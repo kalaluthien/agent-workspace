@@ -1,0 +1,17 @@
+# The root tracks only container-level tooling. Everything an agent clones or
+# generates below it stays untracked: a cloned repository carries its own git
+# history, and scratch work is not worth a commit.
+/*
+
+# ...except these.
+!/.gitignore
+!/README.md
+!/AGENTS.md
+!/CLAUDE.md
+!/.claude/
+!/docs/
+!/scripts/
+
+# Machine-local state never enters git.
+.claude/settings.local.json
+.DS_Store
