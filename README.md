@@ -21,7 +21,7 @@ agent-workspace/
   spec/  docs/  scripts/
   auth-refactor-260828/          a campaign, git-ignored
     AGENTS.md CLAUDE.md          engineering principles for this campaign
-    README.md                    Intent, Scope, Requirements, Plan
+    README.md                    the anchor issue body, section for section
     runtime/                     data, state, artifacts, handover briefs
     scripts/                     reusable scripts for this campaign
     repos/api/  repos/web/       member repositories, each its own git repo
