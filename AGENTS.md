@@ -194,6 +194,21 @@ things already versioned elsewhere, so it is git-ignored on purpose and nothing
 durable may live only there. `.gitignore` is an allowlist over the container
 row: a new tracked directory needs its own `!` line.
 
+**A campaign with no member repository does not bend that rule; it is the case
+that tests it.** Such a campaign's `<campaign>/scripts/` is tooling and scratch
+by design — a script written to answer this campaign's question, thrown away
+with the tree. Its lasting results live where any campaign's do: in the anchor
+issue and its sub-issues, in this container's memory pool, or in a repository it
+lands work in by hand. Making the container a member so that `scripts/` could
+survive is the other reading and it is rejected: it would make every repo-less
+campaign not repo-less, for the sake of committing scratch.
+
+So the close makes the claim checkable instead of hoped for. Before deleting the
+directory, `closing-campaign` lists every file under it outside `runtime/` and
+`repos/` into the closing comment on the anchor — one comment, the one it
+already posts — so what the delete destroyed is on the record, and a file
+somebody still wants is caught while the tree is still there.
+
 **Resolve the container root one way, everywhere:**
 
 ```sh
@@ -333,6 +348,29 @@ is a markdown heading followed by a plain `- owner/repo` list, in the issue body
 and in the campaign `README.md` alike — the same heading, so a reader written
 against one works on the other.
 
+**A campaign with no member repository writes `- none` as the whole list**, body
+and `README.md` alike. An *empty* list stays refused everywhere it is refused
+today — `closing-campaign` step 4 above all — because an empty list is
+indistinguishable from a list a bad write dropped, and that step is the last
+thing standing between such a write and the loss of the index. `- none` is a
+deliberate entry and reads as one; the `<`-placeholder check is unchanged by it.
+
+Its subtasks are filed on the container tracker, `kalaluthien/agent-workspace`,
+as sub-issues of the anchor exactly like any other — it is the only tracker
+there is. **And the claim is create-ref on the container** for
+`campaign-<N>/<issue>-<topic>`, even when no container code will change: the
+branch is the claim before it is a workspace, and without it two executors on
+one subtask are serialized by nothing. It is released the same way as any other
+— a claim holding nothing beyond `origin/main` may be deleted when no agent on
+your machine works it — so an unused claim costs a ref and one command.
+
+**Such a subtask closes as completed with no pull request**, and
+`scripts/campaign-settlement` prints that row as `dropped [completed, no merged
+pull request]`. That is the designed reading, stated in the script's own header:
+settled is "the issue is closed", and the merged pull request only says which
+kind. Quote the note, never the word, and do not add a second reading to the
+script to flatter this case.
+
 **Do it here, hand it to a subagent, or hand it to a delegate** — every subtask
 runs one of three ways, and the mode is chosen before the work starts.
 
@@ -352,6 +390,12 @@ subtask's issue exists because the number is minted there — a refusal means
 another executor holds the subtask. Work is pushed as soon as one commit
 exists, so a checkout that dies costs uncommitted work and nothing more. It
 lands by pull request.
+
+**A repo-less campaign has the first two modes and not the third.** The
+delegate mode is a clone under `<campaign>/repos/<repo>/`, and there is no
+repository to clone; its subagent runs with the campaign directory as its
+working directory rather than a worktree of anything. The mechanics above are
+otherwise unchanged, the container branch being the claim.
 
 The subagent mode needs none of the delegate rules that exist to cross a
 process boundary: no handover file, because the brief is passed in-process and
@@ -504,6 +548,39 @@ Never answer one with the other.
 - **Liveness is a herdr fact**, read from `herdr agent list` presence plus the
   session transcript — never from `agent_status` alone, which reports the screen
   and calls a mid-turn pause `idle`.
+
+  **Finding a campaign's sessions is that same reading, filtered by `cwd`.**
+  There is no registry and no name to match on: `name` is null for every
+  interactive session (probed 2026-08-28 — the key is absent from all four rows
+  a container root was holding), so the only handle a campaign session leaves is
+  where it runs. Filter by a whole-segment `cwd` prefix of the campaign
+  directory, or of the container root for a campaign that has no directory — #1
+  is that case, and so is every repo-less campaign whose tree is gone.
+
+  ```sh
+  herdr agent list | jq -r --arg tree "$CONTAINER" \
+    '.result.agents[] | select(.cwd + "/" | startswith($tree + "/"))
+     | "\(.agent_session.value // "-")\t\(.agent_status)\t\(.cwd)"'
+  ```
+
+  `agent_session.value` is the session UUID, and it names the transcript:
+  `~/.claude/projects/<cwd with every / and . replaced by ->/<uuid>.jsonl`. What
+  the session works is the first `"type":"user"` record in it that is not a
+  harness wrapper — the literal first one is a `<local-command-caveat>` or a
+  `<command-name>` block often enough that skipping them is part of the recipe,
+  not a refinement of it:
+
+  ```sh
+  jq -rs 'map(select(.type == "user") | .message.content
+              | if type == "array" then map(.text // "") | join(" ") else . end)
+          | map(select(test("^<(local-command|command-name)") | not)) | first' \
+    ~/.claude/projects/<encoded cwd>/<uuid>.jsonl
+  ```
+
+  A row with no `agent_session` at all is a pane whose session has not started;
+  it has no transcript to read and nothing to say what it works. And the address
+  to talk to any of them by is still the `ListAgents` name, never the `cwd` that
+  found it and never herdr's pane label.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the campaign session retires it once
