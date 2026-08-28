@@ -143,6 +143,19 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0
 - **A skill edited inside the clone does not change the running campaign**, and
   that is deliberate — the tool must not move under a session using it. It takes
   effect only once merged and pulled.
+- **One tracker then holds both kinds of issue** — this campaign's anchors and
+  this repository's subtasks — drawn from one number sequence. An anchor is an
+  issue labelled `campaign` with no parent; a subtask is an issue with a parent,
+  labelled or not. Both readings are cheap and they cross-check each other:
+
+  ```sh
+  gh issue list -R kalaluthien/agent-workspace --state open \
+    --json number,title,parent --jq '.[] | select(.parent == null) | .number'
+  ```
+
+  Neither reading is enforced by GitHub, so `scripts/campaign-settlement` reports
+  a mismatch instead of guessing. Never survey the container's issues unfiltered:
+  the plain `gh issue list` here is mostly subtasks.
 
 # Running a campaign
 
