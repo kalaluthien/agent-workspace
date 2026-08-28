@@ -1,6 +1,6 @@
 ---
 name: opening-campaign
-description: Opens a campaign in the agent-workspace container, or joins one that already exists — decides new versus follow-up, files the anchor issue, scaffolds its directory on this machine, and acquires the member repositories. Use when a person arrives in the container root with an unstructured request, such as a sentence, an issue number, or a screenshot, and cross-repository work has to start. Not for closing a campaign, and not for the second and later subtasks of a campaign already scaffolded in this directory.
+description: Opens a campaign in the agent-workspace container, or joins one that already exists — decides new versus follow-up, files the anchor issue and binds it to this machine, scaffolds its directory and takes it as the holding session, and acquires the member repositories. Use when a person arrives in the container root with an unstructured request, such as a sentence, an issue number, or a screenshot, and cross-repository work has to start. Not for closing a campaign, and not for the second and later subtasks of a campaign already scaffolded in this directory.
 ---
 
 # Opening a campaign
@@ -14,8 +14,10 @@ Finished when all of these hold:
 - An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
   no parent, and the sections of the anchor template `assets/README.md`, with
   `Repos` a plain `- owner/repo` list.
+- The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
-  `CLAUDE.md`, `README.md`, `runtime/handover/`, and `scripts/`.
+  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/holder`, and
+  `scripts/`, with `runtime/holder` naming this session and a live PID.
 - The campaign's `README.md` is the anchor issue body, and the `- ` entries
   under its `## Repos` heading hold no `<`. Scope the check to that list: a
   correct Requirements section quotes things like `issues/<N>/sub_issues`, so a
@@ -67,7 +69,7 @@ it.
 | what you find | what to do |
 | --- | --- |
 | No open campaign's Scope covers the request | Open a new campaign: continue to step 2. |
-| One open campaign's Scope covers it | Join it: file a follow-up subtask, and scaffold the directory here if this machine has none. |
+| One open campaign's Scope covers it | Join it — but read the binding and the holder below first: they decide whether you may join at all, and as what. |
 | Two or more could cover it, or the fit is arguable | Ask the person which, naming the candidates. Do not guess. |
 
 Match on Scope, never on `## Repos`. A request that touches a repository an open
@@ -83,20 +85,50 @@ File the follow-up the way "Filing a subtask issue" below says: an issue created
 without `--parent` is in no campaign and shows up in no listing, and nothing
 reports it.
 
-Then check whether this machine holds the campaign at all. Several sessions may
-hold one campaign, on one machine or on several, and none of them is the one
-that opened it — so "already scaffolded" is a fact about a directory, not about
-the campaign:
+**Then read the binding, before anything else about this campaign.** A campaign
+runs on one machine at a time, and joining one bound elsewhere is the mistake
+this read exists to stop — the full rule is § Who is a campaign session in the
+container's `AGENTS.md`.
+
+```sh
+gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/comments \
+  --jq '.[] | select(.body | startswith("BOUND ")) | .body' | tail -1
+hostname -s
+```
+
+Another machine — stop. File nothing, scaffold nothing, launch nothing; say
+which machine holds it, and that only the person can move it by posting a new
+`BOUND` comment once that machine is released or dead. No output at all — the
+campaign predates the rule and is unbound; ask the person before binding it
+here, because holding its directory is not what binds it.
+
+Then check whether this machine holds the campaign at all. "Already scaffolded"
+is a fact about a directory, not about the campaign:
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
 ls -d "$CONTAINER"/*-[0-9][0-9][0-9][0-9][0-9][0-9]/ 2>/dev/null
 ```
 
-A directory whose `README.md` names this campaign — the run ends here; work in
-that directory. None — the campaign exists on GitHub but not on this machine, so
+A directory whose `README.md` names this campaign — bind `CAMPAIGN` to it, and
+read its `runtime/holder` before working in it:
+
+```sh
+CAMPAIGN=$(cd "$CONTAINER/<the directory that matched>" && pwd -P)
+PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder" 2>/dev/null)
+kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
+```
+
+Alive, and not this session — you are an **executor session** on one subtask.
+File it or take the one you were given, claim its branch, tell the holding
+session, and from there work it like any executor: never survey, never sync,
+never close. Dead, missing, or your own — you are the holding session; rewrite
+the file as step 4 does and carry on in that directory.
+
+No directory at all — the campaign exists on GitHub but not on this machine, so
 run steps 2, 4 and 5 for it, taking its ID and body from the anchor issue. Skip
-step 3: it exists only to mint an ID this campaign already has.
+step 3: it exists only to mint an ID this campaign already has, and the campaign
+is already bound.
 
 Step 2 still runs because neither the slug nor the kind is recoverable from
 GitHub — the kind lives in another machine's `AGENTS.md`, which nothing here can
@@ -164,6 +196,19 @@ Want `campaign` among `labels` and `parent` null. A non-null `parent` means you
 filed a subtask, not an anchor — `gh issue edit <N> --remove-parent` before
 going on.
 
+**Then bind the campaign to this machine**, in the same step, because everything
+after it is a write or a launch and both are gated on the binding:
+
+```sh
+gh issue comment <N> -R kalaluthien/agent-workspace --body "BOUND $(hostname -s)"
+```
+
+This is one of only two occasions a session posts `BOUND` — a campaign it filed
+itself. The other is a person's word, and that one is a migration; see § Who is
+a campaign session in the container's `AGENTS.md`. Read it back the way step 1
+reads it, and if the latest `BOUND` is not yours, somebody migrated the campaign
+in the seconds since: stop and say so.
+
 **Write the body by filling the anchor template**, `assets/README.md` in this
 skill — its sections, each placeholder replaced, and no others. That file is the
 one copy of the anchor's shape: step 4 copies it into the campaign directory as
@@ -172,7 +217,10 @@ later survey classifies by the shape you leave behind. Issue #1 in that
 repository is the worked example; read it beside the template.
 
 Scope is what a later run reads to decide new-versus-follow-up in step 1, so
-write it to be matched against a request, not admired.
+write it to be matched against a request, not admired. `## Plan` is the
+decomposition as it stands now and is never revised afterwards — the body is a
+charter, and progress is read from the sub-issue index instead (§ Running a
+campaign in the container's `AGENTS.md`).
 
 ### 4. Scaffold the directory
 
@@ -206,8 +254,10 @@ CAMPAIGN="$CONTAINER/<slug>-$(date +%y%m%d)"
 placeholders, so the existence test is a gate, not a formality. What to do when
 it does exist depends on which campaign is in it: read `$CAMPAIGN/README.md`.
 The same campaign — another session on this machine got here first, given the
-same slug on the same day — leave the directory alone, skip to step 5, which is
-safe to re-run. A different campaign, or unreadable — stop and ask the person.
+same slug on the same day — leave the directory alone and read `runtime/holder`
+as step 1 does: a live holder makes you an executor session, a dead one makes
+you the holder, and either way skip to step 5, which is safe to re-run. A
+different campaign, or unreadable — stop and ask the person.
 
 Then finish it:
 
@@ -229,6 +279,18 @@ Then finish it:
   ```
 
   `>|`, not `>` — see the redirect gotcha below.
+- **Take the campaign, in `runtime/holder`.** It is what every later session
+  reads to know whether this machine's copy already has a holding session:
+
+  ```sh
+  printf 'session %s\npid %s\n' "$CLAUDE_CODE_SESSION_ID" "$CLAUDE_PID" \
+    >| "$CAMPAIGN/runtime/holder"
+  ```
+
+  Write it when you claim the directory, not when you leave it: only the claim
+  knows what holding means for the work about to start. Overwrite a holder whose
+  PID is dead; a live one means the directory is somebody's, and step 1 already
+  sent you down the executor path.
 - **Keep the copy.** `runtime/anchor-body-derived.md` is the body exactly as it
   read at the moment this README was derived from it, and it is the only thing
   that can later answer "has the body moved since?". `closing-campaign` step 4
@@ -237,9 +299,10 @@ Then finish it:
   else under `runtime/`, and dies with the directory — which is the right
   lifetime, because it is only ever compared against by a session working in
   this tree.
-- The `README.md` is the working copy a campaign session edits. Several sessions
-  may hold this campaign and each has its own copy, which is why the write back
-  to the issue body compares before it writes. A delegate never touches either.
+- The `README.md` is the working copy the holding session edits, and the write
+  back to the issue body still compares before it writes — against a person's
+  own edit to the charter, and against a machine writing the anchor it is not
+  bound to. Neither a delegate nor an executor session touches either copy.
 - The directory is git-ignored by the container's allowlist. Nothing durable may
   live only there; if you write something that must survive, it belongs in a
   member repository or on a GitHub issue.
@@ -262,11 +325,11 @@ subtask issue exists yet, so there is no name to pass. The checkout is left on t
 repository's default branch and each delegate cuts its own branch when it starts
 on its subtask — see "Filing a subtask issue".
 
-That is also what keeps the checkout safe when two sessions hold this campaign.
-One directory serves both, so `--branch` here would make a re-run of this step
-switch the shared checkout onto another branch, under a delegate already working
-in it. Without `--branch`, `acquire-repo` re-runs as a fetch and touches no
-branch.
+That is also what keeps the checkout safe when an executor session shares this
+campaign's directory. One checkout serves both it and the holding session, so
+`--branch` here would make a re-run of this step switch it onto another branch,
+under a delegate already working in it. Without `--branch`, `acquire-repo`
+re-runs as a fetch and touches no branch.
 
 ### 6. Report
 
@@ -328,7 +391,10 @@ campaign `README.md`, sync that to the anchor body, and acquire it as in step 5.
 The list is what a later open reads to know what to clone; the index does not
 depend on it.
 
-**Sync it now, and compare before you write.** Leaving the addition in a local
+**Sync it now, and compare before you write.** Adding a repository is a scope
+change, which is one of the two moments the anchor body is written at all — the
+other is the close, and filing the subtask itself is not one of them, because
+the sub-issue index already carries it. Leaving the addition in a local
 `README.md` until the campaign closes hides the new repository from every other
 session holding this campaign — one of them will open the campaign on its
 machine, clone the list, and have no checkout for the subtask you just filed.
@@ -350,8 +416,9 @@ auth-refactor-260828/
   README.md      issue #7's body, section for section
   runtime/handover/ scripts/
   runtime/anchor-body-derived.md  issue #7's body as the README was derived from
-  repos/api/     on the default branch; subtask #31 is worked on c7/31-token-refresh
-  repos/web/     on the default branch; subtask #12 is worked on c7/12-token-refresh
+  runtime/holder                  the session holding #7 on this machine
+  repos/api/     on the default branch; #31 is worked on campaign-7/31-token-refresh
+  repos/web/     on the default branch; #12 is worked on campaign-7/12-token-refresh
 ```
 
 ## Gotchas
@@ -361,13 +428,15 @@ auth-refactor-260828/
   scope, and nothing errors — you get two anchor issues that both look right.
   Two sessions each running step 1 honestly produce the same pair, which is why
   step 3 surveys a second time.
-- **You are not the only campaign session.** Any session opened in the container
-  root is one, several may hold this campaign at once, and none of them is
-  privileged or announced anywhere. Everything durable here is therefore written
-  as read-then-write against GitHub, never as "mine because I made it": the
-  anchor body is compared before it is overwritten, the directory may already
-  exist because a peer built it minutes ago, and the shared checkout is left on
-  its default branch so a re-run cannot move it under somebody's delegate.
+- **You may not be this campaign's session.** Any session opened in the
+  container root is a candidate, and two cheap reads decide which of three
+  things it is: the anchor's latest `BOUND` comment, then `runtime/holder`. Bound
+  elsewhere is not yours to touch; a live holder makes you an executor session on
+  one subtask. Everything durable is still written as read-then-write against
+  GitHub rather than as "mine because I made it" — the anchor body is compared
+  before it is overwritten, the directory may already exist because a peer built
+  it minutes ago, and the shared checkout is left on its default branch so a
+  re-run cannot move it under somebody's delegate.
 - Filing the anchor issue after scaffolding gives the directory a slug with no
   ID behind it and branches named for a number you have not got yet. Order
   matters here and nowhere else in the procedure.

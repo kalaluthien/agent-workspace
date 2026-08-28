@@ -21,35 +21,109 @@ repositories are worked on together.
 
 # Who is a campaign session
 
-**Any session opened in the container root is one.** There is no privileged
-session and no registry: a session arrives, surveys the open anchor issues,
-and either opens a campaign or joins one that already covers the request.
-Several may hold the same campaign at once, on one machine or on several.
+**A campaign runs on one machine at a time, and on that machine one session
+holds it.** Any session opened in the container root is a candidate. Which of
+three roles it takes is read rather than assumed, from two facts that cost one
+call each: the anchor's latest `BOUND` comment says which machine the campaign
+is on, and the campaign directory's `runtime/holder` says which session on that
+machine holds it.
 
-That is the intent, and it costs four rules. Each answers a way two sessions
-were witnessed breaking each other; none of them makes concurrency safe on its
-own, and where a window stays open this file says so rather than implying it
-is closed.
+| what the two readings say | this session is |
+| --- | --- |
+| `BOUND` names another machine | **not in this campaign.** Stop before any write and before any launch, and name the machine that holds it. |
+| `BOUND` names this machine, and there is no directory or its holder is dead | **the holding session.** Write `runtime/holder` and carry on. |
+| `BOUND` names this machine, and `runtime/holder` names a live session | **an executor session** on one subtask: claim its branch, announce itself to the holding session, and never write the anchor. |
+| there is no `BOUND` comment | **not bound yet.** Only a person's word binds an existing campaign; see below. |
+
+The executor role is stated here as a role only. What that announcement is —
+`CLAIMED`, and what the protocol does with it — is pending in
+kalaluthien/agent-workspace#37, and this file gains it when that lands.
+
+**`BOUND <machine>` is a comment on the anchor, and the latest one is
+authoritative.** Comments append, so writing one races nothing; that is why the
+binding is a comment and not the body. Its first line is `BOUND <machine>` with
+the machine from `hostname -s`, and anything after that line is prose for a
+person — a migration says there why.
+
+```sh
+gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/comments \
+  --jq '.[] | select(.body | startswith("BOUND ")) | .body' | tail -1
+```
+
+REST returns comments oldest first, so `tail -1` is the current binding and no
+output means the campaign is not bound (probed 2026-08-28). Read it before every
+write to the anchor — body, comment, or sub-issue link — and before launching
+any executor onto one of its subtasks.
+
+**A session posts `BOUND` in exactly two cases**: for a campaign it has just
+filed itself, and when a person tells it to. The second is migration, and it is
+the person's call because its premise is that the other machine has released the
+campaign or is dead, and nothing here can observe either. Post it, then read it
+back: a later `BOUND` naming somebody else means the campaign was migrated out
+from under you, and the latest one still wins. A campaign with no `BOUND`
+comment predates this rule; holding its directory is not the fact that binds it,
+the person's word is.
+
+**`runtime/holder` is the campaign directory's record of the holding session**,
+written when a session takes the campaign and read by every session arriving
+after it:
+
+```sh
+printf 'session %s\npid %s\n' "$CLAUDE_CODE_SESSION_ID" "$CLAUDE_PID" \
+  >| "$CAMPAIGN/runtime/holder"
+```
+
+`CLAUDE_PID` is the `claude` process; `$$` is the shell one tool call runs in
+and is dead before the next one starts. Liveness is `kill -0` plus the process
+still being `claude` — both commands, and all three of their outcomes, probed
+2026-08-28:
+
+```sh
+PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
+kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
+```
+
+Alive means you are an executor session; dead means you take over by rewriting
+the file. This is the one lock here that cannot rot, because staleness is a
+local process fact rather than a guess about a machine you cannot see — which is
+what pinning the campaign to one machine was bought for. Its failure mode is a
+recycled PID belonging to a *different* `claude`, and that reads as live, so the
+check errs towards refusing to take over: ask rather than overwrite. `runtime/`
+dies with the directory, which is the right lifetime — nothing off this machine
+reads the holder.
+
+Those two readings replace the rule that stood here, *several sessions may hold
+one campaign, on one machine or on several*, and they change what the four rules
+below are for. Each was written from a witnessed breakage; under the principle
+two survive unchanged, one holds by construction, and one inverts.
 
 - **Survey again at the moment you file.** Two sessions that each checked the
   open anchors before either filed will both file, and one scope gets two
   campaigns. Re-reading immediately before `gh issue create` narrows that
-  window; it does not close it, because read and create are not atomic.
+  window; it does not close it, because read and create are not atomic. The
+  principle buys nothing here: a campaign that does not exist yet is bound to
+  nobody, so this is the one window `BOUND` cannot narrow.
 - **Claim the branch before you launch onto it**: `campaign-<N>/<issue>-<topic>`,
   created on the remote by create-ref, which refuses an existing ref. The
   campaign number keeps two campaigns apart and the issue number keeps two
   subtasks apart, but two sessions delegating the *same* subtask still landed
   on one branch — until the branch became the claim. A refusal means the
-  subtask is taken; read who by, do not push past it.
-- **Retire only an agent on your own machine.** "Its branch is on the remote"
-  is the check a stand-down rests on, and it passes for an agent whose
-  uncommitted work lives on a different machine. Ask the session that launched
-  it, or leave it.
-- **Holding the directory is not owning the campaign.** Two sessions given the
-  same slug on the same day build the same path, and the local no-live-agent
-  gate cannot see a delegate working on another machine. Before closing, say in
-  the anchor issue that you are closing it, and read GitHub rather than your own
-  tree for who else is in it.
+  subtask is taken; read who by, do not push past it. This is what serializes
+  executors *within* the bound machine, and the principle leaves it untouched.
+- **Retire only an agent on your own machine.** Under the principle every agent
+  of a campaign is on the machine it is bound to, so this now holds by
+  construction. It is kept for the one window where it does not: just after a
+  migration, when an agent may still be running on the machine the campaign
+  left. Ask the session that launched it, or leave it.
+- **Holding the directory with a live holder *is* owning the campaign.** This
+  rule read the other way round, because two sessions given the same slug on the
+  same day build the same path and neither could tell whose tree it was.
+  `runtime/holder` answers exactly that, so a session arriving to a live holder
+  is an executor rather than a peer. What survives of the old blind spot is
+  narrow: the local no-live-agent gate still cannot see a machine working this
+  campaign against its `BOUND`. So `closing-campaign` still says in the anchor
+  issue that it is closing — as the guard for a broken principle, not as the
+  normal path.
 
 - **ID** — the number of its anchor issue in `kalaluthien/agent-workspace`.
   Typed as `#N`. The anchor carries the `campaign` label, and that label is what
@@ -245,6 +319,14 @@ issue — it is not the index and nothing queries it. What the filled shape does
 carry is the issue's kind, readable without an API call; see § When the container
 is a member of its own campaign.
 
+**A discovery becomes a subtask at the moment it is found.** Work that turns up
+mid-task and falls outside the current subtask's scope is filed then — a
+sub-issue of the anchor, body from the same template — by whoever can file it:
+the finder, or the campaign session the moment a delegate reports it. A finding
+held in a session's memory or parked in a report is invisible to every other
+session, dies with the pane that found it, and reaches the close as nothing at
+all, because the index is the only place the close can look.
+
 The anchor's **`## Repos`** section still earns its place: it says which
 repositories to clone when a campaign is opened, before any subtask exists. It
 is a markdown heading followed by a plain `- owner/repo` list, in the issue body
@@ -283,7 +365,30 @@ in one repository are each small enough to do here, and a session that does
 them here does them one after another.
 
 **Close** — load the `closing-campaign` skill. A campaign closes when its anchor
-issue closes, and only a person decides that.
+issue closes, and only a person decides that. The skill refuses while any open
+subtask lacks a disposition: a campaign may close over unfinished work, never
+over unexamined work.
+
+**The anchor body is a charter, not a status board.** Intent, Scope and
+Requirements say what a person signed up for, and change only when the scope
+genuinely changes — their decision, not a session's. `## Plan` is the
+decomposition made at opening and is not revised as subtasks land. Progress and
+membership are *derived*, by `scripts/campaign-settlement <N>` over the
+sub-issue index, and never written into the body.
+
+So the body is filled when the anchor is filed, and after that written at
+exactly two moments: a scope change, and the close — each through the
+compare-then-write below. Adding work is neither —
+filing a subtask touches only the subtask side, `gh issue create --parent` plus
+the branch claim, and the index carries it from there. Ticking a `## Plan`
+checkbox as a subtask settles is the anti-pattern this names: a hand copy of a
+listing that already exists, paid for with one lost-update window per write.
+
+Two moments is not *write only at open and at close*, which `spec/alloy/`
+weighs as `syncAtCloseOnly` and rejects.
+Adding a repository **is** a scope change, so it syncs when it happens; held
+back until the close it is invisible to every other session holding the
+campaign, and the loss it was meant to prevent happens at the close anyway.
 
 The campaign's `README.md` and the anchor issue body carry **the same sections
 in the same shapes**, and the anchor template
@@ -294,12 +399,17 @@ dropped.
 
 **Compare then write the anchor issue body.** Re-read it immediately before
 `gh issue edit`, and refuse if it has moved since your `README.md` was derived
-from it. Without that check a second session's sync silently discards the
-first's — modelled and witnessed, and the loss is worse than it looks because a
-body write cannot touch a sub-issue link, so the index goes on naming work in a
-repository the `## Repos` list has dropped, and the close then deletes that
-list's last copy. Step 4 already reads the body back after writing, so the extra
-read costs nothing. A delegate never writes the body at all.
+from it. One campaign, one machine gives the body a single structural writer, so
+this ceremony is no longer the everyday guard it was written as — it is demoted
+to catching the two things the principle does not cover, and from here they look
+identical: a person editing the charter straight on GitHub, which is theirs to
+do, and a session writing from a machine the anchor is not `BOUND` to, which is
+the principle broken. Without it one of those silently discards the other —
+modelled and witnessed, and the loss is worse than it looks because a body write
+cannot touch a sub-issue link, so the index goes on naming work in a repository
+the `## Repos` list has dropped, and the close then deletes that list's last
+copy. Step 4 already reads the body back after writing, so the extra read costs
+nothing. Neither a delegate nor an executor session writes the body at all.
 
 # Delegating to a repository agent
 
@@ -455,18 +565,30 @@ A campaign may not be closed while any agent is live under its tree, and a
 repository may not be dropped from a campaign while an agent is working one of
 its subtasks.
 
-**That check is local and cannot see another machine.** An operator deleting a
-campaign tree here is blind to an agent live on the same campaign elsewhere, and
-no cheap mechanism fixes it. What lowers the stakes instead: a delegate pushes
-its branch as soon as it has one commit, so a tree deleted underneath it costs
-uncommitted work and nothing more.
+**That check is local, and under the principle that is nearly enough.** Every
+agent of a campaign runs on the machine it is `BOUND` to, so a local gate sees
+all of them. What it cannot see is a machine working this campaign against that
+binding, and no cheap mechanism fixes it. What lowers the stakes instead: a
+delegate pushes its branch as soon as it has one commit, so a tree deleted
+underneath it costs uncommitted work and nothing more.
 
-# Concurrency
+# Concurrency and what it costs
 
-Several machines and several agents may hold the same campaign. They read and
-write the same GitHub issues, and their local directories never need to agree,
-because those hold no state anyone else reads. Survey before editing, scope
-edits so they do not collide with other worktrees, and rebase onto what landed
-rather than force-pushing over it.
+One campaign, one machine (§ Who is a campaign session) settles the hard half.
+The anchor has one structural writer, the campaign directory has one holding
+session, and no lock ever has to be judged stale across a network. What stays
+concurrent is concurrent *within* the bound machine — the holding session, its
+executor sessions, its subagents and its delegates — and the branch claim is
+what serializes them. Survey before editing, scope edits so they do not collide
+with other worktrees, and rebase onto what landed rather than force-pushing over
+it.
+
+**The named cost: no concurrent cross-machine or cloud work on one campaign.**
+Another machine, a cloud session, or a phone may read a campaign and may open a
+different one; none of them may write this one's anchor or launch into it. A
+campaign reaches another machine only by migration — a person's new `BOUND`
+comment, once the machine it leaves is released or declared dead. That is the
+price of a staleness check that is a local `kill -0` rather than a distributed
+guess, and it is paid deliberately.
 
 Use `gh` for every GitHub operation; it is authenticated on this machine.

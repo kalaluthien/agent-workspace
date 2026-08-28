@@ -18,8 +18,11 @@ Out:
 
 ## Plan
 
-- [ ] <subtask> — <owner/repo>
-- [ ] <subtask> — <owner/repo>
+<!-- The decomposition as it stands at opening. Not a checklist and not ticked
+     off: progress is read from the sub-issue index, never written here. -->
+
+- <subtask> — <owner/repo>
+- <subtask> — <owner/repo>
 
 ## Repos
 

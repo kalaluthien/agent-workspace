@@ -1,6 +1,6 @@
 ---
 name: closing-campaign
-description: Closes a campaign — binds the campaign directory, refuses while an agent is live or while work exists only on this machine, reports unsettled subtasks, syncs the README into the anchor issue, then closes the issue and deletes the directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory. Not for closing a single subtask issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
+description: Closes a campaign — binds the campaign directory, refuses when the anchor is BOUND to another machine or another live session holds it, refuses while an agent is live or while work exists only on this machine, refuses while any open subtask lacks a disposition, syncs the README into the anchor issue, then closes the issue and deletes the directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory. Not for closing a single subtask issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
 ---
 
 # Closing a campaign
@@ -9,24 +9,32 @@ Delete a campaign directory only after everything in it also exists somewhere
 else. The directory is a scratch assembly of things versioned elsewhere, so
 closing is a checked demolition, not a decision.
 
-Finished when all four hold:
+Finished when all six hold:
 
+- the anchor's latest `BOUND` comment names this machine;
 - `gh issue view <N> -R kalaluthien/agent-workspace --json state` reports
   `CLOSED`;
+- every subtask in the anchor's index reads settled or has moved to another
+  anchor, each open one having been given a named disposition first;
 - the campaign directory does not exist;
-- no herdr agent's `cwd` is under the path that directory had;
+- no herdr agent's `cwd` was under the path that directory had, and no
+  `runtime/holder` in it named a live session other than this one;
 - the anchor issue body is the campaign README, `## Repos` list included, and
   the body was compared against `runtime/anchor-body-derived.md` before it was
   written.
 
-Where this machine holds no directory for the campaign, only the first is a real
-condition and the other three are about a cache that does not exist. Step 0 says
+Where this machine holds no directory for the campaign, the first three are the
+real conditions — the binding, and two GitHub facts that read the same from any
+machine — and the other three are about a cache that does not exist. Step 0 says
 what to skip.
 
 ## Procedure
 
 The order is load-bearing: each gate is cheaper than the one after it, and step
-5 is irreversible. Run 0–4 without asking. Run 5 only on explicit confirmation.
+5 is irreversible. Run 0–4 without asking — with one exception: step 3 reads and
+refuses on its own, but the disposition of an open subtask is the person's
+choice, and this skill acts on GitHub only once they have made it. Run 5 only on
+explicit confirmation.
 
 ### 0. Bind the campaign, once
 
@@ -39,6 +47,28 @@ listed by.
 ```sh
 gh issue list -R kalaluthien/agent-workspace --label campaign --state open
 ```
+
+**Then the binding, before any other gate.** A campaign runs on one machine at a
+time, and closing is the most destructive thing a session can do to one it does
+not hold:
+
+```sh
+gh api --paginate repos/kalaluthien/agent-workspace/issues/"$N"/comments \
+  --jq '.[] | select(.body | startswith("BOUND ")) | .body' | tail -1
+hostname -s
+```
+
+```text
+REFUSE: campaign #<N> is BOUND to <machine>; this is <hostname -s>.
+
+Nothing was closed. Close it from that machine, or have the person migrate the
+campaign here with a new BOUND comment first.
+```
+
+No output at all means the campaign was opened before the rule and is not bound.
+That is not consent: say so, and let the person bind it here or close it from
+the machine that has been working it. The rule and the two occasions a session
+may post `BOUND` are § Who is a campaign session in the container's `AGENTS.md`.
 
 **Then the directory, if this machine has one.** A campaign is its anchor issue
 and the directory is one machine's cache, so a campaign legitimately has none
@@ -72,11 +102,26 @@ esac
 Stop on either. They are what stop `..`, a nested path, and the container's own
 `docs/` from reaching step 5.
 
-### 1. Refuse while an agent is live under the tree
+### 1. Refuse while another session holds it, or an agent is live under the tree
 
-Presence in `herdr agent list` is the signal, not `agent_status` — that reports
-the screen and calls a mid-turn pause `idle`. An agent listed under the tree
-blocks the close whatever its status says.
+**The holder first**, because it is a two-line read and it settles who this
+directory belongs to. Only the holding session closes a campaign; an executor
+session arrived to work one subtask and this skill is not its to run.
+
+```sh
+PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN_DIR/runtime/holder" 2>/dev/null)
+kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
+```
+
+Alive and not this session — print the file and stop; that session is holding
+the campaign and only it, or the person, may close it. Missing or dead — you are
+the holding session by default, so say so, take the directory as
+`opening-campaign` step 4 does, and carry on. A live PID that is some other
+`claude` reads as held, which is the safe direction to be wrong in here.
+
+**Then the agents.** Presence in `herdr agent list` is the signal, not
+`agent_status` — that reports the screen and calls a mid-turn pause `idle`. An
+agent listed under the tree blocks the close whatever its status says.
 
 Compare whole path segments. A bare prefix test matches a sibling whose name
 merely starts the same, and misses the directory itself.
@@ -150,7 +195,7 @@ Nothing was deleted. Clear every row, or say to discard it, then re-run.
 unmerged branch. `<check>` is the command that found it, named as it appears
 above. `<count>` counts rows, not checks.
 
-### 3. Report the unsettled subtasks
+### 3. Settle or dispose of every open subtask
 
 **First, confirm `$N` is an anchor.** The container is a member of its own
 campaigns, so its tracker holds subtasks under the same number sequence, and a
@@ -177,17 +222,86 @@ commands is the drift that rule exists to stop, and the two did drift before
 this step was written this way.
 
 ```sh
-"$CONTAINER/scripts/campaign-settlement" "$N"
+"$CONTAINER/scripts/campaign-settlement" "$N" >| /tmp/settlement-$N
+cat /tmp/settlement-$N
 ```
 
 It reads the anchor's sub-issue index in one paginated call — every member
 repository at once, public or private — and prints one row per subtask, then
-whether the campaign is closable.
+whether the campaign is closable. Keep the output in a file: the rest of this
+step is read off it by machine, not by eye.
 
-Report every row that is not settled. None of them blocks the close — a person
-may close a campaign over unfinished work — but show them all before they
-decide. Read the note beside a `dropped` row before repeating the word to
-anyone: it covers four different closes and only one of them is an abandonment.
+Read the note beside a `dropped` row before repeating the word to anyone: it
+covers four different closes and only one of them is an abandonment.
+
+**Then every `open` row gets a disposition, and this step refuses without one.**
+A campaign may close over unfinished work; it may not close over *unexamined*
+work. A leftover nobody named is work that vanishes with the close — the anchor
+is the only thing that indexes it, and step 5 closes that. The person chooses
+one of three per row:
+
+| disposition | the act | what the row becomes |
+| --- | --- | --- |
+| `finish` | do the work, land the pull request, close the issue | `complete` |
+| `not-planned` | `gh issue close <issue> -R <repo> --reason "not planned" --comment "<why>"` | `dropped` |
+| `reparent` | `gh issue edit <issue> -R <repo> --parent <URL of the inheriting anchor>` | gone from this index — the sub-issue link is prunable |
+
+All three end with the row off this campaign's open list, which is what makes
+the gate below a check rather than a promise.
+
+Write one line per open row — `<owner/repo>#<issue>  <verb>  <reason or target>`
+— then validate that list against the settlement output row for row. Do not read
+the two side by side; a close is where an eye skips a line.
+
+```sh
+DISPOSITIONS=/tmp/dispositions-$N        # write it here, one line per open row
+awk '$1 ~ /#[0-9]+$/ && $2 == "open" { print $1 }' /tmp/settlement-$N | sort >| /tmp/open-$N
+awk 'NF { print $1 }' "$DISPOSITIONS" | sort >| /tmp/disposed-$N
+command diff /tmp/open-$N /tmp/disposed-$N && echo "every open subtask has a disposition"
+awk 'NF && $2 !~ /^(finish|not-planned|reparent)$/ { print "REFUSE: unknown disposition: " $0 }' "$DISPOSITIONS"
+awk 'NF && $2 != "finish" && NF < 3 { print "REFUSE: no reason or target: " $0 }' "$DISPOSITIONS"
+```
+
+`command diff`, not `diff` — see the shadowed-`diff` gotcha below. A `<` line is
+an open subtask nobody disposed of and it stops the close; a `>` line names a
+subtask that is not open, so the list was written against a stale reading and
+the script must be re-run before anything is acted on.
+
+```text
+REFUSE: <count> open subtask(s) under #<N> have no disposition.
+
+  <owner/repo>#<issue>  <title>
+
+Nothing was closed. Give each one finish, not-planned with a reason, or
+reparent with the anchor that inherits it, then re-run.
+```
+
+`/tmp/dispositions-$N` is scratch and dies with the run. The durable record of
+each disposition is the act itself: the merged pull request, the reason in the
+close comment, or the new parent. Nothing here is written into the anchor body —
+progress is derived from the index, and the body is a charter.
+
+**Carry them out, then read the same script again.** The dispositions are
+claims until GitHub shows them; this is the check that the close is not being
+argued from the list rather than from the tracker.
+
+```sh
+"$CONTAINER/scripts/campaign-settlement" "$N" >| /tmp/settlement-after-$N
+cat /tmp/settlement-after-$N
+grep -q '; closable$' /tmp/settlement-after-$N ||
+  grep -q 'the index is empty' /tmp/settlement-after-$N ||
+  echo "REFUSE: open subtasks remain after the dispositions were carried out"
+```
+
+`; closable$` and not `closable`, because the failing line ends
+`NOT closable: open subtasks remain` and a bare match reads it as a pass. The
+empty-index line is the second accepted reading: a campaign with no subtasks
+prints no settlement count at all, and refusing it would leave such a campaign
+unclosable.
+
+A `-- REPORT:` line about nested sub-issues is not covered by this gate. A
+subtask that is itself an anchor hides its own members, so run the script on it
+and dispose of those rows too before you count this one settled.
 
 ### 4. Validate the README, compare, then overwrite the anchor issue body
 
@@ -210,13 +324,21 @@ adjacent section cannot be read as a member repository.
 
 This step is also run mid-campaign, whenever a repository is added to the
 `## Repos` list — `opening-campaign`'s "Filing a subtask issue" sends you here.
-Closing is not the only time the anchor body is written; it is only the last.
+Those are the only two moments the body is written at: a scope change, of which
+adding a repository is one, and the close. The body is a charter, not a status
+board, so a settled subtask is never written back into it — nothing in step 3
+edits the body, and `## Plan` is left exactly as it was at opening.
 
-**Then compare before you write.** You are not the only campaign session, and
-this README was derived from the body at some earlier moment. If another session
-has written the body since, an overwrite from here silently discards everything
-it put there. `runtime/anchor-body-derived.md` is that earlier moment, kept by
-`opening-campaign` step 4; re-read the body now and require the two to match.
+**Then compare before you write.** This README was derived from the body at some
+earlier moment, and if anything has written the body since, an overwrite from
+here silently discards it. Under one campaign, one machine the body has a single
+structural writer, so what this catches is no longer a peer session on the
+normal path: it is a person editing the charter straight on GitHub, which is
+theirs to do, or a machine writing an anchor it is not `BOUND` to, which is the
+principle broken — and from here the two look the same. The ceremony stays
+because both are silent. `runtime/anchor-body-derived.md` is that earlier
+moment, kept by `opening-campaign` step 4; re-read the body now and require the
+two to match.
 
 ```sh
 DERIVED="$CAMPAIGN_DIR/runtime/anchor-body-derived.md"
@@ -264,10 +386,12 @@ Not identical: say so and stop before step 5, while the README still exists.
 Only after the person confirms.
 
 **Say it on the anchor issue first, and read who answers.** Step 1's gate is
-local: it sees agents on this machine and nothing else. Another session may hold
-this campaign on another machine with a delegate live in it, and no cheap local
-check can see that. The anchor issue is the one place every session can read, so
-announce there and read the comments back before going further.
+local, and under the principle that covers everything legitimate: every agent
+and every executor session of this campaign is on the machine it is `BOUND` to,
+and step 1 saw them. What it cannot see is a machine working this campaign
+against the binding, and no cheap local check can. The anchor issue is the one
+place every machine can read, so announce there and read the comments back —
+this is the guard for a broken principle, not a routine handshake.
 
 ```sh
 gh issue comment "$N" -R kalaluthien/agent-workspace \
@@ -276,11 +400,12 @@ gh issue view "$N" -R kalaluthien/agent-workspace --comments
 ```
 
 Another session's note saying it is working or closing: stop, name it, and let
-the person resolve it. Otherwise carry on. This narrows the window rather than
-closing it — a session that never comments is invisible either way. What keeps
-that survivable is not this check but the rule that a delegate pushes its branch
-as soon as it has one commit, so a tree deleted underneath it costs uncommitted
-work and nothing more.
+the person resolve it — and say that it should not have been there, because the
+campaign is bound here. This narrows the window rather than closing it: a
+session that never comments is invisible either way. What keeps that survivable
+is not this check but the rule that a delegate pushes its branch as soon as it
+has one commit, so a tree deleted underneath it costs uncommitted work and
+nothing more.
 
 Then close, in this order — the issue first, because a failed close leaves the
 directory to retry from, while the reverse leaves nothing. The comment states
@@ -365,12 +490,14 @@ rm -rf -- "$CAMPAIGN_DIR"
   say so rather than assuming the person knows.
 - Closing the anchor issue is what closes the campaign. A deleted directory with
   an open issue is a campaign that still exists and has lost its cache.
-- A second machine may hold the same campaign under a directory whose date
-  differs. Deleting this one does not touch that one, and the person there sees
-  the issue close underneath them.
+- A machine the campaign was `BOUND` to before a migration may still hold a
+  directory for it, under a date suffix of its own. That is a stale cache, not a
+  second holder: deleting this one does not touch it, and nothing there is
+  durable.
 - **On one machine, two sessions given the same slug on the same day build the
-  same path**, so the directory this skill deletes may be another session's
-  live workspace. Nothing in steps 0–4 catches that: the live-agent gate in step
-  1 matches on an agent's `cwd`, and a campaign session's `cwd` is the container
-  root. That is why step 5 announces on the issue and looks at open files before
-  removing anything.
+  same path**, so the directory this skill deletes may be another session's live
+  workspace. `runtime/holder` is what catches that, in step 1 — the live-agent
+  gate cannot, because it matches on an agent's `cwd` and a campaign session's
+  `cwd` is the container root. Step 5's announcement and open-file check are the
+  layer under it, for a session that is in the tree without having written the
+  holder.
