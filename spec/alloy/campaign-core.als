@@ -1,5 +1,9 @@
 /*
- * Campaign lifecycle -- variant D (proposed).
+ * Campaign lifecycle: the adopted model.
+ *
+ * The properties in spec/design-campaign.md and AGENTS.md, checked against the
+ * index the design chose. Three rejected alternatives were modelled beside it
+ * and are recorded in README.md; this file is what survived.
  *
  * Index mechanism: GitHub's native sub-issue link. The anchor issue is the
  * parent; every member issue is a sub-issue of it.
@@ -12,13 +16,14 @@
  * not a guess: the GraphQL schema exposes addSubIssue / removeSubIssue, and
  * gh 2.96.0 has `gh issue create --parent <number|url>` plus
  * `gh issue edit --add-sub-issue / --remove-sub-issue`. The link is therefore
- * made by the same command that creates the member issue.
+ * made by the same command that creates the member issue. The one open
+ * question -- whether a sub-issue may live in another repository, and a private
+ * one, under a public parent -- was probed the same day and holds.
  *
- * STILL UNVERIFIED: whether a sub-issue may live in a different repository
- * from its parent for this owner. If it may not, D is unusable and C is the
- * fallback.
+ * Run every command:
+ *   alloy exec -f -o /tmp/alloy-core -t text -c '*' spec/alloy/campaign-core.als
  */
-module campaignD
+module campaignCore
 
 /* ---------------- static structure ---------------- */
 
@@ -36,7 +41,8 @@ sig Issue {
 sig Campaign {
   anchor:      one Issue,       -- the anchor issue in the container repo; the campaign ID
   var members: set Issue,       -- ground truth: the subtasks that belong to the campaign
-  var dirs:    set Machine      -- machines currently holding the git-ignored local directory
+  var dirs:    set Machine,     -- machines currently holding the git-ignored local directory
+  var sub:     set Issue        -- the index: GitHub's native sub-issue link
 }
 
 abstract sig AState {}
@@ -66,32 +72,29 @@ fact WellFormed {
 var sig Open   in Issue {}      -- issues currently open on GitHub
 var sig Merged in PR {}         -- pull requests currently merged
 
-fun campaignOf[i: Issue]: lone Campaign { members.i }
-
 /* Completion is a GitHub fact and mentions no agent. */
 pred complete[i: Issue] { i not in Open and some i.pr and i.pr in Merged }
 
-/* ---------------- the index, variant D ---------------- */
+/* Settlement, the reading AGENTS.md adopted after 7b below: a subtask is
+   settled when its issue is closed, either as completed or as dropped -- closed
+   as not planned, with no merged pull request behind it. Completion alone has no
+   way to say "dropped", which is what 7b's counterexample is. */
+pred dropped[i: Issue] { i not in Open and not complete[i] }
+pred settled[i: Issue] { complete[i] or dropped[i] }
 
-sig CampaignD in Campaign { var sub: set Issue }
-fact { CampaignD = Campaign }
+/* ---------------- the index ---------------- */
 
+/* One relation, maintained by the platform in both directions: it is written by
+   the same command that creates the member issue, and it prunes. */
 fun idx[c: Campaign]: set Issue { c.sub }
 
 pred idxFrame { sub' = sub }
-
-/* One relation, maintained by the platform in both directions. */
-pred addIdx[c: Campaign, i: Issue] { sub' = sub + c->i }
-pred remIdx[c: Campaign, i: Issue] { sub' = sub - c->i }
-pred initIdx { all c: Campaign | c.sub = c.members }
-
-pred variantStep { some none }
 
 /* ---------------- observable events ---------------- */
 
 abstract sig Event {}
 one sig Stutter, OpenPR, MergePR, CloseIssue, AddMember, RemoveMember,
-        AgentDie, DeleteDir, CreateDir, Mention extends Event {}
+        AgentDie, DeleteDir, CreateDir extends Event {}
 
 one sig Now {
   var ev:        one Event,
@@ -129,7 +132,7 @@ pred addMember[c: Campaign, i: Issue] {
   i not in Open and no i.pr                    -- the anchor guard above already covers it
   members' = members + c->i
   Open' = Open + i
-  addIdx[c, i]
+  sub' = sub + c->i
   Merged' = Merged and pr' = pr and dirs' = dirs and st' = st
   Now.ev = AddMember and Now.evIssue = i and no Now.evMachine
 }
@@ -137,7 +140,7 @@ pred addMember[c: Campaign, i: Issue] {
 pred removeMember[c: Campaign, i: Issue] {
   i in c.members
   members' = members - c->i
-  remIdx[c, i]
+  sub' = sub - c->i
   Open' = Open and Merged' = Merged and pr' = pr and dirs' = dirs and st' = st
   Now.ev = RemoveMember and Now.evIssue = i and no Now.evMachine
 }
@@ -178,7 +181,7 @@ pred init {
   some Campaign.members
   all a: Agent | a.st = Live
   all a: Agent | some c: Campaign | a.task in c.members and a.host in c.dirs
-  initIdx
+  all c: Campaign | c.sub = c.members
 }
 
 pred step {
@@ -187,7 +190,6 @@ pred step {
   or (some c: Campaign, i: Issue | addMember[c,i] or removeMember[c,i])
   or (some a: Agent | agentDie[a])
   or (some c: Campaign, m: Machine | deleteDir[c,m] or createDir[c,m])
-  or variantStep
 }
 
 fact Trace { init and always step }
@@ -252,8 +254,6 @@ assert Termination {
     (eventually all c: Campaign, i: c.members | complete[i])
 }
 
-pred progressPossible { some c: Campaign, i: c.members | not complete[i] }
-
 /* Weak fairness: whenever some progress event is enabled on a member issue,
    one eventually fires. It says nothing when nothing is enabled. */
 pred progressEnabled {
@@ -280,6 +280,21 @@ assert TerminationDisciplined {
   implies (eventually all c: Campaign, i: c.members | complete[i])
 }
 
+// 7d. Termination under the settlement the design actually adopted. 7b fails
+// because a subtask closed as not planned never reads complete; read both ways,
+// the same traces terminate. This is the repair AGENTS.md states, checked.
+assert TerminationUnderSettlement {
+  ((eventually always Now.ev != AddMember)
+   and weakFairness)
+  implies (eventually all c: Campaign, i: c.members | settled[i])
+}
+
+/* Control for 7d: settlement is strictly weaker than completion at these
+   bounds. Without a reachable member that settles with no pull request at all,
+   7d would be 7b with a synonym. */
+run SettledWithoutMerge { eventually (some i: Campaign.members | settled[i] and no i.pr) }
+                             for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 2 Agent, 3 Repo, 6 steps
+
 run Sanity { eventually (some Merged and some i: Issue | complete[i]) }
                              for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 2 Agent, 3 Repo, 6 steps
 check NoLostWork             for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 2 Agent, 3 Repo, 6 steps
@@ -296,3 +311,4 @@ check NoOrphanIfGuarded      for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 2 Agent, 
 check Termination            for 3 Issue, 2 PR, 1 Campaign, 1 Machine, 1 Agent, 2 Repo, 10 steps
 check TerminationUnderFairness for 3 Issue, 2 PR, 1 Campaign, 1 Machine, 1 Agent, 2 Repo, 10 steps
 check TerminationDisciplined   for 3 Issue, 2 PR, 1 Campaign, 1 Machine, 1 Agent, 2 Repo, 10 steps
+check TerminationUnderSettlement for 3 Issue, 2 PR, 1 Campaign, 1 Machine, 1 Agent, 2 Repo, 10 steps

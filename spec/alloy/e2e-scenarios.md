@@ -67,6 +67,7 @@ Tear down with `gh issue close $ANCHOR -R kalaluthien/agent-workspace` and
 | 14 | follow-up after the anchor closed | fixture | a closed anchor gains an `open` subtask |
 | 15 | run the whole campaign with no local directory | real | listing reaches `closable` from a machine that never cloned |
 | 16 | the container is a member of its own campaign | real | container checkout is `0 0` against `origin/main` at every checkpoint |
+| 17 | a clone current when cut, stale when the delegate starts | real | the clone reads `0 0` against `origin/main` in the same shell that launches |
 
 ## The steps
 
@@ -134,7 +135,7 @@ mess to explain on a real campaign.
 **9 — tree deleted under a live agent.** Launch a delegate, let it commit but
 *not* push, then delete `<campaign>/` from a second session. Pass is a
 demonstration of loss: the commits are unrecoverable and GitHub never knew about
-them. This is `campaign-D`'s assertion-6 counterexample made real, and it is
+them. This is `campaign-core`'s assertion-6 counterexample made real, and it is
 why `STATUS` question 3 exists. Fixture only, and never with a real delegate's
 work in the tree.
 
@@ -220,6 +221,8 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # "<behin
   A delegate launched behind obeys an `AGENTS.md` this session has already
   superseded, and nothing reports it. Pull the clone, then launch. Pushing the
   container before cloning is still worth doing and is still not sufficient.
+  Scenario 17 models exactly this: `S17b` shows the retired rule holding for a
+  whole trace while a delegate still launches into a stale clone.
 - **Hazard 3 is safe, but do not read the model as proof.** Edits to
   `.claude/skills/` inside the clone cannot change the running campaign, because
   the loaded copy is the outer container's. The model agrees — but only because
@@ -233,16 +236,41 @@ checkpoints, the clone reads zero behind at launch, and the delegate's subtask
 reads `complete` in `scripts/campaign-settlement`. Real-safe — every
 step is a fetch, a compare, or an ordinary pull.
 
-**The finding.** `S16a_ContainerMemberUnderD` is UNSAT. `campaign-D`'s
+**The finding.** `S16a_ContainerMemberUnderNarrowReading` is UNSAT. `campaign-core`'s
 `WellFormed` said `i.home = Container implies i in Campaign.anchor` — every
 container-homed issue must be *some campaign's anchor*. Read precisely that
 forbids an ordinary container subtask, and with a single campaign, which is the
 real situation, it rules the case out entirely; `addMember`'s
 `i.home != Container` restated the same rule and blocked joining mid-flight.
-Both were widened here and, on 2026-08-28, in `campaign-D.als` itself, where all
+Both were widened here and, on 2026-08-28, in `campaign-core.als` itself, where all
 fifteen verdicts came back identical. `spec/alloy/README.md` carries the
 before/after probes that show the new states are genuinely reachable rather than
 merely unvisited. `spec/design-campaign.md` is untouched.
+
+**17 — current when cut, stale when launched.** The clone is cut from
+`origin/main`, then `origin/main` moves, then the delegate starts. Nothing
+reports it, and the delegate obeys an `AGENTS.md` this campaign session has
+already superseded. Run it deliberately: clone `agent-workspace` into
+`<campaign>/repos/`, merge any container pull request, then read the clone.
+
+```sh
+git -C <campaign>/repos/<repo> fetch origin -q
+git -C <campaign>/repos/<repo> rev-list --left-right --count origin/main...HEAD
+```
+
+Pass: the pair reads `0\t0` in the same shell that then launches the delegate,
+after a `git -C <campaign>/repos/<repo> pull --ff-only` if it did not.
+Real-safe — a fetch, a compare and an ordinary pull.
+
+`S17a_CloneBehindAtLaunch` is SAT, so the stale launch is reachable.
+`S17b_OldCloneRuleInsufficient` is the finding: the same trace with the
+superseded rule — never clone while the container is ahead — enforced for its
+whole length is **still SAT**. The rule is not wrong, it is read in the wrong
+place. `S17c_PullBeforeLaunchAdmitsLaunch` is SAT and is the control: checking
+inside the clone at launch still admits a container pull request merging
+mid-campaign and a delegate starting afterwards, so the repair is not green by
+forbidding the scenario. The repair itself is not run as a check — a guard on
+"behind at launch" that then finds no behind launch restates the guard.
 
 ## What the scenarios do not cover
 
