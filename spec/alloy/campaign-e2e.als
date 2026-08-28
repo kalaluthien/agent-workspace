@@ -60,7 +60,10 @@ sig Agent {
 fact WellFormed {
   all c: Campaign | c.anchor.home = Container
   all disj c1, c2: Campaign | c1.anchor != c2.anchor
-  all i: Issue | i.home = Container implies i in Campaign.anchor
+  -- D says `i.home = Container implies i in Campaign.anchor`, which forbids the
+  -- container being a member of its own campaign outright. Widened here to admit
+  -- scenario 16; `containerIsAnchorOnly` below keeps D's reading runnable.
+  all i: Issue | i.home = Container implies i in Campaign.anchor + Campaign.members
   always all p: PR | lone pr.p
   always all i: Issue | some i.pr implies i.pr' = i.pr    -- a PR link is never undone
   always all c: Campaign | c.anchor not in c.members
@@ -70,6 +73,17 @@ fact WellFormed {
 
 var sig Open   in Issue {}      -- issues currently open on GitHub
 var sig Merged in PR {}         -- pull requests currently merged
+
+/* The container cloned into its own campaign tree: one repository, two
+   checkouts on a machine. The OUTER checkout is where the campaign session runs
+   and where its instruction files are read from; the INNER clone, under
+   <campaign>/repos/agent-workspace/, is what a delegate works in and is cut
+   from origin/main. Two bits per machine say everything the hazards need. */
+var sig Behind   in Machine {}  -- the outer checkout is behind origin/main
+var sig Unpushed in Machine {}  -- the outer checkout holds commits origin lacks
+
+/* D's original reading, kept runnable so the widening above stays visible. */
+pred containerIsAnchorOnly { always all i: Issue | i.home = Container implies i in Campaign.anchor }
 
 fun campaignOf[i: Issue]: lone Campaign { members.i }
 
@@ -117,7 +131,7 @@ pred mergeClosed[s: set Issue] {
 
 abstract sig Event {}
 one sig Stutter, OpenPR, MergePR, CloseIssue, AddMember, RemoveMember,
-        AgentDie, DeleteDir, CreateDir, Report extends Event {}
+        AgentDie, DeleteDir, CreateDir, Report, PullContainer, CommitLocal extends Event {}
 
 one sig Now {
   var ev:        one Event,
@@ -152,7 +166,7 @@ pred closeIssue[i: Issue] {
 
 pred addMember[c: Campaign, i: Issue] {
   i not in Campaign.members and i not in Campaign.anchor
-  i.home != Container and i not in Open and no i.pr
+  i not in Open and no i.pr
   members' = members + c->i
   Open' = Open + i
   addIdx[c, i]
@@ -202,6 +216,21 @@ pred createDir[c: Campaign, m: Machine] {
   Now.ev = CreateDir and no Now.evIssue and Now.evMachine = m
 }
 
+pred pullContainer[m: Machine] {
+  m in Behind
+  Behind' = Behind - m and Unpushed' = Unpushed
+  githubFrame and dirs' = dirs and st' = st
+  Now.ev = PullContainer and no Now.evIssue and Now.evMachine = m
+}
+
+/* An edit committed in the outer container and not yet pushed. */
+pred commitLocal[m: Machine] {
+  m not in Unpushed
+  Unpushed' = Unpushed + m and Behind' = Behind
+  githubFrame and dirs' = dirs and st' = st
+  Now.ev = CommitLocal and no Now.evIssue and Now.evMachine = m
+}
+
 pred stutter {
   githubFrame and dirs' = dirs and st' = st
   Now.ev = Stutter and no Now.evIssue and no Now.evMachine
@@ -214,6 +243,7 @@ pred init {
   some Campaign.members
   all a: Agent | a.st = Live
   all a: Agent | some c: Campaign | a.task in c.members and a.host in c.dirs
+  no Behind and no Unpushed
   initIdx
 }
 
@@ -223,6 +253,20 @@ pred step {
   or (some c: Campaign, i: Issue | addMember[c,i] or removeMember[c,i])
   or (some a: Agent | agentDie[a] or agentReport[a])
   or (some c: Campaign, m: Machine | deleteDir[c,m] or createDir[c,m])
+  or (some m: Machine | pullContainer[m] or commitLocal[m])
+}
+
+/* Merging a pull request against the container leaves every outer checkout
+   behind origin/main. Nothing else moves either bit -- in particular no event
+   here writes the outer checkout from inside the clone, which is hazard 3:
+   the model agrees that editing .claude/skills/ in the clone cannot change what
+   the running campaign follows, but it agrees *by construction*, because that
+   event was never written. That is a restatement, not evidence. */
+fact CheckoutFrame {
+  always ((Now.ev not in PullContainer + CommitLocal) implies
+    (Unpushed' = Unpushed and
+     ((Now.ev = MergePR and Now.evIssue.home = Container)
+        implies Behind' = Machine else Behind' = Behind)))
 }
 
 fact Trace { init and always step }
@@ -470,6 +514,56 @@ pred S15_NoLocalDirectory {
   }
 }
 
+/* --- 16. The container as a member of its own campaign --- */
+
+/* 16a. Under D's reading, this scenario cannot exist at all: a container-homed
+        issue must BE the anchor. Expected UNSAT, and that is the finding --
+        the model forbade what is about to happen for real. */
+pred S16a_ContainerMemberUnderD {
+  containerIsAnchorOnly
+  some c: Campaign, i: c.members | i.home = Container
+}
+
+/* 16b. Hazard 1, and its remedy. A pull request against the container merges;
+        every outer container checkout is now behind origin/main, and only a
+        pull clears it. Anyone editing from a behind checkout can silently
+        revert the merged work. */
+pred S16b_ContainerBehindAfterMerge {
+  one c: Campaign | some i: c.members {
+    i.home = Container
+    always Now.ev not in AddMember + RemoveMember
+    mergeClosed[c.members]
+    eventually (Now.ev = MergePR and Now.evIssue = i)
+    eventually Machine in Behind            -- every outer checkout, not just one
+    eventually Now.ev = PullContainer
+    eventually (no Behind and complete[i])
+  }
+}
+
+/* 16c. Hazard 1 left alone. Nobody pulls, so the outer checkouts stay behind
+        for the rest of the campaign with nothing saying so. */
+pred S16c_BehindForever {
+  one c: Campaign | some i: c.members {
+    i.home = Container
+    always Now.ev != PullContainer
+    eventually (Now.ev = MergePR and Now.evIssue = i)
+    eventually always Machine in Behind
+  }
+}
+
+/* 16d. Hazard 2. The campaign directory is created -- the clone is cut from
+        origin/main -- while the outer container holds unpushed commits. The
+        delegate reads an AGENTS.md older than the one the campaign session is
+        following, and obeys rules already superseded. */
+pred S16d_CloneFromUnpushedContainer {
+  one c: Campaign | some m: Machine {
+    m not in c.dirs                         -- not yet cloned here
+    eventually (Now.ev = CommitLocal and Now.evMachine = m)
+    eventually (m in Unpushed and Now.ev = CreateDir and Now.evMachine = m)
+    eventually (m in c.dirs and m in Unpushed)
+  }
+}
+
 /* ---------------- commands ---------------- */
 
 run S1_HappyPath                for exactly 3 Issue, 2 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 3 Repo, 12 steps
@@ -490,3 +584,7 @@ run S13b_ReopenAnyClosed        for exactly 2 Issue, 1 PR, exactly 1 Campaign, 1
 run S13c_ReopenWithPR           for exactly 2 Issue, 1 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 2 Repo, 10 steps
 run S14_FollowUpAfterClose      for exactly 3 Issue, 2 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 2 Repo, 14 steps
 run S15_NoLocalDirectory        for exactly 3 Issue, 2 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 3 Repo, 12 steps
+run S16a_ContainerMemberUnderD      for exactly 2 Issue, 1 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 2 Repo, 6 steps
+run S16b_ContainerBehindAfterMerge  for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, 0 Agent, exactly 2 Repo, 12 steps
+run S16c_BehindForever              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, 0 Agent, exactly 2 Repo, 10 steps
+run S16d_CloneFromUnpushedContainer for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, 0 Agent, exactly 2 Repo, 10 steps

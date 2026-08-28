@@ -66,6 +66,7 @@ Tear down with `gh issue close $ANCHOR -R kalaluthien/agent-workspace` and
 | 13 | reopen a merged subtask | blocked | model says impossible; GitHub does not — see below |
 | 14 | follow-up after the anchor closed | fixture | a closed anchor gains an `open` subtask |
 | 15 | run the whole campaign with no local directory | real | listing reaches `closable` from a machine that never cloned |
+| 16 | the container is a member of its own campaign | real | container checkout is `0 0` against `origin/main` at every checkpoint |
 
 ## The steps
 
@@ -180,6 +181,51 @@ machine (or the repository's own web editor) push the branches. Pass: the
 listing reaches `closable` read from the machine with no directory. This
 exercises the reconstitution claim rather than asserting it — the campaign
 plane really does live in GitHub.
+
+**16 — the container as a member of its own campaign.** `agent-workspace` is
+cloned into `<campaign>/repos/agent-workspace/`, so one repository has two
+checkouts: the **outer** container the campaign session runs from, and the
+**inner** clone the delegate works in, which the container git-ignores. The
+model had to be widened to admit this at all — see the finding below.
+
+One command reads both hazards at once, and it belongs at three checkpoints:
+before launching the delegate, immediately after merging its pull request, and
+before the campaign session next edits anything in the container.
+
+```sh
+CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
+git -C "$CONTAINER" fetch origin -q
+git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # "<behind>\t<ahead>"
+```
+
+- **`behind > 0` is hazard 1.** The delegate's pull request merged and the outer
+  checkout has not caught up. Editing from here can silently revert the merged
+  work, and nothing in `AGENTS.md` currently says to pull. Fix with
+  `git -C "$CONTAINER" pull --ff-only` and re-read `0` before editing.
+- **`ahead > 0` *before the clone* is hazard 2.** The inner clone is cut from
+  `origin/main`, so a delegate launched now reads an `AGENTS.md` older than the
+  one the campaign session is following, and obeys rules already superseded.
+  Push before cloning; a clone taken while `ahead > 0` is the defect.
+- **Hazard 3 is safe, but do not read the model as proof.** Edits to
+  `.claude/skills/` inside the clone cannot change the running campaign, because
+  the loaded copy is the outer container's. The model agrees — but only because
+  no event was written that writes the outer checkout from inside the clone, so
+  it restates the assumption rather than testing it. The real check is one
+  command: after editing a skill in the clone, confirm
+  `git -C "$CONTAINER" status --porcelain .claude/` is still empty.
+
+Pass for the whole scenario: `0\t0` at all three checkpoints, and the delegate's
+subtask reads `complete` in `scripts/campaign-settlement`. Real-safe — every
+step is a fetch, a compare, or an ordinary pull.
+
+**The finding.** `S16a_ContainerMemberUnderD` is UNSAT. `campaign-D`'s
+`WellFormed` says `i.home = Container implies i in Campaign.anchor`, which
+forbids the container being a member of its own campaign outright — the model
+ruled out a case that is about to happen for real. `campaign-e2e.als` widens
+that one clause to `Campaign.anchor + Campaign.members` and drops `addMember`'s
+now-redundant `i.home != Container` guard; every other scenario's verdict is
+unchanged under the widening. Whether `campaign-D.als` and `design-campaign.md`
+should carry the same widening is a decision for their owner, not this file.
 
 ## What the scenarios do not cover
 

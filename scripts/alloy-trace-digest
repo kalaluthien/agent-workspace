@@ -22,6 +22,8 @@ VARYING = [
     ("Campaign<:sub", "sub"),
     ("Campaign<:dirs", "dirs"),
     ("Agent<:st", "agent"),
+    ("Behind", "behind"),
+    ("Unpushed", "unpushed"),
 ]
 STATIC = ["Issue<:home", "Campaign<:anchor", "Agent<:task", "Agent<:host"]
 

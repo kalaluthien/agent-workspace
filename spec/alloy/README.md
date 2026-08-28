@@ -71,8 +71,15 @@ alloy exec -f -o /tmp/alloy-e2e -t text -c '*' spec/alloy/campaign-e2e.als
 scripts/alloy-trace-digest /tmp/alloy-e2e/S1_HappyPath-solution-0.txt
 ```
 
-Fifteen scenarios; all SAT but `S13_ReopenAfterMerge`. That one is UNSAT because
+Sixteen scenarios, twenty-two commands. All SAT but two.
+
+`S13_ReopenAfterMerge` is UNSAT because
 an issue that ever had a pull request can never return to `Open` -- `addMember`
 guards on `no i.pr` and a PR link is never undone -- so the model cannot state
 "reopen a merged subtask for review feedback", which GitHub permits. The gap is
 in the model, not the design.
+
+`S16a_ContainerMemberUnderD` is UNSAT because D's `WellFormed` forbids the
+container being a member of its own campaign at all. `campaign-e2e.als` widens
+that clause; no other scenario's verdict moves. Whether D and
+`design-campaign.md` should carry the same widening is their owner's call.
