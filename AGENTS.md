@@ -18,6 +18,36 @@ arriving until someone decides it is over.
 A campaign is not a repository and not a ticket. It is the place where several
 repositories are worked on together.
 
+# Who is a campaign session
+
+**Any session opened in the container root is one.** There is no privileged
+session and no registry: a session arrives, surveys the open anchor issues,
+and either opens a campaign or joins one that already covers the request.
+Several may hold the same campaign at once, on one machine or on several.
+
+That is the intent, and it costs four rules. Each answers a way two sessions
+were witnessed breaking each other; none of them makes concurrency safe on its
+own, and where a window stays open this file says so rather than implying it
+is closed.
+
+- **Survey again at the moment you file.** Two sessions that each checked the
+  open anchors before either filed will both file, and one scope gets two
+  campaigns. Re-reading immediately before `gh issue create` narrows that
+  window; it does not close it, because read and create are not atomic.
+- **Name a branch for the subtask, not the topic**: `c<N>/<issue>-<topic>`.
+  The campaign number keeps two campaigns apart, but two subtasks of one
+  campaign with the same topic collide on a single branch, and two delegates
+  then share one checkout.
+- **Retire only an agent on your own machine.** "Its branch is on the remote"
+  is the check a stand-down rests on, and it passes for an agent whose
+  uncommitted work lives on a different machine. Ask the session that launched
+  it, or leave it.
+- **Holding the directory is not owning the campaign.** Two sessions given the
+  same slug on the same day build the same path, and the local no-live-agent
+  gate cannot see a delegate working on another machine. Before closing, say in
+  the anchor issue that you are closing it, and read GitHub rather than your own
+  tree for who else is in it.
+
 - **ID** — the number of its anchor issue in `kalaluthien/agent-workspace`.
   Typed as `#N`.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored.
@@ -152,11 +182,14 @@ with nothing to merge. A README shaped differently from the body forces the
 sync to compose, and a compose step is where the repository index gets silently
 dropped.
 
-**The campaign session is the anchor issue body's only writer.** A delegate
-never edits it — not to tick a Plan box, not to add a repository. The Plan is
-the owner's plan and progress is read from the subtask issues, which are the
-things that actually close. One writer is what makes the overwrite safe; two
-writers would make every close silently discard whatever the other one did.
+**Compare then write the anchor issue body.** Re-read it immediately before
+`gh issue edit`, and refuse if it has moved since your `README.md` was derived
+from it. Without that check a second session's sync silently discards the
+first's — modelled and witnessed, and the loss is worse than it looks because a
+body write cannot touch a sub-issue link, so the index goes on naming work in a
+repository the `## Repos` list has dropped, and the close then deletes that
+list's last copy. Step 4 already reads the body back after writing, so the extra
+read costs nothing. A delegate never writes the body at all.
 
 # Delegating to a repository agent
 

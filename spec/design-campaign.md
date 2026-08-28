@@ -195,6 +195,34 @@ without touching a caller:
 Implementing any of them now would be guessing at which one matters. Leaving
 the seam costs one function boundary.
 
+## Several sessions, one campaign
+
+Any session opened in the container root is a campaign session, and several may
+hold one campaign at once. That is the owner's intent, and it was not what the
+design said: the word appeared five times without ever being defined, and one
+rule — that the campaign session is the anchor body's only writer — contradicted
+it outright. `alloy/campaign-multi.als` drops the one-session assumption and
+finds eight ways two sessions break each other; `alloy/multi-session.md` carries
+the witnesses.
+
+The repair is one shape applied twice: **re-read immediately before you write.**
+Compare-then-write on the anchor body is UNSAT for the lost update at identical
+bounds, and re-surveying at the moment of filing is UNSAT for the duplicate
+campaign. It was checked against the obvious alternative — writing the body only
+at open and close — which still loses the update and additionally hides a
+repository added mid-campaign from every other session.
+
+Two of the eight are narrowed rather than closed, and the contract says so
+rather than implying otherwise. Filing is still not atomic, so two sessions can
+still produce two anchors for one scope. And a local gate cannot see a delegate
+alive on another machine, so a campaign can still be closed out from under one;
+what makes that survivable is not a lock but that a delegate pushes as soon as
+it has a commit, which is why that rule sits where it does.
+
+Concurrency here is deliberately cheap and honest rather than correct. A lock
+would need a place to live, and every candidate is either a second copy of a
+GitHub fact or a file the campaign directory takes with it when it goes.
+
 ## Deliberately absent
 
 - **No ticket system.** Campaigns are triggered by a person, and GitHub issues
