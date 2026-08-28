@@ -58,7 +58,7 @@ Issues live on the repository whose code changes — that is where a reviewer
 expects them, and it is what a pull request can close. A campaign spans
 repositories, so its issues are scattered by construction.
 
-Four schemes were modelled in Alloy (`docs/alloy/`) and checked against index
+Four schemes were modelled in Alloy (`spec/alloy/`) and checked against index
 totality, machine independence, and reconstitution:
 
 | scheme | verdict |

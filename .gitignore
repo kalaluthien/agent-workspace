@@ -10,6 +10,7 @@
 !/CLAUDE.md
 !/.claude/
 !/docs/
+!/spec/
 !/scripts/
 
 # Machine-local state never enters git.

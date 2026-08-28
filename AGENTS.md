@@ -2,7 +2,7 @@
 
 A container for running **campaigns** — cross-repository units of work — on
 repositories that live elsewhere. `README.md` says what the container is; this
-file is how to work inside it. `docs/design-campaign.md` says why these rules
+file is how to work inside it. `spec/design-campaign.md` says why these rules
 are what they are.
 
 This project is early. Where a rule is missing, decide, do the work, and write
@@ -31,7 +31,12 @@ and whether it survives the machine. Identify the plane before any git command.
 
 | plane | holds | stored in |
 | --- | --- | --- |
-| **container** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `docs/`, `scripts/` | this repository |
+| **container** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `docs/`, `scripts/` | this repository |
+
+`spec/` holds what is normative — the design and the models that check it, as
+markdown. `docs/` holds views drawn for a reader, as HTML. The two are kept
+apart and neither inherits the other's rules, so a markdown file under `docs/`
+is misfiled rather than temporary.
 | **member repository** | the code and its history | each repository's own remote |
 | **campaign** | which repositories, what for, how far along | GitHub issues |
 

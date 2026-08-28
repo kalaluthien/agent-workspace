@@ -16,7 +16,7 @@ agent-workspace/
   AGENTS.md CLAUDE.md README.md .gitignore    tracked here
   .claude/skills/opening-campaign
   .claude/skills/closing-campaign
-  docs/  scripts/
+  spec/  docs/  scripts/
   auth-refactor-260828/          a campaign, git-ignored
     AGENTS.md CLAUDE.md          engineering principles for this campaign
     README.md                    Intent, Scope, Requirements, Plan
@@ -57,5 +57,5 @@ Requires `git`, `gh` (authenticated), `herdr`, `uv`, and Python 3.
 
 ## Reading order
 
-`AGENTS.md` for the rules. `docs/design-campaign.md` for why they are those
+`AGENTS.md` for the rules. `spec/design-campaign.md` for why they are those
 rules, what was rejected, and which risks are still open.

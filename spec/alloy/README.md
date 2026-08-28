@@ -1,8 +1,8 @@
 # Alloy check of the campaign lifecycle
 
-Four models of `docs/design-campaign.md`, identical but for the
+Four models of `spec/design-campaign.md`, identical but for the
 campaign-to-issue index. Run one with
-`alloy exec -f -o /tmp/alloy-run -t text -c '*' docs/alloy/campaign-A.als`.
+`alloy exec -f -o /tmp/alloy-run -t text -c '*' spec/alloy/campaign-A.als`.
 
 | # | assertion | A body line | B checklist | C label | D sub-issue |
 |---|---|:-:|:-:|:-:|:-:|
