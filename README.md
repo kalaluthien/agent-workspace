@@ -60,6 +60,8 @@ Requires `git`, `gh` (authenticated), `herdr`, `uv`, and Python 3.
 
 ## Reading order
 
-`AGENTS.md` for the rules. `spec/design-campaign.md` for why they are those
-rules, what was rejected, and which risks are still open.
-`spec/agent-protocol.md` for how a campaign session and its agents talk.
+`AGENTS.md` for the rules. `spec/alloy/campaign-core.als` for why they are
+those rules, what was rejected, and which risks are still open — it is the entry
+point to `spec/`, which is Alloy models and nothing else, each one's comments
+carrying the part of the spec it checks. `spec/alloy/agent-protocol.als` for how
+a campaign session and its agents talk.

@@ -2,8 +2,9 @@
 
 A container for running **campaigns** — cross-repository units of work — on
 repositories that live elsewhere. `README.md` says what the container is; this
-file is how to work inside it. `spec/design-campaign.md` says why these rules
-are what they are.
+file is how to work inside it. `spec/alloy/campaign-core.als` says why these
+rules are what they are, in its comments, and points at the three models beside
+it.
 
 This project is early. Where a rule is missing, decide, do the work, and write
 the decision back here.
@@ -83,10 +84,11 @@ and whether it survives the machine. Identify the plane before any git command.
 | **member repository** | the code and its history | each repository's own remote |
 | **campaign** | which repositories, what for, how far along | GitHub issues |
 
-`spec/` holds what is normative — the design and the models that check it, as
-markdown. `docs/` holds views drawn for a reader, as HTML. The two are kept
-apart and neither inherits the other's rules, so a markdown file under `docs/`
-is misfiled rather than temporary.
+`spec/` holds what is normative — the models that check the design, as Alloy
+files whose comments are the spec. No markdown lives there: prose beside a model
+drifts from it, prose inside it cannot. `docs/` holds views drawn for a reader,
+as HTML. The two are kept apart and neither inherits the other's rules, so a
+markdown file under either is misfiled rather than temporary.
 
 The campaign directory holds no plane of its own. It is a scratch assembly of
 things already versioned elsewhere, so it is git-ignored on purpose and nothing
@@ -373,7 +375,7 @@ thing.
 
 # Talking to a repository agent
 
-`spec/agent-protocol.md` is the contract; this is the short form. Address an
+`spec/alloy/agent-protocol.als` is the contract; this is the short form. Address an
 agent by the name given at launch, which `ListAgents` resolves — herdr's pane
 label is not an address.
 

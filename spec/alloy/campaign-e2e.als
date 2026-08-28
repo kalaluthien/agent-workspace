@@ -20,11 +20,127 @@
  *     hazard is read at launch rather than before the clone.
  *
  * No assertions here. The checks live in campaign-core.als and are not repeated.
+ * campaign-core.als is spec/'s entry point and carries the orientation to all
+ * four models.
+ *
+ * Seventeen scenarios, twenty-five commands, all SAT but two. Each scenario's
+ * write-up -- how to make it happen for real, and the observable that decides
+ * it passed -- sits beside the predicate that states it, not here.
  *
  * Run one:
  *   alloy exec -f -o /tmp/alloy-e2e -t text -c 'S1_HappyPath' spec/alloy/campaign-e2e.als
  * Run all:
  *   alloy exec -f -o /tmp/alloy-e2e -t text -c '*' spec/alloy/campaign-e2e.als
+ * A raw trace repeats every static signature in every state; condense it:
+ *   scripts/alloy-trace-digest /tmp/alloy-e2e/S1_HappyPath-solution-0.txt
+ *
+ *
+ * HOW A SCENARIO IS JUDGED
+ *
+ * Saying a scenario is possible is half of it. Each predicate below also
+ * carries how to make one HAPPEN and what to look at to decide it passed --
+ * hand that write-up to a campaign session and it should need to invent
+ * nothing.
+ *
+ * Every scenario is judged by one observable, and it is always GitHub:
+ *
+ *   scripts/campaign-settlement <anchor-number> [owner/repo]
+ *
+ * It prints one line per subtask -- complete, dropped, or open -- then whether
+ * the campaign is closable. Nothing on a terminal screen counts, which is the
+ * rule these scenarios exist to exercise.
+ *
+ * Each write-up names where it can run:
+ *   real      safe against repositories you care about; it writes nothing you
+ *             would not write anyway
+ *   fixture   needs the throwaway repositories below; it merges, mangles a
+ *             close, or destroys a workspace
+ *   blocked   cannot be run as written -- see the scenario
+ *
+ *
+ * THE FIXTURE
+ *
+ * The anchor goes in the real container repository, because the campaign ID IS
+ * a container issue number and a drill with a fake ID exercises nothing. The
+ * member repositories are throwaway, because most scenarios end in a merged
+ * pull request or a deliberately mangled close.
+ *
+ *   gh repo create <you>/e2e-fixture-a --private --add-readme
+ *   gh repo create <you>/e2e-fixture-b --private --add-readme
+ *   TITLE="Drill: e2e scenarios"
+ *   gh issue create -R kalaluthien/agent-workspace --title "$TITLE" \
+ *     --body "Drill anchor. Close when done."
+ *   ANCHOR=$(gh issue list -R kalaluthien/agent-workspace \
+ *     --search "$TITLE in:title" --limit 1 --json number --jq '.[0].number')
+ *
+ * Every subtask is created as a sub-issue in one command -- the whole index:
+ *
+ *   gh issue create -R <you>/e2e-fixture-a \
+ *     --parent https://github.com/kalaluthien/agent-workspace/issues/$ANCHOR \
+ *     --title "..." --body "Campaign: kalaluthien/agent-workspace#$ANCHOR"
+ *
+ * Tear down with `gh issue close $ANCHOR -R kalaluthien/agent-workspace` and
+ * `gh repo delete <you>/e2e-fixture-{a,b}`.
+ *
+ *
+ * WHO DOES THE WORK, AND WHY THERE ARE THREE MODES
+ *
+ * Unmodelled, stated for the record. AGENTS.md states the choice between doing
+ * a subtask here, handing it to an in-process subagent on a worktree, and
+ * handing it to a herdr delegate in a clone; the reasons are here and are not
+ * restated there. No construct below distinguishes the three -- `Launch` is one
+ * event -- and modelling them would buy nothing the reasons do not already say.
+ *
+ * The first predicate is "will I need that repository's context loaded to do
+ * this well?", and the cost being weighed is turns: a spawn costs one launch
+ * and one handover, so anything longer than a handful of turns is cheaper
+ * delegated.
+ *
+ * That predicate alone gives two modes, and two is one short. The third -- an
+ * in-process subagent working a git worktree -- exists because the clone a
+ * herdr delegate needs is sometimes the wrong thing to make. When the target
+ * repository is the container itself there is nothing to clone into: the
+ * campaign directory is optional and may not exist, and campaign #1 built this
+ * machinery from the container root with no directory at all. And a clone
+ * reintroduces the launch-behind hazard, which scenario 17 below shows is not
+ * an edge case. A worktree cannot be behind at cut time, because it shares one
+ * .git with the checkout it was cut from and therefore sees exactly the refs
+ * that checkout sees.
+ *
+ * The criterion also weighs parallelism, which the binary form could not see.
+ * Turn count measures one subtask; parallelism measures several. Several
+ * independent subtasks in one repository are worth handing over even when each
+ * is small on its own, because a session that keeps them does them in sequence,
+ * while the modes that hand over run them at once.
+ *
+ *
+ * THREE LAUNCH FACTS, ALSO UNMODELLED
+ *
+ *   herdr's pane-to-session link is write-once, so the link is made at launch
+ *   and never re-made.
+ *
+ *   A campaign has a kind, and the kind is its principles. Four are written --
+ *   research, analysis, prototyping, migration -- and one is copied into the
+ *   campaign as its AGENTS.md when the directory is scaffolded. They differ in
+ *   what a claim has to carry before it counts, which is the one thing a
+ *   delegate cannot infer from the repository it was handed. So the kind is
+ *   stated to the requester at the open: it costs a line to correct there and a
+ *   wrong standard of evidence in every subtask if it goes by unseen.
+ *
+ *   The herdr tab title stays LLM-generated by the existing hook; that is a
+ *   human-readable label, not an identifier. The name is the identifier and is
+ *   a slug, because it is what gets searched, addressed, and resumed.
+ *
+ *
+ * WHAT THE SCENARIOS DO NOT COVER
+ *
+ * Liveness. Every observable here is a GitHub fact by design. Whether a
+ * delegate is thinking, stuck, or gone is a herdr question and no scenario
+ * decides it; 3, 4, 7 and 9 only check that the GitHub answer is unaffected by
+ * whatever the delegate is doing.
+ *
+ * Adequacy. A merged pull request that does not do what was asked reads
+ * complete in every row. Verifying that the work exists is not reviewing it.
  */
 module campaignE2E
 
@@ -315,6 +431,12 @@ fact Trace { init and always step }
 
 /* 1. The plain path: two repositories, two subtasks, both settled by merge,
       then the campaign closes. */
+/* FOR REAL -- fixture. Create two subtasks, one per fixture repo. In each:
+   branch c$ANCHOR/<n>-<topic> for subtask <n>, one commit, `git push -u
+   origin`, `gh pr create --body "Closes #<n>"`, `gh pr merge --squash
+   --delete-branch`. Then `scripts/campaign-settlement $ANCHOR`.
+   PASS: both rows read `complete` and the listing says `closable`. Close the
+   anchor only after that line -- that ordering IS the design's close rule. */
 pred S1_HappyPath {
   one c: Campaign {
     #c.members = 2
@@ -329,6 +451,11 @@ pred S1_HappyPath {
 
 /* 2. One subtask dropped -- closed as not planned, no pull request ever -- and
       the campaign still reaches closable. */
+/* FOR REAL -- fixture. As 1 for the first subtask. For the second, open no pull
+   request at all and run `gh issue close <n> -R <repo> --reason "not planned"`.
+   PASS: one row `complete`, one `dropped`, and `closable` still reached. This
+   is the case campaign-core's assertion 7b says closed-and-merged alone cannot
+   express. */
 pred S2_SubtaskDropped {
   one c: Campaign {
     #c.members = 2
@@ -346,6 +473,12 @@ pred S2_SubtaskDropped {
 
 /* 3. The delegate dies after pushing. Completion is a GitHub fact, so it
       survives the death and never comes undone. */
+/* FOR REAL -- real. Launch a delegate on a subtask. Wait until it has pushed
+   and opened a pull request (`gh pr list -R <repo> --head c$ANCHOR/<n>-<topic>`
+   returns a row). Kill the pane -- `herdr agent list` to find it, then kill the
+   process. Merge the pull request yourself.
+   PASS: the row goes `complete` with no agent alive anywhere. Safe on real
+   repositories: the branch is already pushed, so nothing local is lost. */
 pred S3_DelegateDiesAfterPushing {
   one c: Campaign | one a: Agent {
     a.task in c.members
@@ -361,6 +494,18 @@ pred S3_DelegateDiesAfterPushing {
 /* 4. The delegate reports done while nothing is pushed. The campaign session
       must not believe it, and the trace shows why: the claim never becomes a
       GitHub fact on its own. */
+/* FOR REAL -- real. Launch a delegate; when it sends REPORT, do not believe it.
+   Run `scripts/campaign-settlement $ANCHOR` first.
+   PASS: the row is `open` -- the claim was not evidence. Then confirm the
+   absence directly, which is the form the protocol requires:
+
+     git -C <campaign>/repos/<repo> status --porcelain           # must be empty
+     git -C <campaign>/repos/<repo> log --branches --not --remotes --oneline
+                                                                 # must be empty
+
+   Only after both are empty may STAND DOWN be sent. A run where the campaign
+   session closed the subtask on the strength of the message is a failure,
+   however the work turned out. */
 pred S4_ReportWithoutPush {
   one c: Campaign | one a: Agent {
     a.task in c.members
@@ -374,6 +519,11 @@ pred S4_ReportWithoutPush {
 
 /* 5. A follow-up subtask arrives after everything else settled, so the campaign
       re-opens work instead of closing. */
+/* FOR REAL -- real. Take a campaign whose listing reads `closable` and do NOT
+   close the anchor. Create one more sub-issue with `--parent`. Re-run the
+   script.
+   PASS: the settled count falls below the total -- the campaign went back to
+   work instead of closing. */
 pred S5_FollowUpAfterSettled {
   one c: Campaign {
     #c.members = 1
@@ -394,6 +544,11 @@ pred S5_FollowUpAfterSettled {
 
 /* 6. A repository joins the campaign mid-flight: the added subtask's home is a
       repository no existing member lives in. */
+/* FOR REAL -- real. As 5, but file the new subtask in a repository no existing
+   subtask lives in, and clone it into `<campaign>/repos/<repo>/`.
+   PASS: the listing shows a second `owner/repo` prefix and the anchor's
+   `## Repos` section is updated to match. The listing is the index; `Repos` is
+   only the clone list, so a mismatch between them is the defect to look for. */
 pred S6_RepoJoinsMidFlight {
   one c: Campaign {
     #c.members = 1
@@ -410,6 +565,15 @@ pred S6_RepoJoinsMidFlight {
 
 /* 7. Two machines hold the campaign. One deletes its own tree while the other
       is still working; the working machine and the GitHub facts are untouched. */
+/* FOR REAL -- real. Hold the campaign on two machines. Capture
+   `scripts/campaign-settlement $ANCHOR > /tmp/before`. Delete the campaign
+   directory on the machine with no live agent. Re-run into /tmp/after and diff.
+   PASS: identical. Then continue the other machine's work to completion.
+
+   With one machine, two campaign directories for the same anchor stand in and
+   test everything this model distinguishes -- `Machine` here is only "a holder
+   of a local directory". What that stand-in does not cover is herdr liveness
+   across machines, which is exactly the blind spot scenario 9 is about. */
 pred S7_TwoMachinesOneDeletes {
   one c: Campaign | one a: Agent {
     a.task in c.members
@@ -426,6 +590,12 @@ pred S7_TwoMachinesOneDeletes {
 
 /* 8. The campaign is closed with a subtask still open. The model allows it --
       nothing guards the anchor's close -- so a real run must report it. */
+/* FOR REAL -- fixture. Settle one subtask, leave the other open, then
+   `gh issue close $ANCHOR -R kalaluthien/agent-workspace`.
+   PASS: the script prints `REPORT: the anchor is closed with subtasks still
+   open`. Nothing prevents the close -- the point is that the report exists, not
+   that the close is blocked. Fixture only: an anchor closed over live work is a
+   mess to explain on a real campaign. */
 pred S8_CloseWithOpenSubtask {
   one c: Campaign {
     #c.members = 2
@@ -443,6 +613,11 @@ pred S8_CloseWithOpenSubtask {
 /* 9. Scenario 7's dangerous twin: the delete lands on the machine the live
       agent runs on. This is campaign-core's assertion-6 counterexample, requested
       as a witness so a run can be written that reproduces it on purpose. */
+/* FOR REAL -- fixture. Launch a delegate, let it commit but NOT push, then
+   delete `<campaign>/` from a second session.
+   PASS is a demonstration of loss: the commits are unrecoverable and GitHub
+   never knew about them. It is why STATUS question 3 exists. Fixture only, and
+   never with a real delegate's work in the tree. */
 pred S9_OrphanedByLocalDelete {
   one c: Campaign | one a: Agent {
     a.task in c.members
@@ -456,6 +631,10 @@ pred S9_OrphanedByLocalDelete {
 
 /* 10. A subtask is moved out of the campaign. The sub-issue index prunes with
        it, so the index equals membership before and after. */
+/* FOR REAL -- real. `gh issue edit <n> -R <repo> --remove-parent`.
+   PASS: the row disappears from `scripts/campaign-settlement` immediately, and
+   the issue itself is untouched. That prunability is the whole reason the
+   sub-issue link beat a back-reference line, which can never un-say a mention. */
 pred S10_SubtaskMovedOut {
   one c: Campaign {
     #c.members = 2
@@ -476,6 +655,11 @@ pred S10_SubtaskMovedOut {
 /* 11. The pull request merged but nobody closed the issue -- a missing
        "Closes #N". The subtask never reads complete and the campaign never
        becomes closable, with nothing on screen to say so. */
+/* FOR REAL -- fixture. Open a pull request whose body omits `Closes #<n>`,
+   merge it, and leave the issue open.
+   PASS: the row reads `open` while `gh pr view <p> --json state` reads MERGED.
+   The failure this drills is silent -- the campaign simply never becomes
+   closable, with nothing anywhere saying why. */
 pred S11_MergedButIssueLeftOpen {
   one c: Campaign {
     #c.members = 1
@@ -491,6 +675,11 @@ pred S11_MergedButIssueLeftOpen {
 
 /* 12. Two campaigns work the same repository at once. Both settle; neither
        touches the other's members. This is what the c<N>/ branch rule buys. */
+/* FOR REAL -- real. Open two anchors, each with one subtask in the same fixture
+   repository, on branches c<N1>/... and c<N2>/... . Merge both.
+   PASS: each anchor's listing shows only its own subtask, and the two branches
+   never collided on the remote. Real-safe, and the reason the branch naming
+   rule carries the campaign number. */
 pred S12_TwoCampaignsOneRepo {
   #Campaign = 2
   all c: Campaign | #c.members = 1
@@ -508,6 +697,16 @@ pred S12_TwoCampaignsOneRepo {
        only for an issue that never had a pull request: `addMember` guards on
        `no i.pr`, and `WellFormed` never undoes a pr link. So any issue that
        ever had a PR is closed forever (13c, UNSAT). */
+/* FOR REAL -- blocked, and the block is the finding. GitHub has no such
+   restriction that this machine's `gh` documents: `gh issue reopen <n>` takes
+   only an optional comment and names no condition about a closing pull request
+   (`gh issue reopen --help`, gh 2.96.0). NOT VERIFIED BY A WRITE -- the
+   one-line probe is `gh issue reopen <n> -R <fixture-repo>` on an issue closed
+   by a merged pull request, and it needs a fixture repository and permission to
+   write. Until it is run, treat "GitHub permits it" as a hypothesis. If it
+   holds, the model -- not the design -- is what needs a reopen event, and
+   "review feedback gets a fresh session" is the design's answer to a case the
+   model cannot state. */
 pred S13_ReopenAfterMerge {
   one c: Campaign | some i: c.members {
     eventually complete[i]
@@ -525,6 +724,12 @@ pred S13c_ReopenWithPR     { some i: Issue | eventually (some i.pr and i not in 
 
 /* 14. A follow-up subtask arrives after the anchor was already closed. Nothing
        in the design guards the anchor's close against later sub-issues. */
+/* FOR REAL -- fixture. Close the anchor legitimately (the listing reads
+   `closable`), then create a new sub-issue with `--parent` pointing at the
+   closed anchor.
+   PASS: the command succeeds and the listing shows a closed anchor with an
+   `open` subtask. Nothing in the design guards against this, so it is worth
+   knowing it is reachable before a real campaign does it by accident. */
 pred S14_FollowUpAfterClose {
   one c: Campaign {
     #c.members = 1
@@ -540,6 +745,12 @@ pred S14_FollowUpAfterClose {
 
 /* 15. The whole campaign runs with no local directory on any machine -- the
        reconstitution claim, exercised rather than asserted. */
+/* FOR REAL -- real. Drive an entire two-subtask campaign from a machine that
+   never clones anything: create the subtasks, and have a delegate on another
+   machine (or the repository's own web editor) push the branches.
+   PASS: the listing reaches `closable` read from the machine with no directory.
+   This exercises the reconstitution claim rather than asserting it -- the
+   campaign plane really does live in GitHub. */
 pred S15_NoLocalDirectory {
   one c: Campaign {
     always no c.dirs
@@ -553,6 +764,41 @@ pred S15_NoLocalDirectory {
 }
 
 /* --- 16. The container as a member of its own campaign --- */
+
+/* agent-workspace is cloned into <campaign>/repos/agent-workspace/, so one
+   repository has two checkouts: the OUTER container the campaign session runs
+   from, and the INNER clone the delegate works in, which the container
+   ignores.
+
+   FOR REAL -- real. One command reads both hazards at once, and it belongs at
+   three checkpoints: before launching the delegate, immediately after merging
+   its pull request, and before the campaign session next edits anything in the
+   container.
+
+     CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute \
+       --git-common-dir)")" && pwd -P)
+     git -C "$CONTAINER" fetch origin -q
+     git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD
+                                                    # "<behind>  <ahead>"
+
+   - behind > 0 is hazard 1. The delegate's pull request merged and the outer
+     checkout has not caught up. Editing from here can silently revert the
+     merged work. Fix with `git -C "$CONTAINER" pull --ff-only` and re-read zero
+     before editing, which is what AGENTS.md says to do.
+   - A clone left behind AT LAUNCH is hazard 2, and the outer checkout is the
+     wrong place to read it. Scenario 17 below is that hazard on its own.
+   - Hazard 3 is safe, but do not read the model as proof. Edits to
+     .claude/skills/ inside the clone cannot change the running campaign,
+     because the loaded copy is the outer container's. The model agrees -- but
+     only because no event was written that writes the outer checkout from
+     inside the clone, so it restates the assumption rather than testing it. The
+     real check is one command: after editing a skill in the clone, confirm
+     `git -C "$CONTAINER" status --porcelain .claude/` is still empty.
+
+   PASS for the whole scenario: the outer checkout reads zero-zero at all three
+   checkpoints, the clone reads zero behind at launch, and the delegate's
+   subtask reads `complete` in scripts/campaign-settlement. Real-safe -- every
+   step is a fetch, a compare, or an ordinary pull. */
 
 /* 16a. Under the narrow reading, this scenario cannot exist at all: a
         container-homed issue must BE the anchor. UNSAT, and that is the
@@ -603,6 +849,20 @@ pred S16d_CloneFromUnpushedContainer {
 }
 
 /* --- 17. The clone that was current when cut and stale when launched --- */
+
+/* The clone is cut from origin/main, then origin/main moves, then the delegate
+   starts. Nothing reports it, and the delegate obeys an AGENTS.md this campaign
+   session has already superseded.
+
+   FOR REAL -- real. Clone agent-workspace into <campaign>/repos/, merge any
+   container pull request, then read the CLONE -- not the outer checkout:
+
+     git -C <campaign>/repos/<repo> fetch origin -q
+     git -C <campaign>/repos/<repo> rev-list --left-right --count origin/main...HEAD
+
+   PASS: the pair reads "0  0" in the same shell that then launches the
+   delegate, after a `git -C <campaign>/repos/<repo> pull --ff-only` if it did
+   not. Real-safe -- a fetch, a compare and an ordinary pull. */
 
 /* The rule as it was written before a live run disproved it: never clone while
    the outer container holds commits origin lacks. */
