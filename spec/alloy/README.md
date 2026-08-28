@@ -56,3 +56,23 @@ the public anchor. D adopted; the fallback to C is not needed.
 
 Unmodelled: text well-formedness, `gh search` consistency, herdr's liveness
 derivation, and issues in repositories the reader's token cannot see.
+
+## Scenarios
+
+`campaign-e2e.als` takes the adopted model (D) and asks the opposite question:
+not "can this go wrong?" but "can a real campaign do this?". Every command in it
+is a `run`, so a SAT result is a witness trace -- a script to follow -- and an
+UNSAT is a finding about the model. `e2e-scenarios.md` maps each one to the
+`gh`/`git`/protocol steps that exercise it for real and the observable that
+decides pass or fail.
+
+```sh
+alloy exec -f -o /tmp/alloy-e2e -t text -c '*' spec/alloy/campaign-e2e.als
+scripts/alloy-trace-digest /tmp/alloy-e2e/S1_HappyPath-solution-0.txt
+```
+
+Fifteen scenarios; all SAT but `S13_ReopenAfterMerge`. That one is UNSAT because
+an issue that ever had a pull request can never return to `Open` -- `addMember`
+guards on `no i.pr` and a PR link is never undone -- so the model cannot state
+"reopen a merged subtask for review feedback", which GitHub permits. The gap is
+in the model, not the design.

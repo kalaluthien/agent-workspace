@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""Condense an Alloy 6 text trace into one readable line per state.
+
+The raw `-t text` dump repeats every static signature in every state, which
+buries the handful of relations a scenario is actually about. This prints the
+event, its arguments, and the varying relations only.
+
+Usage: scripts/alloy-trace-digest <solution-0.txt> [...]
+"""
+import re
+import sys
+
+# Relations worth showing, in the order a reader wants them.
+VARYING = [
+    ("Now<:ev", "ev"),
+    ("Now<:evIssue", "arg"),
+    ("Now<:evMachine", "on"),
+    ("Open", "open"),
+    ("Merged", "merged"),
+    ("Issue<:pr", "pr"),
+    ("Campaign<:members", "members"),
+    ("Campaign<:sub", "sub"),
+    ("Campaign<:dirs", "dirs"),
+    ("Agent<:st", "agent"),
+]
+STATIC = ["Issue<:home", "Campaign<:anchor", "Agent<:task", "Agent<:host"]
+
+ATOM = re.compile(r"(\w+)\$(\d+)")
+
+
+def short(text):
+    """Issue$0 -> I0, Campaign$0 -> C0, Machine$1 -> M1, OpenPR$0 -> OpenPR."""
+    def rep(m):
+        name, idx = m.group(1), m.group(2)
+        if name in ("Issue", "PR", "Campaign", "Machine", "Repo", "Agent"):
+            return {"Issue": "I", "PR": "P", "Campaign": "C",
+                    "Machine": "M", "Repo": "R", "Agent": "A"}[name] + idx
+        if name == "Container":
+            return "Container"
+        return name
+    return ATOM.sub(rep, text)
+
+
+def parse(path):
+    states = []
+    cur = None
+    for line in open(path):
+        line = line.rstrip("\n")
+        m = re.match(r"-+State (\d+)( \(loop\))?-+", line)
+        if m:
+            cur = {"n": int(m.group(1)), "loop": bool(m.group(2)), "rel": {}}
+            states.append(cur)
+            continue
+        if cur is None or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        if key.startswith("this/"):
+            cur["rel"][key[len("this/"):]] = val.strip("{}")
+    return states
+
+
+def render(path):
+    states = parse(path)
+    if not states:
+        return f"{path}: no trace\n"
+    out = [f"# {path.split('/')[-1]}"]
+    fixed = states[0]["rel"]
+    facts = [f"{label}={short(fixed[label]) or '-'}" for label in STATIC if fixed.get(label)]
+    out.append("static: " + "; ".join(facts))
+    for s in states:
+        parts = []
+        for key, label in VARYING:
+            val = s["rel"].get(key, "")
+            if not val:
+                continue
+            parts.append(f"{label}={short(val).replace('Now->', '')}")
+        tag = f"S{s['n']}" + (" (loop)" if s["loop"] else "")
+        out.append(f"{tag:>10}  " + "  ".join(parts))
+    return "\n".join(out) + "\n"
+
+
+for arg in sys.argv[1:]:
+    print(render(arg))

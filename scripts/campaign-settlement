@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""Print the settlement of every subtask of a campaign anchor.
+
+This is the observable the e2e scenarios in spec/alloy/e2e-scenarios.md are
+judged by. It reads GitHub only -- no terminal screen, no local directory -- so
+it answers the same question from any machine, which is the point.
+
+Verdicts match spec/alloy/campaign-e2e.als:
+  complete  closed, and a pull request that closed it is merged
+  dropped   closed, with no merged pull request behind it (a subtask dropped
+            on purpose is closed as "not planned" and lands here)
+  open      still open
+
+Usage: scripts/campaign-settlement <anchor-issue-number> [owner/repo]
+"""
+import json
+import subprocess
+import sys
+
+DEFAULT_ANCHOR_REPO = "kalaluthien/agent-workspace"
+
+
+def gh(*args):
+    out = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if out.returncode != 0:
+        raise SystemExit(f"gh {' '.join(args)} failed:\n{out.stderr.strip()}")
+    return json.loads(out.stdout) if out.stdout.strip() else None
+
+
+def verdict(repo, number):
+    """(verdict, note) for one subtask issue."""
+    info = gh("issue", "view", str(number), "-R", repo,
+              "--json", "state,stateReason,closedByPullRequestsReferences,title")
+    if info["state"] == "OPEN":
+        return "open", "", info["title"]
+    for ref in info["closedByPullRequestsReferences"]:
+        pr_repo = f"{ref['repository']['owner']['login']}/{ref['repository']['name']}"
+        pr = gh("pr", "view", str(ref["number"]), "-R", pr_repo, "--json", "state")
+        if pr["state"] == "MERGED":
+            return "complete", ref["url"], info["title"]
+    return "dropped", info["stateReason"] or "closed, no merged PR", info["title"]
+
+
+def main():
+    if len(sys.argv) < 2:
+        raise SystemExit(__doc__)
+    anchor = sys.argv[1]
+    anchor_repo = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_ANCHOR_REPO
+
+    head = gh("issue", "view", anchor, "-R", anchor_repo, "--json", "state,title")
+    subs = gh("api", f"repos/{anchor_repo}/issues/{anchor}/sub_issues")
+
+    print(f"anchor {anchor_repo}#{anchor}  [{head['state']}]  {head['title']}")
+    if not subs:
+        print("  (no sub-issues: the index is empty)")
+        return
+
+    rows, settled = [], 0
+    for s in subs:
+        repo = "/".join(s["repository_url"].split("/")[-2:])
+        v, note, title = verdict(repo, s["number"])
+        settled += v != "open"
+        rows.append((f"{repo}#{s['number']}", v, title[:44], note))
+
+    width = max(len(r[0]) for r in rows)
+    for ref, v, title, note in rows:
+        print(f"  {ref:<{width}}  {v:<9} {title}" + (f"  [{note}]" if note else ""))
+
+    closable = settled == len(rows)
+    print(f"  -- {settled}/{len(rows)} settled; "
+          + ("closable" if closable else "NOT closable: open subtasks remain"))
+    if head["state"] == "CLOSED" and not closable:
+        print("  -- REPORT: the anchor is closed with subtasks still open")
+
+
+main()
