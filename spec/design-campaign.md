@@ -90,6 +90,66 @@ repository list to loop over and no search index to have caught up.
 Its one open question was whether a sub-issue may live in a different
 repository, and a private one, under a public parent. Probed 2026-08-28: it can.
 
+## Self-hosted campaigns: two kinds of issue in one tracker
+
+`agent-workspace` is a member of its own campaigns, so its tracker holds anchors
+and subtasks side by side, drawn from one number sequence. Every reader of
+issues could conflate them. What follows was probed against GitHub on
+2026-08-28, on throwaway issues since deleted — not read out of documentation.
+
+| question | answer |
+| --- | --- |
+| does closing a parent close its sub-issues? | no; the children stay open |
+| does closing every sub-issue close the parent? | no |
+| does a closed sub-issue stay in `sub_issues`? | yes, with `state: closed` |
+| may a sub-issue itself be a parent? | yes, to any depth |
+| is `sub_issues` recursive? | no — direct children only |
+| may an issue have two parents? | no; a second `--add-sub-issue` *moves* it |
+| may an issue be its own parent? | no; the API refuses it |
+| does an unlabelled anchor appear under `--label campaign`? | no |
+
+Three readers come out clean.
+
+**Closing cannot reach another campaign.** Every enumeration in
+`closing-campaign` is scoped to `issues/<N>/sub_issues`, the only issue it closes
+is `<N>` itself, and GitHub does not cascade a close in either direction. A
+campaign closed here leaves a neighbouring campaign's subtasks untouched even
+though they sit in the same tracker.
+
+**The settlement stays correct.** Each row's repository comes from the
+sub-issue's own `repository_url`, which resolves to the anchor's repository in
+the self-hosted case and to a different one otherwise; nothing in the script
+assumes the two differ.
+
+**Branch names cannot collide.** `c<N>/<issue>-<topic>` collides only on an
+equal `<N>` and `<issue>` pair. An issue has at most one parent, so a subtask
+maps to exactly one campaign number; two subtasks of one campaign have different
+numbers; and sharing a sequence with the anchor *helps*, because it makes
+`<issue>` and `<N>` distinct integers rather than allowing them to coincide. The
+collision case cannot be constructed.
+
+### Residual risks
+
+- **The `campaign` label is the only thing that marks an anchor, and nothing
+  enforces it.** An anchor filed without it is invisible to every later survey,
+  so the next session opens a second campaign over the same scope and nothing
+  reports it. Two cheap readers narrow this — `opening-campaign` reads the label
+  back after filing, and `parent == null` finds an anchor the label missed — but
+  a session that runs neither still files the duplicate.
+- **A campaign may be filed under another campaign.** GitHub allows it and
+  `sub_issues` is not recursive, so the outer settlement shows the nested anchor
+  as one ordinary row and never sees its members: the outer campaign reads
+  closable while the inner one is still running. `scripts/campaign-settlement`
+  reports a subtask that has sub-issues of its own; nothing prevents the shape.
+- **A reparent is silent and leaves no trace.** `gh issue edit <other>
+  --add-sub-issue <n>` moves a subtask out of its campaign's index with no
+  warning, and the old parent's listing simply gets shorter. The sanctioned flow
+  only ever passes `--parent` at create, so this needs a hand-run command with a
+  mistyped number — but there is no undo signal if one happens.
+- **A bare issue number says nothing about its kind.** `#4` and `#1` are an
+  anchor and a subtask by nothing a reader can see. Prose that names a number
+  should name the kind with it, and a tool should resolve it rather than assume.
+
 ## Completion and liveness are different questions
 
 The old workspace asked a delegate to print `DONE <name>` and grepped for it.

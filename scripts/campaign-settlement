@@ -11,6 +11,10 @@ Verdicts match spec/alloy/campaign-e2e.als:
             on purpose is closed as "not planned" and lands here)
   open      still open
 
+The anchor repository also holds subtasks -- it is a member of its own
+campaigns -- so the number handed in may be a subtask, and a subtask may be an
+anchor. Neither is visible in a settlement table, so both are reported.
+
 Usage: scripts/campaign-settlement <anchor-issue-number> [owner/repo]
 """
 import json
@@ -18,6 +22,7 @@ import subprocess
 import sys
 
 DEFAULT_ANCHOR_REPO = "kalaluthien/agent-workspace"
+CAMPAIGN_LABEL = "campaign"
 
 
 def gh(*args):
@@ -41,30 +46,51 @@ def verdict(repo, number):
     return "dropped", info["stateReason"] or "closed, no merged PR", info["title"]
 
 
+def anchor_reports(head):
+    """What says the number handed in is not an anchor. Costs no extra call."""
+    if CAMPAIGN_LABEL not in [l["name"] for l in head["labels"]]:
+        yield (f"REPORT: no `{CAMPAIGN_LABEL}` label, so this may be a subtask read"
+               " as an anchor")
+    if head["parent"]:
+        yield (f"REPORT: this anchor is itself a sub-issue of #{head['parent']['number']}"
+               " -- closing that campaign will not settle this one")
+
+
 def main():
     if len(sys.argv) < 2:
         raise SystemExit(__doc__)
     anchor = sys.argv[1]
     anchor_repo = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_ANCHOR_REPO
 
-    head = gh("issue", "view", anchor, "-R", anchor_repo, "--json", "state,title")
+    head = gh("issue", "view", anchor, "-R", anchor_repo,
+              "--json", "state,title,labels,parent")
     subs = gh("api", f"repos/{anchor_repo}/issues/{anchor}/sub_issues")
 
     print(f"anchor {anchor_repo}#{anchor}  [{head['state']}]  {head['title']}")
+    for line in anchor_reports(head):
+        print(f"  -- {line}")
     if not subs:
         print("  (no sub-issues: the index is empty)")
         return
 
-    rows, settled = [], 0
+    rows, settled, nested = [], 0, []
     for s in subs:
         repo = "/".join(s["repository_url"].split("/")[-2:])
         v, note, title = verdict(repo, s["number"])
         settled += v != "open"
         rows.append((f"{repo}#{s['number']}", v, title[:44], note))
+        # sub_issues is not recursive (probed), so a subtask that is itself an
+        # anchor hides its own members from this table.
+        if s["sub_issues_summary"]["total"]:
+            nested.append((f"{repo}#{s['number']}", s["sub_issues_summary"]["total"]))
 
     width = max(len(r[0]) for r in rows)
     for ref, v, title, note in rows:
         print(f"  {ref:<{width}}  {v:<9} {title}" + (f"  [{note}]" if note else ""))
+
+    for ref, total in nested:
+        print(f"  -- REPORT: {ref} has {total} sub-issue(s) of its own, not listed"
+              " above; run this on it too")
 
     closable = settled == len(rows)
     print(f"  -- {settled}/{len(rows)} settled; "

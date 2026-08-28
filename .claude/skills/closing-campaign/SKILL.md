@@ -131,6 +131,21 @@ above. `<count>` counts rows, not checks.
 
 ### 3. Report the unsettled subtasks
 
+**First, confirm `$N` is an anchor.** The container is a member of its own
+campaigns, so its tracker holds subtasks under the same number sequence, and a
+subtask number handed in here reads as a campaign with an empty index — step 5
+would then close somebody's subtask and delete a directory over it.
+
+```sh
+gh issue view "$N" -R kalaluthien/agent-workspace --json labels,parent \
+  -q '"\([.labels[].name] | join(","))\t\(.parent.number // "-")"'
+```
+
+Want `campaign` among the labels and `-` for the parent. A parent means `$N` is
+a subtask; no label means it may be one. Either way, stop and say which issue it
+actually is. `scripts/campaign-settlement "$N"` reports both, alongside step 3's
+verdicts.
+
 The index is the anchor's sub-issue list: one call, every member repository at
 once, public or private. Pass `--paginate`, or a campaign past the first page
 reports a truncated index as if it were complete.
