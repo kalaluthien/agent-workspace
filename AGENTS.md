@@ -2,8 +2,8 @@
 
 A container for running **campaigns** — cross-repository units of work — on
 repositories that live elsewhere. `README.md` says what the container is; this
-file is how to work inside it. `spec/alloy/campaign-core.als` says why these
-rules are what they are, in its comments, and points at the three models beside
+file is how to work inside it. `spec/alloy/ledger.als` says why these rules are
+what they are, in its comments, and points at the three layers stacked above
 it.
 
 This project is early. Where a rule is missing, decide, do the work, and write
@@ -403,7 +403,7 @@ thing.
 
 # Talking to a repository agent
 
-`spec/alloy/agent-protocol.als` is the contract; this is the short form. Address an
+`spec/alloy/agent.als` is the contract; this is the short form. Address an
 agent by the name given at launch, which `ListAgents` resolves — herdr's pane
 label is not an address.
 
@@ -420,9 +420,14 @@ stale.
 
 - **A claim in a message is never evidence.** It says where to look; then look,
   in GitHub, yourself.
-- **Shutdown is two steps.** `STATUS`, verify durability in GitHub, then
-  `STAND DOWN`. One-step "you're done, quit" makes the delegate's own account
-  the reason for destroying its workspace.
+- **Shutdown is two steps, and both are yours.** `STATUS`, verify durability in
+  GitHub, then `STAND DOWN`. One-step "you're done, quit" makes the delegate's
+  own account the reason for destroying its workspace. The session that verifies
+  and the session that stands down are the same one, on the agent's own machine:
+  a verification run from another machine reads *its* working tree and comes back
+  clean whatever the agent holds, so splitting the two steps across two sessions
+  destroys work with every rule obeyed (modelled: `spec/alloy/agent.als`,
+  `TwoStepCoLocatedSuffices`).
 - **Silence is a liveness question, not an answer.** Ask once more, then resolve
   it through herdr and GitHub instead of waiting for a reply that may never come.
 

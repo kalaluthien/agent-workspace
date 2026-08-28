@@ -116,7 +116,7 @@
   </tbody>
 </table>
 
-<p>산출물 하나는 <span class="ct">3&times; 평면</span> 중 정확히 하나에 속한다. 평면이 저장 위치를 정하고, 그 기계가 죽어도 남는지를 정한다. 컨테이너 평면에서 규범은 <code>spec/alloy/</code> 의 <span class="ct">4&times; Alloy 모델</span> 이고, 독자를 위해 그린 뷰는 <code>docs/</code> 의 HTML이다. <code>campaign-core.als</code> 는 검사 15개로 설계가 어긋날 수 있는지를 묻고, 무엇을 검사하는지는 그 파일의 주석에 적는다. 모델 옆에 둔 산문은 모델에서 멀어지고, 모델 안에 쓴 주석은 멀어지지 않는다. 그래서 <code>spec/</code> 아래에 마크다운은 없다. <span class="src">AGENTS.md, spec/alloy/campaign-core.als @ 24cb850</span></p>
+<p>산출물 하나는 <span class="ct">3&times; 평면</span> 중 정확히 하나에 속한다. 평면이 저장 위치를 정하고, 그 기계가 죽어도 남는지를 정한다. 컨테이너 평면에서 규범은 <code>spec/alloy/</code> 의 <span class="ct">4&times; Alloy 모델</span> 이고, 독자를 위해 그린 뷰는 <code>docs/</code> 의 HTML이다. 네 모델은 층이고, 각각 아래를 <code>open</code> 한다. <code>ledger</code>, <code>repos</code>, <code>session</code>, <code>agent</code> 순으로 쌓이므로 맨 위 파일이 곧 합쳐진 모델이다. 파일 하나가 개념 모듈 하나고, SYSTEM 부분이 그것을 구현하는 스크립트와 스킬의 설계, SCENARIOS 부분이 그 시험의 설계다. 무엇을 검사하는지는 그 파일의 주석에 적는다. 모델 옆에 둔 산문은 모델에서 멀어지고, 모델 안에 쓴 주석은 멀어지지 않는다. 그래서 <code>spec/</code> 아래에 마크다운은 없다. <span class="src">AGENTS.md, spec/alloy/ledger.als @ d6cefab</span></p>
 
 <p>캠페인 디렉터리는 자기 평면이 없다. 이미 다른 곳에서 버전 관리되는 것들을 모아 둔 임시 조립물이다. 그래서 <code>.gitignore</code> 가 무시한다. 무시 규칙은 허용 목록이라서, 추적되는 디렉터리는 <code>!/docs/</code> 처럼 자기 줄을 가진다. <span class="src">.gitignore @ 24cb850</span></p>
 
@@ -181,9 +181,9 @@
   </ol>
 </figure>
 
-<p>디렉터리 이름은 지역 편의고, ID가 정체성이다. 두 기계가 날짜만 다른 디렉터리로 같은 캠페인을 잡아도 아무것도 깨지지 않는다. 어느 디렉터리도 권위를 가지지 않기 때문이다. <span class="src">spec/alloy/campaign-core.als @ 24cb850</span></p>
+<p>디렉터리 이름은 지역 편의고, ID가 정체성이다. 두 기계가 날짜만 다른 디렉터리로 같은 캠페인을 잡아도 아무것도 깨지지 않는다. 어느 디렉터리도 권위를 가지지 않기 때문이다. <span class="src">spec/alloy/repos.als @ d6cefab</span></p>
 
-<p>앵커 이슈 본문은 비교한 뒤에 쓴다. <code>gh issue edit</code> 직전에 본문을 다시 읽고, <code>README.md</code> 를 뽑아낸 뒤로 본문이 움직였으면 쓰지 않는다. 여러 세션이 한 캠페인을 동시에 잡을 수 있어서, 확인 없는 동기화는 앞선 세션의 쓰기를 말없이 버린다. 위임자는 본문을 아예 쓰지 않는다. <span class="src">spec/alloy/campaign-multi.als @ 24cb850</span></p>
+<p>앵커 이슈 본문은 비교한 뒤에 쓴다. <code>gh issue edit</code> 직전에 본문을 다시 읽고, <code>README.md</code> 를 뽑아낸 뒤로 본문이 움직였으면 쓰지 않는다. 여러 세션이 한 캠페인을 동시에 잡을 수 있어서, 확인 없는 동기화는 앞선 세션의 쓰기를 말없이 버린다. 위임자는 본문을 아예 쓰지 않는다. <span class="src">spec/alloy/session.als @ d6cefab</span></p>
 
 <h2>하위 과제 발행과 브랜치 청구</h2>
 
@@ -216,10 +216,10 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
     <li><strong>저장소마다 다는 <code>campaign-&lt;N&gt;</code> 라벨</strong> — 맞기는 하다. 저장소마다 라벨을 만들어야 하고, 떼어낸 뒤에도 흔적으로 남는다.</li>
     <li><strong>서브이슈 링크</strong> — 색인이 곧 구성원이다. 하나의 명령이 만들고, 하나의 호출이 읽는다.</li>
   </ul>
-  <p><span class="src">spec/alloy/campaign-core.als @ 24cb850</span></p>
+  <p><span class="src">spec/alloy/ledger.als @ d6cefab</span></p>
 </details>
 
-<p>브랜치는 <code>campaign-&lt;N&gt;/&lt;issue&gt;-&lt;topic&gt;</code> 이고, 하위 과제의 작업 공간이자 청구다. 이슈 번호는 이슈가 만들어질 때 발행되므로 청구는 발행을 뒤따르고, 실행자를 붙이기 전에 원격에 만든다. create-ref는 이미 있는 ref를 서버에서 거절하므로 청구는 원자적이다. 같은 SHA로 두 번째로 만들면 <span class="chip">422</span> 와 <code>Reference already exists</code> 가 돌아온다. 거절은 다른 실행자가 그 하위 과제를 잡았다는 뜻이고, 밀고 지나가지 않는다. 첫 커밋 전에 실행자가 죽어도 청구는 모든 기계에서 보인다. <span class="src">AGENTS.md, spec/alloy/campaign-multi.als @ 24cb850</span></p>
+<p>브랜치는 <code>campaign-&lt;N&gt;/&lt;issue&gt;-&lt;topic&gt;</code> 이고, 하위 과제의 작업 공간이자 청구다. 이슈 번호는 이슈가 만들어질 때 발행되므로 청구는 발행을 뒤따르고, 실행자를 붙이기 전에 원격에 만든다. create-ref는 이미 있는 ref를 서버에서 거절하므로 청구는 원자적이다. 같은 SHA로 두 번째로 만들면 <span class="chip">422</span> 와 <code>Reference already exists</code> 가 돌아온다. 거절은 다른 실행자가 그 하위 과제를 잡았다는 뜻이고, 밀고 지나가지 않는다. 첫 커밋 전에 실행자가 죽어도 청구는 모든 기계에서 보인다. <span class="src">AGENTS.md, spec/alloy/repos.als @ d6cefab</span></p>
 
 <h2>하위 과제의 세 실행 방식</h2>
 
@@ -234,9 +234,9 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   </tbody>
 </table>
 
-<p>하위 과제 하나는 <span class="ct">3&times; 실행 방식</span> 중 하나로 돌고, 방식은 일을 시작하기 전에 정한다. 첫 질문은 그 저장소의 맥락을 불러와야 잘 할 수 있는가다. 재는 비용은 턴이다. 생성 한 번과 인수인계 한 번이 드는 위임은 몇 턴을 넘는 일에서 더 싸다. 병렬성도 그 자체로 넘기는 이유가 된다. 각각 작아도 여럿인 하위 과제를 세션이 직접 하면 차례로 하게 되기 때문이다. <span class="src">spec/alloy/campaign-e2e.als @ 24cb850</span></p>
+<p>하위 과제 하나는 <span class="ct">3&times; 실행 방식</span> 중 하나로 돌고, 방식은 일을 시작하기 전에 정한다. 첫 질문은 그 저장소의 맥락을 불러와야 잘 할 수 있는가다. 재는 비용은 턴이다. 생성 한 번과 인수인계 한 번이 드는 위임은 몇 턴을 넘는 일에서 더 싸다. 병렬성도 그 자체로 넘기는 이유가 된다. 각각 작아도 여럿인 하위 과제를 세션이 직접 하면 차례로 하게 되기 때문이다. <span class="src">spec/alloy/agent.als @ d6cefab</span></p>
 
-<p>워크트리는 클론이 틀린 물건일 때 쓴다. 대상 저장소가 컨테이너 자신이면 클론해 넣을 곳이 없다. 캠페인 디렉터리가 선택 사항이라 없을 수 있기 때문이다. 워크트리는 잘라낸 체크아웃과 <code>.git</code> 하나를 공유하므로 잘라내는 순간에 뒤처질 수 없다. 서브에이전트는 프로세스 경계를 넘지 않으므로 인수인계 파일도, 카나리아도, herdr 생존 확인도 필요 없다. <span class="src">spec/alloy/campaign-e2e.als @ 24cb850</span></p>
+<p>워크트리는 클론이 틀린 물건일 때 쓴다. 대상 저장소가 컨테이너 자신이면 클론해 넣을 곳이 없다. 캠페인 디렉터리가 선택 사항이라 없을 수 있기 때문이다. 워크트리는 잘라낸 체크아웃과 <code>.git</code> 하나를 공유하므로 잘라내는 순간에 뒤처질 수 없다. 서브에이전트는 프로세스 경계를 넘지 않으므로 인수인계 파일도, 카나리아도, herdr 생존 확인도 필요 없다. <span class="src">spec/alloy/repos.als, spec/alloy/agent.als @ d6cefab</span></p>
 
 <div class="pair">
   <div class="do">
@@ -327,7 +327,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   </ol>
 </figure>
 
-<p>세 시스템이 각각 다른 질문에 답한다. 일이 끝났는가는 GitHub이 답하고, 프로세스가 살아 있는가는 herdr이 답한다. 무엇을 하고 있으며 무엇을 기다리는가는 에이전트 자신만 안다. 이 프로토콜은 세 번째만 나른다. GitHub 사실이나 herdr 사실을 되풀이하는 메시지는 두 번째 사본을 만들고, 낡는 쪽은 언제나 사본이다. <span class="src">spec/alloy/agent-protocol.als @ 24cb850</span></p>
+<p>세 시스템이 각각 다른 질문에 답한다. 일이 끝났는가는 GitHub이 답하고, 프로세스가 살아 있는가는 herdr이 답한다. 무엇을 하고 있으며 무엇을 기다리는가는 에이전트 자신만 안다. 이 프로토콜은 세 번째만 나른다. GitHub 사실이나 herdr 사실을 되풀이하는 메시지는 두 번째 사본을 만들고, 낡는 쪽은 언제나 사본이다. <span class="src">spec/alloy/agent.als @ d6cefab</span></p>
 
 <p>완료와 생존을 서로의 답으로 쓰지 않는다. 밀어 놓고 죽은 위임자는 성공한 것이다. 살아서 말이 많은 위임자는 아무것도 하지 않았을 수 있다. 생존은 <code>herdr agent list</code> 의 존재 여부와 세션 기록에서 읽는다. <span class="chip">agent_status</span> 하나로는 읽지 않는다. 그 값은 화면을 보고하며 턴 중간의 멈춤을 <span class="chip">idle</span> 이라고 부른다. 대신 <span class="chip">blocked</span> 는 즉시 움직일 값이다. 다만 사용량 한도 메뉴도 창을 똑같이 막으면서 <span class="chip">idle</span> 로 보고하므로, 조용한 시간을 재는 타이머를 함께 둔다.</p>
 
@@ -395,7 +395,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   </ol>
 </figure>
 
-<p>끝난 에이전트는 캠페인이 닫힐 때가 아니라 캠페인이 도는 동안 물러난다. 오래 가는 캠페인은 하위 과제를 계속 끝내고, 창은 아무도 쓸지 않으면 쌓인다. 풀 리퀘스트가 열린 에이전트는 리뷰를 기다리지 않고 물러난다. 리뷰 의견은 풀 리퀘스트로 브리핑한 새 세션이 받는다. <span class="src">spec/alloy/agent-protocol.als @ 24cb850</span></p>
+<p>끝난 에이전트는 캠페인이 닫힐 때가 아니라 캠페인이 도는 동안 물러난다. 오래 가는 캠페인은 하위 과제를 계속 끝내고, 창은 아무도 쓸지 않으면 쌓인다. 풀 리퀘스트가 열린 에이전트는 리뷰를 기다리지 않고 물러난다. 리뷰 의견은 풀 리퀘스트로 브리핑한 새 세션이 받는다. <span class="src">spec/alloy/agent.als @ d6cefab</span></p>
 
 <h2>캠페인이 가지지 않는 것</h2>
 
@@ -410,7 +410,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   <li>기계 사이의 합의가 없다. 여러 기계가 같은 캠페인을 잡아도 지역 디렉터리는 서로 같을 필요가 없다.</li>
 </ul>
 
-<p>리뷰를 지켜보는 것도 없다. 풀 리퀘스트가 열린 시점에 에이전트가 물러나므로, 보드가 생기기 전까지는 사람이 알아채는 쪽이다. <span class="src">spec/alloy/campaign-core.als @ 24cb850</span></p>
+<p>리뷰를 지켜보는 것도 없다. 풀 리퀘스트가 열린 시점에 에이전트가 물러나므로, 보드가 생기기 전까지는 사람이 알아채는 쪽이다. <span class="src">spec/alloy/ledger.als @ d6cefab</span></p>
 
 </article>
 </body>

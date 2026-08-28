@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """Print the settlement of every subtask of a campaign anchor.
 
-This is the observable the e2e scenarios in spec/alloy/campaign-e2e.als are
-judged by. It reads GitHub only -- no terminal screen, no local directory -- so
+This is the observable the scenarios in spec/alloy/ are judged by. It reads GitHub only -- no terminal screen, no local directory -- so
 it answers the same question from any machine, which is the point.
 
-Verdicts match spec/alloy/campaign-e2e.als:
+Verdicts match spec/alloy/ledger.als:
   complete  closed, and a pull request that closed it is merged
   dropped   closed, with no merged pull request behind it -- closed as "not
             planned", as a duplicate, or as completed with nothing to merge
   open      still open
 
 Settled is "the issue is closed", both verdicts alike; the merged pull request
-only says which kind. That is the reading spec/alloy/campaign-multi.als pins and
+only says which kind. That is the reading spec/alloy/ledger.als pins and
 AGENTS.md states, and this script is its one implementation -- a second reader
 written by hand somewhere else is what drifts.
 
