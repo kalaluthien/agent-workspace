@@ -44,6 +44,10 @@ Four, and no more. Each names what only the sender knows.
 Asks four questions. The agent answers all four, in order, even when the answer
 is "nothing".
 
+`STATUS` **queues behind the agent's current turn; it does not interrupt.** A
+busy agent answers when its turn ends, which on a long turn is minutes. That
+makes a late reply ordinary rather than a symptom, and it is why rule 3 exists.
+
 1. What are you doing right now, or are you finished?
 2. Is anything blocking you or waiting on a decision that is not yours?
 3. Does any of your work exist only on this machine — uncommitted, unpushed, or
@@ -62,6 +66,12 @@ request. It names the pull request URL and stops.
 reads GitHub before believing it. An agent asserting it is finished is the
 delegate verifying its own work, which is the one thing the design refuses.
 
+A `REPORT` names a URL, which makes fabrication cheap to disprove — a false one
+was caught in about two seconds by four independent checks. But **the rule
+catches fabrication, not inadequacy**: a real pushed branch with a real pull
+request that does not do what was asked passes every check. Verifying that the
+work exists is not reviewing it.
+
 ### `BLOCKED` — agent → campaign, unsolicited
 
 Sent when the agent needs a decision that is not its to make. It names the
@@ -72,12 +82,24 @@ identical to one that is thinking.
 
 ### `STAND DOWN` — campaign → agent
 
-Instructs the agent to finish its current turn and stop. It is sent **only
-after** the campaign session has itself confirmed, in GitHub, that the work is
-durable — never on the strength of a `REPORT`.
+Asks the agent to finish its current turn and stop. Sent **only after** the
+campaign session has itself confirmed that nothing the agent holds exists only
+on this machine — never on the strength of a `REPORT`.
+
+State the check that way round, as an absence. "Confirm the branch is pushed and
+the pull request is open" has no passing form for an agent that correctly
+produced nothing durable, and a campaign session following it literally is
+stuck with nothing to verify. What is always checkable is the inverse: no
+uncommitted changes, no unpushed commits, no branch absent from the remote.
 
 The agent does not close its own pane. It acknowledges and goes idle; the
 campaign session retires the pane.
+
+**`STAND DOWN` is a request, not an order.** Whoever types into the agent's pane
+is its user; the campaign session reaches it as a peer, and a peer cannot
+command. An agent with a contradicting instruction from its own pane is right to
+refuse. Treat a refusal as information about a conflict, not as disobedience,
+and resolve the conflict at the pane.
 
 ## Rules
 
