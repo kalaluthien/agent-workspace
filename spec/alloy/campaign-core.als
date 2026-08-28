@@ -22,10 +22,47 @@
  * before, so the two can be diffed.
  *
  *
+ * STATUS
+ *
+ * First design, 2026-08-28. Campaign #1 is exercising it as it is written -- a
+ * smoke test, a protocol test and an e2e drill have each contradicted a rule
+ * here, and each correction is folded into the model rather than kept as an
+ * erratum.
+ *
+ *
+ * IDENTITY
+ *
+ * A campaign is opened by filing one anchor issue in agent-workspace, and that
+ * issue number is the campaign's ID. What each name is for, since AGENTS.md
+ * states the forms and not the reasons:
+ *
+ *   ID            #N, the anchor issue number. Short to type, already unique,
+ *                 already resolvable from any machine and from a phone.
+ *   Slug          a meaningful kebab-case phrase, chosen when the campaign
+ *                 opens.
+ *   Directory     <slug>-<YYMMDD>/ at the container root, and optional. The
+ *                 date disambiguates a slug reused months later and sorts
+ *                 usefully in a listing.
+ *   Branch        c<N>/<issue>-<topic>. The campaign number stops two campaigns
+ *                 working one repository from colliding on the remote, and it
+ *                 tells a reviewer which campaign a branch came from; the
+ *                 subtask's issue number separates subtasks within a campaign,
+ *                 which only matters once several sessions hold it at once.
+ *   Display name  the anchor issue's title, in the person's own words.
+ *
+ * The directory name is a local convenience; the ID is the identity. Assertion
+ * 4 below is that claim checked.
+ *
+ *
  * THIS FILE
  *
  * The properties of the design and of the rules in AGENTS.md, checked against
  * the index the design chose.
+ *
+ * Issues live on the repository whose code changes -- that is where a reviewer
+ * expects them, and it is what a pull request can close. A campaign spans
+ * repositories, so its issues are scattered by construction, and the whole
+ * index question below is what to do about that.
  *
  * Index mechanism: GitHub's native sub-issue link. The anchor issue is the
  * parent; every member issue is a sub-issue of it.
@@ -98,13 +135,65 @@
  * issue. Nothing queries it.
  *
  *
- * UNMODELLED
+ * DELIBERATELY ABSENT
+ *
+ *   No ticket system. Campaigns are triggered by a person, and GitHub issues
+ *   carry the subtasks. A board over campaigns will be built later, as a
+ *   campaign run in this container.
+ *
+ *   No campaign-level git. See the three planes in AGENTS.md.
+ *
+ *   No status file, no lock file, no local database. Every one of them would be
+ *   a second copy of a GitHub fact, and the copy is what goes stale.
+ *
+ *   No virtual environment until something needs one. `.venv` appears the first
+ *   time a campaign script is run, not at scaffold time.
+ *
+ *
+ * UNMODELLED, STATED FOR THE RECORD
+ *
+ * No construct here exercises any of these. Modelling them was weighed and is
+ * not worth it -- each is a fact about text, a platform's timing, or another
+ * tool's internals rather than a property of the lifecycle.
  *
  * Text well-formedness, `gh` latency and search-index consistency, herdr's
  * liveness derivation, issues in repositories the reader's token cannot see,
  * the delegation mechanics (--append-system-prompt-file, the canary, the
- * 1024-byte launch line), and whether a merged pull request does what was
- * asked.
+ * 1024-byte launch line, all of which live in campaign-e2e.als's header), and
+ * whether a merged pull request does what was asked.
+ *
+ * Four residual risks of the self-hosted arrangement, none of them modelled:
+ *
+ *   The `campaign` label is the only thing that marks an anchor, and nothing
+ *   enforces it. An anchor filed without it is invisible to every later survey,
+ *   so the next session opens a second campaign over the same scope and nothing
+ *   reports it. Two cheap readers narrow this -- opening-campaign reads the
+ *   label back after filing, and `parent == null` finds an anchor the label
+ *   missed -- but a session that runs neither still files the duplicate.
+ *
+ *   A campaign may be filed under another campaign. GitHub allows it and
+ *   sub_issues is not recursive, so the outer settlement shows the nested
+ *   anchor as one ordinary row and never sees its members: the outer campaign
+ *   reads closable while the inner one is still running.
+ *   scripts/campaign-settlement reports a subtask that has sub-issues of its
+ *   own; nothing prevents the shape.
+ *
+ *   A reparent is silent and leaves no trace. `gh issue edit <other>
+ *   --add-sub-issue <n>` moves a subtask out of its campaign's index with no
+ *   warning, and the old parent's listing simply gets shorter. The sanctioned
+ *   flow only ever passes --parent at create, so this needs a hand-run command
+ *   with a mistyped number -- but there is no undo signal if one happens.
+ *
+ *   A bare issue number says nothing about its kind. #4 and #1 are an anchor
+ *   and a subtask by nothing a reader can see. Prose that names a number should
+ *   name the kind with it, and a tool should resolve it rather than assume.
+ *
+ *
+ * OPEN RISKS
+ *
+ * Two machines can open the same campaign into directories whose date suffixes
+ * differ. Nothing breaks -- assertion 4 is exactly that -- but a person reading
+ * two listings sees two names for one thing.
  */
 module campaignCore
 
@@ -151,6 +240,12 @@ fact WellFormed {
      `i.home != Container` was the same rule restated, and it blocked the
      container joining mid-flight.
 
+     Nothing in the three planes forbade the case -- the container plane is a
+     repository like any other -- so this was the model contradicting the
+     design, not the design being narrow. Worth stating because the modelled
+     version originally ruled it out, which made it possible to read the whole
+     scheme as forbidding it.
+
      Both were widened on 2026-08-28: the clause to `Campaign.anchor +
      Campaign.members`, and the redundant addMember guard dropped. Measured
      before and after, at this model's own bounds:
@@ -175,7 +270,16 @@ fact WellFormed {
 var sig Open   in Issue {}      -- issues currently open on GitHub
 var sig Merged in PR {}         -- pull requests currently merged
 
-/* Completion is a GitHub fact and mentions no agent. */
+/* Completion is a GitHub fact and mentions no agent.
+
+   The old workspace asked a delegate to print `DONE <name>` and grepped for it.
+   That conflates completion with liveness and is fragile in both: a pane can
+   show the word and have finished nothing, and a delegate can finish and have
+   its line scrolled away. Splitting them is the point -- completion is read
+   from GitHub, survives the delegate's death, the pane's death and the
+   machine's reboot, and reads the same from a phone; liveness is a herdr fact
+   and appears nowhere in this model. Assertions 2b and 2c are the two cheaper
+   readings, refuted. */
 pred complete[i: Issue] { i not in Open and some i.pr and i.pr in Merged }
 
 /* Settlement, the reading AGENTS.md adopted after 7b below: a subtask is
@@ -188,7 +292,39 @@ pred settled[i: Issue] { complete[i] or dropped[i] }
 /* ---------------- the index ---------------- */
 
 /* One relation, maintained by the platform in both directions: it is written by
-   the same command that creates the member issue, and it prunes. */
+   the same command that creates the member issue, and it prunes.
+
+   WHAT THE PLATFORM ACTUALLY DOES. agent-workspace is a member of its own
+   campaigns, so its tracker holds anchors and subtasks side by side, drawn from
+   one number sequence, and every reader of issues could conflate them. The
+   following was probed against GitHub on 2026-08-28, on throwaway issues since
+   deleted -- not read out of documentation. It is what this relation's
+   modelling rests on, which is why it is recorded here rather than anywhere
+   else.
+
+     does closing a parent close its sub-issues?    no; the children stay open
+     does closing every sub-issue close the parent? no
+     does a closed sub-issue stay in sub_issues?    yes, with state: closed
+     may a sub-issue itself be a parent?            yes, to any depth
+     is sub_issues recursive?                       no -- direct children only
+     may an issue have two parents?                 no; a second
+                                                    --add-sub-issue MOVES it
+     may an issue be its own parent?                no; the API refuses it
+     does an unlabelled anchor appear under
+       --label campaign?                            no
+
+   Two readers come out clean because of it, and neither is modelled here:
+
+   Closing cannot reach another campaign. Every enumeration in
+   closing-campaign is scoped to issues/<N>/sub_issues, the only issue it closes
+   is <N> itself, and GitHub does not cascade a close in either direction. A
+   campaign closed here leaves a neighbouring campaign's subtasks untouched even
+   though they sit in the same tracker.
+
+   The settlement stays correct. Each row's repository comes from the
+   sub-issue's own repository_url, which resolves to the anchor's repository in
+   the self-hosted case and to a different one otherwise; nothing in
+   scripts/campaign-settlement assumes the two differ. */
 fun idx[c: Campaign]: set Issue { c.sub }
 
 pred idxFrame { sub' = sub }
@@ -330,8 +466,10 @@ assert IndexExactStableMembership {
   (always Now.ev != RemoveMember) implies (always all c: Campaign | c.members = idx[c])
 }
 
-// 4. PASS. Machine independence: deleting a local directory changes no fact
-// another machine reads.
+/* 4. PASS. Machine independence: deleting a local directory changes no fact
+   another machine reads. This is the claim that lets the directory be optional
+   and lets two machines hold the same campaign under directory names that
+   differ only in date: neither is authoritative, so nothing has to agree. */
 assert MachineIndependence {
   always (Now.ev = DeleteDir implies
     (githubFrame and all c: Campaign, m: Machine - Now.evMachine | (m in c.dirs iff m in c.dirs')))

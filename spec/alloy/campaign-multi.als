@@ -73,6 +73,26 @@
  *     the comments back, which a session that never comments still slips past.
  *
  *
+ * WHY CONCURRENCY IS CHEAP RATHER THAN CORRECT
+ *
+ * Several sessions holding one campaign is the owner's intent, and it was not
+ * what the design said: the phrase "the campaign session" appeared five times
+ * without ever being defined, and one rule -- that it is the anchor body's only
+ * writer -- contradicted the intent outright. This model is what settled it.
+ *
+ * Two of the eight findings are narrowed rather than closed, and AGENTS.md says
+ * so rather than implying otherwise. Filing is still not atomic, so two
+ * sessions can still produce two anchors for one scope. And a local gate cannot
+ * see a delegate alive on another machine, so a campaign can still be closed
+ * out from under one; what makes that survivable is not a lock but that a
+ * delegate pushes as soon as it has a commit, which is why that rule sits where
+ * it does.
+ *
+ * A lock would need a place to live, and every candidate is either a second
+ * copy of a GitHub fact or a file the campaign directory takes with it when it
+ * goes. So the answer is cheap and honest rather than correct.
+ *
+ *
  * NOT EXPRESSED
  *
  * Settlement here is "the issue is closed"; the merged-pull-request half stays
@@ -157,6 +177,14 @@ fun working: set Session { { s: Session | some s.holds and s.smach in s.holds.di
 /* The branch an agent works, in the form the design carried when R4 below was
    found: c<N>/<topic>. Two agents share it when the campaign and the topic
    match -- true by definition of the name, not by proof. */
+/* BRANCH NAMES CANNOT COLLIDE ACROSS CAMPAIGNS, even though the container
+   shares one number sequence between its anchors and its subtasks.
+   c<N>/<issue>-<topic> collides only on an equal <N> and <issue> pair. An issue
+   has at most one parent, so a subtask maps to exactly one campaign number; two
+   subtasks of one campaign have different numbers; and sharing a sequence with
+   the anchor HELPS, because it makes <issue> and <N> distinct integers rather
+   than allowing them to coincide. The collision case cannot be constructed --
+   which is why what R4 finds below is intra-campaign, and only that. */
 pred sameBranchByTopic[a1, a2: Agent] {
   campaignOf[a1.task] = campaignOf[a2.task] and a1.atopic = a2.atopic
 }
@@ -339,7 +367,24 @@ pred deleteDir[s: Session] {
 }
 
 /* scripts/acquire-repo: leave <repo> checked out on <branch> in this campaign's
-   tree. On a re-run over an existing checkout it switches the branch. */
+   tree. On a re-run over an existing checkout it switches the branch -- which
+   is exactly what R4c below catches it doing under a live delegate.
+
+   WHY IT IS A SEAM. Cloning is one strategy among several that will be wanted,
+   so callers ask for a repository at a path on a branch and get a ready
+   checkout; how it got there is not their business. Only clone is implemented.
+   The seam exists so these can be added later without touching a caller:
+
+     - a shared local mirror, when a repository is too large to re-clone per
+       campaign;
+     - a git worktree cut from another campaign's checkout of the same
+       repository;
+     - a shallow or partial clone, when only recent history matters;
+     - reusing an existing checkout in place.
+
+   Implementing any of them now would be guessing at which one matters. Leaving
+   the seam costs one function boundary, and this predicate is that boundary --
+   it says what an acquire DOES to the checkout, not how. */
 pred acquire[s: Session, r: Repo, t: Topic] {
   some s.holds
   s.smach in s.holds.dirs
