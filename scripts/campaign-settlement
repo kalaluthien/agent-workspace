@@ -19,6 +19,12 @@ written by hand somewhere else is what drifts.
 The anchor repository also holds subtasks -- it is a member of its own
 campaigns -- so the number handed in may be a subtask, and a subtask may be an
 anchor. Neither is visible in a settlement table, so both are reported.
+
+Those reports read labels and the parent relation, never the body. Body shape is
+the second layer of the classification AGENTS.md states, and it is a person's
+reading: prose is editable and the parent relation is not, so a script that
+classified by prose would change its answer when somebody reflows a paragraph.
+
 Usage: scripts/campaign-settlement <anchor-issue-number> [owner/repo]
 """
 import json

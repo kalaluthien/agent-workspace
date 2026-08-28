@@ -164,7 +164,10 @@ gh issue view "$N" -R kalaluthien/agent-workspace --json labels,parent \
 
 Want `campaign` among the labels and `-` for the parent. A parent means `$N` is
 a subtask; no label means it may be one. Either way, stop and say which issue it
-actually is. `scripts/campaign-settlement "$N"` reports both, alongside step 3's
+actually is — and with no label and no parent, its body says which kind it is:
+the anchor template's sections, a `Campaign: owner/repo#<N>` first line, or
+neither, and neither means `$N` is not a campaign issue at all and nothing in
+this skill applies to it. `scripts/campaign-settlement "$N"` reports both, alongside step 3's
 verdicts.
 
 Then one reader, and it is the container's script. The rule it implements —
@@ -188,7 +191,8 @@ anyone: it covers four different closes and only one of them is an abandonment.
 
 ### 4. Validate the README, compare, then overwrite the anchor issue body
 
-The README and the anchor body carry the same five sections, so the sync is an
+The README and the anchor body are the same anchor template filled in —
+`.claude/skills/opening-campaign/assets/README.md` — so the sync is an
 overwrite. That makes the README the only thing standing between a malformed
 heading and the loss of the campaign's repository index, which step 5 then
 deletes the last copy of. Validate before writing.

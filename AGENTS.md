@@ -146,19 +146,41 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0
 - **A skill edited inside the clone does not change the running campaign**, and
   that is deliberate — the tool must not move under a session using it. It takes
   effect only once merged and pulled.
-- **One tracker then holds both kinds of issue** — this campaign's anchors and
-  this repository's subtasks — drawn from one number sequence. An anchor is an
-  issue labelled `campaign` with no parent; a subtask is an issue with a parent,
-  labelled or not. Both readings are cheap and they cross-check each other:
+- **One tracker then holds three kinds of issue** — this campaign's anchors,
+  this repository's subtasks, and everything else a tracker collects: a person's
+  request, a bug somebody else filed. All three are drawn from one number
+  sequence.
+
+  **Structure classifies. Body shape is the layer under it, not beside it.** An
+  anchor is an issue labelled `campaign` with no parent; a subtask is an issue
+  with a parent, labelled or not. The parent relation is the strong half — it is
+  an API relation, so no edit to a body can forge it or lose it — and the label
+  is applied by hand, so the two readings cross-check each other and both are
+  cheap:
 
   ```sh
   gh issue list -R kalaluthien/agent-workspace --state open \
     --json number,title,parent --jq '.[] | select(.parent == null) | .number'
   ```
 
+  Each kind has a body template — `.claude/skills/opening-campaign/assets/`,
+  `README.md` for an anchor and `subtask.md` for a subtask — and filling one is
+  what decides the kind at create time, before any relation exists to read. So
+  body shape answers the case structure cannot: an issue with no parent and no
+  label is an anchor whose label was forgotten if it carries the anchor
+  template's sections, and a subtask filed without `--parent` if it carries the
+  `Campaign: owner/repo#<N>` line. It never overrules the parent relation, and
+  reading it is a person's job — prose is editable and the relation is not.
+
+  **An issue matching neither template is the third kind, and every reader leaves
+  it alone**: not surveyed as an anchor, not counted as a subtask, never edited
+  or closed by a campaign flow.
+
   Neither reading is enforced by GitHub, so `scripts/campaign-settlement` reports
-  a mismatch instead of guessing. Never survey the container's issues unfiltered:
-  the plain `gh issue list` here is mostly subtasks.
+  a mismatch instead of guessing — from labels and the parent relation only,
+  because a script that classified by prose would change its answer when somebody
+  reflows a paragraph. Never survey the container's issues unfiltered: the plain
+  `gh issue list` here is mostly subtasks.
 
 # Running a campaign
 
@@ -189,8 +211,12 @@ issue, so there is no second write to forget, and it is prunable — moving a
 subtask out of the campaign removes it from the index, which a back-reference
 or a search over body text cannot do.
 
-Add a body line `Campaign: kalaluthien/agent-workspace#N` as prose for a human
-reading the raw issue. It is not the index and nothing queries it.
+Fill the body from the subtask template,
+`.claude/skills/opening-campaign/assets/subtask.md`: the `Campaign:` line, the
+work, and a `Done when` close. That line is prose for a person reading the raw
+issue — it is not the index and nothing queries it. What the filled shape does
+carry is the issue's kind, readable without an API call; see § When the container
+is a member of its own campaign.
 
 The anchor's **`## Repos`** section still earns its place: it says which
 repositories to clone when a campaign is opened, before any subtask exists. It
@@ -230,10 +256,10 @@ them here does them one after another.
 **Close** — load the `closing-campaign` skill. A campaign closes when its anchor
 issue closes, and only a person decides that.
 
-The campaign's `README.md` and the anchor issue body carry **the same five
-sections in the same shapes** — Intent, Scope, Requirements, Plan, and `Repos`
-as a plain `- owner/repo` list — so syncing one to the other is an overwrite
-with nothing to merge. A README shaped differently from the body forces the
+The campaign's `README.md` and the anchor issue body carry **the same sections
+in the same shapes**, and the anchor template
+`.claude/skills/opening-campaign/assets/README.md` is the one copy of that shape
+— so syncing one to the other is an overwrite with nothing to merge. A README shaped differently from the body forces the
 sync to compose, and a compose step is where the repository index gets silently
 dropped.
 
