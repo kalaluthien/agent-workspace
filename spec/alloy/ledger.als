@@ -16,10 +16,10 @@
  *
  *   ledger.als    issues, the sub-issue index, settlement, the anchor body   32
  *   repos.als     a member repository from one machine and on its remote    18
- *   session.als   a campaign session, several at once                       23
+ *   session.als   a campaign session, several at once                       24
  *   agent.als     the executor: launch, the four messages, retirement       43
  *
- * (the trailing number is that file's command count; 116 in all)
+ * (the trailing number is that file's command count; 117 in all)
  *
  *   agent -> session -> repos -> ledger
  *
@@ -318,8 +318,22 @@ fact WellFormed {
      Nothing in the three planes forbade the case -- the container plane is a
      repository like any other -- so this was the model contradicting the
      design, not the design being narrow. Widened 2026-08-28; no verdict changed,
-     and `containerIsAnchorOnly` below keeps the narrow reading runnable. */
-  all i: Issue | i.home = Container implies i in Campaign.anchor + Campaign.members
+     and `containerIsAnchorOnly` below keeps the narrow reading runnable.
+
+     WIDENED AGAIN 2026-08-29, and this time it is about WHEN the clause is
+     read. A fact carrying no `always` is evaluated at the initial state only,
+     so `i in Campaign.members` demanded that a container-homed subtask be a
+     member ALREADY -- while `addMember` refuses an issue that is. Between them
+     they made a container-homed subtask unfilable in any trace that also files
+     its campaign, and that is exactly the campaign with no member repository:
+     the container tracker is the only place its subtasks can go. Isolated by
+     probe, not by reading -- session.als's R4 is UNSAT at 2 Issue / 1 Campaign
+     against the old clause and SAT against this one, with nothing else changed,
+     and a 3 Issue / 2 Campaign bound reaches it only through the accident of
+     moving a subtask out of a second campaign first. Saying `eventually` is
+     what the clause always meant; it is strictly weaker than what stood here,
+     and all 116 pre-existing verdicts reproduce. */
+  all i: Issue | i.home = Container implies (i in Campaign.anchor or eventually i in Campaign.members)
   always all p: PR | lone pr.p
   always all i: Issue | some i.pr implies i.pr' = i.pr    -- a PR link is never undone
   always all c: Campaign | c.anchor not in c.members
