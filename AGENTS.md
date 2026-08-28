@@ -123,11 +123,20 @@ writers would make every close silently discard whatever the other one did.
 # Delegating to a repository agent
 
 Launch it in `<campaign>/repos/<repo>/` with
-`--append-system-prompt-file <campaign>/AGENTS.md`. That flag is the *only*
-thing that gets the campaign's principles into the delegate: instruction files
-do **not** load from ancestor directories, with or without a git boundary and
-with or without `--add-dir` (probed 2026-08-28). A delegate launched without it
-sees the repository's `AGENTS.md` and nothing else.
+`--append-system-prompt-file <campaign>/AGENTS.md`.
+
+Ancestor instruction files *do* load — but only once that directory has
+`hasClaudeMdExternalIncludesApproved` set in `~/.claude.json`, which defaults to
+**false** and is asked as an interactive dialog. So a freshly acquired
+repository, which is exactly what a delegate is launched into, silently gets the
+repository's own `AGENTS.md` and nothing above it: under `-p` the dialog never
+appears and the import is declined without a word, and interactively the
+delegate sits on a prompt that looks from outside like an agent thinking.
+
+`--append-system-prompt-file` depends on none of that, which is why it is the
+mechanism rather than a belt-and-braces addition (both probed 2026-08-28: with
+the flag, or with approval granted, the campaign's marker loads; with neither,
+only the repository's does).
 
 The campaign's principles are appended to a delegate that already has the
 repository's own, so a campaign `AGENTS.md` only ever *adds*; one that
