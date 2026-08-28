@@ -99,10 +99,31 @@ reaches a commit made on a detached head; `tail -n +2` drops the main worktree,
 which always prints and would otherwise flag every repository. A repository
 whose default branch will not resolve is reported, never skipped quietly.
 
-Enumerate everything found, repository by repository, and refuse until it is
-pushed, merged, or the person says to discard it. A branch listed by
-`--no-merged` that is pushed is not a blocker — it exists on the remote — so say
-which of the two each finding is.
+Report one row per thing at risk, never one per check. An unpushed commit on a
+topic branch is found twice — once by `log --not --remotes`, once by `branch
+--no-merged` — and is still one blocker. Keep both checks and merge only the
+report: the overlap is what makes the check hard to fool, while two rows make a
+reader counting blockers see two problems where there is one.
+
+A branch listed by `--no-merged` that is pushed is not a blocker at all; it
+exists on the remote. Say which of the two each row is.
+
+Refuse in this shape, so two refusals written on different days can be read side
+by side:
+
+```text
+REFUSE: <count> item(s) under <CAMPAIGN_DIR> exist only on this machine.
+
+  <owner/repo>  <kind>  <identifier>
+    found by  <check>[, <check>]
+    clears by <push | merge | discard>
+
+Nothing was deleted. Clear every row, or say to discard it, then re-run.
+```
+
+`<kind>` is one of: uncommitted, ignored, unpushed commit, stash, worktree,
+unmerged branch. `<check>` is the command that found it, named as it appears
+above. `<count>` counts rows, not checks.
 
 ### 3. Report the unsettled subtasks
 
@@ -194,6 +215,12 @@ rm -rf -- "$CAMPAIGN_DIR"
 - `state_reason` is `null` on an issue closed before GitHub added the field.
   Closed with no reason is not the same as unsettled; report it as unknown
   rather than folding it into either side.
+- `git status --porcelain` never lists ignored files, so the obvious command for
+  "nothing local is left" answers clean over a checkout holding a `.env`, a
+  build directory, or a downloaded fixture — every one of which dies with the
+  directory. Run both forms over any repository with a `.gitignore` and they
+  disagree. Only `--ignored` is evidence, which is why step 2 uses
+  `--ignored=matching`.
 - The campaign directory is git-ignored, so nothing in it outside `repos/` is
   under version control at all. `runtime/` dies with the directory by design;
   say so rather than assuming the person knows.

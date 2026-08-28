@@ -173,8 +173,13 @@ install_commit_guard() {
 	local guard="$HOME/.claude/git-hooks/no-main-commits"
 	local hooks hook dest_abs
 
-	[ -x "$guard" ] ||
-		die "no executable guard at $guard, so $dest would be left unguarded"
+	if [ ! -x "$guard" ]; then
+		log "no executable guard at $guard, so $dest would be left unguarded."
+		log "Restore it from the checkout that owns it:"
+		log "  git -C \"\$HOME/.claude\" checkout -- git-hooks/no-main-commits"
+		log "  chmod +x \"$guard\""
+		die "refusing to leave $dest unguarded"
+	fi
 
 	hooks=$(git -C "$dest" rev-parse --path-format=absolute --git-path hooks)
 	dest_abs=$(cd "$dest" && pwd -P)
@@ -186,9 +191,11 @@ install_commit_guard() {
 	mkdir -p "$hooks"
 	hook="$hooks/pre-commit"
 
+	# `>|` in the printed remediation, not `>`: it is pasted into the operator's
+	# shell, where `noclobber` makes a plain `>` refuse over the existing hook.
 	if [ -e "$hook" ] && ! grep -q 'no-main-commits' "$hook"; then
 		log "$hook exists and does not call the guard. Replace it with:"
-		log "  printf '%s\\n' '#!/usr/bin/env sh' 'exec \"\$HOME/.claude/git-hooks/no-main-commits\" \"\$@\"' > $hook"
+		log "  printf '%s\\n' '#!/usr/bin/env sh' 'exec \"\$HOME/.claude/git-hooks/no-main-commits\" \"\$@\"' >| $hook"
 		log "  chmod +x $hook"
 		die "refusing to overwrite an existing pre-commit hook"
 	fi
