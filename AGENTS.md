@@ -66,6 +66,12 @@ many turns, or when two repositories must move at once.
 **Close** — load the `closing-campaign` skill. A campaign closes when its anchor
 issue closes, and only a person decides that.
 
+The campaign's `README.md` and the anchor issue body carry **the same five
+sections** — Intent, Scope, Requirements, Plan, Repos — so syncing one to the
+other is a plain overwrite with nothing to merge. A README missing `Repos:`
+would silently drop the campaign's repository index on the next sync, and that
+index is the one thing that has to be maintained.
+
 # Delegating to a repository agent
 
 Launch it in `<campaign>/repos/<repo>/`, where it inherits the container's, the

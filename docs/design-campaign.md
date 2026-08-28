@@ -69,7 +69,11 @@ What replaces it needs no search and no API beyond `gh issue list`:
 
 - The anchor issue body carries a **`Repos:` list** — the member repositories.
   It changes only when a repository joins the campaign, which is rare, unlike a
-  per-issue checklist that must be edited on every subtask.
+  per-issue checklist that must be edited on every subtask. The campaign's
+  `README.md` carries the same five sections as the issue body, `Repos:`
+  included, so syncing the two is an overwrite rather than a merge — a README
+  shaped differently from the body forces the sync to compose, and a compose
+  step is where the repository index gets silently dropped.
 - Every member issue carries the **label `campaign-<N>`** and one body line
   `Campaign: kalaluthien/agent-workspace#N`. The label is what a query matches;
   the line is what a human clicks.
