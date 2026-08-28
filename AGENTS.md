@@ -35,10 +35,12 @@ is closed.
   open anchors before either filed will both file, and one scope gets two
   campaigns. Re-reading immediately before `gh issue create` narrows that
   window; it does not close it, because read and create are not atomic.
-- **Name a branch for the subtask, not the topic**: `c<N>/<issue>-<topic>`.
-  The campaign number keeps two campaigns apart, but two subtasks of one
-  campaign with the same topic collide on a single branch, and two delegates
-  then share one checkout.
+- **Claim the branch before you launch onto it**: `campaign-<N>/<issue>-<topic>`,
+  created on the remote by create-ref, which refuses an existing ref. The
+  campaign number keeps two campaigns apart and the issue number keeps two
+  subtasks apart, but two sessions delegating the *same* subtask still landed
+  on one branch — until the branch became the claim. A refusal means the
+  subtask is taken; read who by, do not push past it.
 - **Retire only an agent on your own machine.** "Its branch is on the remote"
   is the check a stand-down rests on, and it passes for an agent whose
   uncommitted work lives on a different machine. Ask the session that launched
@@ -67,11 +69,34 @@ is closed.
   — demonstrated, not assumed: the settlement listing reads the same from a
   machine whose directory is gone. A campaign with no directory here is closed
   by closing its issue, and the delete step has nothing to do.
-- **Branch** — `c<N>/<issue>-<topic>` in every member repository. `<N>` keeps two
-  campaigns from colliding on the remote; the subtask's issue number keeps two
-  subtasks of one campaign from colliding with each other. The number is minted
-  when the subtask is filed, so a checkout cannot be acquired onto its branch —
-  the delegate cuts it after filing.
+- **Branch** — `campaign-<N>/<issue>-<topic>` in every member repository, and it
+  is the subtask's claim as well as its workspace. `<N>` keeps two campaigns
+  from colliding on the remote; the issue number keeps two subtasks of one
+  campaign apart; and the branch's *existence* keeps two executors off one
+  subtask, because the launcher creates it on the remote before any work:
+
+  ```sh
+  gh api repos/<owner>/<repo>/git/refs \
+    -f ref=refs/heads/campaign-<N>/<issue>-<topic> \
+    -f sha=$(git -C <checkout> rev-parse origin/main)
+  ```
+
+  create-ref refuses an existing ref server-side, at any SHA (probed
+  2026-08-28: HTTP 422 "Reference already exists"), so the claim is atomic
+  where a survey-then-file is not. The number is minted when the subtask is
+  filed, so the claim follows the filing; the executor then works a branch
+  that already exists on the remote, and a crash before the first commit
+  still leaves the claim visible from every machine. A claim whose branch
+  holds nothing beyond `origin/main` may be released — deleted — only when no
+  agent on *your* machine works it; a live agent elsewhere that has not pushed
+  loses its claim to that rule, which is one more reason it pushes early.
+  The executor's every other name is this string projected: an agent is
+  `--name`d the branch with its slash flattened to a dash
+  (`campaign-1-31-executor-identity`), so nothing carries a second naming rule
+  to drift. Campaign sessions stay nameless on purpose: their durable trace is
+  what they filed and what they claimed, retirement authority is co-location
+  rather than ownership, and nothing durable reads a session name — so giving
+  one would be machinery, not structure.
 
 # Three planes
 
@@ -239,10 +264,12 @@ runs one of three ways, and the mode is chosen before the work starts.
   the work needs the repository's own conventions and toolchain, when it will
   take many turns, or when two repositories must move at once.
 
-All three carry the same mechanics. The branch is `c<N>/<issue>-<topic>`, cut
-after the subtask's issue exists because the number is minted there. It is
-pushed as soon as one commit exists, so a checkout that dies costs uncommitted
-work and nothing more. It lands by pull request.
+All three carry the same mechanics. The branch is
+`campaign-<N>/<issue>-<topic>`, claimed on the remote by create-ref after the
+subtask's issue exists because the number is minted there — a refusal means
+another executor holds the subtask. Work is pushed as soon as one commit
+exists, so a checkout that dies costs uncommitted work and nothing more. It
+lands by pull request.
 
 The subagent mode needs none of the delegate rules that exist to cross a
 process boundary: no handover file, because the brief is passed in-process and
@@ -318,8 +345,9 @@ cannot resolve.
   launch line into the pane, and a terminal silently drops a line past 1024
   bytes — nothing runs and the launch looks like a slow agent.
 - Choose the session UUID in advance (`claude --session-id`) so the transcript
-  path is known before the agent starts, and give it a slug name
-  (`claude --name <role>-<slug>`) so it can be found and addressed.
+  path is known before the agent starts, and `--name` it its branch with the
+  slash flattened (`campaign-<N>-<issue>-<topic>`) so the name an address
+  resolves and the branch a reader meets are one string, not two rules.
 - Put the prompt **before** any variadic flag on the `claude` command line.
   `--add-dir` and `--allowedTools` swallow a trailing prompt as one of their own
   values, and the run dies on "Input must be provided".

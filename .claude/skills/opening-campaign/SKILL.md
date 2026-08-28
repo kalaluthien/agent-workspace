@@ -257,8 +257,8 @@ and fails:
 Safe to re-run. Do not clone by hand and do not read the script to work out what
 it does — its interface is the contract.
 
-**No `--branch` here.** A branch is named `c<N>/<issue>-<topic>` and no subtask
-issue exists yet, so there is no name to pass. The checkout is left on the
+**No `--branch` here.** A branch is named `campaign-<N>/<issue>-<topic>` and no
+subtask issue exists yet, so there is no name to pass. The checkout is left on the
 repository's default branch and each delegate cuts its own branch when it starts
 on its subtask — see "Filing a subtask issue".
 
@@ -291,17 +291,27 @@ for a person reading the raw issue and nothing queries it; the shape is what
 makes the issue readable as a subtask by anyone who has not yet read `--parent`
 back.
 
-**The issue number is half the branch name.** The subtask is worked on
-`c<N>/<issue>-<topic>` — campaign number, subtask number, then a short topic —
-so the branch cannot be named until the issue exists, and this is the step that
-mints it. The campaign number alone keeps two campaigns apart; the subtask
-number is what keeps two subtasks of one campaign apart, which matters as soon
-as two sessions delegate into one repository and both reach for the same topic
-word. Put the branch name in the handover brief, and let the delegate create it:
+**The issue number is half the branch name, and the branch is the claim.** The
+subtask is worked on `campaign-<N>/<issue>-<topic>` — campaign number, subtask
+number, then a short topic — so the branch cannot be named until the issue
+exists, and this is the step that mints it. The campaign number keeps two
+campaigns apart; the subtask number keeps two subtasks of one campaign apart.
+What keeps two *executors* off one subtask is the claim: create the branch on
+the remote before launching anyone onto it, and read a refusal as the subtask
+being already taken —
 
 ```sh
-git -C "$CAMPAIGN/repos/<name>" switch -c c<N>/<issue>-<topic>
+gh api repos/<owner>/<repo>/git/refs \
+  -f ref=refs/heads/campaign-<N>/<issue>-<topic> \
+  -f sha=$(git -C "$CAMPAIGN/repos/<name>" rev-parse origin/main)
+git -C "$CAMPAIGN/repos/<name>" fetch origin campaign-<N>/<issue>-<topic>
+git -C "$CAMPAIGN/repos/<name>" switch -c campaign-<N>/<issue>-<topic> \
+  --track origin/campaign-<N>/<issue>-<topic>
 ```
+
+Put the branch name in the handover brief; the delegate finds its branch
+already on the remote, which is also how a reader on any machine knows the
+subtask is held before its first commit lands.
 
 Read the campaign's subtasks back from the anchor, in one call, across every
 repository:
