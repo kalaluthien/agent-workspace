@@ -34,7 +34,50 @@
  * four models.
  *
  * Thirty-five commands, every one a run. Each finding's witness sits beside the
- * predicate that states it, not here.
+ * predicate that states it; below is the inventory, not the explanation.
+ *
+ *
+ * WHAT BREAKS
+ *
+ *   R1   LostBodyUpdate             SAT  a body update is lost outright
+ *   R1b  IndexOutlivesRepoList      SAT  and the index outlives the list
+ *   R2   DuplicateCampaign          SAT  two anchors over one scope
+ *   R3   DeleteUnderWorkingSession  SAT  a directory deleted under a session
+ *   R3b  CloseFromAnotherMachine    SAT  a close over a delegate on M1
+ *   R4   SameBranchTwice            SAT  two delegates, one branch
+ *   R4c  CheckoutSwitchedUnderAgent SAT  an acquire moves a live agent's HEAD
+ *   R5   RemoteStandDownLosesWork   SAT  a remote stand-down destroys work
+ *
+ * Clean: R4b SAT -- c<N> still separates campaigns, so the collision is
+ * intra-campaign only. R5c SAT -- a non-launcher on the agent's own machine
+ * retires it safely, so co-location is the axis, not ownership (R5b SAT:
+ * on-the-remote without a clean tree is reachable).
+ *
+ *
+ * WHAT REPAIRS THEM, AND WHAT IT DOES NOT
+ *
+ * One shape, applied twice: re-read immediately before you write.
+ * Compare-then-write on the anchor body (R1c, UNSAT) and re-surveying at the
+ * moment of filing (R2b, UNSAT) are the two, and each has a control showing the
+ * green is not the scenario forbidden (R1d, R2c, both SAT).
+ *
+ * Nothing repaired 3, 4 or 5 inside the model. Each was a contract change, and
+ * all three have since been written outside it, so the runs above still read
+ * SAT:
+ *   - 4, by putting the subtask's issue number in the branch,
+ *     c<N>/<issue>-<topic>, which answers it for two SUBTASKS only. R4e is what
+ *     it leaves: two sessions delegating the same subtask onto one branch.
+ *   - 5, by naming STAND DOWN's pre-check local -- retire only an agent on your
+ *     own machine. agent-protocol.als carries that as a check.
+ *   - 3, only narrowed, by announcing the close on the anchor issue and reading
+ *     the comments back, which a session that never comments still slips past.
+ *
+ *
+ * NOT EXPRESSED
+ *
+ * Settlement here is "the issue is closed"; the merged-pull-request half stays
+ * campaign-core's. "Covers the request" is a static bit, not a judgement over
+ * Scope prose. There is no `gh` latency, so each window measured is a minimum.
  *
  * Run one:
  *   alloy exec -f -o /tmp/alloy-multi -t text -c 'R1_LostBodyUpdate' spec/alloy/campaign-multi.als
@@ -375,16 +418,31 @@ fact Trace { init and always step }
 /* ---------------- disciplines: candidate repairs ---------------- */
 
 /* Compare-then-write: read the anchor body immediately before overwriting it,
-   and refuse if it has moved since this README was derived from it. */
+   and refuse if it has moved since this README was derived from it.
+
+   THE RECOMMENDATION, and the one AGENTS.md adopted. R1c -- R1 plus this
+   discipline -- is UNSAT at identical bounds, and R1d SAT shows both sessions
+   still sync, so the green is not the scenario being forbidden. Step 4 of the
+   close already reads the body back after writing, so the extra read costs
+   nothing. */
 pred syncCAS { always (Now.ev = Sync implies Now.actor.holds.body = Now.actor.seen) }
 
 /* The rejected candidate: write the body only at open and at close, never
-   mid-campaign. Modelled as "sync only when every subtask is settled". */
+   mid-campaign. Modelled as "sync only when every subtask is settled".
+
+   Compare-then-write beats it. R1e is SAT: both sessions reach close and the
+   loss happens anyway, and meanwhile a repository added mid-campaign sits in
+   one README, invisible to the other session. */
 pred syncAtCloseOnly {
   always (Now.ev = Sync implies (all i: Now.actor.holds.members | settled[i]))
 }
 
-/* Re-run the new-versus-follow-up survey at the moment of filing. */
+/* Re-run the new-versus-follow-up survey at the moment of filing.
+
+   The same shape repairs finding 2: R2b is UNSAT, and R2c confirms filing still
+   works. It NARROWS the window rather than closing it -- read and create are
+   not atomic, and the model cannot say so because it has no clock. AGENTS.md
+   states the residue instead of implying it is gone. */
 pred surveyAtFile {
   always (Now.ev = FileAnchor implies
             (no c: Campaign | c in Filed and c.anchor in Open and some c.covers))
@@ -404,6 +462,9 @@ pred closeDisciplineLocal[c: Campaign] { always (Now.ev = CloseAnchor implies cl
 /* R1. Both sessions hold the campaign; both overwrite the anchor body from
    their own README. A repository that reached the body leaves it again and
    never returns, with no event that means "remove a repository". */
+/* WITNESS. S1 files and adds R0 to its README; S0 adopts while the body is
+   still empty; S1 syncs, so the body reads {R0}; S0 syncs from its own stale
+   README, so the body reads empty. R0 never returns. */
 pred R1_LostBodyUpdate {
   some c: Campaign, disj s1, s2: Session, r: Repo {
     eventually (Now.ev = FileAnchor and Now.actor = s1 and Now.evIssue = c.anchor)
@@ -419,6 +480,11 @@ pred R1_LostBodyUpdate {
    index still names an open subtask homed in the repository the `## Repos`
    list has just dropped. A session opened later clones from the list and has
    no checkout for work the index says the campaign owns. */
+/* WITNESS, and why the loss is worse than it looks. `## Repos` is not
+   survivable; the sub-issue index is. A body write cannot touch a sub-issue
+   link, so after the loss the index goes on naming an open subtask homed in a
+   repository the list has dropped -- and closing the campaign then deletes that
+   list's last copy. */
 pred R1b_IndexOutlivesRepoList {
   some c: Campaign, disj s1, s2: Session, i: Issue, r: Repo {
     r != Container and i.home = r
@@ -474,6 +540,8 @@ pred R1e_CloseOnlyStillLoses {
 
 /* R2. Two sessions each survey the open anchors, each find nothing covering the
    request, and each file. Two anchors, one scope. */
+/* WITNESS. Survey(S0), Survey(S1) -- neither sees a covering campaign --
+   FileAnchor(S1), FileAnchor(S0). Two anchors, one scope. */
 pred R2_DuplicateCampaign {
   some disj s1, s2: Session, disj c1, c2: Campaign {
     some c1.covers and some c2.covers
@@ -502,6 +570,9 @@ pred R2c_SurveyAtFileAdmitsOne {
    session 1 is working in it with checkouts on disk. No agent is live anywhere,
    so every gate the design has -- the live-agent refusal in closing-campaign
    step 1 -- passes. A live session is invisible to it. */
+/* WITNESS. Same slug, same date, one directory. S1 deletes it while S0 holds
+   the campaign with checkouts on disk, and NO agent is live anywhere -- so the
+   no-live-agent gate is not what was missed. */
 pred R3_DeleteUnderWorkingSession {
   some c: Campaign, disj s1, s2: Session {
     s1.smach = s2.smach
@@ -514,6 +585,10 @@ pred R3_DeleteUnderWorkingSession {
 /* R3b. The cross-machine form: session 2 closes the anchor from another machine
    while session 1's delegate is live on machine 1. The local gate reads
    closable; the campaign is not. */
+/* WITNESS. S0 closes the anchor from M0 while S1's delegate is live on M1; the
+   local gate reads closable because it is reading M0. R3c UNSAT below restates
+   the close rule globally, so R3b reads as that rule being unreadable from one
+   machine, not as the rule failing. */
 pred R3b_CloseFromAnotherMachine {
   some c: Campaign, disj s1, s2: Session, a: Agent {
     s1.smach != s2.smach
@@ -539,6 +614,9 @@ pred R3c_GlobalCloseRuleBlocks {
 /* R4. Two sessions on the same campaign launch delegates into the same
    repository and pick the same topic. c<N> keeps campaigns apart; nothing keeps
    two sessions of one campaign apart. */
+/* WITNESS, against c<N>/<topic> -- the branch form this was found on. Two
+   subtasks in R0, two sessions, the same <topic>: one branch, two delegates,
+   one checkout. R4d is the same with a single subtask. */
 pred R4_SameBranchTwice {
   some disj a1, a2: Agent, r: Repo {
     r != Container
@@ -556,6 +634,11 @@ pred R4_SameBranchTwice {
    subtasks, and there is only ever one of it per subtask. AGENTS.md names the
    branch rule as answering the two-subtask collision only, and this is the
    residual it leaves standing. */
+/* WHAT THE REPAIR LEAVES. Under c<N>/<issue>-<topic>, the form AGENTS.md
+   adopted in answer to R4, two sessions delegating the SAME subtask still share
+   one branch. The issue number separates two subtasks, and there is only ever
+   one of it per subtask; that the numbered form separates two subtasks is
+   definitional and is not run. */
 pred R4e_NumberedBranchStillShared {
   some disj a1, a2: Agent {
     a1.launcher != a2.launcher
@@ -593,6 +676,8 @@ pred R4b_CrossCampaignCoexists {
 /* R4c. The acquire race. One machine, one campaign directory, one checkout of
    the repository. Session 2 acquires it on another branch while session 1's
    delegate is live in it with work that is not on the remote. */
+/* WITNESS. S0's acquire-repo switches the shared checkout off the branch S1's
+   live delegate is working. */
 pred R4c_CheckoutSwitchedUnderAgent {
   some c: Campaign, disj s1, s2: Session, a: Agent, r: Repo {
     r != Container
@@ -612,6 +697,10 @@ pred R4c_CheckoutSwitchedUnderAgent {
 /* R5. A session on another machine stands the agent down. The check it can
    actually run -- the branch is on the remote -- passes, and work that exists
    only on the agent's machine is destroyed with the pane. */
+/* WITNESS. S0 on M0 stands an M1 agent down. The branch is on the remote, so
+   S0's only available check passes; work living only on M1 dies with the pane.
+   R5c is the control that co-location, not launch ownership, is the axis: a
+   non-launcher on the agent's own machine retires it safely. */
 pred R5_RemoteStandDownLosesWork {
   some disj s1, s2: Session, a: Agent {
     a.launcher = s1 and a.amach = s1.smach
