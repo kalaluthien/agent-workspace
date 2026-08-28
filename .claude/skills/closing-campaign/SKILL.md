@@ -17,9 +17,9 @@ Finished when all six hold:
 - every subtask in the anchor's index reads settled or has moved to another
   anchor, each open one having been given a named disposition first;
 - the campaign directory does not exist;
-- no herdr agent's `cwd` was under the path that directory had, no `ListAgents`
-  peer had announced a subtask of this campaign, and no `runtime/holder` in it
-  named a live session other than this one;
+- no herdr agent's `cwd` was under the path that directory had, no live pid was
+  left in its `runtime/executors/`, and no `runtime/holder` in it named a live
+  session other than this one;
 - the anchor issue body is the campaign README, `## Repos` list included, and
   the body was compared against `runtime/anchor-body-derived.md` before it was
   written.
@@ -59,31 +59,23 @@ gh api --paginate repos/kalaluthien/agent-workspace/issues/"$N"/comments \
 hostname -s
 ```
 
-```text
-REFUSE: campaign #<N> is BOUND to <machine>; this is <hostname -s>.
+Another machine — refuse, naming the campaign, the machine that holds it and
+this one, and say nothing was closed. No output at all means the campaign
+predates the rule and is unbound, which is not consent either: let the person
+bind it here, or close it from the machine that has been working it. The rule
+and the two occasions a session may post `BOUND` are § Who is a campaign session
+in the container's `AGENTS.md`.
 
-Nothing was closed. Close it from that machine, or have the person migrate the
-campaign here with a new BOUND comment first.
-```
+**Then the directory, if this machine has one.** A campaign legitimately has
+none here (§ Who is a campaign session, Directory). That is not a failure and
+not a reason to stop: say so, skip steps 1, 2 and 4, and close the issue in step
+5, where the delete then has nothing to do.
 
-No output at all means the campaign was opened before the rule and is not bound.
-That is not consent: say so, and let the person bind it here or close it from
-the machine that has been working it. The rule and the two occasions a session
-may post `BOUND` are § Who is a campaign session in the container's `AGENTS.md`.
-
-**Then the directory, if this machine has one.** A campaign is its anchor issue
-and the directory is one machine's cache, so a campaign legitimately has none
-here — never scaffolded, held only elsewhere, or never needed. That is not a
-failure and not a reason to stop: say so, skip steps 1, 2 and 4, and close the
-issue in step 5, where the delete then has nothing to do. Closing the issue is
-what closes the campaign.
-
-Every later step reads `$CAMPAIGN_DIR`, and two of them fail silently if it is
-relative or wrong: step 1 compares it against herdr's absolute `cwd`, so a
-relative value matches nothing and the live-agent refusal passes while finding
-nothing; step 5 then deletes relative to whatever directory the session happens
-to hold. Bind it here, from the slug the person gave, and never rebuild it later
-in the run.
+Every later step reads `$CAMPAIGN_DIR`, and two fail silently if it is relative
+or wrong: step 1 compares it against herdr's absolute `cwd`, so a relative value
+matches nothing and the refusal passes having found nothing; step 5 then deletes
+relative to whatever directory the session happens to hold. Bind it here, from
+the slug the person gave, and never rebuild it later in the run.
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
@@ -120,10 +112,10 @@ the holding session by default, so say so, take the directory as
 `opening-campaign` step 4 does, and carry on. A live PID that is some other
 `claude` reads as held, which is the safe direction to be wrong in here.
 
-**Then the agents, and there are two lists.** A delegate runs in a herdr pane
+**Then the agents, and there are two records.** A delegate runs in a herdr pane
 and appears in `herdr agent list`; an executor session has no pane at all and
-appears only as a `ListAgents` peer. Reading one of them passes the gate over
-every executor of the other kind.
+appears in `runtime/executors/`, written when its `CLAIMED` arrived. Reading one
+of them passes the gate over every executor of the other kind.
 
 Presence is the signal, not `agent_status` — that reports the screen and calls a
 mid-turn pause `idle`. An agent listed under the tree blocks the close whatever
@@ -137,29 +129,37 @@ herdr agent list | jq -r --arg tree "$CAMPAIGN_DIR" \
   '.result.agents[]
    | select(.cwd + "/" | startswith(($tree | sub("/$";"")) + "/"))
    | "\(.name // "unnamed")\t\(.agent_status)\t\(.cwd)"'
+
+for F in "$CAMPAIGN_DIR"/runtime/executors/*; do
+  [ -e "$F" ] || continue
+  P=$(awk '$1 == "pid" { print $2 }' "$F")
+  kill -0 "$P" 2>/dev/null && [ "$(ps -o comm= -p "$P")" = claude ] &&
+    { echo "live executor: $(basename "$F")"; cat "$F"; }
+done
 ```
 
-Then `ListAgents`, and match on the campaign's branch prefix. An executor
-session's address is what it sent in `CLAIMED`, and by the naming rule that
-address is its branch with the slash flattened — so every peer working campaign
-`<N>` is named `campaign-<N>-...`, whether it is a delegate or a session.
+**Do not match `ListAgents` names against the branch.** An executor session keeps
+whatever name its harness gave it and cannot rename itself, so a prefix test on
+`campaign-<N>-` finds the delegates and misses exactly the executors this record
+exists to catch. The record is the reading; the name in it is how you then
+address one.
 
-Any row from either list: print the rows, say which agent holds the campaign,
-stop. The person retires it; this skill never kills an agent.
+Any row from either: print the rows, say which agent holds the campaign, stop.
+The person retires it; this skill never kills an agent.
 
-No rows still leaves two cases open. One is an agent herdr has forgotten whose
-session is mid-turn: if `$CAMPAIGN_DIR/runtime/handover/` names briefs you cannot
-account for, say so before continuing. The other is an executor session that
-never sent `CLAIMED` — it is live, it holds a branch, and neither list can
-attribute it to this campaign. Cross-check the campaign's claimed branches
-against the peers you can name, and say what you could not account for rather
-than reading silence as absence.
+No rows still leaves two cases open, and both are for step 2 to settle rather
+than this one: an agent herdr has forgotten, and an executor session that never
+sent `CLAIMED` and so was never recorded. Neither can be enumerated here; both
+leave the same trace, which is work in a checkout that is not on a remote.
 
 ### 2. Refuse while work exists only on this machine
 
-Deleting the directory destroys these and nothing recovers them. Check every
-checkout under `repos/`, one at a time — never one git command across member
-repositories.
+Deleting the directory destroys these and nothing recovers them, and this is
+also where step 1's two unenumerable cases land: an executor nothing recorded
+still leaves its work in a checkout, so the loop below is what finds it. Check
+every checkout under `repos/`, one at a time — never one git command across
+member repositories. Read `$CAMPAIGN_DIR/runtime/handover/` beside it and say
+which briefs you cannot account for.
 
 ```sh
 for R in "$CAMPAIGN_DIR"/repos/*/; do
@@ -212,29 +212,25 @@ above. `<count>` counts rows, not checks.
 
 ### 3. Settle or dispose of every open subtask
 
-**First, confirm `$N` is an anchor.** The container is a member of its own
-campaigns, so its tracker holds subtasks under the same number sequence, and a
-subtask number handed in here reads as a campaign with an empty index — step 5
-would then close somebody's subtask and delete a directory over it.
+**First, confirm `$N` is an anchor.** The container's tracker holds subtasks
+under the same number sequence, so a subtask number handed in here reads as a
+campaign with an empty index — and step 5 would then close somebody's subtask
+and delete a directory over it.
 
 ```sh
 gh issue view "$N" -R kalaluthien/agent-workspace --json labels,parent \
   -q '"\([.labels[].name] | join(","))\t\(.parent.number // "-")"'
 ```
 
-Want `campaign` among the labels and `-` for the parent. A parent means `$N` is
-a subtask; no label means it may be one. Either way, stop and say which issue it
-actually is — and with no label and no parent, its body says which kind it is:
-the anchor template's sections, a `Campaign: owner/repo#<N>` first line, or
-neither, and neither means `$N` is not a campaign issue at all and nothing in
-this skill applies to it. `scripts/campaign-settlement "$N"` reports both, alongside step 3's
-verdicts.
+Want `campaign` among the labels and `-` for the parent. Anything else, stop and
+say which issue `$N` actually is — the three kinds and how body shape settles the
+unlabelled case are § When the container is a member of its own campaign in the
+container's `AGENTS.md`. `scripts/campaign-settlement "$N"` reports the mismatch
+alongside step 3's verdicts.
 
-Then one reader, and it is the container's script. The rule it implements —
-settled is "the issue is closed", and the merged pull request only says which
-kind — is stated once in `AGENTS.md`; a second copy written out here as `gh`
-commands is the drift that rule exists to stop, and the two did drift before
-this step was written this way.
+Then one reader, and it is the container's script — never a second copy of the
+settlement rule written out here as `gh` commands, which is the drift that rule
+exists to stop and which did happen before this step was written this way.
 
 ```sh
 "$CONTAINER/scripts/campaign-settlement" "$N" >| /tmp/settlement-$N
@@ -248,7 +244,6 @@ step is read off it by machine, not by eye.
 
 Read the note beside a `dropped` row before repeating the word to anyone: it
 covers four different closes and only one of them is an abandonment.
-
 **Then every `open` row gets a disposition, and this step refuses without one.**
 A campaign may close over unfinished work; it may not close over *unexamined*
 work. A leftover nobody named is work that vanishes with the close — the anchor
@@ -454,19 +449,14 @@ rm -rf -- "$CAMPAIGN_DIR"
 
 ## Gotchas
 
-- `agent_status: idle` is a screen reading. A mid-turn pause looks identical to
-  a finished agent, so presence in the list is the gate, never the status word.
 - **`dropped` covers four closes and its note says which**: `not planned`,
-  `duplicate` (the work moved to another issue), `completed, no merged pull
-  request` (closed by hand, with nothing to merge), and `closed, no reason
-  recorded` for an issue closed before GitHub had the field. All four are
-  settled, because settled is "the issue is closed". Only the first reads as
-  abandonment, so quote the note, not the word.
-- `state_reason` is spelled lowercase by `gh api` (`completed`, `not_planned`)
-  and uppercase by `gh issue list --json stateReason` (`COMPLETED`,
-  `NOT_PLANNED`). A comparison written against the wrong one matches nothing and
-  reads every subtask as unsettled — which is half of why the reading lives in
-  one script instead of in prose here.
+  `duplicate`, `completed, no merged pull request`, and `closed, no reason
+  recorded`. All four are settled — settled is "the issue is closed" — and only
+  the first is abandonment, so quote the note, not the word.
+- `state_reason` is lowercase from `gh api` and uppercase from `gh issue list
+  --json stateReason`. A comparison against the wrong one matches nothing and
+  reads every subtask as unsettled — half of why the reading lives in one script
+  rather than in prose here.
 - **After a squash merge, ancestry is the wrong test, and squash is the default
   merge here.** `git branch --no-merged <base>` walks ancestry, and a squash
   merge writes a *new* commit onto the base, so the topic branch stays
@@ -475,10 +465,9 @@ rm -rf -- "$CAMPAIGN_DIR"
   only on this machine. A campaign whose work is fully landed then reports one
   false blocker per member repository. The discriminator is content, not
   ancestry: `git -C <repo> diff --stat <base>..<branch>` empty means the branch
-  changes nothing the base does not already have, and it is safe however the
-  ancestry reads. Check the paths the subtask actually touched too, since a
-  branch cut before the base moved on will diff non-empty on files it never
-  edited. Report such a row as landed, not as a blocker.
+  changes nothing the base lacks, however the ancestry reads. Check the paths the
+  subtask actually touched too, since a branch cut before the base moved on
+  diffs non-empty on files it never edited. Report such a row as landed.
 - **`set -- $var` does not word-split in zsh, and this skill is made of gates.**
   This machine's shell leaves unquoted parameters unsplit, so the common
   `for pair in a:1 b:2; do set -- $pair` idiom leaves `$2` empty. Here it failed
@@ -500,19 +489,10 @@ rm -rf -- "$CAMPAIGN_DIR"
   directory. Run both forms over any repository with a `.gitignore` and they
   disagree. Only `--ignored` is evidence, which is why step 2 uses
   `--ignored=matching`.
-- The campaign directory is git-ignored, so nothing in it outside `repos/` is
-  under version control at all. `runtime/` dies with the directory by design;
-  say so rather than assuming the person knows.
-- Closing the anchor issue is what closes the campaign. A deleted directory with
-  an open issue is a campaign that still exists and has lost its cache.
-- A machine the campaign was `BOUND` to before a migration may still hold a
-  directory for it, under a date suffix of its own. That is a stale cache, not a
-  second holder: deleting this one does not touch it, and nothing there is
-  durable.
-- **On one machine, two sessions given the same slug on the same day build the
-  same path**, so the directory this skill deletes may be another session's live
-  workspace. `runtime/holder` is what catches that, in step 1 — the live-agent
-  gate cannot, because it matches on an agent's `cwd` and a campaign session's
-  `cwd` is the container root. Step 5's announcement and open-file check are the
-  layer under it, for a session that is in the tree without having written the
-  holder.
+- **Two sessions given the same slug on the same day build the same path**, so
+  the directory this skill deletes may be another session's live workspace.
+  `runtime/holder` catches that in step 1; the herdr gate cannot, because it
+  matches an agent's `cwd` and a campaign session's `cwd` is the container root.
+  Step 5's announcement and open-file check are the layer under it. A machine the
+  campaign was `BOUND` to before a migration may still hold a directory of its
+  own: a stale cache, untouched by this delete, with nothing durable in it.

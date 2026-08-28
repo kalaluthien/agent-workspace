@@ -32,7 +32,7 @@ machine holds it.
 | --- | --- |
 | `BOUND` names another machine | **not in this campaign.** Stop before any write and before any launch, and name the machine that holds it. |
 | `BOUND` names this machine, and there is no directory or its holder is dead | **the holding session.** Write `runtime/holder` and carry on. |
-| `BOUND` names this machine, and `runtime/holder` names a live session | **an executor session** on one subtask: file or take the subtask, claim its branch, send `CLAIMED`, and from there behave as an agent. |
+| `BOUND` names this machine, and `runtime/holder` names a live session | **an executor session** on one subtask; see below. |
 | there is no `BOUND` comment | **not bound yet.** Only a person's word binds an existing campaign; see below. |
 
 **An executor session is an agent, not a second campaign session.** It files the
@@ -531,34 +531,42 @@ Never answer one with the other.
   kind — `complete`, or `dropped` for everything else that is closed. Do not
   hand-roll a second reader; two of them drift, and the campaign's central
   verdict is the worst place for that.
-- **Liveness is a herdr fact for a delegate and a `ListAgents` fact for an
-  executor session**, and a gate that reads only the first is blind to half its
-  executors. A delegate is read from `herdr agent list` presence plus the session
-  transcript — never from `agent_status` alone, which reports the screen and
-  calls a mid-turn pause `idle`. An executor session runs no herdr pane at all;
-  it is a peer, and `ListAgents` is where it appears. **Both readings, every
-  time**: the no-live-agent gate in `closing-campaign` and the retirement sweep
-  below each run both.
+- **Liveness is a herdr fact for a delegate and a `runtime/executors/` fact for
+  an executor session**, and a gate that reads only the first is blind to half
+  its executors. A delegate is read from `herdr agent list` presence plus the
+  session transcript — never from `agent_status` alone, which reports the screen
+  and calls a mid-turn pause `idle`. An executor session runs no herdr pane at
+  all, so it is read from the record the holder wrote when its `CLAIMED` arrived,
+  and its liveness from the `pid` in that file the way `runtime/holder` is read.
+  **Both readings, every time**: the no-live-agent gate in `closing-campaign` and
+  the retirement sweep below each run both.
 
-  `ListAgents` gives a name, not a subtask, so presence alone cannot say which
-  campaign a peer is in. That is what `CLAIMED` supplies, and it is why an
-  executor session that never announced can be live under a campaign that reads
-  closable.
+  `ListAgents` alone will not do it. It gives a name, not a subtask, so presence
+  there cannot say which campaign a peer is in — which is why the record exists,
+  and why an executor session that never announced can be live under a campaign
+  that reads closable.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the campaign session retires it once
-that work is durable. **The review is launched, not waited for**: the holding
-session starts a herdr session on `/code-review <PR#>` — a model-invocable skill,
-so that command is the whole opening prompt, and `ultra` is person-triggered only
-and not the default. Feedback then goes to a *fresh* executor, briefed from the
-pull request and the review, because a pane held open across a multi-day review
-is the expensive thing.
+that work is durable.
+
+**Who reviews, and in which mode.** The reviewer is one the holder launches, and
+`/code-review <PR#>` is the whole opening prompt either way, because it is
+model-invocable. The default is an **in-process subagent**: a review only reads,
+so it needs none of what a process boundary is paid for — no handover file, no
+canary, no pane, no sweep. A **herdr session** is for a review that will take
+many turns, or an `ultra` review, which is person-triggered only and never the
+default. Feedback then goes to a *fresh* executor, briefed from the pull request
+and the review, because a pane held open across a multi-day review is the
+expensive thing.
 
 # Talking to a repository agent
 
-`spec/alloy/agent.als` is the contract; this is the short form. Address an
-agent by the name given at launch, which `ListAgents` resolves — herdr's pane
-label is not an address.
+`spec/alloy/agent.als` is the contract; this is the short form. `ListAgents`
+resolves the address; herdr's pane label is not one. Where the address comes from
+is the difference between the two kinds of executor — a delegate's was chosen at
+launch, an executor session's was announced — and § Who is a campaign session
+says which is which.
 
 Five messages, carrying **only what the agent alone knows**. Anything a message
 says about finished work duplicates a GitHub fact, and the copy is what goes
@@ -582,20 +590,42 @@ stale.
   renaming to the flattened branch is an optional courtesy and `CLAIMED` is the
   mechanism.
 
-  An executor session that skips it is invisible rather than merely quiet: the
-  holder sees a peer in `ListAgents` and cannot tell which subtask it works, so
-  the close gate reads straight past it (modelled: `spec/alloy/agent.als`, `A1`).
+- **The holder writes it down**, in `<campaign>/runtime/executors/<issue>` — one
+  file per announced subtask, holding `session <ListAgents name>`, `pid` and
+  `branch`:
+
+  ```sh
+  printf 'session %s\npid %s\nbranch %s\n' "<name>" "<pid>" "<branch>" \
+    >| "$CAMPAIGN/runtime/executors/<issue>"
+  ```
+
+  The holder writes it because the holder is what must read it back — at a close,
+  at a sweep, possibly from a later session, since a message received is gone the
+  moment the session that received it is. That gives the record `runtime/holder`'s
+  argument exactly, and `runtime/holder`'s lifetime: it is on the bound machine,
+  it dies with the directory, and nothing off the machine reads it. It is keyed
+  to no session, so a successor that takes a dead holder's directory inherits
+  every address in it.
+
+  **That directory is the only reader of executor-session liveness.** The close
+  gate and the retirement sweep enumerate it; nothing matches names by prefix,
+  because an executor session keeps whatever name its harness gave it and a
+  session cannot rename itself. An executor that skips `CLAIMED` is therefore
+  invisible rather than merely quiet — the holder sees a peer in `ListAgents` and
+  cannot tell which subtask it works, so the gate reads straight past it
+  (modelled: `spec/alloy/agent.als`, `A1`; the delete under it, `A10`).
 
 - **An executor never merges its own pull request, and never reviews it.** It
   pushes, `REPORT`s the URL once, and waits. The holding session verifies in
-  GitHub, launches `/code-review <PR#>` on it, reads the findings, and then
-  either merges — telling the executor the work is durable, which is what lets it
-  drop its worktree — or briefs a fresh executor from the pull request and the
-  review, until the review is clean. **The holder never merges unreviewed.**
-  Witnessed 2026-08-28, which is why the rule is written: an executor session
-  squash-merged its own pull request in the same minute the holding session sent
-  a hold, and nothing on disk said who merges (modelled: `A4` the collision,
-  `A5`/`A7` the rule, `A8` the control).
+  GitHub, launches a reviewer, reads the findings, and then either merges —
+  telling the executor the work is durable, which is what lets it drop its
+  worktree — or briefs a fresh executor from the pull request and the review,
+  until the review is clean. **The holder never merges unreviewed**, and a push
+  after a review retires that review: a review is of a pull request at a
+  revision. Witnessed 2026-08-28, which is why the rule is written: an executor
+  session squash-merged its own pull request in the same minute the holding
+  session sent a hold, and nothing on disk said who merges (modelled: `A4` the
+  collision, `A5`/`A7` the rule, `A8` the control, `A13` the re-push).
 
 - **A claim in a message is never evidence.** It says where to look; then look,
   in GitHub, yourself.
@@ -628,9 +658,10 @@ and treat a long quiet as a question to go and look at rather than as progress.
 
 Retire finished agents as the campaign runs, not when it closes: a long-lived
 campaign finishes subtasks continuously, and panes accumulate until someone
-sweeps them. **Sweep both lists.** `herdr agent list` finds the delegates and
-`ListAgents` finds the executor sessions, which have no pane at all; a sweep that
-reads one of them leaves the other kind standing and reports nothing.
+sweeps them. **Sweep both records.** `herdr agent list` finds the delegates by
+their `cwd`; `<campaign>/runtime/executors/` names the executor sessions, which
+have no pane at all. A sweep that reads one of them leaves the other kind
+standing and reports nothing.
 
 A campaign may not be closed while any agent is live under its tree, and a
 repository may not be dropped from a campaign while an agent is working one of

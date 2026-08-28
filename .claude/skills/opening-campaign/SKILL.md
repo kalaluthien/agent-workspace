@@ -16,8 +16,9 @@ Finished when all of these hold:
   `Repos` a plain `- owner/repo` list.
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
-  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/holder`, and
-  `scripts/`, with `runtime/holder` naming this session and a live PID.
+  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/executors/`,
+  `runtime/holder`, and `scripts/`, with `runtime/holder` naming this session
+  and a live PID.
 - The campaign's `README.md` is the anchor issue body, and the `- ` entries
   under its `## Repos` heading hold no `<`. Scope the check to that list: a
   correct Requirements section quotes things like `issues/<N>/sub_issues`, so a
@@ -69,9 +70,11 @@ it.
 | what you find | what to do |
 | --- | --- |
 | No open campaign's Scope covers the request | Open a new campaign: continue to step 2. |
-| One open campaign's Scope covers it | Join it — but read the binding and the holder below first: they decide whether you may join at all, and as what. |
-| One open campaign covers it and a live holder is on this machine | Become its **executor session** on one subtask. Do not scaffold, do not sync, do not close: take the subtask, claim its branch, send `CLAIMED`, and stop running this skill. |
+| One open campaign's Scope covers it | Read the binding below, then the holder. **In that order** — they decide whether you may touch this campaign at all, and as what. |
 | Two or more could cover it, or the fit is arguable | Ask the person which, naming the candidates. Do not guess. |
+
+The two readings, and the three roles they give, are § Who is a campaign session
+in the container's `AGENTS.md`. What follows is how to run them here.
 
 Match on Scope, never on `## Repos`. A request that touches a repository an open
 campaign already lists, but that its Scope does not cover, opens a new campaign.
@@ -128,20 +131,25 @@ session
 CLAIMED campaign-<N>/<issue>-<topic> <your ListAgents name>
 ```
 
-which is the whole announcement: the branch and the issue are GitHub facts
-already, and your address is the one thing only you know. From there work the
-subtask like any executor — answer `STATUS`, send `REPORT` and `BLOCKED`, stop on
-`STAND DOWN`, never survey, never sync, never close, never merge your own pull
-request — and mind the mode rule in § Running a campaign: an executor session may
-take a container subtask or campaign-directory work, and for a member-repository
-subtask it launches a delegate and names *that* branch in its `CLAIMED`.
+Then stop running this skill: from here you are an agent, and § Talking to a
+repository agent in the container's `AGENTS.md` is your half of it, § Running a
+campaign the rule about which subtasks you may take at all. Nothing below this
+line is yours — you do not scaffold, sync, or close.
 
-Skipping the announcement is not a small omission. The holder sees a peer in
-`ListAgents` and cannot tell which subtask it works, so its close gate and its
-retirement sweep both read past you.
+Skipping the announcement is not a small omission. It is the only thing that
+puts you in `<campaign>/runtime/executors/`, and that directory is the only
+place the holder's close gate looks for you.
 
 Dead, missing, or your own — you are the holding session; rewrite the file as
-step 4 does and carry on in that directory.
+step 4 does and carry on in that directory. **When a `CLAIMED` reaches you**,
+record it before doing anything else, because a message is gone with the session
+that received it:
+
+```sh
+mkdir -p "$CAMPAIGN/runtime/executors"
+printf 'session %s\npid %s\nbranch %s\n' "<name>" "<pid>" "<branch>" \
+  >| "$CAMPAIGN/runtime/executors/<issue>"
+```
 
 No directory at all — the campaign exists on GitHub but not on this machine, so
 run steps 2, 4 and 5 for it, taking its ID and body from the anchor issue. Skip
@@ -279,6 +287,8 @@ different campaign, or unreadable — stop and ask the person.
 
 Then finish it:
 
+- `mkdir -p runtime/executors`. It is where a received `CLAIMED` is recorded,
+  and `closing-campaign` refuses a close it cannot enumerate.
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
 - Delete `subtask.md`. It came along with the copy, but a subtask is filed from
   the skill's own copy at `assets/subtask.md`; a second copy sitting in a
@@ -446,15 +456,13 @@ auth-refactor-260828/
   scope, and nothing errors — you get two anchor issues that both look right.
   Two sessions each running step 1 honestly produce the same pair, which is why
   step 3 surveys a second time.
-- **You may not be this campaign's session.** Any session opened in the
-  container root is a candidate, and two cheap reads decide which of three
-  things it is: the anchor's latest `BOUND` comment, then `runtime/holder`. Bound
-  elsewhere is not yours to touch; a live holder makes you an executor session on
-  one subtask. Everything durable is still written as read-then-write against
-  GitHub rather than as "mine because I made it" — the anchor body is compared
-  before it is overwritten, the directory may already exist because a peer built
-  it minutes ago, and the shared checkout is left on its default branch so a
-  re-run cannot move it under somebody's delegate.
+- **You may not be this campaign's session**, and the two reads in step 1 are
+  what decide it — in that order, because a campaign bound elsewhere is not yours
+  to read a holder file for. Everything durable is still written as read-then-write
+  against GitHub rather than as "mine because I made it": the anchor body is
+  compared before it is overwritten, the directory may already exist, and the
+  shared checkout is left on its default branch so a re-run cannot move it under
+  somebody's delegate.
 - Filing the anchor issue after scaffolding gives the directory a slug with no
   ID behind it and branches named for a number you have not got yet. Order
   matters here and nowhere else in the procedure.
