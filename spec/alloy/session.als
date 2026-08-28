@@ -550,8 +550,12 @@ pred R3_DeleteUnderWorkingSession {
    it -- the designed reading, checked here for the case that has no pull
    request to offer.
 
-   This run is why ledger.als's WellFormed clause reads `eventually`: against
-   the clause as it stood, R4 is UNSAT, and that comment records the isolation. */
+   This run is why ledger.als's container clause is no longer a clause of
+   WellFormed: as a global fact it made a container-homed subtask unfilable, and
+   R4 was UNSAT against it. It survives there as
+   `containerIssuesAreCampaignIssues`, conjoined by the scenario that is about
+   it (S16b/S16c), where it constrains what it meant to constrain and nothing
+   else. */
 pred R4_RepolessCampaign {
   syncCAS and surveyAtFile
   some s: Session, c: Campaign, i: Issue {
