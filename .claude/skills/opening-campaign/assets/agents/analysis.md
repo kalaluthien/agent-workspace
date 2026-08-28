@@ -30,8 +30,8 @@ started.
 
 ## What to refuse
 
-- Fixing what you find. A defect discovered mid-audit is filed as its own
-  subtask issue on the owning repository; changing it under you invalidates the
+- Fixing what you find. Report a defect discovered mid-audit to the campaign
+  session, which makes it a subtask; changing it under you invalidates the
   measurement and hides the finding in a diff.
 - An estimate presented in the shape of a measurement. If it was not measured,
   say it was not.

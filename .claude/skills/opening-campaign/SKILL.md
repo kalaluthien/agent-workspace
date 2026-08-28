@@ -18,7 +18,7 @@ Finished when all of these hold:
   `CLAUDE.md`, `README.md`, `runtime/`, and `scripts/`.
 - No angle-bracket placeholder survives in the campaign's `README.md`.
 - Every entry under `Repos:` resolves to a checkout at
-  `<campaign>/repos/<name>/` and carries the label `campaign-<N>`.
+  `<campaign>/repos/<name>/`.
 - The reply names the campaign ID, the directory, and the anchor issue URL.
 
 ## Procedure
@@ -46,9 +46,8 @@ Match on Scope, never on `Repos:`. A request that touches a repository an open
 campaign already lists, but that its Scope does not cover, opens a new campaign.
 
 Filing the follow-up ends the run — that campaign is already scaffolded. File it
-the way "Filing a subtask issue" below says, including the index steps; a
-follow-up landing on a repository the anchor issue does not list is invisible to
-every status query.
+the way "Filing a subtask issue" below says: an issue created without `--parent`
+is in no campaign and shows up in no listing, and nothing reports it.
 
 ### 2. Name it and pick its kind
 
@@ -145,8 +144,6 @@ and fails:
 Safe to re-run. Do not clone by hand and do not read the script to work out what
 it does — its interface is the contract.
 
-Then make the subtask label exist on each of them, as below.
-
 ### 6. Report
 
 The campaign ID, the directory path, and the anchor issue URL. Then the first
@@ -155,27 +152,28 @@ subtask, and whether you are doing it here or handing it to a repository agent.
 ### Filing a subtask issue
 
 Both the follow-up path in step 1 and every subtask after step 6 file the same
-shape, and both keep the index intact. The index is the anchor's `Repos:` list
-plus the label, so a subtask that skips either becomes unfindable with no error.
+shape. `--parent` is what puts the issue in the campaign, so an issue filed
+without it belongs to no campaign and appears in no listing:
 
-1. If the target repository is not in the anchor's `Repos:` list, add it to that
-   list and to the campaign `README.md`, and acquire it as in step 5.
-2. Make the label exist on that repository. `gh issue create --label` fails
-   outright on a label the repository does not have, and `--force` makes this
-   safe to re-run:
+```sh
+gh issue create -R <owner/repo> \
+  --parent https://github.com/kalaluthien/agent-workspace/issues/<N> \
+  --title "<title>" --body-file <path>
+```
 
-   ```sh
-   gh label create campaign-<N> -R <owner/repo> --force \
-     --description "Campaign kalaluthien/agent-workspace#<N>"
-   ```
+The body carries a line `Campaign: kalaluthien/agent-workspace#<N>`. That is
+prose for a person reading the raw issue; nothing queries it.
 
-3. File the issue with the label and a body carrying the back-reference line
-   `Campaign: kalaluthien/agent-workspace#<N>`:
+Read the campaign's subtasks back from the anchor, in one call, across every
+repository:
 
-   ```sh
-   gh issue create -R <owner/repo> --label campaign-<N> \
-     --title "<title>" --body-file <path>
-   ```
+```sh
+gh api repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
+```
+
+If the target repository is not in the anchor's `Repos:` list, add it to that
+list and to the campaign `README.md`, and acquire it as in step 5. The list is
+what a later open reads to know what to clone; the index does not depend on it.
 
 ## Example
 
@@ -209,6 +207,9 @@ auth-refactor-260828/
   repository's own conventions. Adding a principle is free; contradicting one
   hands the delegate a conflict it cannot resolve, and it will pick a side
   without telling you.
+- `gh issue create` without `--parent` succeeds. It returns a URL and a live
+  issue that belongs to no campaign, and only a later listing that comes back
+  short shows anything is wrong.
 - `git status` in the container root will never show the campaign directory.
   That is the allowlist working, not a missing file.
 - Never run one git command across `repos/*`. Each is its own repository with

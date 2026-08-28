@@ -34,6 +34,6 @@ re-derived and most likely to be repeated.
 ## What to refuse
 
 - A conclusion drawn from one source, one sample, or one run.
-- Changing a member repository's code beyond a scratch probe. Research produces
-  findings; a change it motivates is a separate subtask, filed as its own issue.
+- Changing a member repository's code beyond a scratch probe. A change your
+  findings motivate is a separate subtask: report it, do not file it yourself.
 - Answering a question the campaign did not ask because it was nearby.
