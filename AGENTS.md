@@ -51,8 +51,11 @@ is closed.
 - **ID** — the number of its anchor issue in `kalaluthien/agent-workspace`.
   Typed as `#N`.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored.
-- **Branch** — `c<N>/<topic>` in every member repository, so two campaigns
-  working one repository never collide on the remote.
+- **Branch** — `c<N>/<issue>-<topic>` in every member repository. `<N>` keeps two
+  campaigns from colliding on the remote; the subtask's issue number keeps two
+  subtasks of one campaign from colliding with each other. The number is minted
+  when the subtask is filed, so a checkout cannot be acquired onto its branch —
+  the delegate cuts it after filing.
 
 # Three planes
 

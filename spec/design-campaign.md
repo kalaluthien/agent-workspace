@@ -52,7 +52,10 @@ issue number is the campaign's ID.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, e.g.
   `auth-refactor-260828/`. The date disambiguates a slug reused months later
   and sorts usefully in a listing.
-- **Branch** — `c<N>/<topic>` in every member repository, e.g. `c7/token-refresh`.
+- **Branch** — `c<N>/<issue>-<topic>` in every member repository, e.g.
+  `c7/31-token-refresh`. The campaign number separates campaigns; the subtask's
+  issue number separates subtasks within one, which only matters once several
+  sessions hold a campaign at once.
   The campaign number in the branch is what stops two campaigns working the same
   repository from colliding on the remote, and it tells a reviewer which
   campaign a branch came from.
