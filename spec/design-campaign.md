@@ -3,7 +3,10 @@
 The reasoning behind the rules in `AGENTS.md`. Read this when a rule looks
 arbitrary; read `AGENTS.md` when you need the rule itself.
 
-Status: first design, 2026-08-28. Not yet exercised by a real campaign.
+Status: first design, 2026-08-28. Campaign #1 is exercising it as it is
+written — a smoke test, a protocol test and an e2e drill have each contradicted
+a rule here, and each correction is folded into the text rather than kept as an
+erratum.
 
 ## The unit
 
@@ -50,8 +53,11 @@ issue number is the campaign's ID.
   already resolvable from any machine and from the phone.
 - **Slug** — a meaningful kebab-case phrase, chosen when the campaign opens.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, e.g.
-  `auth-refactor-260828/`. The date disambiguates a slug reused months later
-  and sorts usefully in a listing.
+  `auth-refactor-260828/`, and **optional**. The date disambiguates a slug
+  reused months later and sorts usefully in a listing. A campaign legitimately
+  has none on a given machine: the campaign is its anchor issue and the
+  directory is one machine's cache of it, so closing a campaign and deleting a
+  directory are different acts. #1, which built this machinery, never had one.
 - **Branch** — `c<N>/<issue>-<topic>` in every member repository, e.g.
   `c7/31-token-refresh`. The campaign number separates campaigns; the subtask's
   issue number separates subtasks within one, which only matters once several
@@ -100,10 +106,16 @@ a computed verdict.
 
 Here the two questions are split and answered by different systems.
 
-- **Completion is a GitHub fact.** A subtask is finished when its issue is
-  closed and its PR is merged. Nothing on a terminal screen is evidence. This
-  survives the delegate's death, the pane's death, and the machine's reboot,
-  and it reads the same from a phone.
+- **Completion is a GitHub fact.** A subtask is settled when its issue is
+  closed. The merged pull request behind it only says which kind of closed —
+  `complete`, or `dropped` for every other close. Settlement had to be widened
+  to that: closed-and-merged alone cannot say "dropped", so a subtask abandoned
+  on purpose, moved to a duplicate, or closed by hand with nothing to merge
+  never reads settled and its campaign can never be closed. That is
+  `campaign-D`'s assertion 7b, and it is why `scripts/campaign-settlement`
+  counts a closed issue as settled whatever closed it. Nothing on a terminal
+  screen is evidence. This survives the delegate's death, the pane's death, and
+  the machine's reboot, and it reads the same from a phone.
 - **Liveness is a herdr fact.** Whether a delegate is working, stuck, waiting
   on a prompt, or gone is read from `herdr agent list` presence plus the
   session transcript — never from `agent_status` alone, which reports the

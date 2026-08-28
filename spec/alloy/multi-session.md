@@ -52,6 +52,12 @@ closing it — read and create are not atomic.
 - No `gh` latency: each window measured is a minimum.
 - Nothing repairs 3, 4 or 5 — each is a contract change, yours to write: a gate
   that sees a live *session*; `<topic>` chosen where both sessions read it;
-  `STAND DOWN`'s pre-check named as local.
+  `STAND DOWN`'s pre-check named as local. All three have since been written,
+  outside the model, so the runs above still read SAT: 4 by putting the
+  subtask's issue number in the branch, `c<N>/<issue>-<topic>`; 5 by naming the
+  pre-check local in `spec/agent-protocol.md` and retiring only an agent on your
+  own machine; 3 only narrowed, by announcing the close on the anchor issue and
+  reading the comments back, which a session that never comments still slips
+  past.
 - `R3c` UNSAT restates the close rule, so `R3b` reads as that rule being
   unreadable, not failing.

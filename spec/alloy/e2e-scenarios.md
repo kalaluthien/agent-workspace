@@ -71,7 +71,8 @@ Tear down with `gh issue close $ANCHOR -R kalaluthien/agent-workspace` and
 ## The steps
 
 **1 — plain path.** Create two subtasks, one per fixture repo. In each: branch
-`c$ANCHOR/<topic>`, one commit, `git push -u origin`, `gh pr create --body "Closes #<n>"`,
+`c$ANCHOR/<n>-<topic>` for subtask `<n>`, one commit, `git push -u origin`,
+`gh pr create --body "Closes #<n>"`,
 `gh pr merge --squash --delete-branch`. Then `scripts/campaign-settlement $ANCHOR`.
 Both rows must read `complete`. Close the anchor only after that line says
 `closable` — that ordering *is* the design's close rule.
@@ -82,7 +83,7 @@ The listing must read `dropped`, and `closable` must still be reached. This is
 the one the model's assertion 7b says closed-and-merged alone cannot express.
 
 **3 — delegate dies after pushing.** Launch a delegate on a subtask. Wait until
-it has pushed and opened a pull request (`gh pr list -R <repo> --head c$ANCHOR/<topic>`
+it has pushed and opened a pull request (`gh pr list -R <repo> --head c$ANCHOR/<n>-<topic>`
 returns a row). Kill the pane — `herdr agent list` to find it, then kill the
 process. Merge the pull request yourself. The row must go `complete` with no
 agent alive anywhere. Safe on real repositories: the branch is already pushed,
@@ -200,12 +201,25 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # "<behin
 
 - **`behind > 0` is hazard 1.** The delegate's pull request merged and the outer
   checkout has not caught up. Editing from here can silently revert the merged
-  work, and nothing in `AGENTS.md` currently says to pull. Fix with
-  `git -C "$CONTAINER" pull --ff-only` and re-read `0` before editing.
-- **`ahead > 0` *before the clone* is hazard 2.** The inner clone is cut from
-  `origin/main`, so a delegate launched now reads an `AGENTS.md` older than the
-  one the campaign session is following, and obeys rules already superseded.
-  Push before cloning; a clone taken while `ahead > 0` is the defect.
+  work. Fix with `git -C "$CONTAINER" pull --ff-only` and re-read `0` before
+  editing, which is what `AGENTS.md` now says to do.
+- **A clone left behind *at launch* is hazard 2**, and the outer checkout is
+  the wrong place to read it. The rule first written here — push before cloning,
+  a clone taken while `ahead > 0` is the defect — is the wrong invariant, and a
+  live run disproved it: the outer check read `0\t0` immediately before both
+  clones, so by that rule the clones were safe, and three commits landed on
+  `origin/main` between the clone and the launch, leaving the delegate three
+  behind. On a campaign of any length the remote moving in between is normal.
+  Read it inside the clone instead, at launch:
+
+  ```sh
+  git -C <campaign>/repos/<repo> fetch origin -q
+  git -C <campaign>/repos/<repo> rev-list --left-right --count origin/main...HEAD
+  ```
+
+  A delegate launched behind obeys an `AGENTS.md` this session has already
+  superseded, and nothing reports it. Pull the clone, then launch. Pushing the
+  container before cloning is still worth doing and is still not sufficient.
 - **Hazard 3 is safe, but do not read the model as proof.** Edits to
   `.claude/skills/` inside the clone cannot change the running campaign, because
   the loaded copy is the outer container's. The model agrees — but only because
@@ -214,8 +228,9 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # "<behin
   command: after editing a skill in the clone, confirm
   `git -C "$CONTAINER" status --porcelain .claude/` is still empty.
 
-Pass for the whole scenario: `0\t0` at all three checkpoints, and the delegate's
-subtask reads `complete` in `scripts/campaign-settlement`. Real-safe — every
+Pass for the whole scenario: the outer checkout reads `0\t0` at all three
+checkpoints, the clone reads zero behind at launch, and the delegate's subtask
+reads `complete` in `scripts/campaign-settlement`. Real-safe — every
 step is a fetch, a compare, or an ordinary pull.
 
 **The finding.** `S16a_ContainerMemberUnderD` is UNSAT. `campaign-D`'s
