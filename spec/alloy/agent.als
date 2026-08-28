@@ -196,9 +196,10 @@
  *
  * WHO DOES THE WORK, AND WHY IT IS NOT MODELLED
  *
- * The execution modes -- the session's own hands, an in-process subagent on a
- * worktree, a herdr delegate in a clone, and now an executor session -- are one
- * `Launch` here on purpose. No construct below distinguishes them, because
+ * The three execution modes the holding session chooses between -- its own
+ * hands, an in-process subagent on a worktree, a herdr delegate in a clone --
+ * plus the executor session, which is not a mode because nobody chooses it, are
+ * one `Launch` here on purpose. No construct below distinguishes them, because
  * nothing a model can say about reachable states differs between them: the
  * branch is the same claim, the completion is the same GitHub fact, and the only
  * differences are turn cost and whether a process boundary is crossed.
