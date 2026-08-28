@@ -9,7 +9,7 @@ Delete a campaign directory only after everything in it also exists somewhere
 else. The directory is a scratch assembly of things versioned elsewhere, so
 closing is a checked demolition, not a decision.
 
-Finished when all six hold:
+Finished when all seven hold:
 
 - the anchor's latest `BOUND` comment names this machine;
 - `gh issue view <N> -R kalaluthien/agent-workspace --json state` reports
@@ -21,11 +21,13 @@ Finished when all six hold:
   `runtime/holder` in it named a live session other than this one;
 - the anchor issue body is the campaign README, `## Repos` list included, and
   the body was compared against `runtime/anchor-body-derived.md` before it was
-  written.
+  written;
+- the closing comment on the anchor lists every file the delete destroyed —
+  everything under the directory outside `runtime/` and `repos/`.
 
 Where this machine holds no directory for the campaign, the first three are the
 real conditions — the binding, and two GitHub facts that read the same from any
-machine — and the other three are about a cache that does not exist. Step 0 says
+machine — and the other four are about a cache that does not exist. Step 0 says
 what to skip.
 
 ## Procedure
@@ -322,6 +324,14 @@ grep -q '<' /tmp/repos-before && echo "REFUSE: placeholders survive in ## Repos"
 The range is bounded to the section and takes only list items, so a link in an
 adjacent section cannot be read as a member repository.
 
+**`- none` is a list, and it passes both gates unchanged.** It is the entry a
+campaign with no member repository carries, so it is non-empty and holds no `<`.
+The empty-list refusal stays exactly as it is: a list with no entries at all is
+indistinguishable from one a bad write dropped, and this step is the last thing
+standing between that and the loss of the index. Under `- none` step 2's sweep
+over `repos/*/` is naturally empty, which is the absence of checkouts and not
+the absence of a check.
+
 This step is also run mid-campaign, whenever a repository is added to the
 `## Repos` list — `opening-campaign`'s "Filing a subtask issue" sends you here.
 Those are the only two moments the body is written at: a scope change, of which
@@ -393,11 +403,30 @@ against the binding, and no cheap local check can. The anchor issue is the one
 place every machine can read, so announce there and read the comments back —
 this is the guard for a broken principle, not a routine handshake.
 
+**Say in the same comment what the delete will destroy.** Everything under the
+campaign directory outside `runtime/` and `repos/` is a file with no other copy:
+`runtime/` is scratch by design and `repos/` is clones with their own remotes,
+and what is left is whatever the campaign built here — a repo-less campaign's
+`scripts/` above all, since that is the only place its work ever lived. Listing
+it in the closing comment is what makes the delete examined rather than merely
+confirmed, and it puts the list somewhere that outlives the tree. This is one
+comment, not two: the announcement carries the listing.
+
 ```sh
-gh issue comment "$N" -R kalaluthien/agent-workspace \
-  --body "Closing campaign #$N from $(hostname -s). Say so here if you are still in it."
+LEFTOVERS=$(cd "$CAMPAIGN_DIR" && find . -mindepth 1 \
+  \( -path ./runtime -o -path ./repos \) -prune -o -type f -print \
+  | sed 's|^\./||' | sort)
+gh issue comment "$N" -R kalaluthien/agent-workspace --body "$(printf \
+  'Closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these files under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
+  "$N" "$(hostname -s)" "${LEFTOVERS:-(nothing outside runtime/ and repos/)}")"
 gh issue view "$N" -R kalaluthien/agent-workspace --comments
 ```
+
+Read the listing before you go on. A file in it that some later reader will want
+is durable output living only here, which the three planes forbid — land it in a
+repository, a memory pool or an issue *now*, then re-run the listing. Where this
+machine holds no directory, step 0 has already skipped to here and there is
+nothing to list; say so and post the announcement alone.
 
 Another session's note saying it is working or closing: stop, name it, and let
 the person resolve it — and say that it should not have been there, because the

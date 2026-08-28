@@ -13,7 +13,10 @@ Finished when all of these hold:
 
 - An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
   no parent, and the sections of the anchor template `assets/README.md`, with
-  `Repos` a plain `- owner/repo` list.
+  `Repos` a plain `- owner/repo` list — or the single entry `- none`, which is
+  how a campaign with no member repository says so. An *empty* list is refused
+  here and at the close alike, because an empty list is indistinguishable from a
+  list that got lost; `- none` is a deliberate entry and reads as one.
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
   `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/holder`, and
@@ -25,7 +28,8 @@ Finished when all of these hold:
 - `runtime/anchor-body-derived.md` holds the body the README was derived from,
   byte for byte.
 - Every entry under `## Repos` resolves to a checkout at
-  `<campaign>/repos/<name>/`.
+  `<campaign>/repos/<name>/` — vacuous under `- none`, where `repos/` stays
+  empty and step 5 does nothing.
 - The reply names the campaign ID, the directory, and the anchor issue URL.
 
 ## Procedure
@@ -309,6 +313,11 @@ Then finish it:
 
 ### 5. Acquire the member repositories
 
+**`- none` skips this step.** A campaign with no member repository has nothing
+to clone, `repos/` stays empty, and the close's sweep over `repos/*/` is
+naturally empty too. Say in the reply that the step was skipped, so a `## Repos`
+list that lost its entries does not read as a repo-less campaign.
+
 For each entry under `## Repos`, by absolute path — step 4 has just created an
 empty `$CAMPAIGN/scripts/`, so a relative `scripts/acquire-repo` resolves there
 and fails:
@@ -375,6 +384,29 @@ git -C "$CAMPAIGN/repos/<name>" switch -c campaign-<N>/<issue>-<topic> \
 Put the branch name in the handover brief; the delegate finds its branch
 already on the remote, which is also how a reader on any machine knows the
 subtask is held before its first commit lands.
+
+**A repo-less campaign files on the container tracker and claims there.** With
+no member repository there is one tracker and one remote to claim on, so the
+subtask is `gh issue create -R kalaluthien/agent-workspace --parent <anchor
+url>` and the claim is create-ref on `kalaluthien/agent-workspace` for
+`campaign-<N>/<issue>-<topic>` — even when no container code will change. The
+branch is the claim before it is a workspace, and a claim that holds nothing
+beyond `origin/main` is released by deleting the ref, exactly as any other. The
+`sha` comes from any checkout of the container, so pass the container root
+rather than `$CAMPAIGN/repos/<name>`, which does not exist:
+
+```sh
+gh api repos/kalaluthien/agent-workspace/git/refs \
+  -f ref=refs/heads/campaign-<N>/<issue>-<topic> \
+  -f sha=$(git -C "$CONTAINER" rev-parse origin/main)
+```
+
+Such a subtask runs by your own hands or in an in-process subagent whose working
+directory is the campaign directory; the delegate-in-a-clone mode needs a
+checkout and is not available. It closes as completed with no pull request, and
+`scripts/campaign-settlement` prints that row as `dropped [completed, no merged
+pull request]` — the designed reading, stated in the script's own header, not a
+defect to work around.
 
 Read the campaign's subtasks back from the anchor, in one call, across every
 repository:
