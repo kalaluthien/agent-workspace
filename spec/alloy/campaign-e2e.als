@@ -20,11 +20,19 @@
  *     hazard is read at launch rather than before the clone.
  *
  * No assertions here. The checks live in campaign-core.als and are not repeated.
+ * campaign-core.als is spec/'s entry point and carries the orientation to all
+ * four models.
+ *
+ * Seventeen scenarios, twenty-five commands, all SAT but two. Each scenario's
+ * write-up -- how to make it happen for real, and the observable that decides
+ * it passed -- sits beside the predicate that states it, not here.
  *
  * Run one:
  *   alloy exec -f -o /tmp/alloy-e2e -t text -c 'S1_HappyPath' spec/alloy/campaign-e2e.als
  * Run all:
  *   alloy exec -f -o /tmp/alloy-e2e -t text -c '*' spec/alloy/campaign-e2e.als
+ * A raw trace repeats every static signature in every state; condense it:
+ *   scripts/alloy-trace-digest /tmp/alloy-e2e/S1_HappyPath-solution-0.txt
  */
 module campaignE2E
 

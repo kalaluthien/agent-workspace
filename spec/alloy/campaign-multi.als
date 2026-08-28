@@ -30,6 +30,12 @@
  *   - added: Visible and Pushed on an Agent -- what a remote session can check
  *     versus what only a co-located one can.
  *
+ * campaign-core.als is spec/'s entry point and carries the orientation to all
+ * four models.
+ *
+ * Thirty-five commands, every one a run. Each finding's witness sits beside the
+ * predicate that states it, not here.
+ *
  * Run one:
  *   alloy exec -f -o /tmp/alloy-multi -t text -c 'R1_LostBodyUpdate' spec/alloy/campaign-multi.als
  * Run all:
