@@ -19,12 +19,33 @@ Finished when all four hold:
   the body was compared against `runtime/anchor-body-derived.md` before it was
   written.
 
+Where this machine holds no directory for the campaign, only the first is a real
+condition and the other three are about a cache that does not exist. Step 0 says
+what to skip.
+
 ## Procedure
 
 The order is load-bearing: each gate is cheaper than the one after it, and step
 5 is irreversible. Run 0–4 without asking. Run 5 only on explicit confirmation.
 
-### 0. Bind the campaign directory, once
+### 0. Bind the campaign, once
+
+**The ID first.** Every step from 3 on reads `$N`, and nothing in the campaign
+directory carries it: the README *is* the anchor body, and a body does not know
+its own issue number. Take it from the person, or resolve it from the open
+anchors and say which one you matched — the `campaign` label is what they are
+listed by.
+
+```sh
+gh issue list -R kalaluthien/agent-workspace --label campaign --state open
+```
+
+**Then the directory, if this machine has one.** A campaign is its anchor issue
+and the directory is one machine's cache, so a campaign legitimately has none
+here — never scaffolded, held only elsewhere, or never needed. That is not a
+failure and not a reason to stop: say so, skip steps 1, 2 and 4, and close the
+issue in step 5, where the delete then has nothing to do. Closing the issue is
+what closes the campaign.
 
 Every later step reads `$CAMPAIGN_DIR`, and two of them fail silently if it is
 relative or wrong: step 1 compares it against herdr's absolute `cwd`, so a
@@ -131,32 +152,24 @@ above. `<count>` counts rows, not checks.
 
 ### 3. Report the unsettled subtasks
 
-The index is the anchor's sub-issue list: one call, every member repository at
-once, public or private. Pass `--paginate`, or a campaign past the first page
-reports a truncated index as if it were complete.
+One reader, and it is the container's script. The rule it implements — settled
+is "the issue is closed", and the merged pull request only says which kind — is
+stated once in `AGENTS.md`; a second copy written out here as `gh` commands is
+the drift that rule exists to stop, and the two did drift before this step was
+written this way.
 
 ```sh
-gh api --paginate repos/kalaluthien/agent-workspace/issues/"$N"/sub_issues \
-  -q '.[] | "\(.state)\t\(.state_reason // "-")\t\(.html_url)\t\(.title)"'
+"$CONTAINER/scripts/campaign-settlement" "$N"
 ```
 
-A subtask is settled when it is closed as completed with its pull request
-merged, or closed as not planned — that second reading is what keeps a campaign
-with a deliberately dropped subtask closable. So `closed` alone is not enough:
-for each one closed as completed, confirm the pull request merged. The owner and
-repository come from the `html_url` in the row above.
+It reads the anchor's sub-issue index in one paginated call — every member
+repository at once, public or private — and prints one row per subtask, then
+whether the campaign is closable.
 
-```sh
-gh issue view "$NUM" -R "$REPO" --json closedByPullRequestsReferences \
-  -q '.closedByPullRequestsReferences[].url'
-```
-
-```sh
-gh pr view "$PR" -R "$REPO" --json state,mergedAt -q '"\(.state)\t\(.mergedAt)"'
-```
-
-Report every unsettled subtask. None of them blocks the close — a person may
-close a campaign over unfinished work — but show them all before they decide.
+Report every row that is not settled. None of them blocks the close — a person
+may close a campaign over unfinished work — but show them all before they
+decide. Read the note beside a `dropped` row before repeating the word to
+anyone: it covers four different closes and only one of them is an abandonment.
 
 ### 4. Validate the README, compare, then overwrite the anchor issue body
 
@@ -284,16 +297,17 @@ rm -rf -- "$CAMPAIGN_DIR"
 
 - `agent_status: idle` is a screen reading. A mid-turn pause looks identical to
   a finished agent, so presence in the list is the gate, never the status word.
+- **`dropped` covers four closes and its note says which**: `not planned`,
+  `duplicate` (the work moved to another issue), `completed, no merged pull
+  request` (closed by hand, with nothing to merge), and `closed, no reason
+  recorded` for an issue closed before GitHub had the field. All four are
+  settled, because settled is "the issue is closed". Only the first reads as
+  abandonment, so quote the note, not the word.
 - `state_reason` is spelled lowercase by `gh api` (`completed`, `not_planned`)
   and uppercase by `gh issue list --json stateReason` (`COMPLETED`,
   `NOT_PLANNED`). A comparison written against the wrong one matches nothing and
-  reads every subtask as unsettled.
-- A third value, `duplicate`, also appears. Treat it as settled — the work moved
-  to another issue — and say that you did, since it is a reading the contract
-  does not name.
-- `state_reason` is `null` on an issue closed before GitHub added the field.
-  Closed with no reason is not the same as unsettled; report it as unknown
-  rather than folding it into either side.
+  reads every subtask as unsettled — which is half of why the reading lives in
+  one script instead of in prose here.
 - **After a squash merge, ancestry is the wrong test, and squash is the default
   merge here.** `git branch --no-merged <base>` walks ancestry, and a squash
   merge writes a *new* commit onto the base, so the topic branch stays
