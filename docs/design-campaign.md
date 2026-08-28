@@ -58,31 +58,24 @@ Issues live on the repository whose code changes — that is where a reviewer
 expects them, and it is what a pull request can close. A campaign spans
 repositories, so its issues are scattered by construction.
 
-The first design used GitHub's own cross-reference timeline as a free index.
-That was rejected on two checks: the active repositories here are private while
-the container repository is public, and GitHub suppresses a private-to-public
-cross-reference from anyone without access to the private side; and a timeline
-is not readable with `gh issue view` at all, only through the GraphQL timeline
-API. A free index nobody can query is not an index.
+Four schemes were modelled in Alloy (`docs/alloy/`) and checked against index
+totality, machine independence, and reconstitution:
 
-What replaces it needs no search and no API beyond `gh issue list`:
+| scheme | verdict |
+| --- | --- |
+| back-reference line, read from GitHub's cross-reference timeline | append-only, so a subtask moved out stays indexed forever; the anchor reconstitutes a growing superset. Also suppressed private-to-public, and unreadable with `gh issue view` |
+| a checklist in the anchor body | a second write to another object; skipping it loses the issue with nothing to contradict it — the only silent total loss of the four |
+| a `campaign-<N>` label per issue | correct, but the label must be created per repository and survives removal as a stale mark |
+| **GitHub's native sub-issue link** | **the only one where the index equals membership in every reachable state** |
 
-- The anchor issue body carries a **`Repos:` list** — the member repositories.
-  It changes only when a repository joins the campaign, which is rare, unlike a
-  per-issue checklist that must be edited on every subtask. The campaign's
-  `README.md` carries the same five sections as the issue body, `Repos:`
-  included, so syncing the two is an overwrite rather than a merge — a README
-  shaped differently from the body forces the sync to compose, and a compose
-  step is where the repository index gets silently dropped.
-- Every member issue carries the **label `campaign-<N>`** and one body line
-  `Campaign: kalaluthien/agent-workspace#N`. The label is what a query matches;
-  the line is what a human clicks.
-- The index is therefore a loop over a short, known list:
-  `gh issue list -R <repo> --label campaign-<N>` for each entry in `Repos:`.
+The sub-issue link wins on cost as well as correctness: `gh issue create
+--parent <anchor-url>` makes the link in the same command that creates the
+issue, so there is no second write to forget, and `gh api
+repos/.../issues/<N>/sub_issues` reads the whole index in one call with no
+repository list to loop over and no search index to have caught up.
 
-This works identically on public and private repositories, needs no search
-indexing to have caught up, and reads the same from the phone. Nothing has to be
-maintained except the repository list.
+Its one open question was whether a sub-issue may live in a different
+repository, and a private one, under a public parent. Probed 2026-08-28: it can.
 
 ## Completion and liveness are different questions
 
