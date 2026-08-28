@@ -1,7 +1,7 @@
 # Several campaign sessions at once
 
 `campaign-multi.als` drops the one-session assumption the other models share:
-`Session` is a sig and every event carries its actor. 34 commands, all run:
+`Session` is a sig and every event carries its actor. 35 commands, all run:
 
 ```sh
 alloy exec -f -o /tmp/alloy-multi -t text -c '*' spec/alloy/campaign-multi.als
@@ -16,12 +16,16 @@ alloy exec -f -o /tmp/alloy-multi -t text -c '*' spec/alloy/campaign-multi.als
 | `R2_DuplicateCampaign` | SAT | Survey(S0), Survey(S1) — neither sees a covering campaign — FileAnchor(S1), FileAnchor(S0). Two anchors, one scope. |
 | `R3_DeleteUnderWorkingSession` | SAT | same slug, same date, one directory. S1 deletes it while S0 holds the campaign with checkouts on disk and **no agent is live anywhere**. |
 | `R3b_CloseFromAnotherMachine` | SAT | S0 closes the anchor from M0 while S1's delegate is live on M1; the local gate reads closable. |
-| `R4_SameBranchTwice` | SAT | two subtasks in R0, two sessions, same `<topic>`: one branch, two delegates, one checkout. `R4d`: same subtask, even. |
+| `R4_SameBranchTwice` | SAT | against `c<N>/<topic>`, the form this was found on: two subtasks in R0, two sessions, same `<topic>`, one branch, two delegates, one checkout. `R4d`: same subtask, even. |
 | `R4c_CheckoutSwitchedUnderAgent` | SAT | S0's `acquire-repo` switches the shared checkout off S1's live delegate's branch. |
 | `R5_RemoteStandDownLosesWork` | SAT | S0 on M0 stands an M1 agent down. The branch is on the remote, so S0's only check passes; work living only on M1 dies with the pane. |
 
 Clean: `R4b` SAT — `c<N>` still separates campaigns; the collision is
-intra-campaign only. `R5c` SAT — a non-launcher on the agent's own machine
+intra-campaign only.
+`R4e` SAT — under `c<N>/<issue>-<topic>`, the form AGENTS.md adopted in answer
+to R4, two sessions delegating the *same* subtask still share one branch. The
+issue number separates two subtasks, and there is only ever one of it per
+subtask; that the numbered form separates them is definitional and is not run. `R5c` SAT — a non-launcher on the agent's own machine
 retires it safely, so co-location is the axis, not ownership (`R5b` SAT:
 on-the-remote without a clean tree is reachable).
 
@@ -47,17 +51,17 @@ closing it — read and create are not atomic.
 
 ## Not expressed
 
-- Settlement is "the issue is closed"; the merged-PR half stays campaign-D's.
+- Settlement is "the issue is closed"; the merged-PR half stays campaign-core's.
 - "Covers the request" is a static bit, not a judgement over Scope prose.
 - No `gh` latency: each window measured is a minimum.
-- Nothing repairs 3, 4 or 5 — each is a contract change, yours to write: a gate
-  that sees a live *session*; `<topic>` chosen where both sessions read it;
-  `STAND DOWN`'s pre-check named as local. All three have since been written,
-  outside the model, so the runs above still read SAT: 4 by putting the
-  subtask's issue number in the branch, `c<N>/<issue>-<topic>`; 5 by naming the
-  pre-check local in `spec/agent-protocol.md` and retiring only an agent on your
-  own machine; 3 only narrowed, by announcing the close on the anchor issue and
-  reading the comments back, which a session that never comments still slips
-  past.
+- Nothing repaired 3, 4 or 5 inside the model — each was a contract change,
+  and all three have since been written outside it, so the runs above still
+  read SAT: 4 by putting the subtask's issue number in the branch,
+  `c<N>/<issue>-<topic>`, which answers it for two *subtasks* only — `R4e` is
+  what it leaves, two sessions delegating the same subtask onto one branch; 5
+  by naming `STAND DOWN`'s pre-check local in `spec/agent-protocol.md` and
+  retiring only an agent on your own machine; 3 only narrowed, by announcing
+  the close on the anchor issue and reading the comments back, which a session
+  that never comments still slips past.
 - `R3c` UNSAT restates the close rule, so `R3b` reads as that rule being
   unreadable, not failing.

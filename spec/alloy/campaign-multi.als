@@ -1,7 +1,7 @@
 /*
  * Several campaign sessions at once.
  *
- * campaign-{A,B,C,D}.als ask "can this design go wrong?"; campaign-e2e.als asks
+ * campaign-core.als asks "can this design go wrong?"; campaign-e2e.als asks
  * "can a real campaign do this?". Both assume ONE campaign session. This file
  * drops that assumption and asks what breaks.
  *
@@ -16,15 +16,17 @@
  *   - kept: Repo/Container, Machine, Issue/home, Open, Campaign/anchor/members,
  *     Agent/task/st, dirs, the observable-event idiom (`Now`).
  *   - dropped: PR, Merged, pr, complete. Settlement collapses to "the issue is
- *     closed". campaign-D already proved the closed-and-merged half, and none of
+ *     closed". campaign-core already proved the closed-and-merged half, and none of
  *     the five questions here turns on it. Named again under "Not expressed".
- *   - dropped: `sub`. campaign-D proved index = membership under the sub-issue
+ *   - dropped: `sub`. campaign-core proved index = membership under the sub-issue
  *     scheme in every reachable state, so this model takes that as given and
  *     writes `idx[c] = c.members`.
  *   - added: Session, and with it the survey/file/adopt/read/edit/sync events
  *     that make the anchor issue body a written object rather than a fact.
  *   - added: Topic and `co`, the branch checked out in a campaign's clone of a
- *     repository on a machine, so an acquire can race another session's.
+ *     repository on a machine, so an acquire can race another session's. Both
+ *     branch forms are here: the one R4 was found against and the numbered one
+ *     AGENTS.md adopted in answer to it.
  *   - added: Visible and Pushed on an Agent -- what a remote session can check
  *     versus what only a co-located one can.
  *
@@ -95,7 +97,7 @@ fact WellFormed {
 
 fun campaignOf[i: Issue]: lone Campaign { members.i }
 
-/* campaign-D's verdict, imported rather than re-derived: under the sub-issue
+/* campaign-core's verdict, imported rather than re-derived: under the sub-issue
    scheme the index equals membership in every reachable state. */
 fun idx[c: Campaign]: set Issue { c.members }
 
@@ -103,11 +105,21 @@ fun idx[c: Campaign]: set Issue { c.members }
    directory exists on its machine. Derived, so no event has to maintain it. */
 fun working: set Session { { s: Session | some s.holds and s.smach in s.holds.dirs } }
 
-/* The branch an agent works: c<N>/<topic>. Two agents share a branch only when
-   both the campaign and the topic match -- that is what the c<N> prefix buys,
-   and here it is true by definition, not by proof. */
-pred sameBranch[a1, a2: Agent] {
+/* The branch an agent works, in the form the design carried when R4 below was
+   found: c<N>/<topic>. Two agents share it when the campaign and the topic
+   match -- true by definition of the name, not by proof. */
+pred sameBranchByTopic[a1, a2: Agent] {
   campaignOf[a1.task] = campaignOf[a2.task] and a1.atopic = a2.atopic
+}
+
+/* The form AGENTS.md adopted in answer to R4: c<N>/<issue>-<topic>. The
+   subtask's issue number joins the campaign number, so two agents share a
+   branch only when campaign, subtask and topic all match. That it separates two
+   subtasks is definitional and is not run; what R4e asks is what it leaves. */
+pred sameBranch[a1, a2: Agent] {
+  campaignOf[a1.task] = campaignOf[a2.task]
+  and a1.task = a2.task
+  and a1.atopic = a2.atopic
 }
 
 /* Settlement, collapsed: the subtask issue is closed. */
@@ -529,6 +541,19 @@ pred R4_SameBranchTwice {
     a1.task.home = r and a2.task.home = r
     a1.atopic = a2.atopic
     eventually (a1.st = Live and a2.st = Live
+                and some campaignOf[a1.task] and sameBranchByTopic[a1, a2])
+  }
+}
+
+/* R4e. The adopted form, and what it does not fix. Two sessions that delegate
+   the SAME subtask still land on one branch: the issue number separates two
+   subtasks, and there is only ever one of it per subtask. AGENTS.md names the
+   branch rule as answering the two-subtask collision only, and this is the
+   residual it leaves standing. */
+pred R4e_NumberedBranchStillShared {
+  some disj a1, a2: Agent {
+    a1.launcher != a2.launcher
+    eventually (a1.st = Live and a2.st = Live
                 and some campaignOf[a1.task] and sameBranch[a1, a2])
   }
 }
@@ -555,7 +580,7 @@ pred R4b_CrossCampaignCoexists {
     a1.atopic = a2.atopic
     eventually (a1.st = Live and a2.st = Live
                 and campaignOf[a1.task] != campaignOf[a2.task]
-                and not sameBranch[a1, a2])
+                and not sameBranchByTopic[a1, a2])
   }
 }
 
@@ -650,6 +675,7 @@ run R3c_GlobalCloseRuleBlocks    for 3 Issue, 1 Campaign, 2 Session, 1 Agent, 2 
 run R4_SameBranchTwice           for 4 Issue, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 14 steps
 run R4b_CrossCampaignCoexists    for 4 Issue, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 16 steps
 run R4d_SameSubtaskTwice         for 4 Issue, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 14 steps
+run R4e_NumberedBranchStillShared  for 4 Issue, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 14 steps
 run R4c_CheckoutSwitchedUnderAgent for 3 Issue, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Topic, 14 steps
 
 run R5_RemoteStandDownLosesWork  for 3 Issue, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 14 steps
