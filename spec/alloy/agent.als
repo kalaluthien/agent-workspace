@@ -243,7 +243,19 @@ sig Agent {
   task:     one Issue,          -- the member issue it works
   host:     one Machine,        -- the machine whose checkout it runs in
   launcher: one Session,        -- the session that put it there
-  topic:    one Topic           -- the <topic> half of its branch
+  topic:    one Topic,          -- the <topic> half of its branch
+  /* AN EXECUTOR MAY BE A SESSION. When it is, `peer` is that session and the
+     executor put itself there: it arrived in the container root, found a live
+     holder, took a subtask and claimed its branch. Everything else about it is
+     an executor's -- it answers STATUS, sends REPORT and BLOCKED, stops on
+     STAND DOWN, and never writes the anchor.
+
+     The field is what makes the address question askable. A herdr delegate is
+     `--name`d its branch at launch, so the launching session knows how to reach
+     it by construction; an executor session was named by nothing the holder
+     chose, and its ListAgents name is the one thing only it knows. That is what
+     CLAIMED carries and what `Addressed` below records. */
+  peer:     lone Session
 }
 
 var sig Launched in Agent {}    -- an executor exists, or existed, for this claim
@@ -254,6 +266,9 @@ var sig Local    in Agent {}    -- it holds work that exists ONLY on its host:
 var sig Visible  in Agent {}    -- its branch is on the remote: checkable from
                                 -- anywhere, and a different fact from Local
 var sig Reported in Agent {}    -- has sent REPORT: a claim, and nothing else
+var sig Addressed in Agent {}   -- the holding session can reach it: a delegate
+                                -- from its --name, an executor session only
+                                -- once it has sent CLAIMED
 var sig Asked    in Agent {}    -- a STATUS is outstanding
 var sig Answered in Agent {}    -- it answered the outstanding STATUS
 var sig Waiting  in Agent {}    -- has sent BLOCKED and is waiting on a decision
@@ -267,6 +282,8 @@ one sig Target { var agent: lone Agent }
 
 fact AgentWellFormed {
   all c: Campaign | c.anchor not in Agent.task
+  /* An executor session is its own launcher and runs on its own machine. */
+  all a: Agent | some a.peer implies (a.launcher = a.peer and a.host = a.peer.smach)
   always Live in Launched
   always Retired in Launched
   always no Live & Retired
@@ -283,10 +300,25 @@ pred liveUnder[c: Campaign] {
 pred liveUnderLocally[c: Campaign, m: Machine] {
   some a: Agent | a in Live and a.host = m and (a.task in c.members or m in dirsOf[c])
 }
+/* And what it can read AND ATTRIBUTE, which is a strictly smaller set.
+
+   A herdr delegate is listed by `herdr agent list` with its `cwd` under the
+   campaign tree, so the gate reads it whether or not anyone addressed it. An
+   executor session is a peer in `ListAgents`: its name is visible and the
+   subtask it works is not, so until it has sent CLAIMED the gate cannot tell it
+   from a session working something else entirely. LIVENESS IS READABLE FOR BOTH;
+   ATTRIBUTION IS NOT, and the close gate needs attribution. A1 below is that
+   gap, and `announceAtClaim` is what closes it. */
+pred liveAndReadable[c: Campaign, m: Machine] {
+  some a: Agent | a in Live and a.host = m
+    and (a.task in c.members or m in dirsOf[c])
+    and (no a.peer or a in Addressed)
+}
 /* ledger's `closable` is the GitHub half -- what scripts/campaign-settlement
-   prints, and all it can see. These two add the half that needs an executor. */
+   prints, and all it can see. These three add the half that needs an executor. */
 pred closableWithAgents[c: Campaign]        { closable[c] and not liveUnder[c] }
 pred closableLocally[s: Session, c: Campaign] { closable[c] and not liveUnderLocally[c, s.smach] }
+pred closableAsRead[s: Session, c: Campaign]  { closable[c] and not liveAndReadable[c, s.smach] }
 
 /* The branch an executor works, in the form the design carried when R4 below
    was found: campaign-<N>/<topic>. Two executors share it when the campaign and
@@ -316,16 +348,21 @@ pred sameBranch[a1, a2: Agent] {
 
 /* ---------------- observable events ---------------- */
 
-one sig Work, Push, Status, Answer, Report, Blocked, Decide,
+one sig Work, Push, Announce, Status, Answer, Report, Blocked, Decide,
         Confirm, ConfirmElsewhere, StandDown, Retire, AgentDie extends Event {}
 
 fun agentOwn: set Event {
-  Work + Push + Status + Answer + Report + Blocked + Decide
+  Work + Push + Announce + Status + Answer + Report + Blocked + Decide
   + Confirm + ConfirmElsewhere + StandDown + Retire + AgentDie
 }
+/* `MergePR` is NOT here. session.als gives it an actor; this layer only guards
+   who that actor may be, which is a discipline over the event rather than a
+   disjunct on it, so the merge still falls through and frames every bit above. */
 fun agentActed: set Event { agentOwn + Launch + Release }
 
-pred keepClaims   { Reported' = Reported and Asked' = Asked and Answered' = Answered and Waiting' = Waiting }
+/* `Addressed` rides with the three message bits because CLAIMED is a message,
+   and because every event that keeps one keeps all four. */
+pred keepClaims   { Reported' = Reported and Asked' = Asked and Answered' = Answered and Waiting' = Waiting and Addressed' = Addressed }
 pred keepShutdown { StoodDown' = StoodDown and Retired' = Retired }
 pred keepWork     { Live' = Live and Local' = Local and Visible' = Visible and Confirmed' = Confirmed }
 pred keepBorn     { Launched' = Launched }
@@ -347,8 +384,41 @@ pred launch[a: Agent] {
   Launched' = Launched + a
   Live'     = Live + a
   Local' = Local and Visible' = Visible and Confirmed' = Confirmed
-  keepClaims and keepShutdown
+  /* A delegate is addressable the moment it exists, because the launching
+     session chose its `--name` and that name is its branch. An executor session
+     is not: nothing the holder chose names it, so it starts unaddressed and
+     `announce` is the only thing that changes that. */
+  (no a.peer implies Addressed' = Addressed + a else Addressed' = Addressed)
+  Reported' = Reported and Asked' = Asked and Answered' = Answered
+  and Waiting' = Waiting
+  keepShutdown
   Target.agent = a
+}
+
+/* CLAIMED -- executor to campaign, sent once at the claim.
+
+   It carries `<branch> <ListAgents name>` and nothing else. The branch and the
+   subtask are already GitHub facts, readable by anyone with the anchor; the
+   address is the one thing only the executor knows, which is the same test every
+   other message in this protocol has to pass. It is the executor session's
+   equivalent of the `--name` a delegate is launched with -- one is chosen by the
+   launcher before the process exists, the other is announced by a process the
+   launcher never started.
+
+   PROBED 2026-08-28: a running session can be renamed, but only by a person
+   typing `/rename` into its pane -- it is not something a session can run for
+   itself. So renaming to the flattened branch stays optional and CLAIMED stays
+   the mechanism, rather than the other way round.
+
+   Guarded on `some a.peer` because a delegate has nothing to announce. */
+pred announce[a: Agent] {
+  a in Live
+  some a.peer
+  Addressed' = Addressed + a
+  Reported' = Reported and Asked' = Asked and Answered' = Answered
+  and Waiting' = Waiting
+  keepWork and keepShutdown and keepBorn
+  Now.ev = Announce and Now.issue = a.task and Target.agent = a and no By.actor
 }
 
 /* The executor produces work that exists only on its own disk. Note what this
@@ -398,10 +468,11 @@ pred push[a: Agent] {
    That makes a late reply ordinary rather than a symptom, and it is why asking
    and answering are two events here and why rule 3 exists. */
 pred status[a: Agent] {
+  a in Addressed                -- you cannot ask an executor you cannot address
   a.task in By.actor.holds.members
   Asked' = Asked + a
   Answered' = Answered - a
-  Reported' = Reported and Waiting' = Waiting
+  Reported' = Reported and Waiting' = Waiting and Addressed' = Addressed
   keepWork and keepShutdown and keepBorn
   Now.ev = Status and Now.issue = a.task and Target.agent = a
 }
@@ -412,6 +483,7 @@ pred answer[a: Agent] {
   a in Live and a in Asked
   Answered' = Answered + a
   Asked' = Asked and Reported' = Reported and Waiting' = Waiting
+  and Addressed' = Addressed
   keepWork and keepShutdown and keepBorn
   Now.ev = Answer and Now.issue = a.task and Target.agent = a and no By.actor
 }
@@ -436,6 +508,7 @@ pred report[a: Agent] {
   a in Live
   Reported' = Reported + a
   Asked' = Asked and Answered' = Answered and Waiting' = Waiting
+  and Addressed' = Addressed
   keepWork and keepShutdown and keepBorn
   Now.ev = Report and Now.issue = a.task and Target.agent = a and no By.actor
 }
@@ -452,6 +525,7 @@ pred blocked[a: Agent] {
   a in Live and a not in Waiting
   Waiting' = Waiting + a
   Reported' = Reported and Asked' = Asked and Answered' = Answered
+  and Addressed' = Addressed
   keepWork and keepShutdown and keepBorn
   Now.ev = Blocked and Now.issue = a.task and Target.agent = a and no By.actor
 }
@@ -461,6 +535,7 @@ pred decide[a: Agent] {
   a.task in By.actor.holds.members
   Waiting' = Waiting - a
   Reported' = Reported and Asked' = Asked and Answered' = Answered
+  and Addressed' = Addressed
   keepWork and keepShutdown and keepBorn
   Now.ev = Decide and Now.issue = a.task and Target.agent = a
 }
@@ -561,14 +636,15 @@ pred aRelease {
 
 pred agentInit {
   no Launched and no Live and no Local and no Visible
-  no Reported and no Asked and no Answered
+  no Reported and no Addressed and no Asked and no Answered
   no Waiting and no Confirmed and no StoodDown and no Retired
 }
 
 pred agentStep {
   (Now.ev = Stutter and agentFrame and no Target.agent)
   or (some a: Agent |
-        launch[a] or work[a] or push[a] or status[a] or answer[a] or report[a]
+        launch[a] or work[a] or push[a] or announce[a]
+        or status[a] or answer[a] or report[a]
         or blocked[a] or decide[a] or confirm[a] or confirmElsewhere[a]
         or standDown[a] or retire[a] or agentDie[a])
   or aRelease
@@ -657,12 +733,56 @@ pred localCheckedShutdown  { always (Now.ev = StandDown implies Target.agent not
 pred claimBeforeLaunch { always (Now.ev = Launch implies Now.issue in By.actor.claims) }
 pred claimAtomic       { always (Now.ev = Claim  implies Now.issue not in Claimed) }
 
-/* The close rule as written, plus the honest local reading of it. */
+/* The close rule as written, plus the honest local reading of it, plus the
+   reading a session can actually perform -- which is the local one narrowed to
+   the executors it can attribute. */
 pred closeDisciplineFull[c: Campaign] {
   always ((Now.ev = CloseIssue and Now.issue = c.anchor) implies closableWithAgents[c])
 }
 pred closeDisciplineLocal[c: Campaign] {
   always ((Now.ev = CloseIssue and Now.issue = c.anchor) implies closableLocally[By.actor, c])
+}
+pred closeDisciplineAsRead[c: Campaign] {
+  always ((Now.ev = CloseIssue and Now.issue = c.anchor) implies closableAsRead[By.actor, c])
+}
+
+/* CLAIMED AT THE CLAIM, as a discipline: an executor that is live and not yet
+   addressed is announcing in this very step. A delegate satisfies it at launch
+   from its `--name` and is never bound by it further; what it binds is the
+   executor session, whose address nothing else carries.
+
+   Stated over the state rather than over the claim event because the claim is
+   repos.als's `Claim` and happens before the executor exists -- the earliest
+   moment the model can name is the step after the launch, which is what
+   "announce as your first act" means here. */
+pred announceAtClaim {
+  always (all a: Agent | a in Live implies
+            (a in Addressed or (Now.ev = Announce and Target.agent = a)))
+}
+
+/* AN EXECUTOR NEVER MERGES ITS OWN PULL REQUEST.
+
+   Written after a live collision on 2026-08-28: the executor session for #36
+   squash-merged its own pull request in the same minute the holding session sent
+   "do not merge -- landing it is the campaign session's act". Nothing on disk
+   said who merges. AGENTS.md said a subtask "lands by pull request" and the
+   protocol ended at REPORT, so a REPORT that announced a merge was read as
+   notice by the one who sent it and as a request by the one who got it. The rule
+   retires that ambiguity from both ends: the merge is the holder's, and REPORT
+   carries the pull request URL and nothing about what happens next.
+
+   Two conjuncts, and the second is the one worth arguing about. The merge is the
+   HOLDING session's (isHolder), which is what excludes the executor -- an
+   executor session is by definition not the holder of the campaign it works. And
+   the holder must have CONFIRMED the executor itself, co-located, BEFORE it
+   merges: `Target.agent in Reported` would put the executor's own account under
+   the merge, and claim-is-not-evidence binds the holder exactly as it binds
+   everybody else. A REPORT says where to look. */
+pred mergedByHolder {
+  always ((Now.ev = MergePR and some campaignOf[Now.issue]) implies
+            (isHolder[By.actor, campaignOf[Now.issue]]
+             and (some a: Agent | a.task = Now.issue and a in Confirmed
+                    and coLocated[By.actor, a])))
 }
 
 /* ---------------- properties ---------------- */
