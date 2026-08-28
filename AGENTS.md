@@ -61,6 +61,31 @@ with a refusal message pointing at the wrong problem.
 Never run one git command across member repositories, and never commit their
 files here.
 
+# When the container is a member of its own campaign
+
+The container gets cloned into `<campaign>/repos/agent-workspace/`, so one
+repository has two checkouts: the **outer** one the campaign session runs from,
+and the **inner** clone a delegate works in, which the outer git-ignores. Read
+both hazards with one command, before launching a delegate, right after merging
+its pull request, and before the campaign session next edits anything here:
+
+```sh
+CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
+git -C "$CONTAINER" fetch origin -q
+git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0	0"
+```
+
+- **Behind is a merged pull request you have not caught up to.** Editing from
+  here can silently revert work that already landed. `git pull --ff-only`, and
+  read zero again before editing.
+- **Ahead *before* the clone means the delegate will read stale rules.** The
+  clone is cut from `origin/main`, so a delegate launched while the container
+  holds unpushed commits obeys an `AGENTS.md` this session has already
+  superseded. Push first; cloning while ahead is the defect.
+- **A skill edited inside the clone does not change the running campaign**, and
+  that is deliberate — the tool must not move under a session using it. It takes
+  effect only once merged and pulled.
+
 # Running a campaign
 
 **Open** — a person arrives in the container root with a sentence, an issue
