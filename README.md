@@ -59,3 +59,4 @@ Requires `git`, `gh` (authenticated), `herdr`, `uv`, and Python 3.
 
 `AGENTS.md` for the rules. `spec/design-campaign.md` for why they are those
 rules, what was rejected, and which risks are still open.
+`spec/agent-protocol.md` for how a campaign session and its agents talk.

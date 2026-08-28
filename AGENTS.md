@@ -155,6 +155,35 @@ that work is durable. Review feedback gets a fresh session, briefed from the
 pull request — a pane held open across a multi-day review is the expensive
 thing.
 
+# Talking to a repository agent
+
+`spec/agent-protocol.md` is the contract; this is the short form. Address an
+agent by the name given at launch, which `ListAgents` resolves — herdr's pane
+label is not an address.
+
+Four messages, carrying **only what the agent alone knows**. Anything a message
+says about finished work duplicates a GitHub fact, and the copy is what goes
+stale.
+
+| message | direction | carries |
+| --- | --- | --- |
+| `STATUS` | campaign → agent | doing what, blocked on what, what exists only on this machine, safe to stop |
+| `REPORT` | agent → campaign | a pull request URL, once, unsolicited |
+| `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
+| `STAND DOWN` | campaign → agent | finish the turn and stop |
+
+- **A claim in a message is never evidence.** It says where to look; then look,
+  in GitHub, yourself.
+- **Shutdown is two steps.** `STATUS`, verify durability in GitHub, then
+  `STAND DOWN`. One-step "you're done, quit" makes the delegate's own account
+  the reason for destroying its workspace.
+- **Silence is a liveness question, not an answer.** Ask once more, then resolve
+  it through herdr and GitHub instead of waiting for a reply that may never come.
+
+Retire finished agents as the campaign runs, not when it closes: a long-lived
+campaign finishes subtasks continuously, and panes accumulate until someone
+sweeps them.
+
 A campaign may not be closed while any agent is live under its tree, and a
 repository may not be dropped from a campaign while an agent is working one of
 its subtasks.
