@@ -67,6 +67,7 @@ Tear down with `gh issue close $ANCHOR -R kalaluthien/agent-workspace` and
 | 14 | follow-up after the anchor closed | fixture | a closed anchor gains an `open` subtask |
 | 15 | run the whole campaign with no local directory | real | listing reaches `closable` from a machine that never cloned |
 | 16 | the container is a member of its own campaign | real | container checkout is `0 0` against `origin/main` at every checkpoint |
+| 17 | a clone current when cut, stale when the delegate starts | real | the clone reads `0 0` against `origin/main` in the same shell that launches |
 
 ## The steps
 
@@ -202,10 +203,12 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # "<behin
   checkout has not caught up. Editing from here can silently revert the merged
   work, and nothing in `AGENTS.md` currently says to pull. Fix with
   `git -C "$CONTAINER" pull --ff-only` and re-read `0` before editing.
-- **`ahead > 0` *before the clone* is hazard 2.** The inner clone is cut from
-  `origin/main`, so a delegate launched now reads an `AGENTS.md` older than the
-  one the campaign session is following, and obeys rules already superseded.
-  Push before cloning; a clone taken while `ahead > 0` is the defect.
+- **`ahead > 0` *before the clone* was written as hazard 2, and it is the
+  wrong invariant.** A live run disproved it: the container read `0\t0`
+  immediately before the clone, and three commits landed on `origin/main`
+  between the clone and the launch. Pushing before cloning is still worth doing
+  and is no longer sufficient; the check that matters is inside the clone at
+  launch, and it is scenario 17.
 - **Hazard 3 is safe, but do not read the model as proof.** Edits to
   `.claude/skills/` inside the clone cannot change the running campaign, because
   the loaded copy is the outer container's. The model agrees — but only because
@@ -228,6 +231,31 @@ Both were widened here and, on 2026-08-28, in `campaign-D.als` itself, where all
 fifteen verdicts came back identical. `spec/alloy/README.md` carries the
 before/after probes that show the new states are genuinely reachable rather than
 merely unvisited. `spec/design-campaign.md` is untouched.
+
+**17 — current when cut, stale when launched.** The clone is cut from
+`origin/main`, then `origin/main` moves, then the delegate starts. Nothing
+reports it, and the delegate obeys an `AGENTS.md` this campaign session has
+already superseded. Run it deliberately: clone `agent-workspace` into
+`<campaign>/repos/`, merge any container pull request, then read the clone.
+
+```sh
+git -C <campaign>/repos/<repo> fetch origin -q
+git -C <campaign>/repos/<repo> rev-list --left-right --count origin/main...HEAD
+```
+
+Pass: the pair reads `0\t0` in the same shell that then launches the delegate,
+after a `git -C <campaign>/repos/<repo> pull --ff-only` if it did not.
+Real-safe — a fetch, a compare and an ordinary pull.
+
+`S17a_CloneBehindAtLaunch` is SAT, so the stale launch is reachable.
+`S17b_OldCloneRuleInsufficient` is the finding: the same trace with the
+superseded rule — never clone while the container is ahead — enforced for its
+whole length is **still SAT**. The rule is not wrong, it is read in the wrong
+place. `S17c_PullBeforeLaunchAdmitsLaunch` is SAT and is the control: checking
+inside the clone at launch still admits a container pull request merging
+mid-campaign and a delegate starting afterwards, so the repair is not green by
+forbidding the scenario. The repair itself is not run as a check — a guard on
+"behind at launch" that then finds no behind launch restates the guard.
 
 ## What the scenarios do not cover
 

@@ -18,6 +18,9 @@
  *     the protocol's point: a claim is not evidence.
  *   - added: the settlement vocabulary a close decision actually reads --
  *     `dropped`, `settled`, `closable`, `campaignClosed`.
+ *   - added: `CloneBehind`, `PullClone` and `Launch`, for scenario 17. The
+ *     clone's distance from origin/main is not the outer checkout's, and the
+ *     hazard is read at launch rather than before the clone.
  *
  * No assertions here. The checks live in campaign-D.als and are not repeated.
  *
@@ -81,6 +84,11 @@ var sig Merged in PR {}         -- pull requests currently merged
    from origin/main. Two bits per machine say everything the hazards need. */
 var sig Behind   in Machine {}  -- the outer checkout is behind origin/main
 var sig Unpushed in Machine {}  -- the outer checkout holds commits origin lacks
+/* The INNER clone's own distance from origin/main. Separate from `Behind`
+   because the two are cleared by different acts: a clone is cut fresh from
+   origin/main, which says nothing about the outer checkout it sits inside. Only
+   meaningful for a machine that has a campaign directory. */
+var sig CloneBehind in Machine {}
 
 /* D's original reading, kept runnable so the widening above stays visible. */
 pred containerIsAnchorOnly { always all i: Issue | i.home = Container implies i in Campaign.anchor }
@@ -131,7 +139,8 @@ pred mergeClosed[s: set Issue] {
 
 abstract sig Event {}
 one sig Stutter, OpenPR, MergePR, CloseIssue, AddMember, RemoveMember,
-        AgentDie, DeleteDir, CreateDir, Report, PullContainer, CommitLocal extends Event {}
+        AgentDie, DeleteDir, CreateDir, Report, PullContainer, CommitLocal,
+        PullClone, Launch extends Event {}
 
 one sig Now {
   var ev:        one Event,
@@ -223,6 +232,25 @@ pred pullContainer[m: Machine] {
   Now.ev = PullContainer and no Now.evIssue and Now.evMachine = m
 }
 
+/* `git -C <campaign>/repos/<repo> pull` inside the clone. */
+pred pullClone[m: Machine] {
+  m in CloneBehind
+  Behind' = Behind and Unpushed' = Unpushed
+  githubFrame and dirs' = dirs and st' = st
+  Now.ev = PullClone and no Now.evIssue and Now.evMachine = m
+}
+
+/* The moment a delegate is started in this machine's clone. An observable
+   marker only -- it moves no agent, because what scenario 17 asks about is when
+   the freshness check happens, not what the delegate then does. The agent-state
+   half of a launch is campaign-multi's. */
+pred launchDelegate[m: Machine] {
+  m in Campaign.dirs
+  Behind' = Behind and Unpushed' = Unpushed
+  githubFrame and dirs' = dirs and st' = st
+  Now.ev = Launch and no Now.evIssue and Now.evMachine = m
+}
+
 /* An edit committed in the outer container and not yet pushed. */
 pred commitLocal[m: Machine] {
   m not in Unpushed
@@ -243,7 +271,7 @@ pred init {
   some Campaign.members
   all a: Agent | a.st = Live
   all a: Agent | some c: Campaign | a.task in c.members and a.host in c.dirs
-  no Behind and no Unpushed
+  no Behind and no Unpushed and no CloneBehind
   initIdx
 }
 
@@ -253,7 +281,8 @@ pred step {
   or (some c: Campaign, i: Issue | addMember[c,i] or removeMember[c,i])
   or (some a: Agent | agentDie[a] or agentReport[a])
   or (some c: Campaign, m: Machine | deleteDir[c,m] or createDir[c,m])
-  or (some m: Machine | pullContainer[m] or commitLocal[m])
+  or (some m: Machine | pullContainer[m] or commitLocal[m]
+                       or pullClone[m] or launchDelegate[m])
 }
 
 /* Merging a pull request against the container leaves every outer checkout
@@ -267,6 +296,17 @@ fact CheckoutFrame {
     (Unpushed' = Unpushed and
      ((Now.ev = MergePR and Now.evIssue.home = Container)
         implies Behind' = Machine else Behind' = Behind)))
+}
+
+/* The clone's bit, moved by three acts and nothing else: a merged container
+   pull request leaves every existing clone behind origin/main; cutting the
+   clone and pulling it each make one current again. */
+fact CloneFrame {
+  always ((Now.ev = MergePR and Now.evIssue.home = Container)
+    implies CloneBehind' = CloneBehind + Campaign.dirs
+    else ((Now.ev in CreateDir + PullClone)
+      implies CloneBehind' = CloneBehind - Now.evMachine
+      else CloneBehind' = CloneBehind))
 }
 
 fact Trace { init and always step }
@@ -564,6 +604,60 @@ pred S16d_CloneFromUnpushedContainer {
   }
 }
 
+/* --- 17. The clone that was current when cut and stale when launched --- */
+
+/* The rule as it was written before a live run disproved it: never clone while
+   the outer container holds commits origin lacks. */
+pred pushBeforeClone { always (Now.ev = CreateDir implies no Unpushed) }
+
+/* The rule AGENTS.md now carries: fetch and compare inside the clone, at
+   launch. Stating it and then finding no behind launch restates the guard, so
+   what is run below is its control, not the guard. */
+pred pullCloneAtLaunch { always (Now.ev = Launch implies Now.evMachine not in CloneBehind) }
+
+/* The three acts in order: the clone is cut, origin/main then moves under it,
+   and the delegate starts in a clone that is behind. Ordered explicitly --
+   written as three unordered `eventually`s this also reads SAT on a clone cut
+   after the merge, which is not the finding. */
+pred cloneThenMergeThenLaunch[c: Campaign, i: Issue, m: Machine] {
+  i in c.members and i.home = Container
+  eventually (Now.ev = CreateDir and Now.evMachine = m
+    and after eventually (Now.ev = MergePR and Now.evIssue = i
+      and after eventually (Now.ev = Launch and Now.evMachine = m
+                            and m in CloneBehind)))
+}
+
+/* 17a. It is reachable at all: a delegate launched into a stale clone obeys an
+        AGENTS.md the campaign session has already superseded, and nothing
+        reports it. */
+pred S17a_CloneBehindAtLaunch {
+  one c: Campaign | some i: Issue, m: Machine | cloneThenMergeThenLaunch[c, i, m]
+}
+
+/* 17b. The superseded rule, enforced for the whole trace, does not stop it.
+        This is the live run's finding as a model result: the container read
+        clean immediately before the clone, and the remote moved between the
+        clone and the launch. The rule is not wrong, it is checked in the wrong
+        place. */
+pred S17b_OldCloneRuleInsufficient {
+  pushBeforeClone
+  one c: Campaign | some i: Issue, m: Machine | cloneThenMergeThenLaunch[c, i, m]
+}
+
+/* 17c. Control for the adopted rule: it is not vacuous. A container pull
+        request still merges mid-flight and a delegate still launches, once the
+        clone is pulled first. */
+pred S17c_PullBeforeLaunchAdmitsLaunch {
+  pullCloneAtLaunch
+  one c: Campaign | some i: Issue, m: Machine {
+    i in c.members and i.home = Container
+    eventually (Now.ev = CreateDir and Now.evMachine = m
+      and after eventually (Now.ev = MergePR and Now.evIssue = i
+        and after eventually (Now.ev = PullClone and Now.evMachine = m
+          and after eventually (Now.ev = Launch and Now.evMachine = m))))
+  }
+}
+
 /* ---------------- commands ---------------- */
 
 run S1_HappyPath                for exactly 3 Issue, 2 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 3 Repo, 12 steps
@@ -588,3 +682,6 @@ run S16a_ContainerMemberUnderD      for exactly 2 Issue, 1 PR, exactly 1 Campaig
 run S16b_ContainerBehindAfterMerge  for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, 0 Agent, exactly 2 Repo, 12 steps
 run S16c_BehindForever              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, 0 Agent, exactly 2 Repo, 10 steps
 run S16d_CloneFromUnpushedContainer for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, 0 Agent, exactly 2 Repo, 10 steps
+run S17a_CloneBehindAtLaunch        for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Machine, 0 Agent, exactly 2 Repo, 12 steps
+run S17b_OldCloneRuleInsufficient   for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Machine, 0 Agent, exactly 2 Repo, 12 steps
+run S17c_PullBeforeLaunchAdmitsLaunch for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Machine, 0 Agent, exactly 2 Repo, 14 steps
