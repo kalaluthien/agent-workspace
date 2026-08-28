@@ -71,6 +71,13 @@ fun campaignOf[i: Issue]: lone Campaign { members.i }
 /* Completion is a GitHub fact and mentions no agent. */
 pred complete[i: Issue] { i not in Open and some i.pr and i.pr in Merged }
 
+/* Settlement, the reading AGENTS.md adopted after 7b below: a subtask is
+   settled when its issue is closed, either as completed or as dropped -- closed
+   as not planned, with no merged pull request behind it. Completion alone has no
+   way to say "dropped", which is what 7b's counterexample is. */
+pred dropped[i: Issue] { i not in Open and not complete[i] }
+pred settled[i: Issue] { complete[i] or dropped[i] }
+
 /* ---------------- the index, variant D ---------------- */
 
 sig CampaignD in Campaign { var sub: set Issue }
@@ -280,6 +287,21 @@ assert TerminationDisciplined {
   implies (eventually all c: Campaign, i: c.members | complete[i])
 }
 
+// 7d. Termination under the settlement the design actually adopted. 7b fails
+// because a subtask closed as not planned never reads complete; read both ways,
+// the same traces terminate. This is the repair AGENTS.md states, checked.
+assert TerminationUnderSettlement {
+  ((eventually always Now.ev != AddMember)
+   and weakFairness)
+  implies (eventually all c: Campaign, i: c.members | settled[i])
+}
+
+/* Control for 7d: settlement is strictly weaker than completion at these
+   bounds. Without a reachable member that settles with no pull request at all,
+   7d would be 7b with a synonym. */
+run SettledWithoutMerge { eventually (some i: Campaign.members | settled[i] and no i.pr) }
+                             for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 2 Agent, 3 Repo, 6 steps
+
 run Sanity { eventually (some Merged and some i: Issue | complete[i]) }
                              for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 2 Agent, 3 Repo, 6 steps
 check NoLostWork             for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 2 Agent, 3 Repo, 6 steps
@@ -296,3 +318,4 @@ check NoOrphanIfGuarded      for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 2 Agent, 
 check Termination            for 3 Issue, 2 PR, 1 Campaign, 1 Machine, 1 Agent, 2 Repo, 10 steps
 check TerminationUnderFairness for 3 Issue, 2 PR, 1 Campaign, 1 Machine, 1 Agent, 2 Repo, 10 steps
 check TerminationDisciplined   for 3 Issue, 2 PR, 1 Campaign, 1 Machine, 1 Agent, 2 Repo, 10 steps
+check TerminationUnderSettlement for 3 Issue, 2 PR, 1 Campaign, 1 Machine, 1 Agent, 2 Repo, 10 steps
