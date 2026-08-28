@@ -105,8 +105,10 @@ topic branch is found twice — once by `log --not --remotes`, once by `branch
 report: the overlap is what makes the check hard to fool, while two rows make a
 reader counting blockers see two problems where there is one.
 
-A branch listed by `--no-merged` that is pushed is not a blocker at all; it
-exists on the remote. Say which of the two each row is.
+A branch listed by `--no-merged` is not a blocker if it is pushed, and also not
+a blocker if it was squash-merged — see the gotcha below, because that case is
+gone from the remote and looks exactly like the real thing. Say which of the
+three each row is.
 
 Refuse in this shape, so two refusals written on different days can be read side
 by side:
@@ -215,6 +217,27 @@ rm -rf -- "$CAMPAIGN_DIR"
 - `state_reason` is `null` on an issue closed before GitHub added the field.
   Closed with no reason is not the same as unsettled; report it as unknown
   rather than folding it into either side.
+- **After a squash merge, ancestry is the wrong test, and squash is the default
+  merge here.** `git branch --no-merged <base>` walks ancestry, and a squash
+  merge writes a *new* commit onto the base, so the topic branch stays
+  "unmerged" forever. Pair that with `--delete-branch` and the local branch is
+  also absent from the remote — which is the exact signature of work that exists
+  only on this machine. A campaign whose work is fully landed then reports one
+  false blocker per member repository. The discriminator is content, not
+  ancestry: `git -C <repo> diff --stat <base>..<branch>` empty means the branch
+  changes nothing the base does not already have, and it is safe however the
+  ancestry reads. Check the paths the subtask actually touched too, since a
+  branch cut before the base moved on will diff non-empty on files it never
+  edited. Report such a row as landed, not as a blocker.
+- **`set -- $var` does not word-split in zsh, and this skill is made of gates.**
+  This machine's shell leaves unquoted parameters unsplit, so the common
+  `for pair in a:1 b:2; do set -- $pair` idiom leaves `$2` empty. Here it failed
+  loudly — `gh` answered `invalid issue format: ""` — but the same construct
+  inside a check whose empty result reads as "nothing to report" passes the gate
+  having tested nothing, and a silent pass is indistinguishable from a clean
+  one. Split with a parameter expansion instead (`repo=${spec%%:*}`,
+  `num=${spec##*:}`), and make any gate that can return empty say which of the
+  two it means.
 - `git status --porcelain` never lists ignored files, so the obvious command for
   "nothing local is left" answers clean over a checkout holding a `.env`, a
   build directory, or a downloaded fixture — every one of which dies with the
