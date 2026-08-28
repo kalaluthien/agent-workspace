@@ -15,8 +15,7 @@ Finished when all four hold:
   `CLOSED`;
 - the campaign directory does not exist;
 - no herdr agent's `cwd` is under the path that directory had;
-- the anchor issue body is the campaign README's Intent, Scope, Requirements
-  and Plan, plus a `## Repos` section.
+- the anchor issue body is the campaign README.
 
 ## Procedure
 
@@ -84,17 +83,14 @@ An open subtask is not a blocker — a person may close a campaign over open wor
 
 ### 4. Sync the README into the anchor issue body
 
-The README is the last state of Intent, Scope, Requirements and Plan, and the
-issue is what survives the directory. Read the current body first: it carries
-the `## Repos` list, which the README does not, and overwriting the body drops
-it. Compose the new body as the README plus that section, write it to a file,
-and pass the file.
+The README and the anchor body carry the same five sections, so this is a plain
+overwrite with nothing to merge. The issue is what survives the directory, so
+the README's last state has to land there before step 5.
 
 ```sh
-gh issue edit "$N" -R kalaluthien/agent-workspace --body-file "$BODY_FILE"
+gh issue edit "$N" -R kalaluthien/agent-workspace \
+  --body-file "$CAMPAIGN_DIR/README.md"
 ```
-
-Then read the body back and confirm `## Repos` is still there.
 
 ### 5. Close the issue, then delete the directory
 
@@ -125,6 +121,10 @@ sibling, never a path built by expanding a wildcard.
 - The campaign directory is git-ignored, so nothing in it outside `repos/`
   is under version control at all. `runtime/` dies with the directory by design;
   say so rather than assuming the person knows.
+- The sync is an overwrite, so a README that has lost its `## Repos` section
+  takes the campaign's repository index down with it, without an error. That
+  index is the one thing a campaign has to maintain, and nothing else holds a
+  copy.
 - Closing the anchor issue is what closes the campaign. A deleted directory
   with an open issue is a campaign that still exists and has lost its cache.
 - A second machine may hold the same campaign under a directory whose date
