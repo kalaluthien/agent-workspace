@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# acquire-repo — leave a ready checkout of <owner/repo> at <dest-path>.
+#
+#   scripts/acquire-repo <owner/repo> <dest-path> [--branch <branch>]
+#
+# The one interface through which a campaign gets a repository. A caller asks
+# for a repository, at a path, on a branch; how it got there is not its
+# business.
+#
+# Bash rather than Python: every step of this job already is a `git` or `gh`
+# invocation, so a shell function *is* a strategy, with nothing between the
+# code and the command a person would type by hand. Python would spend most of
+# its lines wrapping subprocess calls, which buries the seam instead of showing
+# it.
+
+set -euo pipefail
+
+usage() {
+	cat >&2 <<'EOF'
+usage: acquire-repo <owner/repo> <dest-path> [--branch <branch>]
+
+Leaves a ready checkout of <owner/repo> at <dest-path>, with <branch> checked
+out (created from the default branch if it exists nowhere yet). Safe to re-run:
+a second call over the same destination converges instead of failing.
+EOF
+	exit 2
+}
+
+log() { printf 'acquire-repo: %s\n' "$*" >&2; }
+die() { printf 'acquire-repo: %s\n' "$*" >&2; exit 1; }
+
+# ---------------------------------------------------------------- arguments
+
+repo=""
+dest=""
+branch=""
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--branch)
+			[ $# -ge 2 ] || usage
+			branch=$2
+			shift 2
+			;;
+		--branch=*)
+			branch=${1#--branch=}
+			shift
+			;;
+		-h|--help) usage ;;
+		-*) die "unknown option: $1" ;;
+		*)
+			if   [ -z "$repo" ]; then repo=$1
+			elif [ -z "$dest" ]; then dest=$1
+			else die "unexpected argument: $1"
+			fi
+			shift
+			;;
+	esac
+done
+
+[ -n "$repo" ] && [ -n "$dest" ] || usage
+case "$repo" in
+	*/*/*|/*|*/) die "expected <owner/repo>, got: $repo" ;;
+	*/*) ;;
+	*) die "expected <owner/repo>, got: $repo" ;;
+esac
+
+command -v git >/dev/null 2>&1 || die "git is not installed"
+
+# ------------------------------------------------------------------- the seam
+#
+# `select_strategy` is the one replaceable step, and `strategy_<name>` is the
+# one replaceable unit of work. `acquire` maps a request to a strategy name,
+# then calls the function of that name and knows nothing else about it.
+#
+# Every strategy takes the same three arguments — repo, dest, branch — and owes
+# the same postcondition: <dest> is a git checkout of <repo> with <branch>
+# checked out, and running it a second time changes nothing. Only `clone` is
+# implemented; it is the default because it is the only one that needs nothing
+# to exist beforehand.
+#
+# Adding a strategy — say a shared local mirror, a worktree cut from another
+# campaign's checkout, a shallow clone, or adopting a checkout already on disk
+# — adds exactly two things:
+#
+#   1. one new function `strategy_mirror()` beside `strategy_clone()`;
+#   2. one new branch inside `select_strategy()` that returns its name.
+#
+# It leaves untouched: the usage text, the argument parsing, `acquire()`,
+# `checkout_branch()`, `install_commit_guard()`, every other `strategy_*`
+# function, and every caller.
+
+select_strategy() {
+	# Arguments (repo, dest, branch) are what a future strategy would decide
+	# on — a mirror path that exists, a sibling checkout of the same repo, a
+	# caller asking for shallow history. Today the answer is unconditional.
+	printf 'clone\n'
+}
+
+strategy_clone() {
+	local repo=$1 dest=$2 branch=$3
+
+	if [ -e "$dest/.git" ]; then
+		local have
+		have=$(remote_slug "$dest") || die "$dest is not a usable git checkout"
+		[ "$have" = "$repo" ] ||
+			die "$dest already holds $have, not $repo — refusing to touch it"
+		log "already present: $dest ($repo)"
+		git -C "$dest" fetch --quiet origin
+	else
+		[ ! -e "$dest" ] || die "$dest exists and is not a git checkout"
+		mkdir -p "$(dirname "$dest")"
+		log "cloning $repo into $dest"
+		if command -v gh >/dev/null 2>&1; then
+			gh repo clone "$repo" "$dest" -- --quiet
+		else
+			git clone --quiet "https://github.com/$repo.git" "$dest"
+		fi
+	fi
+
+	checkout_branch "$dest" "$branch"
+}
+
+# ------------------------------------------------------------ shared helpers
+# Used by every strategy, so a new one adds no copy of them.
+
+# Print the owner/repo an existing checkout's origin points at.
+remote_slug() {
+	local url
+	url=$(git -C "$1" remote get-url origin 2>/dev/null) || return 1
+	url=${url%.git}
+	url=${url#*github.com}
+	url=${url#:}
+	url=${url#/}
+	printf '%s\n' "$url"
+}
+
+checkout_branch() {
+	local dest=$1 branch=$2
+	if [ -z "$branch" ]; then
+		log "on branch $(git -C "$dest" branch --show-current)"
+		return 0
+	fi
+	if [ "$(git -C "$dest" branch --show-current)" = "$branch" ]; then
+		log "already on branch $branch"
+	elif git -C "$dest" show-ref --verify --quiet "refs/heads/$branch"; then
+		git -C "$dest" switch --quiet "$branch"
+		log "switched to local branch $branch"
+	elif git -C "$dest" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+		git -C "$dest" fetch --quiet origin "$branch"
+		git -C "$dest" switch --quiet --track "origin/$branch"
+		log "checked out remote branch $branch"
+	else
+		git -C "$dest" switch --quiet -c "$branch"
+		log "created branch $branch"
+	fi
+}
+
+# Git hooks do not clone, so the guard that blocks direct commits to main has
+# to be installed into every fresh checkout, whatever strategy produced it.
+install_commit_guard() {
+	local dest=$1
+	local guard="$HOME/.claude/git-hooks/no-main-commits"
+	local hooks hook
+
+	[ -x "$guard" ] || { log "warning: no guard at $guard, skipping"; return 0; }
+
+	hooks=$(git -C "$dest" rev-parse --git-path hooks)
+	case "$hooks" in /*) ;; *) hooks="$dest/$hooks" ;; esac
+	mkdir -p "$hooks"
+	hook="$hooks/pre-commit"
+
+	if [ -e "$hook" ] && ! grep -q 'no-main-commits' "$hook"; then
+		log "warning: $hook already exists and does not call the guard."
+		log "warning: add this as its first line: exec-or-call $guard"
+		return 0
+	fi
+
+	printf '%s\n' '#!/usr/bin/env sh' "exec \"$guard\" \"\$@\"" > "$hook"
+	chmod +x "$hook"
+	log "installed the no-main-commits guard"
+}
+
+# ------------------------------------------------------------------- acquire
+
+acquire() {
+	local repo=$1 dest=$2 branch=$3 strategy
+
+	strategy=$(select_strategy "$repo" "$dest" "$branch")
+	command -v "strategy_$strategy" >/dev/null 2>&1 ||
+		die "no such strategy: $strategy"
+
+	log "strategy: $strategy"
+	"strategy_$strategy" "$repo" "$dest" "$branch"
+	install_commit_guard "$dest"
+	log "ready: $dest"
+}
+
+acquire "$repo" "$dest" "$branch"
