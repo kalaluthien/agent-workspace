@@ -78,10 +78,23 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0
 - **Behind is a merged pull request you have not caught up to.** Editing from
   here can silently revert work that already landed. `git pull --ff-only`, and
   read zero again before editing.
-- **Ahead *before* the clone means the delegate will read stale rules.** The
-  clone is cut from `origin/main`, so a delegate launched while the container
-  holds unpushed commits obeys an `AGENTS.md` this session has already
-  superseded. Push first; cloning while ahead is the defect.
+- **The clone must not be behind *at launch*.** The rule first written here —
+  "do not clone while the container is ahead" — is the wrong invariant, and a
+  live run disproved it: the check read `0	0` immediately before both clones,
+  so by that rule the clone was safe, and three commits landed on `origin/main`
+  between the clone and the launch, leaving the delegate `3	0` behind. On a
+  campaign of any length the remote moving in between is normal, not an edge
+  case. So check inside the clone, at launch:
+
+  ```sh
+  git -C <campaign>/repos/<repo> fetch origin -q
+  git -C <campaign>/repos/<repo> rev-list --left-right --count origin/main...HEAD
+  ```
+
+  A delegate launched behind obeys an `AGENTS.md` this session has already
+  superseded, and nothing reports it. Pull the clone, then launch. Pushing the
+  container before cloning is still worth doing, but it is not sufficient and
+  was never the thing that mattered.
 - **A skill edited inside the clone does not change the running campaign**, and
   that is deliberate — the tool must not move under a session using it. It takes
   effect only once merged and pulled.
@@ -255,9 +268,13 @@ a missing agent or a missing commit will sit through it. Anything that clears
 such a prompt is the person's decision, not the campaign session's, so surface
 it rather than answering it.
 
-Do not trust the absence of that reading either: a usage-limit menu blocks a
-pane just as hard and reports `idle`. So pair it with a quiet timer, and treat a
-long quiet as a question to go and look at rather than as progress.
+Do not trust the absence of that reading either. A usage-limit menu blocks a
+pane just as hard and reports `idle`, and so does the folder-trust dialog — a
+delegate sitting on it was reported by `herdr agent start` as `idle` with
+`interactive_ready: true`, and it never reaches `blocked` at all. **Read the
+pane once after every launch.** That is the only check that catches a delegate
+which stopped before it began. Then pair the `blocked` watch with a quiet timer,
+and treat a long quiet as a question to go and look at rather than as progress.
 
 Retire finished agents as the campaign runs, not when it closes: a long-lived
 campaign finishes subtasks continuously, and panes accumulate until someone
