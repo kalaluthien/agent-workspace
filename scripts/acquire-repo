@@ -69,71 +69,79 @@ command -v git >/dev/null 2>&1 || die "git is not installed"
 
 # ------------------------------------------------------------------- the seam
 #
-# `select_strategy` is the one replaceable step, and `strategy_<name>` is the
-# one replaceable unit of work. `acquire` maps a request to a strategy name,
-# then calls the function of that name and knows nothing else about it.
+# `select_strategy` names the strategy; `strategy_<name>` builds a checkout that
+# does not exist yet. Those two are the replaceable pair.
 #
-# Every strategy takes the same three arguments — repo, dest, branch — and owes
-# the same postcondition: <dest> is a git checkout of <repo> with <branch>
-# checked out, and running it a second time changes nothing. Only `clone` is
-# implemented; it is the default because it is the only one that needs nothing
-# to exist beforehand.
+# `acquire()` owns everything that is the same whatever built the checkout: the
+# already-acquired test, the wrong-repository refusal, convergence on a re-run,
+# and installing the commit guard. A strategy therefore only ever runs against a
+# destination that is absent or empty, and never implements idempotency itself.
 #
-# Adding a strategy — say a shared local mirror, a worktree cut from another
-# campaign's checkout, a shallow clone, or adopting a checkout already on disk
-# — adds exactly two things:
+# Only `clone` exists. It is the documented default because it is the only
+# strategy that needs nothing to be on disk beforehand.
 #
-#   1. one new function `strategy_mirror()` beside `strategy_clone()`;
-#   2. one new branch inside `select_strategy()` that returns its name.
+# Adding a strategy — a shared local mirror, a worktree cut from another
+# campaign's checkout, a shallow clone, or adopting a checkout already on disk —
+# costs, honestly:
+#
+#   1. one new `strategy_<name>()` function;
+#   2. one new branch in `select_strategy()` returning its name, plus whatever
+#      parameters it needs as extra fields on that same line (a mirror path, a
+#      source checkout); `acquire()` passes them through untouched.
 #
 # It leaves untouched: the usage text, the argument parsing, `acquire()`,
-# `checkout_branch()`, `install_commit_guard()`, every other `strategy_*`
-# function, and every caller.
+# `remote_slug()`, `install_commit_guard()`, every other strategy, and every
+# caller.
+#
+# Two helpers are shared but *not* universal, and a new strategy has to face
+# them rather than assume them:
+#
+#   - `checkout_branch()` selects a branch with `git switch`, which fails inside
+#     a linked worktree when that branch is checked out elsewhere. A worktree
+#     strategy picks its branch at `git worktree add` time and must not call it.
+#   - `install_commit_guard()` resolves the hooks directory, which for a linked
+#     worktree is the *common* directory back in the source checkout. It refuses
+#     when that path falls outside the destination rather than silently guard
+#     another campaign's tree, so a worktree strategy has to solve hooks
+#     deliberately.
 
 select_strategy() {
-	# Arguments (repo, dest, branch) are what a future strategy would decide
-	# on — a mirror path that exists, a sibling checkout of the same repo, a
-	# caller asking for shallow history. Today the answer is unconditional.
+	# Prints the strategy name, optionally followed by parameters for it. The
+	# arguments (repo, dest, branch) are what a future strategy would branch on
+	# — a mirror that already exists, a sibling checkout of the same repository,
+	# a caller wanting only recent history. Today the answer is unconditional.
 	printf 'clone\n'
 }
 
 strategy_clone() {
 	local repo=$1 dest=$2 branch=$3
 
-	if [ -e "$dest/.git" ]; then
-		local have
-		have=$(remote_slug "$dest") || die "$dest is not a usable git checkout"
-		[ "$have" = "$repo" ] ||
-			die "$dest already holds $have, not $repo — refusing to touch it"
-		log "already present: $dest ($repo)"
-		git -C "$dest" fetch --quiet origin
+	mkdir -p "$(dirname "$dest")"
+	log "cloning $repo into $dest"
+	if command -v gh >/dev/null 2>&1; then
+		gh repo clone "$repo" "$dest" -- --quiet
 	else
-		[ ! -e "$dest" ] || die "$dest exists and is not a git checkout"
-		mkdir -p "$(dirname "$dest")"
-		log "cloning $repo into $dest"
-		if command -v gh >/dev/null 2>&1; then
-			gh repo clone "$repo" "$dest" -- --quiet
-		else
-			git clone --quiet "https://github.com/$repo.git" "$dest"
-		fi
+		git clone --quiet "https://github.com/$repo.git" "$dest"
 	fi
-
 	checkout_branch "$dest" "$branch"
 }
 
 # ------------------------------------------------------------ shared helpers
-# Used by every strategy, so a new one adds no copy of them.
 
-# Print the owner/repo an existing checkout's origin points at.
+# Print the owner/repo an existing checkout's origin points at. Reads the last
+# two path segments, so ssh, https, and a non-GitHub host all parse, rather than
+# only a URL containing the literal "github.com".
 remote_slug() {
-	local url
+	local url name rest
 	url=$(git -C "$1" remote get-url origin 2>/dev/null) || return 1
 	url=${url%.git}
-	url=${url#*github.com}
-	url=${url#:}
-	url=${url#/}
-	printf '%s\n' "$url"
+	url=${url%/}
+	name=${url##*/}
+	rest=${url%/*}
+	printf '%s/%s\n' "${rest##*[:/]}" "$name"
 }
+
+dir_is_empty() { [ -z "$(ls -A "$1" 2>/dev/null)" ]; }
 
 checkout_branch() {
 	local dest=$1 branch=$2
@@ -156,24 +164,33 @@ checkout_branch() {
 	fi
 }
 
-# Git hooks do not clone, so the guard that blocks direct commits to main has
-# to be installed into every fresh checkout, whatever strategy produced it.
+# Git hooks do not clone, so the guard that blocks direct commits to main has to
+# be installed into every checkout, whatever strategy produced it. A failure
+# here is fatal: a caller reading success over an unguarded checkout is exactly
+# the silent case the guard exists to prevent.
 install_commit_guard() {
 	local dest=$1
 	local guard="$HOME/.claude/git-hooks/no-main-commits"
-	local hooks hook
+	local hooks hook dest_abs
 
-	[ -x "$guard" ] || { log "warning: no guard at $guard, skipping"; return 0; }
+	[ -x "$guard" ] ||
+		die "no executable guard at $guard, so $dest would be left unguarded"
 
-	hooks=$(git -C "$dest" rev-parse --git-path hooks)
-	case "$hooks" in /*) ;; *) hooks="$dest/$hooks" ;; esac
+	hooks=$(git -C "$dest" rev-parse --path-format=absolute --git-path hooks)
+	dest_abs=$(cd "$dest" && pwd -P)
+	case "$hooks" in
+		"$dest_abs"/*) ;;
+		*) die "hooks for $dest resolve to $hooks, outside the checkout; refusing to guard another tree" ;;
+	esac
+
 	mkdir -p "$hooks"
 	hook="$hooks/pre-commit"
 
 	if [ -e "$hook" ] && ! grep -q 'no-main-commits' "$hook"; then
-		log "warning: $hook already exists and does not call the guard."
-		log "warning: add this as its first line: exec-or-call $guard"
-		return 0
+		log "$hook exists and does not call the guard. Replace it with:"
+		log "  printf '%s\\n' '#!/usr/bin/env sh' 'exec \"\$HOME/.claude/git-hooks/no-main-commits\" \"\$@\"' > $hook"
+		log "  chmod +x $hook"
+		die "refusing to overwrite an existing pre-commit hook"
 	fi
 
 	printf '%s\n' '#!/usr/bin/env sh' "exec \"$guard\" \"\$@\"" > "$hook"
@@ -184,14 +201,31 @@ install_commit_guard() {
 # ------------------------------------------------------------------- acquire
 
 acquire() {
-	local repo=$1 dest=$2 branch=$3 strategy
+	local repo=$1 dest=$2 branch=$3 have
+	local strategy=()
 
-	strategy=$(select_strategy "$repo" "$dest" "$branch")
-	command -v "strategy_$strategy" >/dev/null 2>&1 ||
-		die "no such strategy: $strategy"
+	if [ -e "$dest/.git" ]; then
+		have=$(remote_slug "$dest") || die "$dest is not a usable git checkout"
+		[ "$have" = "$repo" ] ||
+			die "$dest already holds $have, not $repo — refusing to touch it"
+		log "already present: $dest ($repo)"
+		git -C "$dest" fetch --quiet origin
+		checkout_branch "$dest" "$branch"
+	else
+		[ ! -e "$dest" ] || [ -d "$dest" ] ||
+			die "$dest exists and is not a directory"
+		[ ! -d "$dest" ] || dir_is_empty "$dest" ||
+			die "$dest is a non-empty directory that is not a git checkout"
 
-	log "strategy: $strategy"
-	"strategy_$strategy" "$repo" "$dest" "$branch"
+		read -r -a strategy <<<"$(select_strategy "$repo" "$dest" "$branch")"
+		[ ${#strategy[@]} -gt 0 ] || die "select_strategy named no strategy"
+		command -v "strategy_${strategy[0]}" >/dev/null 2>&1 ||
+			die "no such strategy: ${strategy[0]}"
+
+		log "strategy: ${strategy[*]}"
+		"strategy_${strategy[0]}" "$repo" "$dest" "$branch" "${strategy[@]:1}"
+	fi
+
 	install_commit_guard "$dest"
 	log "ready: $dest"
 }
