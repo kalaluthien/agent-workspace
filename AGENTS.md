@@ -67,10 +67,17 @@ many turns, or when two repositories must move at once.
 issue closes, and only a person decides that.
 
 The campaign's `README.md` and the anchor issue body carry **the same five
-sections** — Intent, Scope, Requirements, Plan, Repos — so syncing one to the
-other is a plain overwrite with nothing to merge. A README missing `Repos:`
-would silently drop the campaign's repository index on the next sync, and that
-index is the one thing that has to be maintained.
+sections in the same shapes** — Intent, Scope, Requirements, Plan, and `Repos`
+as a plain `- owner/repo` list — so syncing one to the other is an overwrite
+with nothing to merge. A README shaped differently from the body forces the
+sync to compose, and a compose step is where the repository index gets silently
+dropped.
+
+**The campaign session is the anchor issue body's only writer.** A delegate
+never edits it — not to tick a Plan box, not to add a repository. The Plan is
+the owner's plan and progress is read from the subtask issues, which are the
+things that actually close. One writer is what makes the overwrite safe; two
+writers would make every close silently discard whatever the other one did.
 
 # Delegating to a repository agent
 
