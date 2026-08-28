@@ -75,7 +75,8 @@ printf 'session %s\npid %s\n' "$CLAUDE_CODE_SESSION_ID" "$CLAUDE_PID" \
 
 `CLAUDE_PID` is the `claude` process; `$$` is the shell one tool call runs in
 and is dead before the next one starts. Liveness is `kill -0` plus the process
-still being `claude` (all three probed 2026-08-28):
+still being `claude` — both commands, and all three of their outcomes, probed
+2026-08-28:
 
 ```sh
 PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
