@@ -66,12 +66,25 @@ many turns, or when two repositories must move at once.
 **Close** — load the `closing-campaign` skill. A campaign closes when its anchor
 issue closes, and only a person decides that.
 
+The campaign's `README.md` and the anchor issue body carry **the same five
+sections** — Intent, Scope, Requirements, Plan, Repos — so syncing one to the
+other is a plain overwrite with nothing to merge. A README missing `Repos:`
+would silently drop the campaign's repository index on the next sync, and that
+index is the one thing that has to be maintained.
+
 # Delegating to a repository agent
 
-Launch it in `<campaign>/repos/<repo>/`, where it inherits the container's, the
-campaign's, and the repository's instruction files by nesting. A campaign
-`AGENTS.md` therefore only ever *adds* principles; one that contradicts a
-repository's own conventions puts the delegate in a conflict it cannot resolve.
+Launch it in `<campaign>/repos/<repo>/` with
+`--append-system-prompt-file <campaign>/AGENTS.md`. That flag is the *only*
+thing that gets the campaign's principles into the delegate: instruction files
+do **not** load from ancestor directories, with or without a git boundary and
+with or without `--add-dir` (probed 2026-08-28). A delegate launched without it
+sees the repository's `AGENTS.md` and nothing else.
+
+The campaign's principles are appended to a delegate that already has the
+repository's own, so a campaign `AGENTS.md` only ever *adds*; one that
+contradicts a repository's conventions puts the delegate in a conflict it
+cannot resolve.
 
 - **Write the brief to a file**, `<campaign>/runtime/handover/<issue>.md`, and
   make the launched prompt one short sentence naming that path. herdr types its
@@ -80,6 +93,9 @@ repository's own conventions puts the delegate in a conflict it cannot resolve.
 - Choose the session UUID in advance (`claude --session-id`) so the transcript
   path is known before the agent starts, and give it a slug name
   (`claude --name <role>-<slug>`) so it can be found and addressed.
+- Put the prompt **before** any variadic flag on the `claude` command line.
+  `--add-dir` and `--allowedTools` swallow a trailing prompt as one of their own
+  values, and the run dies on "Input must be provided".
 - Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to this container's pool. A memory
   pool inside a git-ignored campaign directory dies with the directory.
 
