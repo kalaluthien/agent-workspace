@@ -49,9 +49,10 @@ it loses the issue with nothing to contradict it — the only silent total loss.
 equal membership in every reachable state, so only there is reconstitution
 exact — and it is cheaper than A, since `gh issue create --parent <url>` links
 in the same command (probed, gh 2.96.0). Keep the `Campaign:` line as prose;
-stop reading the timeline as an index. Unverified: cross-repository sub-issues
-for this owner. If unavailable, fall back to C, which differs only by a stale
-label after removal.
+stop reading the timeline as an index. The one open question — whether a
+sub-issue may live in another repository for this owner — was probed on
+2026-08-28 and holds: a sub-issue in a private repository lists correctly under
+the public anchor. D adopted; the fallback to C is not needed.
 
 Unmodelled: text well-formedness, `gh search` consistency, herdr's liveness
 derivation, and issues in repositories the reader's token cannot see.
