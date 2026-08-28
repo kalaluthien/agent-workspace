@@ -45,6 +45,19 @@ things already versioned elsewhere, so it is git-ignored on purpose and nothing
 durable may live only there. `.gitignore` is an allowlist over the container
 row: a new tracked directory needs its own `!` line.
 
+**Resolve the container root one way, everywhere:**
+
+```sh
+CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
+```
+
+The container root is the main checkout by definition, and this form returns it
+from anywhere — including a linked worktree, where `git rev-parse
+--show-toplevel` returns the worktree instead. The two forms agree everywhere
+else, so a pair of tools that disagree about which to use tests green and then
+strands a campaign: opened inside a worktree by one, invisible to the other,
+with a refusal message pointing at the wrong problem.
+
 Never run one git command across member repositories, and never commit their
 files here.
 
