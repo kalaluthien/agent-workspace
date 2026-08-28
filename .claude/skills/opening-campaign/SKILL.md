@@ -20,7 +20,7 @@ Finished when all of these hold:
   under its `## Repos` heading hold no `<`. Scope the check to that list: a
   correct Requirements section quotes things like `issues/<N>/sub_issues`, so a
   bare `grep '<'` over the whole file reports hits on a clean README.
-- Every entry under `Repos:` resolves to a checkout at
+- Every entry under `## Repos` resolves to a checkout at
   `<campaign>/repos/<name>/`.
 - The reply names the campaign ID, the directory, and the anchor issue URL.
 
@@ -45,7 +45,7 @@ carry the scope.
 | One open campaign's Scope covers it | File a follow-up subtask on that campaign and stop. |
 | Two or more could cover it, or the fit is arguable | Ask the person which, naming the candidates. Do not guess. |
 
-Match on Scope, never on `Repos:`. A request that touches a repository an open
+Match on Scope, never on `## Repos`. A request that touches a repository an open
 campaign already lists, but that its Scope does not cover, opens a new campaign.
 
 Testing, validating, or fixing a campaign's own deliverable is a follow-up on
@@ -159,7 +159,7 @@ Then finish it:
 
 ### 5. Acquire the member repositories
 
-For each entry under `Repos:`, by absolute path — step 4 has just created an
+For each entry under `## Repos`, by absolute path — step 4 has just created an
 empty `$CAMPAIGN/scripts/`, so a relative `scripts/acquire-repo` resolves there
 and fails:
 
@@ -198,7 +198,7 @@ repository:
 gh api repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
 ```
 
-If the target repository is not in the anchor's `Repos:` list, add it to that
+If the target repository is not in the anchor's `## Repos` list, add it to that
 list and to the campaign `README.md`, and acquire it as in step 5. The list is
 what a later open reads to know what to clone; the index does not depend on it.
 
