@@ -31,6 +31,16 @@ The campaign directory is deliberately git-ignored. It is a scratch assembly of
 things that are each already versioned somewhere else, so committing it would
 store a second, staler copy of everything. What must survive lives in GitHub.
 
+**The container can also be a member repository of a campaign**, and this
+container's own machinery is built that way. Nothing in the three planes forbids
+it — the container plane is a repository like any other — but it puts two
+checkouts of one repository in play at once: the outer one the campaign session
+runs from, and a clone nested inside it that the outer ignores. `AGENTS.md`
+carries the rule that keeps them in step, and scenario 16 in `alloy/` is the
+witness for what goes wrong without it. Worth stating because the modelled
+version of this design originally ruled the case out, so it was possible to read
+the whole scheme as forbidding it.
+
 ## Identity
 
 A campaign is opened by filing one **anchor issue** in `agent-workspace`. Its
