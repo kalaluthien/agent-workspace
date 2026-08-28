@@ -1,6 +1,6 @@
 ---
 name: closing-campaign
-description: Closes a campaign — binds the campaign directory, refuses while an agent is live or while work exists only on this machine, reports unsettled subtasks, syncs the README into the anchor issue, then closes the issue and deletes the directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory. Not for closing a single subtask issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
+description: Closes a campaign — binds the campaign directory, refuses while an agent is live or while work exists only on this machine, refuses while any open subtask lacks a disposition, syncs the README into the anchor issue, then closes the issue and deletes the directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory. Not for closing a single subtask issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
 ---
 
 # Closing a campaign
@@ -9,24 +9,29 @@ Delete a campaign directory only after everything in it also exists somewhere
 else. The directory is a scratch assembly of things versioned elsewhere, so
 closing is a checked demolition, not a decision.
 
-Finished when all four hold:
+Finished when all five hold:
 
 - `gh issue view <N> -R kalaluthien/agent-workspace --json state` reports
   `CLOSED`;
+- every subtask in the anchor's index reads settled or has moved to another
+  anchor, each open one having been given a named disposition first;
 - the campaign directory does not exist;
 - no herdr agent's `cwd` is under the path that directory had;
 - the anchor issue body is the campaign README, `## Repos` list included, and
   the body was compared against `runtime/anchor-body-derived.md` before it was
   written.
 
-Where this machine holds no directory for the campaign, only the first is a real
-condition and the other three are about a cache that does not exist. Step 0 says
-what to skip.
+Where this machine holds no directory for the campaign, the first two are the
+real conditions — they are GitHub facts and hold from any machine — and the
+other three are about a cache that does not exist. Step 0 says what to skip.
 
 ## Procedure
 
 The order is load-bearing: each gate is cheaper than the one after it, and step
-5 is irreversible. Run 0–4 without asking. Run 5 only on explicit confirmation.
+5 is irreversible. Run 0–4 without asking — with one exception: step 3 reads and
+refuses on its own, but the disposition of an open subtask is the person's
+choice, and this skill acts on GitHub only once they have made it. Run 5 only on
+explicit confirmation.
 
 ### 0. Bind the campaign, once
 
@@ -150,7 +155,7 @@ Nothing was deleted. Clear every row, or say to discard it, then re-run.
 unmerged branch. `<check>` is the command that found it, named as it appears
 above. `<count>` counts rows, not checks.
 
-### 3. Report the unsettled subtasks
+### 3. Settle or dispose of every open subtask
 
 **First, confirm `$N` is an anchor.** The container is a member of its own
 campaigns, so its tracker holds subtasks under the same number sequence, and a
@@ -177,17 +182,86 @@ commands is the drift that rule exists to stop, and the two did drift before
 this step was written this way.
 
 ```sh
-"$CONTAINER/scripts/campaign-settlement" "$N"
+"$CONTAINER/scripts/campaign-settlement" "$N" >| /tmp/settlement-$N
+cat /tmp/settlement-$N
 ```
 
 It reads the anchor's sub-issue index in one paginated call — every member
 repository at once, public or private — and prints one row per subtask, then
-whether the campaign is closable.
+whether the campaign is closable. Keep the output in a file: the rest of this
+step is read off it by machine, not by eye.
 
-Report every row that is not settled. None of them blocks the close — a person
-may close a campaign over unfinished work — but show them all before they
-decide. Read the note beside a `dropped` row before repeating the word to
-anyone: it covers four different closes and only one of them is an abandonment.
+Read the note beside a `dropped` row before repeating the word to anyone: it
+covers four different closes and only one of them is an abandonment.
+
+**Then every `open` row gets a disposition, and this step refuses without one.**
+A campaign may close over unfinished work; it may not close over *unexamined*
+work. A leftover nobody named is work that vanishes with the close — the anchor
+is the only thing that indexes it, and step 5 closes that. The person chooses
+one of three per row:
+
+| disposition | the act | what the row becomes |
+| --- | --- | --- |
+| `finish` | do the work, land the pull request, close the issue | `complete` |
+| `not-planned` | `gh issue close <issue> -R <repo> --reason "not planned" --comment "<why>"` | `dropped` |
+| `reparent` | `gh issue edit <issue> -R <repo> --parent <URL of the inheriting anchor>` | gone from this index — the sub-issue link is prunable |
+
+All three end with the row off this campaign's open list, which is what makes
+the gate below a check rather than a promise.
+
+Write one line per open row — `<owner/repo>#<issue>  <verb>  <reason or target>`
+— then validate that list against the settlement output row for row. Do not read
+the two side by side; a close is where an eye skips a line.
+
+```sh
+DISPOSITIONS=/tmp/dispositions-$N        # write it here, one line per open row
+awk '$1 ~ /#[0-9]+$/ && $2 == "open" { print $1 }' /tmp/settlement-$N | sort >| /tmp/open-$N
+awk 'NF { print $1 }' "$DISPOSITIONS" | sort >| /tmp/disposed-$N
+command diff /tmp/open-$N /tmp/disposed-$N && echo "every open subtask has a disposition"
+awk 'NF && $2 !~ /^(finish|not-planned|reparent)$/ { print "REFUSE: unknown disposition: " $0 }' "$DISPOSITIONS"
+awk 'NF && $2 != "finish" && NF < 3 { print "REFUSE: no reason or target: " $0 }' "$DISPOSITIONS"
+```
+
+`command diff`, not `diff` — see the shadowed-`diff` gotcha below. A `<` line is
+an open subtask nobody disposed of and it stops the close; a `>` line names a
+subtask that is not open, so the list was written against a stale reading and
+the script must be re-run before anything is acted on.
+
+```text
+REFUSE: <count> open subtask(s) under #<N> have no disposition.
+
+  <owner/repo>#<issue>  <title>
+
+Nothing was closed. Give each one finish, not-planned with a reason, or
+reparent with the anchor that inherits it, then re-run.
+```
+
+`/tmp/dispositions-$N` is scratch and dies with the run. The durable record of
+each disposition is the act itself: the merged pull request, the reason in the
+close comment, or the new parent. Nothing here is written into the anchor body —
+progress is derived from the index, and the body is a charter.
+
+**Carry them out, then read the same script again.** The dispositions are
+claims until GitHub shows them; this is the check that the close is not being
+argued from the list rather than from the tracker.
+
+```sh
+"$CONTAINER/scripts/campaign-settlement" "$N" >| /tmp/settlement-after-$N
+cat /tmp/settlement-after-$N
+grep -q '; closable$' /tmp/settlement-after-$N ||
+  grep -q 'the index is empty' /tmp/settlement-after-$N ||
+  echo "REFUSE: open subtasks remain after the dispositions were carried out"
+```
+
+`; closable$` and not `closable`, because the failing line ends
+`NOT closable: open subtasks remain` and a bare match reads it as a pass. The
+empty-index line is the second accepted reading: a campaign with no subtasks
+prints no settlement count at all, and refusing it would leave such a campaign
+unclosable.
+
+A `-- REPORT:` line about nested sub-issues is not covered by this gate. A
+subtask that is itself an anchor hides its own members, so run the script on it
+and dispose of those rows too before you count this one settled.
 
 ### 4. Validate the README, compare, then overwrite the anchor issue body
 
@@ -210,7 +284,10 @@ adjacent section cannot be read as a member repository.
 
 This step is also run mid-campaign, whenever a repository is added to the
 `## Repos` list — `opening-campaign`'s "Filing a subtask issue" sends you here.
-Closing is not the only time the anchor body is written; it is only the last.
+Those are the only two moments the body is written at: a scope change, of which
+adding a repository is one, and the close. The body is a charter, not a status
+board, so a settled subtask is never written back into it — nothing in step 3
+edits the body, and `## Plan` is left exactly as it was at opening.
 
 **Then compare before you write.** You are not the only campaign session, and
 this README was derived from the body at some earlier moment. If another session

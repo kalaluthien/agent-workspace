@@ -245,6 +245,14 @@ issue — it is not the index and nothing queries it. What the filled shape does
 carry is the issue's kind, readable without an API call; see § When the container
 is a member of its own campaign.
 
+**A discovery becomes a subtask at the moment it is found.** Work that turns up
+mid-task and falls outside the current subtask's scope is filed then — a
+sub-issue of the anchor, body from the same template — by whoever can file it:
+the finder, or the campaign session the moment a delegate reports it. A finding
+held in a session's memory or parked in a report is invisible to every other
+session, dies with the pane that found it, and reaches the close as nothing at
+all, because the index is the only place the close can look.
+
 The anchor's **`## Repos`** section still earns its place: it says which
 repositories to clone when a campaign is opened, before any subtask exists. It
 is a markdown heading followed by a plain `- owner/repo` list, in the issue body
@@ -283,7 +291,30 @@ in one repository are each small enough to do here, and a session that does
 them here does them one after another.
 
 **Close** — load the `closing-campaign` skill. A campaign closes when its anchor
-issue closes, and only a person decides that.
+issue closes, and only a person decides that. The skill refuses while any open
+subtask lacks a disposition: a campaign may close over unfinished work, never
+over unexamined work.
+
+**The anchor body is a charter, not a status board.** Intent, Scope and
+Requirements say what a person signed up for, and change only when the scope
+genuinely changes — their decision, not a session's. `## Plan` is the
+decomposition made at opening and is not revised as subtasks land. Progress and
+membership are *derived*, by `scripts/campaign-settlement <N>` over the
+sub-issue index, and never written into the body.
+
+So the body is filled when the anchor is filed, and after that written at
+exactly two moments: a scope change, and the close — each through the
+compare-then-write below. Adding work is neither —
+filing a subtask touches only the subtask side, `gh issue create --parent` plus
+the branch claim, and the index carries it from there. Ticking a `## Plan`
+checkbox as a subtask settles is the anti-pattern this names: a hand copy of a
+listing that already exists, paid for with one lost-update window per write.
+
+Two moments is not *write only at open and at close*, which `spec/alloy/`
+weighs as `syncAtCloseOnly` and rejects.
+Adding a repository **is** a scope change, so it syncs when it happens; held
+back until the close it is invisible to every other session holding the
+campaign, and the loss it was meant to prevent happens at the close anyway.
 
 The campaign's `README.md` and the anchor issue body carry **the same sections
 in the same shapes**, and the anchor template

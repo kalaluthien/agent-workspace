@@ -172,7 +172,10 @@ later survey classifies by the shape you leave behind. Issue #1 in that
 repository is the worked example; read it beside the template.
 
 Scope is what a later run reads to decide new-versus-follow-up in step 1, so
-write it to be matched against a request, not admired.
+write it to be matched against a request, not admired. `## Plan` is the
+decomposition as it stands now and is never revised afterwards — the body is a
+charter, and progress is read from the sub-issue index instead (§ Running a
+campaign in the container's `AGENTS.md`).
 
 ### 4. Scaffold the directory
 
@@ -328,7 +331,10 @@ campaign `README.md`, sync that to the anchor body, and acquire it as in step 5.
 The list is what a later open reads to know what to clone; the index does not
 depend on it.
 
-**Sync it now, and compare before you write.** Leaving the addition in a local
+**Sync it now, and compare before you write.** Adding a repository is a scope
+change, which is one of the two moments the anchor body is written at all — the
+other is the close, and filing the subtask itself is not one of them, because
+the sub-issue index already carries it. Leaving the addition in a local
 `README.md` until the campaign closes hides the new repository from every other
 session holding this campaign — one of them will open the campaign on its
 machine, clone the list, and have no checkout for the subtask you just filed.
