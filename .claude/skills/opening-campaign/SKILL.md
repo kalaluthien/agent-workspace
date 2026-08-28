@@ -11,9 +11,9 @@ to work in.
 
 Finished when all of these hold:
 
-- An open issue in `kalaluthien/agent-workspace` carries the label `campaign`
-  and body sections Intent, Scope, Requirements, Plan, Repos, with `Repos` a
-  plain `- owner/repo` list.
+- An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
+  no parent, and the sections of the anchor template `assets/README.md`, with
+  `Repos` a plain `- owner/repo` list.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
   `CLAUDE.md`, `README.md`, `runtime/handover/`, and `scripts/`.
 - The campaign's `README.md` is the anchor issue body, and the `- ` entries
@@ -42,9 +42,9 @@ Read the body of each one that could plausibly cover the request
 carry the scope.
 
 **That repository holds subtasks too**, because it is a member of its own
-campaigns, and the `campaign` label is the whole thing that tells the two apart.
-The label is applied by hand at create time, so cross-check it against the one
-property a subtask cannot have:
+campaigns, and issues that are neither — a person's request, somebody else's
+bug. The `campaign` label is applied by hand at create time, so cross-check it
+against the one property a subtask cannot have:
 
 ```sh
 gh issue list -R kalaluthien/agent-workspace --state open \
@@ -55,9 +55,14 @@ gh issue list -R kalaluthien/agent-workspace --state open \
 An anchor is the issue nothing is the parent of, so every anchor is in that
 output whether or not it was labelled. An issue it names that the labelled
 listing does not may be an anchor whose label was forgotten — read its body
-before deciding no campaign covers the request. A labelled issue *missing* from
-it is a subtask wearing the label, or a campaign filed under another campaign;
-say so rather than joining it.
+before deciding no campaign covers the request, and read it for shape, which is
+what tells the three kinds apart when neither reading places it. The anchor
+template's sections mean the label was forgotten; a `Campaign: owner/repo#<N>`
+first line means a subtask filed without `--parent`; neither means an issue that
+is in no campaign at all, and that one you leave alone rather than survey, join,
+or edit. A labelled issue *missing* from the output is a subtask wearing the
+label, or a campaign filed under another campaign; say so rather than joining
+it.
 
 | what you find | what to do |
 | --- | --- |
@@ -159,16 +164,12 @@ Want `campaign` among `labels` and `parent` null. A non-null `parent` means you
 filed a subtask, not an anchor — `gh issue edit <N> --remove-parent` before
 going on.
 
-Issue #1 in that repository is the worked example of the body shape; read it
-before writing yours. Its sections:
-
-| section | holds |
-| --- | --- |
-| Intent | the one sentence of what this campaign is for |
-| Scope | what is in, and an explicit out-of-scope list |
-| Requirements | the conditions the finished work must satisfy |
-| Plan | a `- [ ]` checklist of the subtasks visible now |
-| Repos | a `- owner/name` list of the member repositories |
+**Write the body by filling the anchor template**, `assets/README.md` in this
+skill — its sections, each placeholder replaced, and no others. That file is the
+one copy of the anchor's shape: step 4 copies it into the campaign directory as
+the placeholder `README.md` and then replaces it with what you write here, and a
+later survey classifies by the shape you leave behind. Issue #1 in that
+repository is the worked example; read it beside the template.
 
 Scope is what a later run reads to decide new-versus-follow-up in step 1, so
 write it to be matched against a request, not admired.
@@ -211,9 +212,13 @@ safe to re-run. A different campaign, or unreadable — stop and ask the person.
 Then finish it:
 
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
+- Delete `subtask.md`. It came along with the copy, but a subtask is filed from
+  the skill's own copy at `assets/subtask.md`; a second copy sitting in a
+  git-ignored directory is one that can be filled long after it has gone stale.
 - Overwrite `README.md` with the anchor issue body, which replaces every
-  placeholder at once. The two carry the same five sections in the same shapes,
-  so this is the close-time sync run backwards:
+  placeholder at once. The two carry the same sections in the same shapes —
+  both are `assets/README.md` filled in — so this is the close-time sync run
+  backwards:
 
   ```sh
   gh issue view <N> -R kalaluthien/agent-workspace --json body --jq .body \
@@ -280,8 +285,11 @@ gh issue create -R <owner/repo> \
   --title "<title>" --body-file <path>
 ```
 
-The body carries a line `Campaign: kalaluthien/agent-workspace#<N>`. That is
-prose for a person reading the raw issue; nothing queries it.
+`--body-file` takes the subtask template filled in — `assets/subtask.md` in this
+skill: the `Campaign:` line, the work, and a `Done when` close. The line is prose
+for a person reading the raw issue and nothing queries it; the shape is what
+makes the issue readable as a subtask by anyone who has not yet read `--parent`
+back.
 
 **The issue number is half the branch name.** The subtask is worked on
 `c<N>/<issue>-<topic>` — campaign number, subtask number, then a short topic —
@@ -329,7 +337,7 @@ opened as campaign #7:
 auth-refactor-260828/
   AGENTS.md      copied from assets/agents/migration.md
   CLAUDE.md      @AGENTS.md
-  README.md      the five sections, copied from issue #7's body
+  README.md      issue #7's body, section for section
   runtime/handover/ scripts/
   runtime/anchor-body-derived.md  issue #7's body as the README was derived from
   repos/api/     on the default branch; subtask #31 is worked on c7/31-token-refresh
