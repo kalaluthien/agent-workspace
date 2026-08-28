@@ -5,9 +5,11 @@ repositories that live elsewhere.
 
 A campaign is one assignment a person is responsible for, worked across several
 repositories at once. It is bigger than a ticket and has no size ceiling. It
-gets a directory here, the repositories it needs are assembled inside it, and
-its subtasks are handed to agents. When it is over the directory is deleted and
-nothing is lost, because everything durable was already somewhere else.
+usually gets a directory here — the repositories it needs are assembled inside
+it, and its subtasks are handed to agents — but that directory is optional, one
+machine's cache of a campaign that lives on GitHub. When it is over the
+directory is deleted and nothing is lost, because everything durable was already
+somewhere else.
 
 ## Shape
 
@@ -38,9 +40,10 @@ so a campaign can never be committed into the wrong repository by accident.
 | what a campaign is and how far along it is | GitHub issues |
 
 A campaign's identity is its **anchor issue** in this repository. Subtasks are
-issues on the repositories whose code changes, each labelled `campaign-<N>`.
-That makes GitHub the single record: two machines can run the same campaign, and
-a phone can read it, without anything local having to agree.
+issues on the repositories whose code changes, each filed as a sub-issue of that
+anchor — the link the creating command makes is the whole index. That makes
+GitHub the single record: two machines can run the same campaign, and a phone
+can read it, without anything local having to agree.
 
 ## Setup
 

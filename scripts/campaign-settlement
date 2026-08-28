@@ -7,14 +7,18 @@ it answers the same question from any machine, which is the point.
 
 Verdicts match spec/alloy/campaign-e2e.als:
   complete  closed, and a pull request that closed it is merged
-  dropped   closed, with no merged pull request behind it (a subtask dropped
-            on purpose is closed as "not planned" and lands here)
+  dropped   closed, with no merged pull request behind it -- closed as "not
+            planned", as a duplicate, or as completed with nothing to merge
   open      still open
+
+Settled is "the issue is closed", both verdicts alike; the merged pull request
+only says which kind. That is the reading spec/alloy/multi-session.md pins and
+AGENTS.md states, and this script is its one implementation -- a second reader
+written by hand somewhere else is what drifts.
 
 The anchor repository also holds subtasks -- it is a member of its own
 campaigns -- so the number handed in may be a subtask, and a subtask may be an
 anchor. Neither is visible in a settlement table, so both are reported.
-
 Usage: scripts/campaign-settlement <anchor-issue-number> [owner/repo]
 """
 import json
@@ -43,7 +47,13 @@ def verdict(repo, number):
         pr = gh("pr", "view", str(ref["number"]), "-R", pr_repo, "--json", "state")
         if pr["state"] == "MERGED":
             return "complete", ref["url"], info["title"]
-    return "dropped", info["stateReason"] or "closed, no merged PR", info["title"]
+    # The note says which kind of closed, because "dropped" alone reads as
+    # abandoned and a completed subtask with nothing to merge lands here too.
+    note = {"NOT_PLANNED": "not planned",
+            "COMPLETED": "completed, no merged pull request",
+            "DUPLICATE": "duplicate"}.get(info["stateReason"] or "",
+                                          "closed, no reason recorded")
+    return "dropped", note, info["title"]
 
 
 def anchor_reports(head):
@@ -64,7 +74,12 @@ def main():
 
     head = gh("issue", "view", anchor, "-R", anchor_repo,
               "--json", "state,title,labels,parent")
-    subs = gh("api", f"repos/{anchor_repo}/issues/{anchor}/sub_issues")
+    # --paginate --slurp, never a bare read: the endpoint pages at thirty and a
+    # truncated index reads exactly like a complete one. --slurp returns one
+    # array per page, so flatten.
+    pages = gh("api", "--paginate", "--slurp",
+               f"repos/{anchor_repo}/issues/{anchor}/sub_issues")
+    subs = [sub for page in pages for sub in page]
 
     print(f"anchor {anchor_repo}#{anchor}  [{head['state']}]  {head['title']}")
     for line in anchor_reports(head):

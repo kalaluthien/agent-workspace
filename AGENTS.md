@@ -49,7 +49,10 @@ is closed.
   tree for who else is in it.
 
 - **ID** — the number of its anchor issue in `kalaluthien/agent-workspace`.
-  Typed as `#N`.
+  Typed as `#N`. The anchor carries the `campaign` label, and that label is what
+  makes it findable — every survey lists by it, so an anchor filed without it is
+  in nobody's listing and the next session opens a second campaign over the same
+  scope.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, and
   **optional**. A campaign is its anchor issue; the directory is one machine's
   cache of it. A campaign legitimately has none here when this machine has not
@@ -77,13 +80,13 @@ and whether it survives the machine. Identify the plane before any git command.
 | plane | holds | stored in |
 | --- | --- | --- |
 | **container** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `docs/`, `scripts/` | this repository |
+| **member repository** | the code and its history | each repository's own remote |
+| **campaign** | which repositories, what for, how far along | GitHub issues |
 
 `spec/` holds what is normative — the design and the models that check it, as
 markdown. `docs/` holds views drawn for a reader, as HTML. The two are kept
 apart and neither inherits the other's rules, so a markdown file under `docs/`
 is misfiled rather than temporary.
-| **member repository** | the code and its history | each repository's own remote |
-| **campaign** | which repositories, what for, how far along | GitHub issues |
 
 The campaign directory holds no plane of its own. It is a scratch assembly of
 things already versioned elsewhere, so it is git-ignored on purpose and nothing
@@ -175,12 +178,13 @@ gh issue create -R <owner/repo> --parent https://github.com/kalaluthien/agent-wo
 That one flag is the whole index. Read it back with
 
 ```sh
-gh api repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
+gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
 ```
 
 which returns exactly the campaign's members, in any repository, public or
 private (probed 2026-08-28: a sub-issue in a private repository lists correctly
-under a public parent). The link is made by the same command that creates the
+under a public parent). `--paginate` is not optional: the endpoint pages at
+thirty, and a truncated index reads exactly like a complete one. The link is made by the same command that creates the
 issue, so there is no second write to forget, and it is prunable — moving a
 subtask out of the campaign removes it from the index, which a back-reference
 or a search over body text cannot do.
@@ -325,6 +329,12 @@ Never answer one with the other.
   campaign can never be closed. Nothing on a terminal screen is evidence. A
   delegate that died after pushing has still succeeded; a delegate that is alive
   and chatty may have done nothing.
+
+  Read it with `scripts/campaign-settlement <N>`, which is the one implementation
+  of that reading: closed is settled, and the merged pull request only says which
+  kind — `complete`, or `dropped` for everything else that is closed. Do not
+  hand-roll a second reader; two of them drift, and the campaign's central
+  verdict is the worst place for that.
 - **Liveness is a herdr fact**, read from `herdr agent list` presence plus the
   session transcript — never from `agent_status` alone, which reports the screen
   and calls a mid-turn pause `idle`.

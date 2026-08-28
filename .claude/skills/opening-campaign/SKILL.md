@@ -299,8 +299,11 @@ Read the campaign's subtasks back from the anchor, in one call, across every
 repository:
 
 ```sh
-gh api repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
+gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
 ```
+
+`--paginate` is not optional: the endpoint pages at thirty, and a truncated
+index reads exactly like a complete one.
 
 If the target repository is not in the anchor's `## Repos` list, add it to the
 campaign `README.md`, sync that to the anchor body, and acquire it as in step 5.

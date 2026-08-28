@@ -86,6 +86,12 @@ Asks the agent to finish its current turn and stop. Sent **only after** the
 campaign session has itself confirmed that nothing the agent holds exists only
 on this machine — never on the strength of a `REPORT`.
 
+**That check is local, so stand down only an agent on your own machine.** "No
+unpushed commits, no branch absent from the remote" is read against a working
+tree, and a session on another machine reads its own, not the agent's. An agent
+launched elsewhere passes every check here while its uncommitted work sits on a
+disk this session cannot see. Ask the session that launched it, or leave it.
+
 State the check that way round, as an absence. "Confirm the branch is pushed and
 the pull request is open" has no passing form for an agent that correctly
 produced nothing durable, and a campaign session following it literally is
