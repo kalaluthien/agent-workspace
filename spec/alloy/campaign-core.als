@@ -43,7 +43,7 @@
  *   Directory     <slug>-<YYMMDD>/ at the container root, and optional. The
  *                 date disambiguates a slug reused months later and sorts
  *                 usefully in a listing.
- *   Branch        c<N>/<issue>-<topic>. The campaign number stops two campaigns
+ *   Branch        campaign-<N>/<issue>-<topic>. The campaign number stops two campaigns
  *                 working one repository from colliding on the remote, and it
  *                 tells a reviewer which campaign a branch came from; the
  *                 subtask's issue number separates subtasks within a campaign,

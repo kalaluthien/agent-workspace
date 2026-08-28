@@ -47,8 +47,9 @@
  *   R4   SameBranchTwice            SAT  two delegates, one branch
  *   R4c  CheckoutSwitchedUnderAgent SAT  an acquire moves a live agent's HEAD
  *   R5   RemoteStandDownLosesWork   SAT  a remote stand-down destroys work
+ *   R6   ReleaseUnderRemoteAgent    SAT  a local release under a remote live agent
  *
- * Clean: R4b SAT -- c<N> still separates campaigns, so the collision is
+ * Clean: R4b SAT -- campaign-<N> still separates campaigns, so the collision is
  * intra-campaign only. R5c SAT -- a non-launcher on the agent's own machine
  * retires it safely, so co-location is the axis, not ownership (R5b SAT:
  * on-the-remote without a clean tree is reachable).
@@ -64,9 +65,14 @@
  * Nothing repaired 3, 4 or 5 inside the model. Each was a contract change, and
  * all three have since been written outside it, so the runs above still read
  * SAT:
- *   - 4, by putting the subtask's issue number in the branch,
- *     c<N>/<issue>-<topic>, which answers it for two SUBTASKS only. R4e is what
- *     it leaves: two sessions delegating the same subtask onto one branch.
+ *   - 4, twice. The issue number in the branch, campaign-<N>/<issue>-<topic>,
+ *     answers it for two SUBTASKS; the branch-as-claim discipline answers what
+ *     that left (R4e): the launcher creates the branch on the remote by
+ *     create-ref BEFORE launching, and create-ref refuses an existing ref
+ *     server-side, so a second session's claim on the same subtask fails
+ *     before a second delegate exists. R4f is that discipline, UNSAT; R4g is
+ *     the control without the refusal, SAT. What remains: a launch that skips
+ *     claiming (R4e itself, still SAT), and a release read locally (R6).
  *   - 5, by naming STAND DOWN's pre-check local -- retire only an agent on your
  *     own machine. agent-protocol.als carries that as a check.
  *   - 3, only narrowed, by announcing the close on the anchor issue and reading
@@ -112,7 +118,7 @@ sig Repo {}
 one sig Container extends Repo {}
 
 sig Machine {}
-sig Topic {}                    -- the <topic> half of a c<N>/<topic> branch
+sig Topic {}                    -- the <topic> half of a campaign-<N>/<topic> branch
 
 /* The standing request a person arrives with. A campaign `covers` it when its
    Scope section would be judged to cover it in opening-campaign step 1. */
@@ -137,7 +143,8 @@ sig Session {
   var holds:  lone Campaign,    -- the campaign it is working
   var saw:    set Campaign,     -- what its new-versus-follow-up survey returned
   var readme: set Repo,         -- its campaign README's `## Repos` list
-  var seen:   set Repo          -- the anchor body's list as this session last read it
+  var seen:   set Repo,         -- the anchor body's list as this session last read it
+  var claimed: set Issue        -- subtask branches this session created on the remote
 }
 var sig Surveyed in Session {}
 
@@ -175,11 +182,11 @@ fun idx[c: Campaign]: set Issue { c.members }
 fun working: set Session { { s: Session | some s.holds and s.smach in s.holds.dirs } }
 
 /* The branch an agent works, in the form the design carried when R4 below was
-   found: c<N>/<topic>. Two agents share it when the campaign and the topic
+   found: campaign-<N>/<topic>. Two agents share it when the campaign and the topic
    match -- true by definition of the name, not by proof. */
 /* BRANCH NAMES CANNOT COLLIDE ACROSS CAMPAIGNS, even though the container
    shares one number sequence between its anchors and its subtasks.
-   c<N>/<issue>-<topic> collides only on an equal <N> and <issue> pair. An issue
+   campaign-<N>/<issue>-<topic> collides only on an equal <N> and <issue> pair. An issue
    has at most one parent, so a subtask maps to exactly one campaign number; two
    subtasks of one campaign have different numbers; and sharing a sequence with
    the anchor HELPS, because it makes <issue> and <N> distinct integers rather
@@ -189,7 +196,7 @@ pred sameBranchByTopic[a1, a2: Agent] {
   campaignOf[a1.task] = campaignOf[a2.task] and a1.atopic = a2.atopic
 }
 
-/* The form AGENTS.md adopted in answer to R4: c<N>/<issue>-<topic>. The
+/* The form AGENTS.md adopted in answer to R4: campaign-<N>/<issue>-<topic>. The
    subtask's issue number joins the campaign number, so two agents share a
    branch only when campaign, subtask and topic all match. That it separates two
    subtasks is definitional and is not run; what R4e asks is what it leaves. */
@@ -219,7 +226,7 @@ pred closableLocally[s: Session, c: Campaign] {
 abstract sig Event {}
 one sig Stutter, Survey, FileAnchor, Adopt, ReadBody, EditReadme, Sync,
         AddMember, CloseIssue, CloseAnchor, CreateDir, DeleteDir,
-        Acquire, Launch, Push, StandDown, AgentDie extends Event {}
+        Acquire, Claim, Release, Launch, Push, StandDown, AgentDie extends Event {}
 
 one sig Now {
   var ev:      one Event,
@@ -249,11 +256,12 @@ pred fDirs   { dirs' = dirs }
 pred fCo     { co' = co }
 pred fLocal  { fDirs and fCo }
 pred fAgent  { st' = st and Pushed' = Pushed and Visible' = Visible }
+pred fClaim  { claimed' = claimed }
 
 /* ---------------- events ---------------- */
 
 pred stutter {
-  fGH and fDoc and fSurv and fHolds and fLocal and fAgent
+  fGH and fDoc and fSurv and fHolds and fLocal and fAgent and fClaim
   obs[Stutter, none, none, none, none]
 }
 
@@ -263,7 +271,7 @@ pred survey[s: Session] {
   let X = { c: Campaign | c in Filed and c.anchor in Open and some c.covers } |
     saw' = saw - s->Campaign + s->X
   Surveyed' = Surveyed + s
-  fGH and fDoc and fHolds and fLocal and fAgent
+  fGH and fDoc and fHolds and fLocal and fAgent and fClaim
   obs[Survey, s, none, none, none]
 }
 
@@ -277,7 +285,7 @@ pred fileAnchor[s: Session, c: Campaign] {
   Filed' = Filed + c
   Open'  = Open + c.anchor
   holds' = holds - s->Campaign + s->c
-  fMem and fDoc and fSurv and fLocal and fAgent
+  fMem and fDoc and fSurv and fLocal and fAgent and fClaim
   obs[FileAnchor, s, c.anchor, none, none]
 }
 
@@ -290,7 +298,7 @@ pred adopt[s: Session, c: Campaign] {
   holds'  = holds  - s->Campaign + s->c
   readme' = readme - s->Repo + s->(c.body)
   seen'   = seen   - s->Repo + s->(c.body)
-  fGH and fBody and fSurv and fLocal and fAgent
+  fGH and fBody and fSurv and fLocal and fAgent and fClaim
   obs[Adopt, s, none, none, none]
 }
 
@@ -299,7 +307,7 @@ pred readBody[s: Session] {
   some s.holds
   readme' = readme - s->Repo + s->(s.holds.body)
   seen'   = seen   - s->Repo + s->(s.holds.body)
-  fGH and fBody and fSurv and fHolds and fLocal and fAgent
+  fGH and fBody and fSurv and fHolds and fLocal and fAgent and fClaim
   obs[ReadBody, s, none, none, none]
 }
 
@@ -308,7 +316,7 @@ pred editReadme[s: Session, r: Repo] {
   some s.holds
   r not in s.readme
   readme' = readme + s->r
-  fGH and fBody and fSeen and fSurv and fHolds and fLocal and fAgent
+  fGH and fBody and fSeen and fSurv and fHolds and fLocal and fAgent and fClaim
   obs[EditReadme, s, none, none, r]
 }
 
@@ -318,7 +326,7 @@ pred sync[s: Session] {
   some s.holds
   body' = body - s.holds->Repo + s.holds->(s.readme)
   seen' = seen - s->Repo + s->(s.readme)
-  fGH and fReadme and fSurv and fHolds and fLocal and fAgent
+  fGH and fReadme and fSurv and fHolds and fLocal and fAgent and fClaim
   obs[Sync, s, none, none, none]
 }
 
@@ -328,14 +336,14 @@ pred addMember[s: Session, i: Issue] {
   i not in Open
   members' = members + s.holds->i
   Open' = Open + i
-  fFiled and fDoc and fSurv and fHolds and fLocal and fAgent
+  fFiled and fDoc and fSurv and fHolds and fLocal and fAgent and fClaim
   obs[AddMember, s, i, none, none]
 }
 
 pred closeIssue[s: Session, i: Issue] {
   i in Open and i not in Campaign.anchor
   Open' = Open - i
-  fMem and fFiled and fDoc and fSurv and fHolds and fLocal and fAgent
+  fMem and fFiled and fDoc and fSurv and fHolds and fLocal and fAgent and fClaim
   obs[CloseIssue, s, i, none, none]
 }
 
@@ -343,7 +351,7 @@ pred closeAnchor[s: Session, c: Campaign] {
   s.holds = c
   c.anchor in Open
   Open' = Open - c.anchor
-  fMem and fFiled and fDoc and fSurv and fHolds and fLocal and fAgent
+  fMem and fFiled and fDoc and fSurv and fHolds and fLocal and fAgent and fClaim
   obs[CloseAnchor, s, c.anchor, none, none]
 }
 
@@ -353,7 +361,7 @@ pred createDir[s: Session] {
   some s.holds
   s.smach not in s.holds.dirs
   dirs' = dirs + s.holds->s.smach
-  fGH and fDoc and fSurv and fHolds and fCo and fAgent
+  fGH and fDoc and fSurv and fHolds and fCo and fAgent and fClaim
   obs[CreateDir, s, none, none, none]
 }
 
@@ -362,7 +370,7 @@ pred deleteDir[s: Session] {
   s.smach in s.holds.dirs
   dirs' = dirs - s.holds->s.smach
   co'   = co   - s.holds->s.smach->Repo->Topic
-  fGH and fDoc and fSurv and fHolds and fAgent
+  fGH and fDoc and fSurv and fHolds and fAgent and fClaim
   obs[DeleteDir, s, none, none, none]
 }
 
@@ -390,8 +398,38 @@ pred acquire[s: Session, r: Repo, t: Topic] {
   s.smach in s.holds.dirs
   s.holds.co[s.smach][r] != t
   co' = co - s.holds->s.smach->r->Topic + s.holds->s.smach->r->t
-  fGH and fDoc and fSurv and fHolds and fDirs and fAgent
+  fGH and fDoc and fSurv and fHolds and fDirs and fAgent and fClaim
   obs[Acquire, s, none, none, r]
+}
+
+/* The claim: the launcher creates the subtask's branch on the remote, at
+   origin/main's SHA, BEFORE any agent exists -- `gh api .../git/refs`, whose
+   refusal of an existing ref is the server's, not a convention's (probed
+   2026-08-28: a second create at the identical SHA returns 422 "Reference
+   already exists"). The base event is deliberately LOOSE -- it does not require
+   the ref to be absent -- so that atomicity can be a named discipline below and
+   its absence a control, the same shape as compare-then-write. */
+pred claim[s: Session, i: Issue] {
+  some s.holds
+  i in s.holds.members and i in Open
+  claimed' = claimed + s->i
+  fGH and fDoc and fSurv and fHolds and fLocal and fAgent
+  obs[Claim, s, i, none, none]
+}
+
+/* Releasing a dangling claim: delete the branch of a dead delegate that never
+   pushed. The guard is what a session can actually read -- the remote branch
+   holds nothing beyond main, and no agent on ITS OWN machine works the task.
+   Liveness on another machine is not readable (R5's axis), so a live remote
+   agent with no pushed work can still lose its claim under this rule: R6 below
+   is that residue, stated rather than implied away. */
+pred release[s: Session, i: Issue] {
+  i in Session.claimed
+  no a: Agent | a.task = i and a in Pushed
+  no a: Agent | a.task = i and a.amach = s.smach and a.st = Live
+  claimed' = claimed - Session->i
+  fGH and fDoc and fSurv and fHolds and fLocal and fAgent
+  obs[Release, s, i, none, none]
 }
 
 pred launch[s: Session, a: Agent] {
@@ -403,7 +441,7 @@ pred launch[s: Session, a: Agent] {
   s.holds.co[s.smach][a.task.home] = a.atopic
   st' = st - a->AState + a->Live
   Pushed' = Pushed and Visible' = Visible
-  fGH and fDoc and fSurv and fHolds and fLocal
+  fGH and fDoc and fSurv and fHolds and fLocal and fClaim
   obs[Launch, s, a.task, a, none]
 }
 
@@ -415,7 +453,7 @@ pred push[a: Agent] {
   Visible' = Visible + a
   (Pushed' = Pushed + a or Pushed' = Pushed)
   st' = st
-  fGH and fDoc and fSurv and fHolds and fLocal
+  fGH and fDoc and fSurv and fHolds and fLocal and fClaim
   obs[Push, none, a.task, a, none]
 }
 
@@ -427,7 +465,7 @@ pred standDown[s: Session, a: Agent] {
   a.task in s.holds.members
   st' = st - a->AState + a->Gone
   Pushed' = Pushed and Visible' = Visible
-  fGH and fDoc and fSurv and fHolds and fLocal
+  fGH and fDoc and fSurv and fHolds and fLocal and fClaim
   obs[StandDown, s, a.task, a, none]
 }
 
@@ -435,14 +473,14 @@ pred agentDie[a: Agent] {
   a.st in Live + Idle
   st' = st - a->AState + a->Gone
   Pushed' = Pushed and Visible' = Visible
-  fGH and fDoc and fSurv and fHolds and fLocal
+  fGH and fDoc and fSurv and fHolds and fLocal and fClaim
   obs[AgentDie, none, a.task, a, none]
 }
 
 pred init {
   no Filed and no Open and no Surveyed
   all c: Campaign | no c.members and no c.body and no c.dirs and no c.co
-  all s: Session | no s.holds and no s.saw and no s.readme and no s.seen
+  all s: Session | no s.holds and no s.saw and no s.readme and no s.seen and no s.claimed
   all a: Agent | a.st = Unborn
   no Visible and no Pushed
 }
@@ -452,7 +490,7 @@ pred step {
   or (some s: Session | survey[s] or readBody[s] or sync[s] or createDir[s] or deleteDir[s])
   or (some s: Session, c: Campaign | fileAnchor[s,c] or adopt[s,c] or closeAnchor[s,c])
   or (some s: Session, r: Repo | editReadme[s,r])
-  or (some s: Session, i: Issue | addMember[s,i] or closeIssue[s,i])
+  or (some s: Session, i: Issue | addMember[s,i] or closeIssue[s,i] or claim[s,i] or release[s,i])
   or (some s: Session, r: Repo, t: Topic | acquire[s,r,t])
   or (some s: Session, a: Agent | launch[s,a] or standDown[s,a])
   or (some a: Agent | push[a] or agentDie[a])
@@ -497,6 +535,16 @@ pred surveyAtFile {
 pred remoteCheckedShutdown { always (Now.ev = StandDown implies Now.evAgent in Visible) }
 /* What only a session on the agent's own machine can check. */
 pred localCheckedShutdown  { always (Now.ev = StandDown implies Now.evAgent in Pushed) }
+
+/* The claim discipline, in two named halves. An agent is launched only onto a
+   claim its launcher created; and a claim is created only where no ref exists,
+   which is what create-ref's 422 enforces server-side. Together they close
+   R4e (R4f UNSAT); the control R4g drops atomicity alone and the collision
+   returns, so the refusal -- not the ritual -- is the load-bearing half. A
+   session that launches without claiming bypasses both, which is why the
+   discipline lives in the launch procedure and R4e itself stays SAT. */
+pred claimBeforeLaunch { always (Now.ev = Launch implies Now.evIssue in Now.actor.claimed) }
+pred claimAtomic       { always (Now.ev = Claim  implies Now.evIssue not in Session.claimed) }
 
 /* The close rule as written, plus the honest local reading of it. */
 pred closeDiscipline[c: Campaign]      { always (Now.ev = CloseAnchor implies closable[c]) }
@@ -657,9 +705,9 @@ pred R3c_GlobalCloseRuleBlocks {
 /* =================== 4. two sessions, one repository =================== */
 
 /* R4. Two sessions on the same campaign launch delegates into the same
-   repository and pick the same topic. c<N> keeps campaigns apart; nothing keeps
+   repository and pick the same topic. campaign-<N> keeps campaigns apart; nothing keeps
    two sessions of one campaign apart. */
-/* WITNESS, against c<N>/<topic> -- the branch form this was found on. Two
+/* WITNESS, against campaign-<N>/<topic> -- the branch form this was found on. Two
    subtasks in R0, two sessions, the same <topic>: one branch, two delegates,
    one checkout. R4d is the same with a single subtask. */
 pred R4_SameBranchTwice {
@@ -679,7 +727,7 @@ pred R4_SameBranchTwice {
    subtasks, and there is only ever one of it per subtask. AGENTS.md names the
    branch rule as answering the two-subtask collision only, and this is the
    residual it leaves standing. */
-/* WHAT THE REPAIR LEAVES. Under c<N>/<issue>-<topic>, the form AGENTS.md
+/* WHAT THE REPAIR LEAVES. Under campaign-<N>/<issue>-<topic>, the form AGENTS.md
    adopted in answer to R4, two sessions delegating the SAME subtask still share
    one branch. The issue number separates two subtasks, and there is only ever
    one of it per subtask; that the numbered form separates two subtasks is
@@ -689,6 +737,50 @@ pred R4e_NumberedBranchStillShared {
     a1.launcher != a2.launcher
     eventually (a1.st = Live and a2.st = Live
                 and some campaignOf[a1.task] and sameBranch[a1, a2])
+  }
+}
+
+/* R4f. The claim discipline closes R4e. Launch only a claim you created, and
+   create-ref refuses an existing ref: the second session's claim fails before
+   a second delegate exists, so two live agents on one subtask from two
+   launchers become unreachable. UNSAT at R4e's own bounds. */
+pred R4f_ClaimClosesSameSubtask {
+  claimBeforeLaunch and claimAtomic
+  R4e_NumberedBranchStillShared
+}
+
+/* R4g. CONTROL: the ritual without the refusal. Both sessions claim -- nothing
+   refuses the second create -- and both launch onto claims they hold. SAT: the
+   collision returns, so the load-bearing half is the server's 422, not the
+   procedure. */
+pred R4g_ClaimWithoutAtomicityStillShared {
+  claimBeforeLaunch
+  some disj s1, s2: Session, i: Issue |
+    eventually (i in s1.claimed and i in s2.claimed)
+  R4e_NumberedBranchStillShared
+}
+
+/* R6. What release cannot read. The guard on release is local -- no PUSHED
+   work anywhere, no LIVE agent on this machine -- because liveness elsewhere
+   is not readable (R5's axis). A live agent on another machine that has not
+   pushed loses its claim under a rule correctly followed. Same shape as R5,
+   same mitigation: push as soon as one commit exists. */
+pred R6_ReleaseUnderRemoteAgent {
+  some s: Session, a: Agent {
+    a.amach != s.smach
+    eventually (a.st = Live and a not in Pushed
+                and Now.ev = Release and Now.actor = s and Now.evIssue = a.task)
+  }
+}
+
+/* R6b. Recovery: a dead delegate's dangling claim is released and the subtask
+   claimed again by a survivor. The claim does not outlive its usefulness. */
+pred R6b_ReclaimAfterDeath {
+  some disj s1, s2: Session, a: Agent {
+    a.launcher = s1
+    eventually (a.st = Gone and a not in Pushed
+                and eventually (Now.ev = Release
+                and eventually (Now.ev = Claim and Now.actor = s2 and Now.evIssue = a.task)))
   }
 }
 
@@ -705,7 +797,7 @@ pred R4d_SameSubtaskTwice {
 
 /* R4b. Positive control for R4: two agents of DIFFERENT campaigns, live in the
    same repository at the same time, with the same <topic> deliberately chosen.
-   They do not share a branch. That is what the c<N> prefix buys, and it isolates
+   They do not share a branch. That is what the campaign-<N> prefix buys, and it isolates
    R4's collision as an intra-campaign one. */
 pred R4b_CrossCampaignCoexists {
   some disj a1, a2: Agent, r: Repo {
@@ -795,6 +887,8 @@ pred Cov_Launch { eventually Now.ev = Launch }
 pred Cov_Push { eventually Now.ev = Push }
 pred Cov_StandDown { eventually Now.ev = StandDown }
 pred Cov_AgentDie { eventually Now.ev = AgentDie }
+pred Cov_Claim { eventually Now.ev = Claim }
+pred Cov_Release { eventually Now.ev = Release }
 
 /* ---------------- commands ---------------- */
 
@@ -816,11 +910,15 @@ run R4_SameBranchTwice           for 4 Issue, 1 Campaign, 2 Session, 2 Agent, 1 
 run R4b_CrossCampaignCoexists    for 4 Issue, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 16 steps
 run R4d_SameSubtaskTwice         for 4 Issue, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 14 steps
 run R4e_NumberedBranchStillShared  for 4 Issue, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 14 steps
+run R4f_ClaimClosesSameSubtask     for 4 Issue, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 14 steps
+run R4g_ClaimWithoutAtomicityStillShared for 4 Issue, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 14 steps
 run R4c_CheckoutSwitchedUnderAgent for 3 Issue, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Topic, 14 steps
 
 run R5_RemoteStandDownLosesWork  for 3 Issue, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 14 steps
 run R5b_VisibleNotPushed         for 3 Issue, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 14 steps
 run R5c_NonLauncherSameMachineIsFine for 3 Issue, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Topic, 14 steps
+run R6_ReleaseUnderRemoteAgent   for 3 Issue, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 14 steps
+run R6b_ReclaimAfterDeath        for 3 Issue, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 16 steps
 
 /* the reachability floor, all sixteen */
 run Cov_Survey       for 3 Issue, 2 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 2 Topic, 12 steps
@@ -839,3 +937,5 @@ run Cov_Launch       for 3 Issue, 2 Campaign, 2 Session, 1 Agent, 2 Machine, 3 R
 run Cov_Push         for 3 Issue, 2 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 2 Topic, 12 steps
 run Cov_StandDown    for 3 Issue, 2 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 2 Topic, 12 steps
 run Cov_AgentDie     for 3 Issue, 2 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 2 Topic, 12 steps
+run Cov_Claim        for 3 Issue, 2 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 2 Topic, 12 steps
+run Cov_Release      for 3 Issue, 2 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 2 Topic, 12 steps

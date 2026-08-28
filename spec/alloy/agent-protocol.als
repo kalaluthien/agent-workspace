@@ -32,7 +32,8 @@
  * TRANSPORT
  *
  * The harness's own peer messaging, addressed by the name given at launch
- * (claude --name <role>-<slug>). ListAgents resolves that name; herdr's pane
+ * (claude --name, the branch with its slash flattened:
+ * campaign-<N>-<issue>-<topic>). ListAgents resolves that name; herdr's pane
  * label is not an address.
  *
  * Two properties make it the right transport and both are load-bearing:

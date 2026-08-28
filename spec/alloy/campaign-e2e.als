@@ -674,7 +674,7 @@ pred S11_MergedButIssueLeftOpen {
 }
 
 /* 12. Two campaigns work the same repository at once. Both settle; neither
-       touches the other's members. This is what the c<N>/ branch rule buys. */
+       touches the other's members. This is what the campaign-<N>/ branch rule buys. */
 /* FOR REAL -- real. Open two anchors, each with one subtask in the same fixture
    repository, on branches c<N1>/... and c<N2>/... . Merge both.
    PASS: each anchor's listing shows only its own subtask, and the two branches
