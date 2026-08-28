@@ -1,9 +1,9 @@
 # Campaign principles: migration
 
 This campaign exists to move a working system from one form to another without
-changing what it does. These principles add to the container's rules and each
-repository's own conventions; where a repository already has a rule, that rule
-stands.
+changing what it does. These principles are appended to the repository's own
+conventions and only add to them; where a repository already has a rule, that
+rule stands.
 
 ## What good means
 

@@ -146,9 +146,15 @@ auth-refactor-260828/
 - Filing the anchor issue after scaffolding gives the directory a slug with no
   ID behind it and branches named for a number you have not got yet. Order
   matters here and nowhere else in the procedure.
-- The campaign `AGENTS.md` stacks on top of each repository's own. Adding a
-  principle is free; contradicting a repository convention hands the delegate a
-  conflict it cannot resolve, and it will pick one and not tell you.
+- A delegate does not pick up the campaign `AGENTS.md` from its parent
+  directories. It reaches the delegate only through
+  `--append-system-prompt-file <campaign>/AGENTS.md` at launch; without that
+  flag the delegate reads the repository's own file and nothing else, and
+  reports nothing wrong.
+- Where the campaign file does reach a delegate, it sits beside the
+  repository's own conventions. Adding a principle is free; contradicting one
+  hands the delegate a conflict it cannot resolve, and it will pick a side
+  without telling you.
 - `git status` in the container root will never show the campaign directory.
   That is the allowlist working, not a missing file.
 - Never run one git command across `repos/*`. Each is its own repository with

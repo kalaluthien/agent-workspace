@@ -1,8 +1,8 @@
 # Campaign principles: analysis
 
 This campaign exists to measure or audit a system that already runs. These
-principles add to the container's rules and each repository's own conventions;
-where a repository already has a rule, that rule stands.
+principles are appended to the repository's own conventions and only add to
+them; where a repository already has a rule, that rule stands.
 
 ## What good means
 

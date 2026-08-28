@@ -1,8 +1,8 @@
 # Campaign principles: research
 
 This campaign exists to answer a question nobody can currently answer. These
-principles add to the container's rules and each repository's own conventions;
-where a repository already has a rule, that rule stands.
+principles are appended to the repository's own conventions and only add to
+them; where a repository already has a rule, that rule stands.
 
 ## What good means
 

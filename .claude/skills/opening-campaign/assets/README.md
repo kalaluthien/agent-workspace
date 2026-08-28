@@ -25,16 +25,16 @@ Out:
 - [ ] <subtask> — <owner/repo>
 - [ ] <subtask> — <owner/repo>
 
-The anchor issue's checklist is the copy that counts. This one is a local
-reading aid and may lag.
+This file and the anchor issue body carry the same five sections, so syncing
+one to the other is an overwrite. The issue is the copy that counts.
 
 ## Repos
 
-| repository | branch | what changes here |
-| --- | --- | --- |
-| <owner/repo> | c<N>/<topic> | <one line> |
+- <owner/repo>
+- <owner/repo>
 
-Subtasks live on each repository as issues labelled `campaign-<N>`:
+Each is checked out under `repos/`, on branch `c<N>/<topic>`. Subtasks live on
+each repository as issues labelled `campaign-<N>`:
 
 ```sh
 gh issue list -R <owner/repo> --label campaign-<N>
