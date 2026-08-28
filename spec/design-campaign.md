@@ -117,17 +117,31 @@ is what makes both usable.
 
 The campaign session is opened by the person, in the container root, with
 whatever they have — a sentence, an issue number, a screenshot of a broken
-service. It decides the campaign, scaffolds it, and then, per subtask, chooses:
+service. It decides the campaign, scaffolds it, and then, per subtask, chooses
+one of three execution modes. `AGENTS.md` states the choice; the reasons are
+here, and they are not restated there.
 
-> **Do it here** when the change fits in one repository, is small enough to
-> hold in view at once, and needs nothing from that repository's build or test
-> loop. **Spawn a repository agent** otherwise — when the work needs the
-> repository's own conventions and toolchain, when it will take many turns, or
-> when two repositories must move at the same time.
-
-The predicate is "will I need that repository's context loaded to do this
+The first predicate is "will I need that repository's context loaded to do this
 well?", and the cost being weighed is turns: a spawn costs one launch and one
 handover, so anything longer than a handful of turns is cheaper delegated.
+
+That predicate alone gives two modes, and two is one short. The third — an
+in-process subagent working a git worktree — exists because the clone a herdr
+delegate needs is sometimes the wrong thing to make. When the target repository
+is the container itself there is nothing to clone into: the campaign directory
+is optional and may not exist, and campaign #1 built this machinery from the
+container root with no directory at all. And a clone reintroduces the
+launch-behind hazard, which is not an edge case: the remote moves between the
+clone and the launch, and a delegate launched behind obeys an `AGENTS.md` the
+session has already superseded, with nothing reporting it. A worktree cannot be
+behind at cut time, because it shares one `.git` with the checkout it was cut
+from and therefore sees exactly the refs that checkout sees.
+
+The criterion also weighs parallelism, which the binary form could not see.
+Turn count measures one subtask; parallelism measures several. Several
+independent subtasks in one repository are worth handing over even when each is
+small on its own, because a session that keeps them does them in sequence,
+while the modes that hand over run them at once.
 
 ## Sessions
 
