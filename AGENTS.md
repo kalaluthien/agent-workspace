@@ -52,10 +52,30 @@ a follow-up subtask on the campaign that already exists. Load the
 `opening-campaign` skill.
 
 **Subtasks** — one subtask is one GitHub issue, filed on the repository whose
-code changes. Every one of them carries the label `campaign-<N>` and a body line
-`Campaign: kalaluthien/agent-workspace#N`. The anchor issue's `Repos:` list plus
-that label is the whole index: `gh issue list -R <repo> --label campaign-<N>`
-over the list. Nothing else has to be maintained.
+code changes, and created **as a sub-issue of the anchor**:
+
+```sh
+gh issue create -R <owner/repo> --parent https://github.com/kalaluthien/agent-workspace/issues/<N> ...
+```
+
+That one flag is the whole index. Read it back with
+
+```sh
+gh api repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
+```
+
+which returns exactly the campaign's members, in any repository, public or
+private (probed 2026-08-28: a sub-issue in a private repository lists correctly
+under a public parent). The link is made by the same command that creates the
+issue, so there is no second write to forget, and it is prunable — moving a
+subtask out of the campaign removes it from the index, which a back-reference
+or a search over body text cannot do.
+
+Add a body line `Campaign: kalaluthien/agent-workspace#N` as prose for a human
+reading the raw issue. It is not the index and nothing queries it.
+
+The anchor's `Repos:` list still earns its place: it says which repositories to
+clone when a campaign is opened, before any subtask exists.
 
 **Do it here or hand it over** — do it here when the change fits in one
 repository, is small enough to hold in view at once, and needs nothing from that
@@ -110,10 +130,13 @@ cannot resolve.
 
 Never answer one with the other.
 
-- **Completion is a GitHub fact.** A subtask is finished when its issue is
-  closed and its pull request is merged. Nothing on a terminal screen is
-  evidence. A delegate that died after pushing has still succeeded; a delegate
-  that is alive and chatty may have done nothing.
+- **Completion is a GitHub fact.** A subtask is settled when its issue is closed
+  — either as completed with its pull request merged, or as **not planned**,
+  which is how a subtask gets dropped. Both readings are needed: with only
+  closed-and-merged, a subtask abandoned on purpose never reads settled and its
+  campaign can never be closed. Nothing on a terminal screen is evidence. A
+  delegate that died after pushing has still succeeded; a delegate that is alive
+  and chatty may have done nothing.
 - **Liveness is a herdr fact**, read from `herdr agent list` presence plus the
   session transcript — never from `agent_status` alone, which reports the screen
   and calls a mid-turn pause `idle`.
@@ -124,7 +147,15 @@ that work is durable. Review feedback gets a fresh session, briefed from the
 pull request — a pane held open across a multi-day review is the expensive
 thing.
 
-A campaign may not be closed while any agent is live under its tree.
+A campaign may not be closed while any agent is live under its tree, and a
+repository may not be dropped from a campaign while an agent is working one of
+its subtasks.
+
+**That check is local and cannot see another machine.** An operator deleting a
+campaign tree here is blind to an agent live on the same campaign elsewhere, and
+no cheap mechanism fixes it. What lowers the stakes instead: a delegate pushes
+its branch as soon as it has one commit, so a tree deleted underneath it costs
+uncommitted work and nothing more.
 
 # Concurrency
 
