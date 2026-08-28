@@ -176,6 +176,22 @@ mechanism rather than a belt-and-braces addition (both probed 2026-08-28: with
 the flag, or with approval granted, the campaign's marker loads; with neither,
 only the repository's does).
 
+**Check that it arrived, with a canary.** The flag is absent from `claude
+--help`'s option list and the appended text never reaches the session
+transcript, so nothing on disk records whether a delegate received the
+campaign's principles — and a delegate that silently got nothing looks exactly
+like one that got everything and ignored it. Asking it would be the self-report
+this design refuses everywhere else, so make the answer unobtainable any other
+way:
+
+1. Append a one-line token to the file being injected, unique per launch.
+2. Launch with `--append-system-prompt-file <that file>`.
+3. **Delete the file**, then ask the delegate for the token.
+
+A delegate that answers correctly is quoting something it cannot read, which is
+evidence rather than testimony. Verified 2026-08-28: the token came back intact
+from a session whose injected file had already been removed.
+
 The campaign's principles are appended to a delegate that already has the
 repository's own, so a campaign `AGENTS.md` only ever *adds*; one that
 contradicts a repository's conventions puts the delegate in a conflict it
