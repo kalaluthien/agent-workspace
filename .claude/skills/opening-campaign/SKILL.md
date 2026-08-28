@@ -41,6 +41,24 @@ Read the body of each one that could plausibly cover the request
 (`gh issue view <N> -R kalaluthien/agent-workspace`); the title alone does not
 carry the scope.
 
+**That repository holds subtasks too**, because it is a member of its own
+campaigns, and the `campaign` label is the whole thing that tells the two apart.
+The label is applied by hand at create time, so cross-check it against the one
+property a subtask cannot have:
+
+```sh
+gh issue list -R kalaluthien/agent-workspace --state open \
+  --json number,title,parent \
+  --jq '.[] | select(.parent == null) | "#\(.number)\t\(.title)"'
+```
+
+An anchor is the issue nothing is the parent of, so every anchor is in that
+output whether or not it was labelled. An issue it names that the labelled
+listing does not may be an anchor whose label was forgotten — read its body
+before deciding no campaign covers the request. A labelled issue *missing* from
+it is a subtask wearing the label, or a campaign filed under another campaign;
+say so rather than joining it.
+
 | what you find | what to do |
 | --- | --- |
 | No open campaign's Scope covers the request | Open a new campaign: continue to step 2. |
@@ -126,6 +144,20 @@ two calls and nothing makes them one, so two sessions can still interleave
 between them. What the re-read buys is that the window is seconds instead of
 however long steps 2 and 3 took. If two anchors appear anyway, close one as
 `not planned` and say which survived.
+
+**Read the label back before scaffolding anything.** `--label campaign` is what
+makes the anchor findable at all, and an anchor filed without it is invisible to
+every later survey, so the next session opens a second campaign over the same
+scope and nothing reports it (probed: an unlabelled parent issue does not appear
+in step 1's labelled listing).
+
+```sh
+gh issue view <N> -R kalaluthien/agent-workspace --json labels,parent
+```
+
+Want `campaign` among `labels` and `parent` null. A non-null `parent` means you
+filed a subtask, not an anchor — `gh issue edit <N> --remove-parent` before
+going on.
 
 Issue #1 in that repository is the worked example of the body shape; read it
 before writing yours. Its sections:
@@ -267,8 +299,11 @@ Read the campaign's subtasks back from the anchor, in one call, across every
 repository:
 
 ```sh
-gh api repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
+gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
 ```
+
+`--paginate` is not optional: the endpoint pages at thirty, and a truncated
+index reads exactly like a complete one.
 
 If the target repository is not in the anchor's `## Repos` list, add it to the
 campaign `README.md`, sync that to the anchor body, and acquire it as in step 5.

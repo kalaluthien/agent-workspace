@@ -3,7 +3,10 @@
 The reasoning behind the rules in `AGENTS.md`. Read this when a rule looks
 arbitrary; read `AGENTS.md` when you need the rule itself.
 
-Status: first design, 2026-08-28. Not yet exercised by a real campaign.
+Status: first design, 2026-08-28. Campaign #1 is exercising it as it is
+written — a smoke test, a protocol test and an e2e drill have each contradicted
+a rule here, and each correction is folded into the text rather than kept as an
+erratum.
 
 ## The unit
 
@@ -50,8 +53,11 @@ issue number is the campaign's ID.
   already resolvable from any machine and from the phone.
 - **Slug** — a meaningful kebab-case phrase, chosen when the campaign opens.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, e.g.
-  `auth-refactor-260828/`. The date disambiguates a slug reused months later
-  and sorts usefully in a listing.
+  `auth-refactor-260828/`, and **optional**. The date disambiguates a slug
+  reused months later and sorts usefully in a listing. A campaign legitimately
+  has none on a given machine: the campaign is its anchor issue and the
+  directory is one machine's cache of it, so closing a campaign and deleting a
+  directory are different acts. #1, which built this machinery, never had one.
 - **Branch** — `c<N>/<issue>-<topic>` in every member repository, e.g.
   `c7/31-token-refresh`. The campaign number separates campaigns; the subtask's
   issue number separates subtasks within one, which only matters once several
@@ -90,6 +96,66 @@ repository list to loop over and no search index to have caught up.
 Its one open question was whether a sub-issue may live in a different
 repository, and a private one, under a public parent. Probed 2026-08-28: it can.
 
+## Self-hosted campaigns: two kinds of issue in one tracker
+
+`agent-workspace` is a member of its own campaigns, so its tracker holds anchors
+and subtasks side by side, drawn from one number sequence. Every reader of
+issues could conflate them. What follows was probed against GitHub on
+2026-08-28, on throwaway issues since deleted — not read out of documentation.
+
+| question | answer |
+| --- | --- |
+| does closing a parent close its sub-issues? | no; the children stay open |
+| does closing every sub-issue close the parent? | no |
+| does a closed sub-issue stay in `sub_issues`? | yes, with `state: closed` |
+| may a sub-issue itself be a parent? | yes, to any depth |
+| is `sub_issues` recursive? | no — direct children only |
+| may an issue have two parents? | no; a second `--add-sub-issue` *moves* it |
+| may an issue be its own parent? | no; the API refuses it |
+| does an unlabelled anchor appear under `--label campaign`? | no |
+
+Three readers come out clean.
+
+**Closing cannot reach another campaign.** Every enumeration in
+`closing-campaign` is scoped to `issues/<N>/sub_issues`, the only issue it closes
+is `<N>` itself, and GitHub does not cascade a close in either direction. A
+campaign closed here leaves a neighbouring campaign's subtasks untouched even
+though they sit in the same tracker.
+
+**The settlement stays correct.** Each row's repository comes from the
+sub-issue's own `repository_url`, which resolves to the anchor's repository in
+the self-hosted case and to a different one otherwise; nothing in the script
+assumes the two differ.
+
+**Branch names cannot collide.** `c<N>/<issue>-<topic>` collides only on an
+equal `<N>` and `<issue>` pair. An issue has at most one parent, so a subtask
+maps to exactly one campaign number; two subtasks of one campaign have different
+numbers; and sharing a sequence with the anchor *helps*, because it makes
+`<issue>` and `<N>` distinct integers rather than allowing them to coincide. The
+collision case cannot be constructed.
+
+### Residual risks
+
+- **The `campaign` label is the only thing that marks an anchor, and nothing
+  enforces it.** An anchor filed without it is invisible to every later survey,
+  so the next session opens a second campaign over the same scope and nothing
+  reports it. Two cheap readers narrow this — `opening-campaign` reads the label
+  back after filing, and `parent == null` finds an anchor the label missed — but
+  a session that runs neither still files the duplicate.
+- **A campaign may be filed under another campaign.** GitHub allows it and
+  `sub_issues` is not recursive, so the outer settlement shows the nested anchor
+  as one ordinary row and never sees its members: the outer campaign reads
+  closable while the inner one is still running. `scripts/campaign-settlement`
+  reports a subtask that has sub-issues of its own; nothing prevents the shape.
+- **A reparent is silent and leaves no trace.** `gh issue edit <other>
+  --add-sub-issue <n>` moves a subtask out of its campaign's index with no
+  warning, and the old parent's listing simply gets shorter. The sanctioned flow
+  only ever passes `--parent` at create, so this needs a hand-run command with a
+  mistyped number — but there is no undo signal if one happens.
+- **A bare issue number says nothing about its kind.** `#4` and `#1` are an
+  anchor and a subtask by nothing a reader can see. Prose that names a number
+  should name the kind with it, and a tool should resolve it rather than assume.
+
 ## Completion and liveness are different questions
 
 The old workspace asked a delegate to print `DONE <name>` and grepped for it.
@@ -100,10 +166,16 @@ a computed verdict.
 
 Here the two questions are split and answered by different systems.
 
-- **Completion is a GitHub fact.** A subtask is finished when its issue is
-  closed and its PR is merged. Nothing on a terminal screen is evidence. This
-  survives the delegate's death, the pane's death, and the machine's reboot,
-  and it reads the same from a phone.
+- **Completion is a GitHub fact.** A subtask is settled when its issue is
+  closed. The merged pull request behind it only says which kind of closed —
+  `complete`, or `dropped` for every other close. Settlement had to be widened
+  to that: closed-and-merged alone cannot say "dropped", so a subtask abandoned
+  on purpose, moved to a duplicate, or closed by hand with nothing to merge
+  never reads settled and its campaign can never be closed. That is
+  `campaign-D`'s assertion 7b, and it is why `scripts/campaign-settlement`
+  counts a closed issue as settled whatever closed it. Nothing on a terminal
+  screen is evidence. This survives the delegate's death, the pane's death, and
+  the machine's reboot, and it reads the same from a phone.
 - **Liveness is a herdr fact.** Whether a delegate is working, stuck, waiting
   on a prompt, or gone is read from `herdr agent list` presence plus the
   session transcript — never from `agent_status` alone, which reports the
@@ -117,17 +189,31 @@ is what makes both usable.
 
 The campaign session is opened by the person, in the container root, with
 whatever they have — a sentence, an issue number, a screenshot of a broken
-service. It decides the campaign, scaffolds it, and then, per subtask, chooses:
+service. It decides the campaign, scaffolds it, and then, per subtask, chooses
+one of three execution modes. `AGENTS.md` states the choice; the reasons are
+here, and they are not restated there.
 
-> **Do it here** when the change fits in one repository, is small enough to
-> hold in view at once, and needs nothing from that repository's build or test
-> loop. **Spawn a repository agent** otherwise — when the work needs the
-> repository's own conventions and toolchain, when it will take many turns, or
-> when two repositories must move at the same time.
-
-The predicate is "will I need that repository's context loaded to do this
+The first predicate is "will I need that repository's context loaded to do this
 well?", and the cost being weighed is turns: a spawn costs one launch and one
 handover, so anything longer than a handful of turns is cheaper delegated.
+
+That predicate alone gives two modes, and two is one short. The third — an
+in-process subagent working a git worktree — exists because the clone a herdr
+delegate needs is sometimes the wrong thing to make. When the target repository
+is the container itself there is nothing to clone into: the campaign directory
+is optional and may not exist, and campaign #1 built this machinery from the
+container root with no directory at all. And a clone reintroduces the
+launch-behind hazard, which is not an edge case: the remote moves between the
+clone and the launch, and a delegate launched behind obeys an `AGENTS.md` the
+session has already superseded, with nothing reporting it. A worktree cannot be
+behind at cut time, because it shares one `.git` with the checkout it was cut
+from and therefore sees exactly the refs that checkout sees.
+
+The criterion also weighs parallelism, which the binary form could not see.
+Turn count measures one subtask; parallelism measures several. Several
+independent subtasks in one repository are worth handing over even when each is
+small on its own, because a session that keeps them does them in sequence,
+while the modes that hand over run them at once.
 
 ## Sessions
 
@@ -157,6 +243,13 @@ handover, so anything longer than a handful of turns is cheaper delegated.
   on no approval, so it is the mechanism. The campaign file is *appended to* a
   delegate that already carries the repository's own, which is why it may only
   add principles.
+- **A campaign has a kind, and the kind is those principles.** Four are written
+  — `research`, `analysis`, `prototyping`, `migration` — and one is copied into
+  the campaign as its `AGENTS.md` when the directory is scaffolded. They differ
+  in what a claim has to carry before it counts, which is the one thing a
+  delegate cannot infer from the repository it was handed. So the kind is stated
+  to the requester at the open: it costs a line to correct there and a wrong
+  standard of evidence in every subtask if it goes by unseen.
 - The herdr **tab** title stays LLM-generated by the existing hook; that is a
   human-readable label, not an identifier. The **name** is the identifier and
   is a slug, because it is what gets searched, addressed, and resumed.

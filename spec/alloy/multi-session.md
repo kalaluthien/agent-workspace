@@ -54,9 +54,14 @@ closing it — read and create are not atomic.
 - Settlement is "the issue is closed"; the merged-PR half stays campaign-core's.
 - "Covers the request" is a static bit, not a judgement over Scope prose.
 - No `gh` latency: each window measured is a minimum.
-- 4 is repaired in the contract and 3 and 5 are not — each of those two is a
-  contract change, yours to write: a gate that sees a live *session*, and
-  `STAND DOWN`'s pre-check named as local. The branch form answers 4 for two
-  subtasks only; `R4e` is what it leaves.
+- Nothing repaired 3, 4 or 5 inside the model — each was a contract change,
+  and all three have since been written outside it, so the runs above still
+  read SAT: 4 by putting the subtask's issue number in the branch,
+  `c<N>/<issue>-<topic>`, which answers it for two *subtasks* only — `R4e` is
+  what it leaves, two sessions delegating the same subtask onto one branch; 5
+  by naming `STAND DOWN`'s pre-check local in `spec/agent-protocol.md` and
+  retiring only an agent on your own machine; 3 only narrowed, by announcing
+  the close on the anchor issue and reading the comments back, which a session
+  that never comments still slips past.
 - `R3c` UNSAT restates the close rule, so `R3b` reads as that rule being
   unreadable, not failing.

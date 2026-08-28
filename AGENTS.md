@@ -49,7 +49,10 @@ is closed.
   tree for who else is in it.
 
 - **ID** — the number of its anchor issue in `kalaluthien/agent-workspace`.
-  Typed as `#N`.
+  Typed as `#N`. The anchor carries the `campaign` label, and that label is what
+  makes it findable — every survey lists by it, so an anchor filed without it is
+  in nobody's listing and the next session opens a second campaign over the same
+  scope.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, and
   **optional**. A campaign is its anchor issue; the directory is one machine's
   cache of it. A campaign legitimately has none here when this machine has not
@@ -77,13 +80,13 @@ and whether it survives the machine. Identify the plane before any git command.
 | plane | holds | stored in |
 | --- | --- | --- |
 | **container** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `docs/`, `scripts/` | this repository |
+| **member repository** | the code and its history | each repository's own remote |
+| **campaign** | which repositories, what for, how far along | GitHub issues |
 
 `spec/` holds what is normative — the design and the models that check it, as
 markdown. `docs/` holds views drawn for a reader, as HTML. The two are kept
 apart and neither inherits the other's rules, so a markdown file under `docs/`
 is misfiled rather than temporary.
-| **member repository** | the code and its history | each repository's own remote |
-| **campaign** | which repositories, what for, how far along | GitHub issues |
 
 The campaign directory holds no plane of its own. It is a scratch assembly of
 things already versioned elsewhere, so it is git-ignored on purpose and nothing
@@ -143,6 +146,19 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0
 - **A skill edited inside the clone does not change the running campaign**, and
   that is deliberate — the tool must not move under a session using it. It takes
   effect only once merged and pulled.
+- **One tracker then holds both kinds of issue** — this campaign's anchors and
+  this repository's subtasks — drawn from one number sequence. An anchor is an
+  issue labelled `campaign` with no parent; a subtask is an issue with a parent,
+  labelled or not. Both readings are cheap and they cross-check each other:
+
+  ```sh
+  gh issue list -R kalaluthien/agent-workspace --state open \
+    --json number,title,parent --jq '.[] | select(.parent == null) | .number'
+  ```
+
+  Neither reading is enforced by GitHub, so `scripts/campaign-settlement` reports
+  a mismatch instead of guessing. Never survey the container's issues unfiltered:
+  the plain `gh issue list` here is mostly subtasks.
 
 # Running a campaign
 
@@ -162,12 +178,13 @@ gh issue create -R <owner/repo> --parent https://github.com/kalaluthien/agent-wo
 That one flag is the whole index. Read it back with
 
 ```sh
-gh api repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
+gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
 ```
 
 which returns exactly the campaign's members, in any repository, public or
 private (probed 2026-08-28: a sub-issue in a private repository lists correctly
-under a public parent). The link is made by the same command that creates the
+under a public parent). `--paginate` is not optional: the endpoint pages at
+thirty, and a truncated index reads exactly like a complete one. The link is made by the same command that creates the
 issue, so there is no second write to forget, and it is prunable — moving a
 subtask out of the campaign removes it from the index, which a back-reference
 or a search over body text cannot do.
@@ -181,11 +198,34 @@ is a markdown heading followed by a plain `- owner/repo` list, in the issue body
 and in the campaign `README.md` alike — the same heading, so a reader written
 against one works on the other.
 
-**Do it here or hand it over** — do it here when the change fits in one
-repository, is small enough to hold in view at once, and needs nothing from that
-repository's build or test loop. Spawn a repository agent otherwise: when the
-work needs the repository's own conventions and toolchain, when it will take
-many turns, or when two repositories must move at once.
+**Do it here, hand it to a subagent, or hand it to a delegate** — every subtask
+runs one of three ways, and the mode is chosen before the work starts.
+
+- **Your own hands** when the change is one small edit, holds in view at once,
+  and needs nothing from that repository's build or test loop.
+- **An in-process subagent on a git worktree of the repository** when several
+  independent subtasks can run at once, or when the work is hands-on enough
+  that the session should not spend its own turns on it — and the repository is
+  already checked out here, which typically means the container itself.
+- **A herdr repository agent in a clone under `<campaign>/repos/<repo>/`** when
+  the work needs the repository's own conventions and toolchain, when it will
+  take many turns, or when two repositories must move at once.
+
+All three carry the same mechanics. The branch is `c<N>/<issue>-<topic>`, cut
+after the subtask's issue exists because the number is minted there. It is
+pushed as soon as one commit exists, so a checkout that dies costs uncommitted
+work and nothing more. It lands by pull request.
+
+The subagent mode needs none of the delegate rules that exist to cross a
+process boundary: no handover file, because the brief is passed in-process and
+no terminal can truncate it; no canary, because nothing is injected that could
+silently fail to arrive; no herdr liveness, because the subagent reports its
+own exit to the session that launched it. Completion is unchanged — it is still
+a GitHub fact, read from the subtask's issue and pull request.
+
+Parallelism is a reason to hand over on its own. Several independent subtasks
+in one repository are each small enough to do here, and a session that does
+them here does them one after another.
 
 **Close** — load the `closing-campaign` skill. A campaign closes when its anchor
 issue closes, and only a person decides that.
@@ -289,6 +329,12 @@ Never answer one with the other.
   campaign can never be closed. Nothing on a terminal screen is evidence. A
   delegate that died after pushing has still succeeded; a delegate that is alive
   and chatty may have done nothing.
+
+  Read it with `scripts/campaign-settlement <N>`, which is the one implementation
+  of that reading: closed is settled, and the merged pull request only says which
+  kind — `complete`, or `dropped` for everything else that is closed. Do not
+  hand-roll a second reader; two of them drift, and the campaign's central
+  verdict is the worst place for that.
 - **Liveness is a herdr fact**, read from `herdr agent list` presence plus the
   session transcript — never from `agent_status` alone, which reports the screen
   and calls a mid-turn pause `idle`.
