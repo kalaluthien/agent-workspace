@@ -29,9 +29,9 @@ cycle of real traffic.
 
 ## What to refuse
 
-- A behaviour change inside a migration commit. Fix it before or after, in its
-  own commit, so the equivalence check stays meaningful and the diff stays
-  reviewable.
+- Mixing a behaviour change into the migration itself. Whatever this repository
+  merges as one unit, the change of form and the change of behaviour go in
+  separate ones, or the equivalence check has nothing to compare.
 - Deleting the old path in the same change that enables the new one. Removal is
   a later subtask, filed once the new path has carried real load.
 - A cutover with no rollback, or one whose rollback needs data it destroys.

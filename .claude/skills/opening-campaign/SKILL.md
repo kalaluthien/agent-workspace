@@ -12,12 +12,13 @@ to work in.
 Finished when all of these hold:
 
 - An open issue in `kalaluthien/agent-workspace` carries the label `campaign`
-  and body sections Intent, Scope, Requirements, Plan, Repos.
+  and body sections Intent, Scope, Requirements, Plan, Repos, with `Repos` a
+  plain `- owner/repo` list.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
   `CLAUDE.md`, `README.md`, `runtime/`, and `scripts/`.
 - No angle-bracket placeholder survives in the campaign's `README.md`.
 - Every entry under `Repos:` resolves to a checkout at
-  `<campaign>/repos/<name>/`.
+  `<campaign>/repos/<name>/` and carries the label `campaign-<N>`.
 - The reply names the campaign ID, the directory, and the anchor issue URL.
 
 ## Procedure
@@ -41,10 +42,13 @@ carry the scope.
 | One open campaign's Scope covers it | File a follow-up subtask on that campaign and stop. |
 | Two or more could cover it, or the fit is arguable | Ask the person which, naming the candidates. Do not guess. |
 
-A follow-up subtask is one issue on the repository whose code changes, carrying
-the label `campaign-<N>` and a body line
-`Campaign: kalaluthien/agent-workspace#N`. Filing it ends the run — the
-campaign is already scaffolded.
+Match on Scope, never on `Repos:`. A request that touches a repository an open
+campaign already lists, but that its Scope does not cover, opens a new campaign.
+
+Filing the follow-up ends the run — that campaign is already scaffolded. File it
+the way "Filing a subtask issue" below says, including the index steps; a
+follow-up landing on a repository the anchor issue does not list is invisible to
+every status query.
 
 ### 2. Name it and pick its kind
 
@@ -90,38 +94,88 @@ write it to be matched against a request, not admired.
 
 ### 4. Scaffold the directory
 
-Copy `assets/` to `<slug>-<YYMMDD>/` at the container root, then fill it in.
+Resolve the container root once, from the container root, and address every path
+below through it — a later step runs with a different working directory:
 
-- `cp -R` the whole `assets/` tree, then move the chosen
-  `agents/<kind>.md` to `AGENTS.md` and delete the rest of `agents/`.
-- Fill every placeholder in `README.md` from the anchor issue, so the two agree.
+```sh
+CONTAINER=$(git rev-parse --show-toplevel)
+```
+
+Reject a slug that is not plain kebab-case before it reaches a path. A slug
+comes from a person and lands in a `cp` destination, so one containing `../`
+writes outside the container:
+
+```sh
+printf '%s' "<slug>" | grep -Eq '^[a-z0-9]+(-[a-z0-9]+)*$'
+```
+
+Then build the directory:
+
+```sh
+CAMPAIGN="$CONTAINER/<slug>-$(date +%y%m%d)"
+[ -e "$CAMPAIGN" ] && echo "exists, stop" || cp -R <skill>/assets "$CAMPAIGN"
+```
+
+Stop if it already exists and ask the person. `cp -R` over a live campaign exits
+0 and replaces a filled-in `README.md` with placeholders.
+
+Then finish it:
+
+- Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
+- Fill every placeholder in `README.md` from the anchor issue body. The two carry
+  the same five sections in the same shapes, so the close-time sync is an
+  overwrite. The `README.md` is the working copy the campaign session edits; the
+  campaign session is the only thing that writes either it or the issue body, and
+  a delegate never touches the issue body at all.
 - The directory is git-ignored by the container's allowlist. Nothing durable may
   live only there; if you write something that must survive, it belongs in a
   member repository or on a GitHub issue.
 
 ### 5. Acquire the member repositories
 
-For each entry under `Repos:`:
+For each entry under `Repos:`, by absolute path — step 4 has just created an
+empty `$CAMPAIGN/scripts/`, so a relative `scripts/acquire-repo` resolves there
+and fails:
 
 ```sh
-scripts/acquire-repo <owner/repo> <campaign>/repos/<name> --branch c<N>/<topic>
+"$CONTAINER/scripts/acquire-repo" <owner/repo> "$CAMPAIGN/repos/<name>" \
+  --branch c<N>/<topic>
 ```
 
 Safe to re-run. Do not clone by hand and do not read the script to work out what
 it does — its interface is the contract.
 
-Then make the subtask label exist on each member repository, since
-`gh issue create --label` fails on a label the repository does not have:
-
-```sh
-gh label create campaign-<N> -R <owner/repo> --force \
-  --description "Campaign kalaluthien/agent-workspace#<N>"
-```
+Then make the subtask label exist on each of them, as below.
 
 ### 6. Report
 
 The campaign ID, the directory path, and the anchor issue URL. Then the first
 subtask, and whether you are doing it here or handing it to a repository agent.
+
+### Filing a subtask issue
+
+Both the follow-up path in step 1 and every subtask after step 6 file the same
+shape, and both keep the index intact. The index is the anchor's `Repos:` list
+plus the label, so a subtask that skips either becomes unfindable with no error.
+
+1. If the target repository is not in the anchor's `Repos:` list, add it to that
+   list and to the campaign `README.md`, and acquire it as in step 5.
+2. Make the label exist on that repository. `gh issue create --label` fails
+   outright on a label the repository does not have, and `--force` makes this
+   safe to re-run:
+
+   ```sh
+   gh label create campaign-<N> -R <owner/repo> --force \
+     --description "Campaign kalaluthien/agent-workspace#<N>"
+   ```
+
+3. File the issue with the label and a body carrying the back-reference line
+   `Campaign: kalaluthien/agent-workspace#<N>`:
+
+   ```sh
+   gh issue create -R <owner/repo> --label campaign-<N> \
+     --title "<title>" --body-file <path>
+   ```
 
 ## Example
 
@@ -132,7 +186,7 @@ opened as campaign #7:
 auth-refactor-260828/
   AGENTS.md      copied from assets/agents/migration.md
   CLAUDE.md      @AGENTS.md
-  README.md      header links kalaluthien/agent-workspace#7
+  README.md      the five sections, copied from issue #7's body
   runtime/ scripts/
   repos/api/     on branch c7/token-refresh
   repos/web/     on branch c7/token-refresh

@@ -20,10 +20,11 @@ Time to the first honest answer. Order the work by which unknown, if it fails,
 kills the approach — and go there first, past everything that would merely be
 nice to have working.
 
-Throwaway is the default. Hardcode the credential, the path, the one input that
-demonstrates it. Skip error handling for cases you have not hit. Write the one
-test that shows the thing working and no others. This code is an argument, not a
-product, and it is expected to be deleted.
+Throwaway is the default. Pin the path and the one input that demonstrates it;
+take any real credential from the environment, and use a throwaway account or a
+fixture wherever one will do. Skip error handling for cases you have not hit.
+Add the test that shows the thing working before you add any other. This code is
+an argument, not a product, and it is expected to be deleted.
 
 ## What to refuse
 
