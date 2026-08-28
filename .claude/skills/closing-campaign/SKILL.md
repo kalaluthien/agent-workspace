@@ -15,7 +15,9 @@ Finished when all four hold:
   `CLOSED`;
 - the campaign directory does not exist;
 - no herdr agent's `cwd` is under the path that directory had;
-- the anchor issue body is the campaign README, `## Repos` list included.
+- the anchor issue body is the campaign README, `## Repos` list included, and
+  the body was compared against `runtime/anchor-body-derived.md` before it was
+  written.
 
 ## Procedure
 
@@ -156,7 +158,7 @@ gh pr view "$PR" -R "$REPO" --json state,mergedAt -q '"\(.state)\t\(.mergedAt)"'
 Report every unsettled subtask. None of them blocks the close — a person may
 close a campaign over unfinished work — but show them all before they decide.
 
-### 4. Validate the README, then overwrite the anchor issue body
+### 4. Validate the README, compare, then overwrite the anchor issue body
 
 The README and the anchor body carry the same five sections, so the sync is an
 overwrite. That makes the README the only thing standing between a malformed
@@ -172,28 +174,103 @@ grep -q '<' /tmp/repos-before && echo "REFUSE: placeholders survive in ## Repos"
 ```
 
 The range is bounded to the section and takes only list items, so a link in an
-adjacent section cannot be read as a member repository. Then overwrite, and read
-the index back out of what GitHub actually stored:
+adjacent section cannot be read as a member repository.
+
+This step is also run mid-campaign, whenever a repository is added to the
+`## Repos` list — `opening-campaign`'s "Filing a subtask issue" sends you here.
+Closing is not the only time the anchor body is written; it is only the last.
+
+**Then compare before you write.** You are not the only campaign session, and
+this README was derived from the body at some earlier moment. If another session
+has written the body since, an overwrite from here silently discards everything
+it put there. `runtime/anchor-body-derived.md` is that earlier moment, kept by
+`opening-campaign` step 4; re-read the body now and require the two to match.
+
+```sh
+DERIVED="$CAMPAIGN_DIR/runtime/anchor-body-derived.md"
+[ -f "$DERIVED" ] || echo "REFUSE: no runtime/anchor-body-derived.md to compare against"
+gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/body-now
+command diff -u "$DERIVED" /tmp/body-now && echo "the body has not moved; safe to write"
+```
+
+`command diff`, not `diff` — see the shadowed-`diff` gotcha below.
+
+Read the diff, not the exit status alone — it names what the other session did.
+
+```text
+REFUSE: the anchor body has moved since this README was derived from it.
+
+  <the diff above>
+
+Nothing was written. Fold those changes into <CAMPAIGN_DIR>/README.md, refresh
+runtime/anchor-body-derived.md from /tmp/body-now, then re-run.
+```
+
+Refuse the same way when `runtime/anchor-body-derived.md` is missing — a
+campaign scaffolded before the file existed, or a directory built by hand. There
+is no cheap substitute: without it, "has the body moved?" has no answer, and
+guessing it has not is exactly the write this step exists to stop. Say so, read
+the body and the README side by side yourself, and once they agree write
+`/tmp/body-now` to `runtime/anchor-body-derived.md` and re-run.
+
+Only then overwrite — and read the index back out of what GitHub actually
+stored, then refresh the derived copy so the next write compares against this
+one:
 
 ```sh
 gh issue edit "$N" -R kalaluthien/agent-workspace --body-file "$README"
-gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body \
-  | sed -n '/^## Repos/,/^## /{/^- /p;}' >| /tmp/repos-after
+gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/body-after
+sed -n '/^## Repos/,/^## /{/^- /p;}' /tmp/body-after >| /tmp/repos-after
 cmp -s /tmp/repos-before /tmp/repos-after && echo "index survived"
+cp /tmp/body-after "$DERIVED"
 ```
 
 Not identical: say so and stop before step 5, while the README still exists.
 
-### 5. Close the issue, then delete the directory
+### 5. Say you are closing, then close, then delete the directory
 
-Only after the person confirms, in this order — the issue first, because a
-failed close leaves the directory to retry from, while the reverse leaves
-nothing. The comment states only what has already happened at the moment it is
-written.
+Only after the person confirms.
+
+**Say it on the anchor issue first, and read who answers.** Step 1's gate is
+local: it sees agents on this machine and nothing else. Another session may hold
+this campaign on another machine with a delegate live in it, and no cheap local
+check can see that. The anchor issue is the one place every session can read, so
+announce there and read the comments back before going further.
+
+```sh
+gh issue comment "$N" -R kalaluthien/agent-workspace \
+  --body "Closing campaign #$N from $(hostname -s). Say so here if you are still in it."
+gh issue view "$N" -R kalaluthien/agent-workspace --comments
+```
+
+Another session's note saying it is working or closing: stop, name it, and let
+the person resolve it. Otherwise carry on. This narrows the window rather than
+closing it — a session that never comments is invisible either way. What keeps
+that survivable is not this check but the rule that a delegate pushes its branch
+as soon as it has one commit, so a tree deleted underneath it costs uncommitted
+work and nothing more.
+
+Then close, in this order — the issue first, because a failed close leaves the
+directory to retry from, while the reverse leaves nothing. The comment states
+only what has already happened at the moment it is written.
 
 ```sh
 gh issue close "$N" -R kalaluthien/agent-workspace --comment "Campaign closed."
 ```
+
+**Check nobody else on this machine is in the directory**, and only then remove
+it. Two sessions given the same slug on the same day build the same path, so the
+tree may be another session's workspace even with no agent anywhere near it —
+step 1 would not have caught that, because a campaign session's own working
+directory is the container root, not the campaign tree.
+
+```sh
+lsof +D "$CAMPAIGN_DIR" 2>/dev/null | tail -n +2
+```
+
+Any rows: name the processes and stop. `lsof` sees an open file, not a session
+sitting idle between turns, so treat an empty result as weak evidence and pair
+it with the announcement above rather than trusting it alone.
 
 List the directory and confirm it holds only the campaign, then remove the bound
 path itself — not a path retyped here, not its parent, not a wildcard.
@@ -238,6 +315,12 @@ rm -rf -- "$CAMPAIGN_DIR"
   one. Split with a parameter expansion instead (`repo=${spec%%:*}`,
   `num=${spec##*:}`), and make any gate that can return empty say which of the
   two it means.
+- **`diff` is shadowed in a Claude Code shell on this machine** by a zsh
+  autoload stub with no file behind it, so a plain `diff` dies with
+  `(eval):1: diff: function definition file not found`. That reads like a
+  missing input file, not a shadowed name, and this step's whole purpose is a
+  comparison — a gate that errors out is a gate that tested nothing. Write
+  `command diff`. `cmp`, `sed`, `grep` and `cp` are unaffected.
 - `git status --porcelain` never lists ignored files, so the obvious command for
   "nothing local is left" answers clean over a checkout holding a `.env`, a
   build directory, or a downloaded fixture — every one of which dies with the
@@ -252,3 +335,9 @@ rm -rf -- "$CAMPAIGN_DIR"
 - A second machine may hold the same campaign under a directory whose date
   differs. Deleting this one does not touch that one, and the person there sees
   the issue close underneath them.
+- **On one machine, two sessions given the same slug on the same day build the
+  same path**, so the directory this skill deletes may be another session's
+  live workspace. Nothing in steps 0–4 catches that: the live-agent gate in step
+  1 matches on an agent's `cwd`, and a campaign session's `cwd` is the container
+  root. That is why step 5 announces on the issue and looks at open files before
+  removing anything.
