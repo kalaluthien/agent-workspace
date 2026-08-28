@@ -51,7 +51,11 @@ sig Agent {
 fact WellFormed {
   all c: Campaign | c.anchor.home = Container
   all disj c1, c2: Campaign | c1.anchor != c2.anchor
-  all i: Issue | i.home = Container implies i in Campaign.anchor
+  -- Widened 2026-08-28: was `implies i in Campaign.anchor`, which forbade the
+  -- container ever being a member of its own campaign -- a case that happens as
+  -- soon as agent-workspace is cloned into <campaign>/repos/. Every verdict below
+  -- was previously checked in a world where that could not occur.
+  all i: Issue | i.home = Container implies i in Campaign.anchor + Campaign.members
   always all p: PR | lone pr.p
   always all i: Issue | some i.pr implies i.pr' = i.pr    -- a PR link is never undone
   always all c: Campaign | c.anchor not in c.members
@@ -122,7 +126,7 @@ pred closeIssue[i: Issue] {
 
 pred addMember[c: Campaign, i: Issue] {
   i not in Campaign.members and i not in Campaign.anchor
-  i.home != Container and i not in Open and no i.pr
+  i not in Open and no i.pr                    -- the anchor guard above already covers it
   members' = members + c->i
   Open' = Open + i
   addIdx[c, i]

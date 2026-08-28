@@ -4,6 +4,10 @@ Four models of `spec/design-campaign.md`, identical but for the
 campaign-to-issue index. Run one with
 `alloy exec -f -o /tmp/alloy-run -t text -c '*' spec/alloy/campaign-A.als`.
 
+**D was widened on 2026-08-28** to admit the container being a member of its own
+campaign; see "The widening" below. All fifteen of its verdicts are unchanged,
+and the table's D column is measured against the widened model.
+
 | # | assertion | A body line | B checklist | C label | D sub-issue |
 |---|---|:-:|:-:|:-:|:-:|
 | 1 | NoLostWork | pass | pass | pass | pass |
@@ -79,7 +83,39 @@ guards on `no i.pr` and a PR link is never undone -- so the model cannot state
 "reopen a merged subtask for review feedback", which GitHub permits. The gap is
 in the model, not the design.
 
-`S16a_ContainerMemberUnderD` is UNSAT because D's `WellFormed` forbids the
-container being a member of its own campaign at all. `campaign-e2e.als` widens
-that clause; no other scenario's verdict moves. Whether D and
-`design-campaign.md` should carry the same widening is their owner's call.
+`S16a_ContainerMemberUnderD` is UNSAT because of the clause described next.
+
+## The widening
+
+`agent-workspace` gets cloned into `<campaign>/repos/agent-workspace/`, so the
+container becomes a member of its own campaign. D's `WellFormed` said
+
+```
+all i: Issue | i.home = Container implies i in Campaign.anchor
+```
+
+which requires every container-homed issue to be *some campaign's anchor*. Read
+precisely, that forbids an ordinary container subtask, while still permitting the
+odd case of one campaign's anchor being another campaign's member -- so a coarse
+probe reads SAT and hides it. The probe that isolates the real claim is "a
+container-homed member that is nobody's anchor", and on the original model it is
+UNSAT. With a single campaign -- the actual situation -- the clause rules the case
+out entirely. `addMember`'s `i.home != Container` was the same rule restated, and
+it blocked the container joining mid-flight.
+
+Both were widened: the clause to `Campaign.anchor + Campaign.members`, and the
+redundant `addMember` guard dropped. Measured before and after, at D's own
+bounds:
+
+| probe | before | after |
+|---|:-:|:-:|
+| a container-homed member that is nobody's anchor | UNSAT | **SAT** |
+| a container-homed issue added mid-flight | UNSAT | **SAT** |
+
+So the widened world is genuinely reachable, and "no verdict changed" is a real
+result rather than a search that never got there. **All fifteen verdicts are
+identical before and after.** The greens were re-proved able to fail: letting
+`deleteDir` drop members still reddens `MachineIndependence` in the widened
+model, so they are not passing vacuously.
+
+`spec/design-campaign.md` is deliberately untouched.

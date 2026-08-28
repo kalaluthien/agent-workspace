@@ -219,13 +219,15 @@ subtask reads `complete` in `scripts/campaign-settlement`. Real-safe — every
 step is a fetch, a compare, or an ordinary pull.
 
 **The finding.** `S16a_ContainerMemberUnderD` is UNSAT. `campaign-D`'s
-`WellFormed` says `i.home = Container implies i in Campaign.anchor`, which
-forbids the container being a member of its own campaign outright — the model
-ruled out a case that is about to happen for real. `campaign-e2e.als` widens
-that one clause to `Campaign.anchor + Campaign.members` and drops `addMember`'s
-now-redundant `i.home != Container` guard; every other scenario's verdict is
-unchanged under the widening. Whether `campaign-D.als` and `design-campaign.md`
-should carry the same widening is a decision for their owner, not this file.
+`WellFormed` said `i.home = Container implies i in Campaign.anchor` — every
+container-homed issue must be *some campaign's anchor*. Read precisely that
+forbids an ordinary container subtask, and with a single campaign, which is the
+real situation, it rules the case out entirely; `addMember`'s
+`i.home != Container` restated the same rule and blocked joining mid-flight.
+Both were widened here and, on 2026-08-28, in `campaign-D.als` itself, where all
+fifteen verdicts came back identical. `spec/alloy/README.md` carries the
+before/after probes that show the new states are genuinely reachable rather than
+merely unvisited. `spec/design-campaign.md` is untouched.
 
 ## What the scenarios do not cover
 
