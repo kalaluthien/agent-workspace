@@ -85,6 +85,17 @@ in the model, not the design.
 
 `S16a_ContainerMemberUnderD` is UNSAT because of the clause described next.
 
+## Several sessions
+
+`campaign-multi.als` drops the assumption every model above shares: that one
+campaign session holds a campaign at a time. It makes `Session` a sig and asks
+what breaks when several are live. Findings, witnesses and the recommendation
+are in `multi-session.md`.
+
+```sh
+alloy exec -f -o /tmp/alloy-multi -t text -c '*' spec/alloy/campaign-multi.als
+```
+
 ## The widening
 
 `agent-workspace` gets cloned into `<campaign>/repos/agent-workspace/`, so the

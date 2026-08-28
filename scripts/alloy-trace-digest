@@ -13,19 +13,34 @@ import sys
 # Relations worth showing, in the order a reader wants them.
 VARYING = [
     ("Now<:ev", "ev"),
+    ("Now<:actor", "by"),
     ("Now<:evIssue", "arg"),
+    ("Now<:evAgent", "agentArg"),
+    ("Now<:evRepo", "repoArg"),
     ("Now<:evMachine", "on"),
     ("Open", "open"),
     ("Merged", "merged"),
     ("Issue<:pr", "pr"),
+    ("Filed", "filed"),
     ("Campaign<:members", "members"),
     ("Campaign<:sub", "sub"),
+    ("Campaign<:body", "body"),
     ("Campaign<:dirs", "dirs"),
+    ("Campaign<:co", "co"),
+    ("Session<:holds", "holds"),
+    ("Surveyed", "surveyed"),
+    ("Session<:saw", "saw"),
+    ("Session<:readme", "readme"),
+    ("Session<:seen", "seen"),
     ("Agent<:st", "agent"),
+    ("Visible", "visible"),
+    ("Pushed", "pushed"),
     ("Behind", "behind"),
     ("Unpushed", "unpushed"),
 ]
-STATIC = ["Issue<:home", "Campaign<:anchor", "Agent<:task", "Agent<:host"]
+STATIC = ["Issue<:home", "Campaign<:anchor", "Campaign<:covers",
+          "Agent<:task", "Agent<:host", "Agent<:amach", "Agent<:launcher",
+          "Agent<:atopic", "Session<:smach"]
 
 ATOM = re.compile(r"(\w+)\$(\d+)")
 
@@ -34,9 +49,11 @@ def short(text):
     """Issue$0 -> I0, Campaign$0 -> C0, Machine$1 -> M1, OpenPR$0 -> OpenPR."""
     def rep(m):
         name, idx = m.group(1), m.group(2)
-        if name in ("Issue", "PR", "Campaign", "Machine", "Repo", "Agent"):
+        if name in ("Issue", "PR", "Campaign", "Machine", "Repo", "Agent",
+                    "Session", "Topic"):
             return {"Issue": "I", "PR": "P", "Campaign": "C",
-                    "Machine": "M", "Repo": "R", "Agent": "A"}[name] + idx
+                    "Machine": "M", "Repo": "R", "Agent": "A",
+                    "Session": "S", "Topic": "T"}[name] + idx
         if name == "Container":
             return "Container"
         return name
