@@ -1,7 +1,7 @@
 /*
  * Several campaign sessions at once.
  *
- * campaign-{A,B,C,D}.als ask "can this design go wrong?"; campaign-e2e.als asks
+ * campaign-core.als asks "can this design go wrong?"; campaign-e2e.als asks
  * "can a real campaign do this?". Both assume ONE campaign session. This file
  * drops that assumption and asks what breaks.
  *
@@ -16,9 +16,9 @@
  *   - kept: Repo/Container, Machine, Issue/home, Open, Campaign/anchor/members,
  *     Agent/task/st, dirs, the observable-event idiom (`Now`).
  *   - dropped: PR, Merged, pr, complete. Settlement collapses to "the issue is
- *     closed". campaign-D already proved the closed-and-merged half, and none of
+ *     closed". campaign-core already proved the closed-and-merged half, and none of
  *     the five questions here turns on it. Named again under "Not expressed".
- *   - dropped: `sub`. campaign-D proved index = membership under the sub-issue
+ *   - dropped: `sub`. campaign-core proved index = membership under the sub-issue
  *     scheme in every reachable state, so this model takes that as given and
  *     writes `idx[c] = c.members`.
  *   - added: Session, and with it the survey/file/adopt/read/edit/sync events
@@ -97,7 +97,7 @@ fact WellFormed {
 
 fun campaignOf[i: Issue]: lone Campaign { members.i }
 
-/* campaign-D's verdict, imported rather than re-derived: under the sub-issue
+/* campaign-core's verdict, imported rather than re-derived: under the sub-issue
    scheme the index equals membership in every reachable state. */
 fun idx[c: Campaign]: set Issue { c.members }
 

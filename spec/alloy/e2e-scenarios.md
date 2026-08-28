@@ -134,7 +134,7 @@ mess to explain on a real campaign.
 **9 — tree deleted under a live agent.** Launch a delegate, let it commit but
 *not* push, then delete `<campaign>/` from a second session. Pass is a
 demonstration of loss: the commits are unrecoverable and GitHub never knew about
-them. This is `campaign-D`'s assertion-6 counterexample made real, and it is
+them. This is `campaign-core`'s assertion-6 counterexample made real, and it is
 why `STATUS` question 3 exists. Fixture only, and never with a real delegate's
 work in the tree.
 
@@ -221,13 +221,13 @@ Pass for the whole scenario: `0\t0` at all three checkpoints, and the delegate's
 subtask reads `complete` in `scripts/campaign-settlement`. Real-safe — every
 step is a fetch, a compare, or an ordinary pull.
 
-**The finding.** `S16a_ContainerMemberUnderD` is UNSAT. `campaign-D`'s
+**The finding.** `S16a_ContainerMemberUnderNarrowReading` is UNSAT. `campaign-core`'s
 `WellFormed` said `i.home = Container implies i in Campaign.anchor` — every
 container-homed issue must be *some campaign's anchor*. Read precisely that
 forbids an ordinary container subtask, and with a single campaign, which is the
 real situation, it rules the case out entirely; `addMember`'s
 `i.home != Container` restated the same rule and blocked joining mid-flight.
-Both were widened here and, on 2026-08-28, in `campaign-D.als` itself, where all
+Both were widened here and, on 2026-08-28, in `campaign-core.als` itself, where all
 fifteen verdicts came back identical. `spec/alloy/README.md` carries the
 before/after probes that show the new states are genuinely reachable rather than
 merely unvisited. `spec/design-campaign.md` is untouched.

@@ -51,7 +51,7 @@ closing it — read and create are not atomic.
 
 ## Not expressed
 
-- Settlement is "the issue is closed"; the merged-PR half stays campaign-D's.
+- Settlement is "the issue is closed"; the merged-PR half stays campaign-core's.
 - "Covers the request" is a static bit, not a judgement over Scope prose.
 - No `gh` latency: each window measured is a minimum.
 - 4 is repaired in the contract and 3 and 5 are not — each of those two is a

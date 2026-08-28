@@ -1,17 +1,14 @@
 /*
- * End-to-end scenarios over the adopted campaign model (variant D).
+ * End-to-end scenarios over the adopted campaign model.
  *
- * campaign-{A,B,C,D}.als ask "can this design go wrong?" and answer with
+ * campaign-core.als asks "can this design go wrong?" and answers with
  * counterexamples. This file asks the opposite question: "can a real campaign
  * actually do this?" Every command below is a `run`, so a SAT result hands back
  * a concrete trace -- the script a real campaign must be able to follow. An
  * UNSAT result is a finding about the design, not a broken scenario.
  *
- * Relation to campaign-D.als, stated so the two can be diffed:
+ * Relation to campaign-core.als, stated so the two can be diffed:
  *   - kept verbatim: the signatures, the events, `init`, `step`, `complete`.
- *   - dropped: `Mention` and `variantStep`, which D never reaches (they exist
- *     only so the four variants share one `step`), and the `CampaignD` subset
- *     wrapper, folded into `Campaign` since there is one variant here.
  *   - added: `Report`, the delegate's unsolicited "I am done" claim. D has no
  *     way to reach Idle except by opening a pull request, so D cannot state
  *     scenario 4 at all. `Report` touches no GitHub relation, which is exactly
@@ -22,7 +19,7 @@
  *     clone's distance from origin/main is not the outer checkout's, and the
  *     hazard is read at launch rather than before the clone.
  *
- * No assertions here. The checks live in campaign-D.als and are not repeated.
+ * No assertions here. The checks live in campaign-core.als and are not repeated.
  *
  * Run one:
  *   alloy exec -f -o /tmp/alloy-e2e -t text -c 'S1_HappyPath' spec/alloy/campaign-e2e.als
@@ -63,9 +60,10 @@ sig Agent {
 fact WellFormed {
   all c: Campaign | c.anchor.home = Container
   all disj c1, c2: Campaign | c1.anchor != c2.anchor
-  -- D says `i.home = Container implies i in Campaign.anchor`, which forbids the
-  -- container being a member of its own campaign outright. Widened here to admit
-  -- scenario 16; `containerIsAnchorOnly` below keeps D's reading runnable.
+  -- This once read `implies i in Campaign.anchor`, which forbids the container
+  -- being a member of its own campaign outright. Widened in both files on
+  -- 2026-08-28 to admit scenario 16; `containerIsAnchorOnly` below keeps the
+  -- narrow reading runnable.
   all i: Issue | i.home = Container implies i in Campaign.anchor + Campaign.members
   always all p: PR | lone pr.p
   always all i: Issue | some i.pr implies i.pr' = i.pr    -- a PR link is never undone
@@ -110,7 +108,7 @@ pred initIdx { all c: Campaign | c.sub = c.members }
 /* ---------------- settlement, as a close decision reads it ---------------- */
 
 /* Closed as "not planned": the issue is closed and no merged PR stands behind
-   it. This is how a subtask gets dropped, and campaign-D's 7b counterexample is
+   it. This is how a subtask gets dropped, and campaign-core's 7b counterexample is
    precisely that closed-and-merged alone cannot say it. */
 pred dropped[i: Issue]  { i not in Open and not complete[i] }
 pred settled[i: Issue]  { complete[i] or dropped[i] }
@@ -443,7 +441,7 @@ pred S8_CloseWithOpenSubtask {
 /* --- scenarios beyond the brief's eight, all reachable in this model --- */
 
 /* 9. Scenario 7's dangerous twin: the delete lands on the machine the live
-      agent runs on. This is campaign-D's assertion-6 counterexample, requested
+      agent runs on. This is campaign-core's assertion-6 counterexample, requested
       as a witness so a run can be written that reproduces it on purpose. */
 pred S9_OrphanedByLocalDelete {
   one c: Campaign | one a: Agent {
@@ -556,10 +554,10 @@ pred S15_NoLocalDirectory {
 
 /* --- 16. The container as a member of its own campaign --- */
 
-/* 16a. Under D's reading, this scenario cannot exist at all: a container-homed
-        issue must BE the anchor. Expected UNSAT, and that is the finding --
-        the model forbade what is about to happen for real. */
-pred S16a_ContainerMemberUnderD {
+/* 16a. Under the narrow reading, this scenario cannot exist at all: a
+        container-homed issue must BE the anchor. UNSAT, and that is the
+        finding -- the model forbade what was about to happen for real. */
+pred S16a_ContainerMemberUnderNarrowReading {
   containerIsAnchorOnly
   some c: Campaign, i: c.members | i.home = Container
 }
@@ -678,7 +676,7 @@ run S13b_ReopenAnyClosed        for exactly 2 Issue, 1 PR, exactly 1 Campaign, 1
 run S13c_ReopenWithPR           for exactly 2 Issue, 1 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 2 Repo, 10 steps
 run S14_FollowUpAfterClose      for exactly 3 Issue, 2 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 2 Repo, 14 steps
 run S15_NoLocalDirectory        for exactly 3 Issue, 2 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 3 Repo, 12 steps
-run S16a_ContainerMemberUnderD      for exactly 2 Issue, 1 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 2 Repo, 6 steps
+run S16a_ContainerMemberUnderNarrowReading      for exactly 2 Issue, 1 PR, exactly 1 Campaign, 1 Machine, 0 Agent, exactly 2 Repo, 6 steps
 run S16b_ContainerBehindAfterMerge  for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, 0 Agent, exactly 2 Repo, 12 steps
 run S16c_BehindForever              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, 0 Agent, exactly 2 Repo, 10 steps
 run S16d_CloneFromUnpushedContainer for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, 0 Agent, exactly 2 Repo, 10 steps
