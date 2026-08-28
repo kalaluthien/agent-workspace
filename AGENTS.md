@@ -2,7 +2,7 @@
 
 A container for running **campaigns** — cross-repository units of work — on
 repositories that live elsewhere. `README.md` says what the container is; this
-file is how to work inside it. `docs/design-campaign.md` says why these rules
+file is how to work inside it. `spec/design-campaign.md` says why these rules
 are what they are.
 
 This project is early. Where a rule is missing, decide, do the work, and write
@@ -31,7 +31,12 @@ and whether it survives the machine. Identify the plane before any git command.
 
 | plane | holds | stored in |
 | --- | --- | --- |
-| **container** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `docs/`, `scripts/` | this repository |
+| **container** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `docs/`, `scripts/` | this repository |
+
+`spec/` holds what is normative — the design and the models that check it, as
+markdown. `docs/` holds views drawn for a reader, as HTML. The two are kept
+apart and neither inherits the other's rules, so a markdown file under `docs/`
+is misfiled rather than temporary.
 | **member repository** | the code and its history | each repository's own remote |
 | **campaign** | which repositories, what for, how far along | GitHub issues |
 
@@ -74,8 +79,11 @@ or a search over body text cannot do.
 Add a body line `Campaign: kalaluthien/agent-workspace#N` as prose for a human
 reading the raw issue. It is not the index and nothing queries it.
 
-The anchor's `Repos:` list still earns its place: it says which repositories to
-clone when a campaign is opened, before any subtask exists.
+The anchor's **`## Repos`** section still earns its place: it says which
+repositories to clone when a campaign is opened, before any subtask exists. It
+is a markdown heading followed by a plain `- owner/repo` list, in the issue body
+and in the campaign `README.md` alike — the same heading, so a reader written
+against one works on the other.
 
 **Do it here or hand it over** — do it here when the change fits in one
 repository, is small enough to hold in view at once, and needs nothing from that
