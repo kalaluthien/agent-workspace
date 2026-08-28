@@ -130,6 +130,9 @@
  *   R1f_HolderOnlyBlocksLoss         UNSAT one holder works, and works better
  *   R1g_HolderOnlyAdmitsSync         SAT   control
  *   R1h_UnboundMachineStillLoses     SAT   the residue: BOUND is a rule, not a lock
+ *   R1m_NoDirectoryLosesAgain        SAT   and the second residue: no directory,
+ *                                          no holder record, no serialization
+ *   R1n_NoDirectoryCloseStillHappens SAT   control: such a campaign still closes
  *   R1j_TwoMomentStillLoses          SAT   two moments is a WHEN rule, not a HOW
  *   R1k_TwoMomentAdmitsScopeSync     SAT   control, and the close-only difference
  *   R2_DuplicateCampaign             SAT   two anchors, one scope
@@ -137,28 +140,42 @@
  *   R2c_SurveyAtFileAdmitsOne        SAT   control
  *   R3_DeleteUnderWorkingSession     SAT   a live session is invisible to the gate
  *   R3d_HolderOnlyStillDeletesUnderExecutor
- *                                    SAT   THE FINDING: one holder does not close it
- *   R3e_NoDeleteUnderWorkingPeerBlocks
- *                                    UNSAT the missing half, assumed, closes it
- *   R3f_DisciplinedDeleteStillHappens SAT  control
- *   R3g_RecycledHolderBlocksTakeover SAT   the second residue: a PID is not identity
+ *                                    SAT   THE FINDING: one holder does not close it,
+ *                                          and the repair is agent.als's A10-A12
+ *   R3g_RecycledHolderBlocksTakeover SAT   a third residue: a PID is not identity
  *   Cov_*                            SAT   every own event and every refinement
  *                                          this layer adds fires in some trace
  *
  * Every UNSAT is proved a finding rather than an artefact by its own control:
- * R1d for R1c, R1g for R1f, R2c for R2b, R3f for R3e. The two UNSATs #37 added
- * were each proved able to fail by a named mutation, run 2026-08-28 against this
- * model and undone afterwards:
+ * R1d for R1c, R1g for R1f, R2c for R2b. The one UNSAT #37 added here was proved
+ * able to fail by a named mutation, run 2026-08-29 against this model and undone
+ * afterwards:
  *
- *   R1f   narrowing `isHolder` to its BOUND half alone, dropping the
+ *   R1f   narrowing `mayWrite` to its BOUND half alone, dropping the
  *         `runtime/holder` conjunct: both sessions read as "the holder" of the
  *         machine and the loss returns (SAT). Dropping the no-live-holder guard
  *         from `holderOnly`'s Adopt clause instead does NOT redden it, which
- *         locates the load-bearing half precisely -- it is `isHolder` on the
- *         write, not the guard on the arrival.
- *   R3e   narrowing `noDeleteUnderWorkingPeer` to peers that are themselves
- *         holders: the executor session stops blocking, the delete returns
- *         (SAT), and the mutation is R3d's finding restated as an edit.
+ *         locates the load-bearing half precisely -- it is the holder reading on
+ *         the write, not the guard on the arrival.
+ *
+ * WHAT THE FIRST DRAFT OF THIS FILE GOT WRONG
+ *
+ * Three things, all found by review and all kept visible here because each is a
+ * standing hazard rather than a typo.
+ *
+ *   `isHolder` was the guard everywhere, and it needs `runtime/holder`, which an
+ *   OPTIONAL DIRECTORY never has -- so the model forbade closing a campaign that
+ *   `closing-campaign` step 0 documents closing, campaign #1 among them.
+ *   `mayWrite` is the reading with that branch, R1n is the case it restores, and
+ *   R1m is what the branch costs.
+ *
+ *   `Cov_Bound` was `eventually some Binding.bound`, satisfiable at step 0 by
+ *   `init` alone: it certified nothing about the event that writes the binding.
+ *   It pins `FileAnchor` now, the way `Cov_Holder` pins `CreateDir`.
+ *
+ *   `noDeleteUnderWorkingPeer` was stated here and keyed on a working PEER --
+ *   a fact nothing on the machine records, which is why it belonged one layer
+ *   up. See R3d.
  */
 module session
 
@@ -206,6 +223,13 @@ var sig Surveyed in Session {}
    the directory is, and because after a migration the machine the campaign left
    may still hold a file naming a session there.
 
+   NO COMMAND BELOW DEREFERENCES `holder` OFF THE READER'S OWN MACHINE, and that
+   is the point rather than an omission: every read is `Binding.holder[c]
+   [s.smach]` for the session doing the reading. The Machine column is kept
+   because the file really is per machine and a migration really does leave one
+   behind on the machine the campaign left -- dropping the arity would say a
+   holder record is global, which is the mistake `BOUND` exists to prevent.
+
    Both hang off a `one sig` for the reason `Req` does: Campaign is ledger's
    signature and a layer above it may not add a field to it. */
 one sig Binding {
@@ -218,14 +242,30 @@ fact BindingWellFormed {
   always all c: Campaign, m: Machine | lone Binding.holder[c][m]
 }
 
-/* The role table in AGENTS.md § Who is a campaign session, as a predicate: this
-   session is the campaign's holding session when the campaign is BOUND to its
+/* The role table in AGENTS.md § Who is a campaign session, as two predicates.
+
+   `isHolder` is the full reading: the campaign is BOUND to this session's
    machine and that machine's `runtime/holder` names it. A session that holds a
    campaign and is not this is an executor session -- #37's subject -- and it may
-   claim, launch and work, but never write the anchor. */
+   claim, launch and work, but never write the anchor.
+
+   `mayWrite` is the reading that survives an OPTIONAL DIRECTORY, and it is what
+   the disciplines below actually use. `runtime/holder` is a file in the campaign
+   directory, and AGENTS.md says the directory is optional -- campaign #1, which
+   built this machinery, never had one. Requiring the holder record
+   unconditionally makes a directory-less campaign unclosable in the model while
+   the skill documents closing it, which is the model contradicting the design.
+   So where there is no directory here, the binding alone is the reading: the
+   person's word, and nothing local to disagree with it. R1m below is what that
+   branch costs. */
+pred hasDirHere[s: Session, c: Campaign] { some treeAt[c, s.smach] & Present }
 pred isHolder[s: Session, c: Campaign] {
   Binding.bound[c] = s.smach
   Binding.holder[c][s.smach] = s
+}
+pred mayWrite[s: Session, c: Campaign] {
+  Binding.bound[c] = s.smach
+  hasDirHere[s, c] implies Binding.holder[c][s.smach] = s
 }
 
 /* This layer's observer: who did it. */
@@ -545,23 +585,20 @@ pred holderOnly {
                and no Binding.holder[c][By.actor.smach] - By.actor))
   always (Now.ev = CreateDir implies
             no Binding.holder[By.actor.holds][By.actor.smach] - By.actor)
-  always (Now.ev in WriteBody + DeleteDir implies isHolder[By.actor, By.actor.holds])
+  always (Now.ev in WriteBody + DeleteDir implies mayWrite[By.actor, By.actor.holds])
   always ((Now.ev = CloseIssue and Now.issue in Campaign.anchor) implies
-            isHolder[By.actor, anchorOf[Now.issue]])
+            mayWrite[By.actor, anchorOf[Now.issue]])
 }
 
-/* The half `holderOnly` cannot supply, and R3d is why it is separate: being the
-   holder says nothing about who else is working the tree. An executor session
-   holds the same campaign, works the same directory, and is not the holder -- so
-   the delete has to refuse while any other session on this machine is working
-   the campaign, and that is a fact about a peer, not about a file. Whether it
-   can be READ is agent.als's `Addressed`; here it is assumed, so R3e measures
-   what it would buy. */
-pred noDeleteUnderWorkingPeer {
-  always (Now.ev = DeleteDir implies
-            no s: Session - By.actor |
-              s.smach = By.actor.smach and s in working and s.holds = By.actor.holds)
-}
+/* THE HALF THIS LAYER CANNOT SUPPLY. Being the holder says nothing about who
+   else is working the tree, and R3d below is that gap measured. A first draft
+   stated the missing half here, as "refuse the delete while another session on
+   this machine is working the campaign" -- and it was the wrong home for it
+   twice over: the key was a working PEER, which is a fact nothing on the machine
+   records, and an executor session could satisfy the key only by accident of
+   `init`. The record that does carry it is `<campaign>/runtime/executors/`, and
+   `Agent` is agent.als's, so the repair is `noDeleteUnderReadableExecutor`
+   there. R3d states the gap; A10-A12 close it.
 
 /* Re-run the new-versus-follow-up survey at the moment of filing.
 
@@ -676,7 +713,13 @@ pred R1e_CloseOnlyStillLoses {
    This is a stronger repair than compare-then-write, and it does not replace it.
    R1h below is the residue it leaves, and AGENTS.md keeps compare-then-write for
    exactly that residue plus a person editing the charter on GitHub. */
-pred R1f_HolderOnlyBlocksLoss { holderOnly and R1_LostBodyUpdate }
+pred R1f_HolderOnlyBlocksLoss {
+  holderOnly
+  -- both writes happen on a machine that HAS the campaign directory, which is
+  -- where `runtime/holder` exists to be read. R1m is the other branch.
+  always (Now.ev = WriteBody implies hasDirHere[By.actor, By.actor.holds])
+  R1_LostBodyUpdate
+}
 
 /* R1g. Control for R1f: the discipline is not vacuous. The holding session still
    files, scaffolds and syncs twice, and both repositories reach the body. An
@@ -708,6 +751,32 @@ pred R1h_UnboundMachineStillLoses {
     eventually (r in c.body and after (always r not in c.body))
     noCloseNoDelete
   }
+}
+
+/* R1m. WHAT THE OPTIONAL DIRECTORY COSTS, and it is a finding rather than a
+   concession. With no directory on the bound machine there is no
+   `runtime/holder` to read, so `mayWrite` falls back to the binding alone and
+   two sessions on that machine are unserialized again: the loss returns. SAT.
+
+   This is not an argument for making the directory mandatory. It is the reason
+   compare-then-write (R1c) stays in AGENTS.md beside the binding rather than
+   being retired by it -- one campaign, one machine, one holder covers the case
+   where a holder record exists, and compare-then-write covers this one and R1h. */
+pred R1m_NoDirectoryLosesAgain {
+  holderOnly
+  always no Present                    -- this machine never scaffolds the campaign
+  R1_LostBodyUpdate
+}
+
+/* R1n. Control for the branch, and the case it was added for: a campaign with no
+   directory here still closes. Under the first draft's `isHolder`-everywhere
+   discipline this was UNSAT -- the model forbade what `closing-campaign` step 0
+   documents. SAT. */
+pred R1n_NoDirectoryCloseStillHappens {
+  holderOnly
+  always no Present
+  some c: Campaign, s: Session |
+    eventually (Now.ev = CloseIssue and Now.issue = c.anchor and By.actor = s)
 }
 
 /* R1j. The two-moment rule measured against the loss it is not for: SAT. Writing
@@ -793,27 +862,12 @@ pred R3_DeleteUnderWorkingSession {
    being the only session entitled to delete, and every rule is obeyed.
 
    Being the holder is a fact about a file; whether another session is working
-   the tree is a fact about a peer, and no file carries it. That is why the
-   second half is a separate discipline below, and why agent.als has to make the
-   executor addressable before the second half can be read at all. */
+   the tree is a fact about a peer, and no file carried it. Making one carry it
+   is what `<campaign>/runtime/executors/` is for, and since that record is about
+   an executor it is agent.als's: `noDeleteUnderReadableExecutor` and A10-A12
+   there are this finding closed, one layer up. */
 pred R3d_HolderOnlyStillDeletesUnderExecutor {
   holderOnly and R3_DeleteUnderWorkingSession
-}
-
-/* R3e. The second half assumed, and R3 is gone: UNSAT. What it costs is a
-   reading nothing on this machine supplies -- `runtime/holder` names the holder
-   and no file names the executors -- so the discipline is honest only once the
-   executor has announced itself. agent.als's `Addressed` is that announcement,
-   and A1 there is this gap measured from the close gate's side. */
-pred R3e_NoDeleteUnderWorkingPeerBlocks {
-  holderOnly and noDeleteUnderWorkingPeer and R3_DeleteUnderWorkingSession
-}
-
-/* R3f. Control for R3e: the same two disciplines still admit a delete. An UNSAT
-   here would mean R3e went green by forbidding the close's last step outright. */
-pred R3f_DisciplinedDeleteStillHappens {
-  holderOnly and noDeleteUnderWorkingPeer
-  some s: Session | eventually (Now.ev = DeleteDir and By.actor = s)
 }
 
 /* R3g. THE SECOND RESIDUE AGENTS.md names, and the model can only admit it
@@ -859,7 +913,7 @@ pred Cov_ClaimBySession    { eventually (Now.ev = Claim and some By.actor) }
 pred Cov_ReleaseBySession  { eventually (Now.ev = Release and some By.actor) }
 pred Cov_LaunchBySession   { eventually (Now.ev = Launch and some By.actor) }
 pred Cov_MergeBySession    { eventually (Now.ev = MergePR and some By.actor) }
-pred Cov_Bound             { eventually some Binding.bound }
+pred Cov_Bound             { eventually (Now.ev = FileAnchor and some Binding.bound') }
 pred Cov_Holder            { eventually (Now.ev = CreateDir and some Binding.holder') }
 
 /* ---------------- commands ---------------- */
@@ -870,6 +924,8 @@ run R1c_CASBlocksLoss            for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Mac
 run R1d_CASAdmitsBothSyncs       for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 14 steps
 run R1e_CloseOnlyStillLoses      for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
 run R1f_HolderOnlyBlocksLoss     for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
+run R1m_NoDirectoryLosesAgain    for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
+run R1n_NoDirectoryCloseStillHappens for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
 run R1g_HolderOnlyAdmitsSync     for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 14 steps
 run R1h_UnboundMachineStillLoses for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
 run R1j_TwoMomentStillLoses      for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
@@ -881,8 +937,6 @@ run R2c_SurveyAtFileAdmitsOne    for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Mac
 
 run R3_DeleteUnderWorkingSession for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
 run R3d_HolderOnlyStillDeletesUnderExecutor for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
-run R3e_NoDeleteUnderWorkingPeerBlocks      for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
-run R3f_DisciplinedDeleteStillHappens       for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
 run R3g_RecycledHolderBlocksTakeover        for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
 
 run Cov_Survey            for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps
