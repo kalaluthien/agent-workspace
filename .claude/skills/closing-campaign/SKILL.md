@@ -22,8 +22,10 @@ Finished when all seven hold:
 - the anchor issue body is the campaign README, `## Repos` list included, and
   the body was compared against `runtime/anchor-body-derived.md` before it was
   written;
-- the closing comment on the anchor lists every file the delete destroyed —
-  everything under the directory outside `runtime/` and `repos/`.
+- the closing comment on the anchor carries the listing taken immediately
+  before the delete: every entry under the directory outside `runtime/` and
+  `repos/`, files and directories and symlinks alike, because `rm -rf` destroys
+  all of them.
 
 Where this machine holds no directory for the campaign, the first three are the
 real conditions — the binding, and two GitHub facts that read the same from any
@@ -149,7 +151,9 @@ checkout under `repos/`, one at a time — never one git command across member
 repositories.
 
 ```sh
-for R in "$CAMPAIGN_DIR"/repos/*/; do
+find "$CAMPAIGN_DIR/repos" -mindepth 1 -maxdepth 1 -type d 2>/dev/null |
+while read -r R; do
+  [ -d "$R" ] || continue
   echo "== $R"
   git -C "$R" status --porcelain --ignored=matching
   git -C "$R" log --oneline --branches HEAD --not --remotes
@@ -162,6 +166,21 @@ for R in "$CAMPAIGN_DIR"/repos/*/; do
   git -C "$R" branch --no-merged "$base"
 done
 ```
+
+**`find`, not `for R in "$CAMPAIGN_DIR"/repos/*/`, and that is about a campaign
+with no member repository having no `repos/` at all.** An unmatched glob fails
+two different ways and this skill is run by hand, in whatever shell the person
+happens to be in (all three probed):
+
+| shell | what an unmatched `repos/*/` does |
+| --- | --- |
+| bash, sh | leaves the glob literal, so the loop runs once on `.../repos/*/` and six git commands fail against a path that does not exist — output that reads as an unresolvable repository blocking the close |
+| zsh | `no matches found`, and the whole `for` never runs — a gate that reported nothing because it tested nothing, and an abort outright under `set -e` |
+
+`find` has neither failure, in any of the three, and it also covers a `repos/`
+that exists but is empty, which a `[ -d "$CAMPAIGN_DIR/repos" ]` wrapper would
+not. `[ -d "$R" ]` stays as the cheap per-row guard. Do not reach for `nullglob`
+or a zsh `(N)` qualifier: each fixes one shell and breaks the other.
 
 Each line finds what the others miss: `--ignored=matching` reaches a `.env` or a
 downloaded fixture that plain `status` hides; `HEAD` alongside `--branches`
@@ -315,22 +334,22 @@ deletes the last copy of. Validate before writing.
 
 ```sh
 README="$CAMPAIGN_DIR/README.md"
-grep -q '^## Repos' "$README" || echo "REFUSE: no ## Repos heading"
-sed -n '/^## Repos/,/^## /{/^- /p;}' "$README" >| /tmp/repos-before
-[ -s /tmp/repos-before ] || echo "REFUSE: the ## Repos list is empty"
-grep -q '<' /tmp/repos-before && echo "REFUSE: placeholders survive in ## Repos"
+"$CONTAINER/scripts/campaign-repos" "$README" >| /tmp/repos-before ||
+  echo "REFUSE: the ## Repos list did not read; nothing was written"
 ```
 
-The range is bounded to the section and takes only list items, so a link in an
-adjacent section cannot be read as a member repository.
+`scripts/campaign-repos` is the one reader of that list, and every refusal this
+step used to spell out by hand is inside it: no heading, an empty list, a
+surviving `<` placeholder, and `- none` mixed with repository entries. It prints
+one `owner/repo` per line, prints nothing and exits 0 for a list that is exactly
+`- none`, and exits 1 with its reason on stderr. Stop on a non-zero exit. Do not
+re-derive the list with `sed` here — the reason is the one `AGENTS.md` gives for
+`campaign-settlement`: two readers of one list drift, and this list is the
+campaign's repository index.
 
-**`- none` is a list, and it passes both gates unchanged.** It is the entry a
-campaign with no member repository carries, so it is non-empty and holds no `<`.
-The empty-list refusal stays exactly as it is: a list with no entries at all is
-indistinguishable from one a bad write dropped, and this step is the last thing
-standing between that and the loss of the index. Under `- none` step 2's sweep
-over `repos/*/` is naturally empty, which is the absence of checkouts and not
-the absence of a check.
+Empty output is therefore not a failure and not a special case. A repo-less
+campaign reads as no repositories, step 2's loop is guarded and finds no
+checkouts, and the comparison below compares nothing with nothing.
 
 This step is also run mid-campaign, whenever a repository is added to the
 `## Repos` list — `opening-campaign`'s "Filing a subtask issue" sends you here.
@@ -384,7 +403,8 @@ one:
 ```sh
 gh issue edit "$N" -R kalaluthien/agent-workspace --body-file "$README"
 gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/body-after
-sed -n '/^## Repos/,/^## /{/^- /p;}' /tmp/body-after >| /tmp/repos-after
+"$CONTAINER/scripts/campaign-repos" /tmp/body-after >| /tmp/repos-after ||
+  echo "REFUSE: the body GitHub stored does not read; the index may be lost"
 cmp -s /tmp/repos-before /tmp/repos-after && echo "index survived"
 cp /tmp/body-after "$DERIVED"
 ```
@@ -404,29 +424,51 @@ place every machine can read, so announce there and read the comments back —
 this is the guard for a broken principle, not a routine handshake.
 
 **Say in the same comment what the delete will destroy.** Everything under the
-campaign directory outside `runtime/` and `repos/` is a file with no other copy:
-`runtime/` is scratch by design and `repos/` is clones with their own remotes,
-and what is left is whatever the campaign built here — a repo-less campaign's
-`scripts/` above all, since that is the only place its work ever lived. Listing
-it in the closing comment is what makes the delete examined rather than merely
-confirmed, and it puts the list somewhere that outlives the tree. This is one
-comment, not two: the announcement carries the listing.
+campaign directory outside `runtime/` and `repos/` has no other copy: `runtime/`
+is scratch by design and `repos/` is clones with their own remotes, and what is
+left is whatever the campaign built here — a repo-less campaign's `scripts/`
+above all, since that is the only place its work ever lived. The listing is the
+record of what the delete destroys, posted where it outlives the tree. One
+comment, not two: the announcement carries it.
 
 ```sh
-LEFTOVERS=$(cd "$CAMPAIGN_DIR" && find . -mindepth 1 \
-  \( -path ./runtime -o -path ./repos \) -prune -o -type f -print \
-  | sed 's|^\./||' | sort)
+[ -n "$CAMPAIGN_DIR" ] && [ -d "$CAMPAIGN_DIR/runtime" ] || {
+  echo "REFUSE: CAMPAIGN_DIR is unset or is not a campaign directory"; exit 1; }
+LEFTOVERS=$(find "$CAMPAIGN_DIR" -mindepth 1 \
+  \( -path "$CAMPAIGN_DIR/runtime" -o -path "$CAMPAIGN_DIR/repos" \) -prune -o -print \
+  | sed "s|^$CAMPAIGN_DIR/||" | sort \
+  | grep . || echo "no entries outside runtime/ and repos/")
 gh issue comment "$N" -R kalaluthien/agent-workspace --body "$(printf \
-  'Closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these files under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
-  "$N" "$(hostname -s)" "${LEFTOVERS:-(nothing outside runtime/ and repos/)}")"
+  'Closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these entries under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
+  "$N" "$(hostname -s)" "$LEFTOVERS")"
 gh issue view "$N" -R kalaluthien/agent-workspace --comments
 ```
 
-Read the listing before you go on. A file in it that some later reader will want
-is durable output living only here, which the three planes forbid — land it in a
-repository, a memory pool or an issue *now*, then re-run the listing. Where this
-machine holds no directory, step 0 has already skipped to here and there is
-nothing to list; say so and post the announcement alone.
+Three things about that snippet are the snippet.
+
+**The guard comes first, and it refuses.** An unset `$CAMPAIGN_DIR` turns the
+listing into one of whatever directory the shell happens to be in, and this
+comment is public and permanent: a wrong value posts the container's own tree to
+the anchor as the things this delete destroys. Requiring `runtime/` beneath it is
+the cheap test that the path is a campaign directory and not the container root.
+
+**`-prune` on the two exact paths, not a `*/runtime*` pattern.** A pattern also
+hides `scripts/repos-helper.sh` and anything else whose name merely contains
+`repos` or `runtime` — an omission from a listing whose whole job is to omit
+nothing (probed: the pattern form drops exactly that file). And `-print` without
+`-type f`, because `rm -rf` destroys directories, symlinks and FIFOs too, and a
+file-only listing would not have named them.
+
+**The empty case is written by the same pipeline, never by a default.**
+`grep . || echo` puts those words there only when a listing that really ran came
+back with nothing. `${LEFTOVERS:-...}` would put them there just as readily when
+the assignment never happened at all, which is a durable false all-clear.
+
+Read the listing before you go on. It is a record, not a to-do — the close is
+where the tree stops existing, so anything a person wants out of it is saved
+before they say close, not after they read the list. Where this machine holds no
+directory, step 0 has already skipped to here: say so and post the announcement
+alone.
 
 Another session's note saying it is working or closing: stop, name it, and let
 the person resolve it — and say that it should not have been there, because the

@@ -13,23 +13,25 @@ Finished when all of these hold:
 
 - An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
   no parent, and the sections of the anchor template `assets/README.md`, with
-  `Repos` a plain `- owner/repo` list — or the single entry `- none`, which is
-  how a campaign with no member repository says so. An *empty* list is refused
-  here and at the close alike, because an empty list is indistinguishable from a
-  list that got lost; `- none` is a deliberate entry and reads as one.
+  a `## Repos` list that `scripts/campaign-repos` reads without complaint — a
+  plain `- owner/repo` list, or the single entry `- none` for a campaign with no
+  member repository. That script is the only reader of the list, and `AGENTS.md`
+  says why each of its four refusals is a refusal.
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
-  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/holder`, and
-  `scripts/`, with `runtime/holder` naming this session and a live PID.
-- The campaign's `README.md` is the anchor issue body, and the `- ` entries
-  under its `## Repos` heading hold no `<`. Scope the check to that list: a
-  correct Requirements section quotes things like `issues/<N>/sub_issues`, so a
-  bare `grep '<'` over the whole file reports hits on a clean README.
+  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/holder`,
+  `runtime/repos`, and `scripts/`, with `runtime/holder` naming this session and
+  a live PID.
+- The campaign's `README.md` is the anchor issue body, and
+  `scripts/campaign-repos` reads its `## Repos` list and exits 0. Never a bare
+  `grep '<'` over the whole file: a correct Requirements section quotes things
+  like `issues/<N>/sub_issues`, so that reports hits on a clean README, which is
+  why the check is a reader scoped to the one section.
 - `runtime/anchor-body-derived.md` holds the body the README was derived from,
   byte for byte.
-- Every entry under `## Repos` resolves to a checkout at
-  `<campaign>/repos/<name>/` — vacuous under `- none`, where `repos/` stays
-  empty and step 5 does nothing.
+- Every line `scripts/campaign-repos` prints resolves to a checkout at
+  `<campaign>/repos/<name>/` — vacuous under `- none`, where it prints nothing,
+  step 5 does nothing, and `repos/` is never created.
 - The reply names the campaign ID, the directory, and the anchor issue URL.
 
 ## Procedure
@@ -278,9 +280,12 @@ Then finish it:
   gh issue view <N> -R kalaluthien/agent-workspace --json body --jq .body \
     >| "$CAMPAIGN/README.md"
   cp "$CAMPAIGN/README.md" "$CAMPAIGN/runtime/anchor-body-derived.md"
-  sed -n '/^## Repos/,/^## /{/^- /p;}' "$CAMPAIGN/README.md" \
-    | grep -q '<' && echo "placeholders survive in ## Repos"
+  "$CONTAINER/scripts/campaign-repos" "$CAMPAIGN/README.md" >| "$CAMPAIGN/runtime/repos"
   ```
+
+  A non-zero exit there is a body that was never filled in, or a `## Repos` list
+  that is empty or self-contradictory; its one line on stderr says which. Stop
+  and fix the body before going on — step 5 reads the file it just wrote.
 
   `>|`, not `>` — see the redirect gotcha below.
 - **Take the campaign, in `runtime/holder`.** It is what every later session
@@ -313,18 +318,20 @@ Then finish it:
 
 ### 5. Acquire the member repositories
 
-**`- none` skips this step.** A campaign with no member repository has nothing
-to clone, `repos/` stays empty, and the close's sweep over `repos/*/` is
-naturally empty too. Say in the reply that the step was skipped, so a `## Repos`
-list that lost its entries does not read as a repo-less campaign.
-
-For each entry under `## Repos`, by absolute path — step 4 has just created an
-empty `$CAMPAIGN/scripts/`, so a relative `scripts/acquire-repo` resolves there
-and fails:
+For each line `scripts/campaign-repos` printed in step 4, by absolute path —
+step 4 has just created an empty `$CAMPAIGN/scripts/`, so a relative
+`scripts/acquire-repo` resolves there and fails:
 
 ```sh
-"$CONTAINER/scripts/acquire-repo" <owner/repo> "$CAMPAIGN/repos/<name>"
+while read -r REPO; do
+  "$CONTAINER/scripts/acquire-repo" "$REPO" "$CAMPAIGN/repos/${REPO##*/}"
+done < "$CAMPAIGN/runtime/repos"
 ```
+
+`- none` needs no special case here and gets none: the reader printed nothing,
+the loop runs zero times, `repos/` is never created, and the close's sweep over
+it is guarded for exactly that. Say in the reply that no repository was
+acquired, so a campaign that was *meant* to have some is one line to correct.
 
 Safe to re-run. Do not clone by hand and do not read the script to work out what
 it does — its interface is the contract.
@@ -373,13 +380,22 @@ the remote before launching anyone onto it, and read a refusal as the subtask
 being already taken —
 
 ```sh
+SHA=$(git -C "$CAMPAIGN/repos/<name>" rev-parse --verify origin/main) || exit 1
 gh api repos/<owner>/<repo>/git/refs \
-  -f ref=refs/heads/campaign-<N>/<issue>-<topic> \
-  -f sha=$(git -C "$CAMPAIGN/repos/<name>" rev-parse origin/main)
+  -f ref=refs/heads/campaign-<N>/<issue>-<topic> -f sha="$SHA"
 git -C "$CAMPAIGN/repos/<name>" fetch origin campaign-<N>/<issue>-<topic>
 git -C "$CAMPAIGN/repos/<name>" switch -c campaign-<N>/<issue>-<topic> \
   --track origin/campaign-<N>/<issue>-<topic>
 ```
+
+**Resolve the sha into a variable and check it, never inline.** Without
+`origin/main` — a single-branch clone, a repository whose default branch is not
+`main`, a fetch that has not run — `git rev-parse` exits non-zero but still
+prints the string `origin/main`, and inside `$(...)` on the `gh` line nothing
+reads that exit status: the literal string goes up as the sha, GitHub answers
+`422`, and this skill teaches that `422` means the subtask is already claimed.
+The subtask is then silently abandoned by an executor that believes somebody
+else has it. `--verify` plus `|| exit 1` is what turns that into a stop.
 
 Put the branch name in the handover brief; the delegate finds its branch
 already on the remote, which is also how a reader on any machine knows the
@@ -390,16 +406,24 @@ no member repository there is one tracker and one remote to claim on, so the
 subtask is `gh issue create -R kalaluthien/agent-workspace --parent <anchor
 url>` and the claim is create-ref on `kalaluthien/agent-workspace` for
 `campaign-<N>/<issue>-<topic>` — even when no container code will change. The
-branch is the claim before it is a workspace, and a claim that holds nothing
-beyond `origin/main` is released by deleting the ref, exactly as any other. The
-`sha` comes from any checkout of the container, so pass the container root
-rather than `$CAMPAIGN/repos/<name>`, which does not exist:
+branch is the claim before it is a workspace, and it is released the way
+`AGENTS.md` says any claim is released.
+
+**Take the sha from the API, not from a checkout.** There is no clone here at
+all, and the container checkout this session is running in is not a substitute:
+its `origin/main` may be stale, absent on a single-branch clone, or resolvable
+only after a fetch nobody ran — and the failure is the silent one described just
+above, where the string `origin/main` goes up as a sha and the `422` reads as
+somebody else's claim. The remote's own answer needs no checkout and cannot be
+stale:
 
 ```sh
+SHA=$(gh api repos/kalaluthien/agent-workspace/commits/main --jq .sha) || exit 1
 gh api repos/kalaluthien/agent-workspace/git/refs \
-  -f ref=refs/heads/campaign-<N>/<issue>-<topic> \
-  -f sha=$(git -C "$CONTAINER" rev-parse origin/main)
+  -f ref=refs/heads/campaign-<N>/<issue>-<topic> -f sha="$SHA"
 ```
+
+The create-ref call runs only after `SHA` is in hand.
 
 Such a subtask runs by your own hands or in an in-process subagent whose working
 directory is the campaign directory; the delegate-in-a-clone mode needs a
@@ -422,6 +446,20 @@ If the target repository is not in the anchor's `## Repos` list, add it to the
 campaign `README.md`, sync that to the anchor body, and acquire it as in step 5.
 The list is what a later open reads to know what to clone; the index does not
 depend on it.
+
+**Adding the first repository replaces `- none`; it never joins it.** The list
+is `- none` alone or it is repositories, and a mixed list is refused by
+`scripts/campaign-repos` — run it over the README before you sync, because a
+mixed list otherwise passes every gate here and then hands the literal string
+`none` to `acquire-repo` on the next machine that opens the campaign:
+
+```sh
+"$CONTAINER/scripts/campaign-repos" "$CAMPAIGN/README.md" >| "$CAMPAIGN/runtime/repos"
+```
+
+The campaign stops being repo-less at that moment, and everything that was
+vacuous for it — step 5, the close's sweep over `repos/*/` — starts having work
+to do.
 
 **Sync it now, and compare before you write.** Adding a repository is a scope
 change, which is one of the two moments the anchor body is written at all — the
