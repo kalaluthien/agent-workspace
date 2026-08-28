@@ -247,6 +247,18 @@ stale.
 - **Silence is a liveness question, not an answer.** Ask once more, then resolve
   it through herdr and GitHub instead of waiting for a reply that may never come.
 
+**Watch a delegate for `blocked`, not only for gone.** A session waiting on a
+permission prompt is still listed, still named, and still looks busy; it simply
+never proceeds. `herdr agent list` reports it as `agent_status: blocked`, and
+that is the one reading worth acting on immediately — a watch that only fires on
+a missing agent or a missing commit will sit through it. Anything that clears
+such a prompt is the person's decision, not the campaign session's, so surface
+it rather than answering it.
+
+Do not trust the absence of that reading either: a usage-limit menu blocks a
+pane just as hard and reports `idle`. So pair it with a quiet timer, and treat a
+long quiet as a question to go and look at rather than as progress.
+
 Retire finished agents as the campaign runs, not when it closes: a long-lived
 campaign finishes subtasks continuously, and panes accumulate until someone
 sweeps them.
