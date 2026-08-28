@@ -155,6 +155,26 @@ cannot resolve.
   values, and the run dies on "Input must be provided".
 - Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to this container's pool. A memory
   pool inside a git-ignored campaign directory dies with the directory.
+- **Deliver the opening prompt with `herdr agent prompt <pane> "<text>"`.** A
+  prompt put on the launch line is word-split: a launch ending with a whole
+  sentence delivered its first word alone, and the delegate reported it had been
+  given no brief while the launch looked successful.
+
+# What silently stops a delegate before it starts
+
+Three things halt a fresh delegate, and from outside all three look exactly like
+an agent thinking. Clear them at launch or watch for them.
+
+| what | how it shows |
+| --- | --- |
+| the folder-trust question | the delegate sits on a dialog, having read nothing |
+| the external-import question for an ancestor `CLAUDE.md` | same, and declining it silently drops the campaign's principles |
+| the first shell-command permission prompt | `--permission-mode acceptEdits` covers edits but not shell, so it stalls on its first `ls` |
+
+The launch line has three ways to eat a prompt, all quiet: the 1024-byte
+terminal ceiling, a variadic flag such as `--add-dir` swallowing a trailing
+prompt, and the word-splitting above. Put the prompt before any variadic flag,
+keep it short, and send the brief as a file path.
 
 # Completion and liveness are different questions
 
