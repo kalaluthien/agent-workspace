@@ -15,8 +15,11 @@ Finished when all of these hold:
   and body sections Intent, Scope, Requirements, Plan, Repos, with `Repos` a
   plain `- owner/repo` list.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
-  `CLAUDE.md`, `README.md`, `runtime/`, and `scripts/`.
-- No angle-bracket placeholder survives in the campaign's `README.md`.
+  `CLAUDE.md`, `README.md`, `runtime/handover/`, and `scripts/`.
+- The campaign's `README.md` is the anchor issue body, and the `- ` entries
+  under its `## Repos` heading hold no `<`. Scope the check to that list: a
+  correct Requirements section quotes things like `issues/<N>/sub_issues`, so a
+  bare `grep '<'` over the whole file reports hits on a clean README.
 - Every entry under `Repos:` resolves to a checkout at
   `<campaign>/repos/<name>/`.
 - The reply names the campaign ID, the directory, and the anchor issue URL.
@@ -45,17 +48,28 @@ carry the scope.
 Match on Scope, never on `Repos:`. A request that touches a repository an open
 campaign already lists, but that its Scope does not cover, opens a new campaign.
 
+Testing, validating, or fixing a campaign's own deliverable is a follow-up on
+that campaign, not a new one — the deliverable is not finished until it is shown
+to work, and the fixes land on the artifacts that campaign already owns. Scope
+is written in artifacts and cannot separate "build X" from "validate X", so this
+one is decided here rather than read off the body.
+
 Filing the follow-up ends the run — that campaign is already scaffolded. File it
 the way "Filing a subtask issue" below says: an issue created without `--parent`
 is in no campaign and shows up in no listing, and nothing reports it.
 
 ### 2. Name it and pick its kind
 
-Agree three things with the person in one message, then wait for the answer:
+Three things fix the campaign:
 
 - **Slug** — kebab-case, meaningful, no date; the date is appended in step 4.
-- **Title** — the display name, in the person's own words, not yours.
+- **Title** — the display name, in the requester's own words, not yours.
 - **Kind** — which `assets/agents/*.md` becomes the campaign's `AGENTS.md`.
+
+With a person in the conversation, propose all three in one message and wait for
+the answer. Started from a handover brief with nobody waiting, read all three
+from the brief and carry on — then state the three choices in the reply, so each
+one costs a single line to veto afterwards.
 
 | the campaign exists to | kind |
 | --- | --- |
@@ -64,9 +78,8 @@ Agree three things with the person in one message, then wait for the answer:
 | find out whether an approach can work at all | `prototyping` |
 | move a working system from one form to another | `migration` |
 
-Propose the kind you read from the request and let the person veto it. The kind
-is a one-line correction for them and a wrong set of principles for every
-delegate if you pick it silently.
+Never leave the kind unstated. It is a one-line correction for the requester and
+a wrong set of principles for every delegate if it goes by unseen.
 
 ### 3. File the anchor issue
 
@@ -97,8 +110,12 @@ Resolve the container root once, from the container root, and address every path
 below through it — a later step runs with a different working directory:
 
 ```sh
-CONTAINER=$(git rev-parse --show-toplevel)
+CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
 ```
+
+Not `git rev-parse --show-toplevel`. In a linked worktree that returns the
+worktree, and the campaign gets scaffolded where the closing skill will never
+look for it.
 
 Reject a slug that is not plain kebab-case before it reaches a path. A slug
 comes from a person and lands in a `cp` destination, so one containing `../`
@@ -121,11 +138,21 @@ Stop if it already exists and ask the person. `cp -R` over a live campaign exits
 Then finish it:
 
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
-- Fill every placeholder in `README.md` from the anchor issue body. The two carry
-  the same five sections in the same shapes, so the close-time sync is an
-  overwrite. The `README.md` is the working copy the campaign session edits; the
-  campaign session is the only thing that writes either it or the issue body, and
-  a delegate never touches the issue body at all.
+- Overwrite `README.md` with the anchor issue body, which replaces every
+  placeholder at once. The two carry the same five sections in the same shapes,
+  so this is the close-time sync run backwards:
+
+  ```sh
+  gh issue view <N> -R kalaluthien/agent-workspace --json body --jq .body \
+    >| "$CAMPAIGN/README.md"
+  sed -n '/^## Repos/,/^## /{/^- /p;}' "$CAMPAIGN/README.md" \
+    | grep -q '<' && echo "placeholders survive in ## Repos"
+  ```
+
+  `>|`, not `>` — see the redirect gotcha below.
+- The `README.md` is the working copy the campaign session edits; the campaign
+  session is the only thing that writes either it or the issue body, and a
+  delegate never touches the issue body at all.
 - The directory is git-ignored by the container's allowlist. Nothing durable may
   live only there; if you write something that must survive, it belongs in a
   member repository or on a GitHub issue.
@@ -185,7 +212,7 @@ auth-refactor-260828/
   AGENTS.md      copied from assets/agents/migration.md
   CLAUDE.md      @AGENTS.md
   README.md      the five sections, copied from issue #7's body
-  runtime/ scripts/
+  runtime/handover/ scripts/
   repos/api/     on branch c7/token-refresh
   repos/web/     on branch c7/token-refresh
 ```
@@ -210,6 +237,11 @@ auth-refactor-260828/
 - `gh issue create` without `--parent` succeeds. It returns a URL and a live
   issue that belongs to no campaign, and only a later listing that comes back
   short shows anything is wrong.
+- This machine's zsh sets `noclobber` and leaves `APPEND_CREATE` unset. Plain
+  `>` onto a file that exists fails with `file exists`, and plain `>>` onto a
+  file that does not exist yet fails with `no such file or directory`, which
+  reads like a missing directory. Write `>|` and `>>|`. Neither failure stops
+  the steps around it, so a fill that never happened still reports success.
 - `git status` in the container root will never show the campaign directory.
   That is the allowlist working, not a missing file.
 - Never run one git command across `repos/*`. Each is its own repository with
