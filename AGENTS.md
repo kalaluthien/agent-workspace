@@ -50,7 +50,19 @@ is closed.
 
 - **ID** — the number of its anchor issue in `kalaluthien/agent-workspace`.
   Typed as `#N`.
-- **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored.
+- **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, and
+  **optional**. A campaign is its anchor issue; the directory is one machine's
+  cache of it. A campaign legitimately has none here when this machine has not
+  scaffolded it yet, when another machine holds the only copy, or when it never
+  needed one — `#1`, which built this machinery, was worked from the container
+  root and never had a directory at all.
+
+  So closing a campaign and deleting a directory are different acts that
+  `closing-campaign` happens to perform in one step. Closing is the anchor issue
+  changing state; deleting is a cache being dropped, and the campaign survives it
+  — demonstrated, not assumed: the settlement listing reads the same from a
+  machine whose directory is gone. A campaign with no directory here is closed
+  by closing its issue, and the delete step has nothing to do.
 - **Branch** — `c<N>/<issue>-<topic>` in every member repository. `<N>` keeps two
   campaigns from colliding on the remote; the subtask's issue number keeps two
   subtasks of one campaign from colliding with each other. The number is minted
