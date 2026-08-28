@@ -74,8 +74,11 @@ or a search over body text cannot do.
 Add a body line `Campaign: kalaluthien/agent-workspace#N` as prose for a human
 reading the raw issue. It is not the index and nothing queries it.
 
-The anchor's `Repos:` list still earns its place: it says which repositories to
-clone when a campaign is opened, before any subtask exists.
+The anchor's **`## Repos`** section still earns its place: it says which
+repositories to clone when a campaign is opened, before any subtask exists. It
+is a markdown heading followed by a plain `- owner/repo` list, in the issue body
+and in the campaign `README.md` alike — the same heading, so a reader written
+against one works on the other.
 
 **Do it here or hand it over** — do it here when the change fits in one
 repository, is small enough to hold in view at once, and needs nothing from that
