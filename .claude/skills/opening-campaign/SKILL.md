@@ -70,6 +70,7 @@ it.
 | --- | --- |
 | No open campaign's Scope covers the request | Open a new campaign: continue to step 2. |
 | One open campaign's Scope covers it | Join it — but read the binding and the holder below first: they decide whether you may join at all, and as what. |
+| One open campaign covers it and a live holder is on this machine | Become its **executor session** on one subtask. Do not scaffold, do not sync, do not close: take the subtask, claim its branch, send `CLAIMED`, and stop running this skill. |
 | Two or more could cover it, or the fit is arguable | Ask the person which, naming the candidates. Do not guess. |
 
 Match on Scope, never on `## Repos`. A request that touches a repository an open
@@ -120,10 +121,27 @@ kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
 ```
 
 Alive, and not this session — you are an **executor session** on one subtask.
-File it or take the one you were given, claim its branch, tell the holding
-session, and from there work it like any executor: never survey, never sync,
-never close. Dead, missing, or your own — you are the holding session; rewrite
-the file as step 4 does and carry on in that directory.
+File it or take the one you were given, claim its branch, and send the holding
+session
+
+```
+CLAIMED campaign-<N>/<issue>-<topic> <your ListAgents name>
+```
+
+which is the whole announcement: the branch and the issue are GitHub facts
+already, and your address is the one thing only you know. From there work the
+subtask like any executor — answer `STATUS`, send `REPORT` and `BLOCKED`, stop on
+`STAND DOWN`, never survey, never sync, never close, never merge your own pull
+request — and mind the mode rule in § Running a campaign: an executor session may
+take a container subtask or campaign-directory work, and for a member-repository
+subtask it launches a delegate and names *that* branch in its `CLAIMED`.
+
+Skipping the announcement is not a small omission. The holder sees a peer in
+`ListAgents` and cannot tell which subtask it works, so its close gate and its
+retirement sweep both read past you.
+
+Dead, missing, or your own — you are the holding session; rewrite the file as
+step 4 does and carry on in that directory.
 
 No directory at all — the campaign exists on GitHub but not on this machine, so
 run steps 2, 4 and 5 for it, taking its ID and body from the anchor issue. Skip

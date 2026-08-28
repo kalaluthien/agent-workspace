@@ -17,8 +17,9 @@ Finished when all six hold:
 - every subtask in the anchor's index reads settled or has moved to another
   anchor, each open one having been given a named disposition first;
 - the campaign directory does not exist;
-- no herdr agent's `cwd` was under the path that directory had, and no
-  `runtime/holder` in it named a live session other than this one;
+- no herdr agent's `cwd` was under the path that directory had, no `ListAgents`
+  peer had announced a subtask of this campaign, and no `runtime/holder` in it
+  named a live session other than this one;
 - the anchor issue body is the campaign README, `## Repos` list included, and
   the body was compared against `runtime/anchor-body-derived.md` before it was
   written.
@@ -119,9 +120,14 @@ the holding session by default, so say so, take the directory as
 `opening-campaign` step 4 does, and carry on. A live PID that is some other
 `claude` reads as held, which is the safe direction to be wrong in here.
 
-**Then the agents.** Presence in `herdr agent list` is the signal, not
-`agent_status` — that reports the screen and calls a mid-turn pause `idle`. An
-agent listed under the tree blocks the close whatever its status says.
+**Then the agents, and there are two lists.** A delegate runs in a herdr pane
+and appears in `herdr agent list`; an executor session has no pane at all and
+appears only as a `ListAgents` peer. Reading one of them passes the gate over
+every executor of the other kind.
+
+Presence is the signal, not `agent_status` — that reports the screen and calls a
+mid-turn pause `idle`. An agent listed under the tree blocks the close whatever
+its status says.
 
 Compare whole path segments. A bare prefix test matches a sibling whose name
 merely starts the same, and misses the directory itself.
@@ -133,12 +139,21 @@ herdr agent list | jq -r --arg tree "$CAMPAIGN_DIR" \
    | "\(.name // "unnamed")\t\(.agent_status)\t\(.cwd)"'
 ```
 
-Any row: print the rows, say which agent holds the campaign, stop. The person
-retires it; this skill never kills an agent.
+Then `ListAgents`, and match on the campaign's branch prefix. An executor
+session's address is what it sent in `CLAIMED`, and by the naming rule that
+address is its branch with the slash flattened — so every peer working campaign
+`<N>` is named `campaign-<N>-...`, whether it is a delegate or a session.
 
-No rows still leaves one case open — an agent herdr has forgotten whose session
-is mid-turn. If `$CAMPAIGN_DIR/runtime/handover/` names briefs you cannot
-account for, say so before continuing.
+Any row from either list: print the rows, say which agent holds the campaign,
+stop. The person retires it; this skill never kills an agent.
+
+No rows still leaves two cases open. One is an agent herdr has forgotten whose
+session is mid-turn: if `$CAMPAIGN_DIR/runtime/handover/` names briefs you cannot
+account for, say so before continuing. The other is an executor session that
+never sent `CLAIMED` — it is live, it holds a branch, and neither list can
+attribute it to this campaign. Cross-check the campaign's claimed branches
+against the peers you can name, and say what you could not account for rather
+than reading silence as absence.
 
 ### 2. Refuse while work exists only on this machine
 
