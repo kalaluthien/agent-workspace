@@ -42,8 +42,9 @@ so a campaign can never be committed into the wrong repository by accident.
 A campaign's identity is its **anchor issue** in this repository. Subtasks are
 issues on the repositories whose code changes, each filed as a sub-issue of that
 anchor — the link the creating command makes is the whole index. That makes
-GitHub the single record: two machines can run the same campaign, and a phone
-can read it, without anything local having to agree.
+GitHub the single record: a campaign can move from one machine to another, and a
+phone can read it, without anything local having to agree. It runs on one
+machine at a time, and the anchor's latest `BOUND` comment says which.
 
 ## Setup
 
