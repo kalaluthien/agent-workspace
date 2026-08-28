@@ -152,11 +152,26 @@ above. `<count>` counts rows, not checks.
 
 ### 3. Report the unsettled subtasks
 
-One reader, and it is the container's script. The rule it implements — settled
-is "the issue is closed", and the merged pull request only says which kind — is
-stated once in `AGENTS.md`; a second copy written out here as `gh` commands is
-the drift that rule exists to stop, and the two did drift before this step was
-written this way.
+**First, confirm `$N` is an anchor.** The container is a member of its own
+campaigns, so its tracker holds subtasks under the same number sequence, and a
+subtask number handed in here reads as a campaign with an empty index — step 5
+would then close somebody's subtask and delete a directory over it.
+
+```sh
+gh issue view "$N" -R kalaluthien/agent-workspace --json labels,parent \
+  -q '"\([.labels[].name] | join(","))\t\(.parent.number // "-")"'
+```
+
+Want `campaign` among the labels and `-` for the parent. A parent means `$N` is
+a subtask; no label means it may be one. Either way, stop and say which issue it
+actually is. `scripts/campaign-settlement "$N"` reports both, alongside step 3's
+verdicts.
+
+Then one reader, and it is the container's script. The rule it implements —
+settled is "the issue is closed", and the merged pull request only says which
+kind — is stated once in `AGENTS.md`; a second copy written out here as `gh`
+commands is the drift that rule exists to stop, and the two did drift before
+this step was written this way.
 
 ```sh
 "$CONTAINER/scripts/campaign-settlement" "$N"

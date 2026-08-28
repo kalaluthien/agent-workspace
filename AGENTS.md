@@ -146,6 +146,19 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0
 - **A skill edited inside the clone does not change the running campaign**, and
   that is deliberate — the tool must not move under a session using it. It takes
   effect only once merged and pulled.
+- **One tracker then holds both kinds of issue** — this campaign's anchors and
+  this repository's subtasks — drawn from one number sequence. An anchor is an
+  issue labelled `campaign` with no parent; a subtask is an issue with a parent,
+  labelled or not. Both readings are cheap and they cross-check each other:
+
+  ```sh
+  gh issue list -R kalaluthien/agent-workspace --state open \
+    --json number,title,parent --jq '.[] | select(.parent == null) | .number'
+  ```
+
+  Neither reading is enforced by GitHub, so `scripts/campaign-settlement` reports
+  a mismatch instead of guessing. Never survey the container's issues unfiltered:
+  the plain `gh issue list` here is mostly subtasks.
 
 # Running a campaign
 
@@ -185,11 +198,34 @@ is a markdown heading followed by a plain `- owner/repo` list, in the issue body
 and in the campaign `README.md` alike — the same heading, so a reader written
 against one works on the other.
 
-**Do it here or hand it over** — do it here when the change fits in one
-repository, is small enough to hold in view at once, and needs nothing from that
-repository's build or test loop. Spawn a repository agent otherwise: when the
-work needs the repository's own conventions and toolchain, when it will take
-many turns, or when two repositories must move at once.
+**Do it here, hand it to a subagent, or hand it to a delegate** — every subtask
+runs one of three ways, and the mode is chosen before the work starts.
+
+- **Your own hands** when the change is one small edit, holds in view at once,
+  and needs nothing from that repository's build or test loop.
+- **An in-process subagent on a git worktree of the repository** when several
+  independent subtasks can run at once, or when the work is hands-on enough
+  that the session should not spend its own turns on it — and the repository is
+  already checked out here, which typically means the container itself.
+- **A herdr repository agent in a clone under `<campaign>/repos/<repo>/`** when
+  the work needs the repository's own conventions and toolchain, when it will
+  take many turns, or when two repositories must move at once.
+
+All three carry the same mechanics. The branch is `c<N>/<issue>-<topic>`, cut
+after the subtask's issue exists because the number is minted there. It is
+pushed as soon as one commit exists, so a checkout that dies costs uncommitted
+work and nothing more. It lands by pull request.
+
+The subagent mode needs none of the delegate rules that exist to cross a
+process boundary: no handover file, because the brief is passed in-process and
+no terminal can truncate it; no canary, because nothing is injected that could
+silently fail to arrive; no herdr liveness, because the subagent reports its
+own exit to the session that launched it. Completion is unchanged — it is still
+a GitHub fact, read from the subtask's issue and pull request.
+
+Parallelism is a reason to hand over on its own. Several independent subtasks
+in one repository are each small enough to do here, and a session that does
+them here does them one after another.
 
 **Close** — load the `closing-campaign` skill. A campaign closes when its anchor
 issue closes, and only a person decides that.
