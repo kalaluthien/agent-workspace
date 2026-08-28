@@ -26,7 +26,8 @@ Out:
 
 ## Repos
 
-<!-- `- none`, alone, is the list for a campaign with no member repository. -->
+<!-- `- none`, alone, is the list for a campaign with no member repository.
+     Adding the first repository replaces it; the two never sit together. -->
 
 - <owner/repo>
 - <owner/repo>
