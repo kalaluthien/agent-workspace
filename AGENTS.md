@@ -349,20 +349,40 @@ and in the campaign `README.md` alike — the same heading, so a reader written
 against one works on the other.
 
 **A campaign with no member repository writes `- none` as the whole list**, body
-and `README.md` alike. An *empty* list stays refused everywhere it is refused
-today — `closing-campaign` step 4 above all — because an empty list is
-indistinguishable from a list a bad write dropped, and that step is the last
-thing standing between such a write and the loss of the index. `- none` is a
-deliberate entry and reads as one; the `<`-placeholder check is unchanged by it.
+and `README.md` alike. An *empty* list stays refused, because an empty list is
+indistinguishable from a list a bad write dropped, and the list is the only copy
+of the campaign's repository index that the close does not delete. `- none` is a
+deliberate entry and reads as one.
+
+**`- none` is retired, never joined.** Adding the first repository replaces it:
+the list is `- none` alone or it is repositories, never both. A mixed list looks
+right to every eye, passes a non-empty test and a placeholder test alike, and
+then hands the literal string `none` to `acquire-repo` on the next machine that
+opens the campaign, which strands that open with nothing saying why.
+
+So the list has one reader and it is a script — `scripts/campaign-repos <path>`,
+which prints one `owner/repo` per line, prints nothing and exits 0 for a list
+that is exactly `- none`, and exits 1 with one line naming which of the four
+faults it found: no heading, an empty list, a surviving `<` placeholder, a mixed
+list. `opening-campaign` steps 4 and 5, its passage on adding a repository, and
+`closing-campaign` step 4 all call it. A rule nothing must consume is a rule that
+drifts, and this one had drifted into three prose copies before it had a reader.
 
 Its subtasks are filed on the container tracker, `kalaluthien/agent-workspace`,
 as sub-issues of the anchor exactly like any other — it is the only tracker
 there is. **And the claim is create-ref on the container** for
 `campaign-<N>/<issue>-<topic>`, even when no container code will change: the
 branch is the claim before it is a workspace, and without it two executors on
-one subtask are serialized by nothing. It is released the same way as any other
-— a claim holding nothing beyond `origin/main` may be deleted when no agent on
-your machine works it — so an unused claim costs a ref and one command.
+one subtask are serialized by nothing. It is released the way any claim is
+released — a claim whose branch holds nothing beyond `origin/main` may be
+released, deleted, **only when no agent on your machine works it**.
+
+Read that guard twice here. It rests on an agent being visible, and a repo-less
+subtask is worked by a session's own hands or by an in-process subagent, neither
+of which has a row in `herdr agent list`. So absence from that listing is not
+evidence that such a claim is abandoned: ask the peer sessions (`STATUS`) before
+deleting one, and leave it standing if nobody answers. Deleting it costs the one
+thing keeping two executors off the subtask.
 
 **Such a subtask closes as completed with no pull request**, and
 `scripts/campaign-settlement` prints that row as `dropped [completed, no merged
@@ -549,38 +569,54 @@ Never answer one with the other.
   session transcript — never from `agent_status` alone, which reports the screen
   and calls a mid-turn pause `idle`.
 
-  **Finding a campaign's sessions is that same reading, filtered by `cwd`.**
-  There is no registry and no name to match on: `name` is null for every
-  interactive session (probed 2026-08-28 — the key is absent from all four rows
-  a container root was holding), so the only handle a campaign session leaves is
-  where it runs. Filter by a whole-segment `cwd` prefix of the campaign
-  directory, or of the container root for a campaign that has no directory — #1
-  is that case, and so is every repo-less campaign whose tree is gone.
+  **Finding a campaign's sessions is a weaker reading than that**, and what
+  makes it weak is worth stating rather than working around. There is no
+  registry and no name to match on: `name` is null for every interactive session
+  (probed 2026-08-28 — the key is absent from every row a container root was
+  holding), so all a campaign session leaves in `herdr agent list` is its `cwd`
+  and its session UUID.
+
+  **The one `cwd` filter is `closing-campaign` step 1's**, which compares whole
+  path segments against a campaign directory. Do not write a second one here.
+  That is the same rule this file states about `campaign-settlement`, and it is
+  the same reason: two readers of one signal drift, and the drift shows up as a
+  gate that passes having matched nothing.
+
+  **That filter cannot scope a campaign with no directory.** Every campaign
+  session's `cwd` is the container root whatever campaign it holds, so a filter
+  rooted there returns every campaign's sessions and attributes all of them to
+  whichever campaign you were asking about. #1 is that case, and so is every
+  repo-less campaign whose tree has been deleted. What tells those rows apart is
+  the transcript and nothing else: `agent_session.value` is the session UUID, and
+  it names `~/.claude/projects/<cwd with every / and . replaced by ->/<uuid>.jsonl`,
+  whose first `"type":"user"` record that is not a harness wrapper is the brief
+  that session was given.
 
   ```sh
-  herdr agent list | jq -r --arg tree "$CONTAINER" \
-    '.result.agents[] | select(.cwd + "/" | startswith($tree + "/"))
-     | "\(.agent_session.value // "-")\t\(.agent_status)\t\(.cwd)"'
-  ```
-
-  `agent_session.value` is the session UUID, and it names the transcript:
-  `~/.claude/projects/<cwd with every / and . replaced by ->/<uuid>.jsonl`. What
-  the session works is the first `"type":"user"` record in it that is not a
-  harness wrapper — the literal first one is a `<local-command-caveat>` or a
-  `<command-name>` block often enough that skipping them is part of the recipe,
-  not a refinement of it:
-
-  ```sh
-  jq -rs 'map(select(.type == "user") | .message.content
-              | if type == "array" then map(.text // "") | join(" ") else . end)
-          | map(select(test("^<(local-command|command-name)") | not)) | first' \
+  jq -rn 'first(inputs
+           | select(.type == "user")
+           | .message.content
+           | if type == "string" then . else (map(.text // "") | join(" ")) end
+           | select(test("^<(local-command|command-name)") | not))' \
     ~/.claude/projects/<encoded cwd>/<uuid>.jsonl
   ```
 
-  A row with no `agent_session` at all is a pane whose session has not started;
-  it has no transcript to read and nothing to say what it works. And the address
-  to talk to any of them by is still the `ListAgents` name, never the `cwd` that
-  found it and never herdr's pane label.
+  `-n` with `inputs`, never `-s`. Slurping parses the whole file before it
+  answers anything, and a transcript being appended to *right now* is the normal
+  state of a live session: the parse fails, the output is empty, and the live
+  session reads as one with nothing to say — the exact misreading this section
+  exists to forbid. `first(inputs)` stops at the record it wants and never
+  reaches the half-written tail. The wrapper filter is part of the recipe, not a
+  refinement of it: the literal first record is a `<local-command-caveat>` or a
+  `<command-name>` block often enough to be the common case.
+
+  **And a session found this way has no address.** What a message is sent to is
+  the `ListAgents` name, and that is null for exactly the interactive sessions
+  this finds; nothing joins a herdr row's session UUID to an address. Until
+  `CLAIMED` lands (kalaluthien/agent-workspace#37, #47), reaching the session
+  that works a subtask means asking the peer sessions — `STATUS` to each — and
+  letting the one holding it answer. Do not write a name lookup; there is none to
+  write.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the campaign session retires it once
