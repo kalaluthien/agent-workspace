@@ -547,10 +547,11 @@ over unexamined work.
 
 **The anchor body is a charter, not a status board.** Intent, Scope and
 Requirements say what a person signed up for, and change only when the scope
-genuinely changes — their decision, not a session's. `## Plan` is the
-decomposition made at opening and is not revised as subtasks land. Progress and
-membership are *derived*, by `scripts/campaign-settlement <N>` over the
-sub-issue index, and never written into the body.
+genuinely changes — their decision, not a session's. The body holds no
+decomposition of its own: opening files the first subtasks, and the sub-issue
+index is the decomposition from that moment on. Progress and membership are
+*derived* from it, by `scripts/campaign-settlement <N>`, and never written into
+the body.
 
 So the body is filled when the anchor is filed, and after that written at
 exactly two moments: a scope change, and the close — each through the
@@ -560,9 +561,9 @@ the branch claim, and the index carries it from there. **When a request reads
 both ways** — a change to what the person signed up for, or a subtask inside
 that scope — ask them with `AskUserQuestion` before writing either side: the two
 readings write different things, and only the person knows which they meant.
-Ticking a `## Plan`
-checkbox as a subtask settles is the anti-pattern this names: a hand copy of a
-listing that already exists, paid for with one lost-update window per write.
+Copying the index into the body as subtasks settle is the anti-pattern this
+names: a hand copy of a listing that already exists, paid for with one
+lost-update window per write.
 
 Two moments is not *write only at open and at close*, which `spec/alloy/`
 weighs as `syncAtCloseOnly` and rejects.
