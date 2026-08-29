@@ -254,6 +254,15 @@ def read_checkouts(campaign_dir, rep):
             rep.add(name, kind, path.split("/")[0] if kind == "ignored" else path,
                     "git status --porcelain --ignored=matching", "discard")
         read_branches(repo, name, rep, default_branch(repo, name, rep))
+        # A checkout left on a detached HEAD holds commits no branch names, so
+        # the branch reading above cannot see them: `git log HEAD --not
+        # --remotes` is the one that does.
+        if not git(repo, "symbolic-ref", "--quiet", "HEAD", check=False):
+            for line in git(repo, "log", "--oneline", "HEAD", "--not",
+                            "--remotes").splitlines():
+                rep.add(name, "unpushed commit", line.split(" ")[0],
+                        "git log HEAD --not --remotes", "push",
+                        note="on a detached HEAD, named by no branch")
         for line in git(repo, "stash", "list").splitlines():
             rep.add(name, "stash", line.split(":")[0], "git stash list", "discard")
         read_worktrees(repo, name, rep)

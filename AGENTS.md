@@ -696,6 +696,13 @@ Never answer one with the other.
   **A `cwd` filter cannot scope a campaign with no directory**, because every
   campaign session's `cwd` is the container root: the session transcript is the
   only discriminator, read through the session id herdr reports.
+- **What exists only on this machine is the third question**, and
+  `scripts/campaign-local-work <N> [campaign-dir]` is its one reader — the
+  container's own `campaign-<N>/` branches and worktrees, the container's
+  working tree, and every checkout under the campaign's `repos/`. Its exit
+  status is about the reading and never the verdict, so a failed read cannot
+  read as a clean tree. `closing-campaign` step 2 is one call to it; a second
+  reader written out anywhere else drifts the way the settlement rule would.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the campaign session retires it once

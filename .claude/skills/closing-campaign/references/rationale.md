@@ -53,20 +53,14 @@ executor nothing recorded both still leave their work in a checkout. The delete
 spares the container checkout, but step 5 closes the anchor indexing it, so it is
 read here too.
 
-**The `[ -d ]` wrapper is what tells "no member repository" from "cannot look".**
-A campaign with no member repository has no `repos/` at all, and that is
-legitimate. A `repos/` that exists but cannot be read is not, and the two looked
-identical while `find` carried `2>/dev/null`: an `EACCES` printed nothing, the
-loop ran zero times, and the close read a repo-less campaign where there were
-checkouts it was not allowed to see.
-
-**The enumeration goes to a file, not through a pipe.** A pipeline's exit status
-is its last command's, so `find | while read` discards whatever `find` said;
-writing to `/tmp/checkouts-$N` puts `find`'s own failure back where a `||` can
-catch it.
-
-`find` rather than a `repos/*/` glob is a portability fix; `references/gotchas.md`
-says what each shell does with an unmatched one.
+**Why the reading is a script and not the nine commands it replaced.** Absent
+`repos/` and unreadable `repos/`, a pipeline swallowing the enumeration's own
+exit status, and a portable enumeration are four things a gate written in prose
+has to get right in whatever shell the person is in — and each of them fails by
+reporting nothing, which reads as a pass. `scripts/campaign-local-work` owns all
+four, its exit status separates "the reading failed" from the verdict, and its
+docstring carries the evidence. This step keeps only what a reader must decide:
+which rows are blockers.
 
 ## Step 4 — validate, compare, write
 

@@ -147,77 +147,40 @@ executor that never sent `CLAIMED` — both leaving work in a checkout.
 
 ### 2. Refuse while work exists only on this machine
 
-Deleting the directory destroys these and nothing recovers them.
-
-**The container checkout first**, because a container subtask is worked there,
-never under `repos/`. No `--ignored` here: the container ignores every campaign
-directory. For a repo-less campaign this is the whole of step 2. **Scope it to
-`campaign-$N/`**, or another campaign's live worktree becomes a blocker on this
-close.
-
-```sh
-git -C "$CONTAINER" for-each-ref --format='%(refname:short)' "refs/heads/campaign-$N/" |
-  while read -r B; do
-    git -C "$CONTAINER" log --oneline "$B" --not --remotes | sed "s|^|$B  |"
-  done
-git -C "$CONTAINER" worktree list | tail -n +2 | grep "\[campaign-$N/" || true
-git -C "$CONTAINER" status --porcelain
-```
-
-The first two are this campaign's own and they are blockers. The last cannot be
-scoped — an uncommitted edit in the container's single working tree carries no
-campaign — so print it, name it as unattributed, and do not count it.
-
-**Then every checkout under `repos/`**, one at a time, never one git command
-across member repositories, reading `runtime/handover/` beside them and saying
-which briefs you cannot account for.
+Deleting the directory destroys these and nothing recovers them. One reader
+answers the whole question — `scripts/campaign-local-work`, which reads this
+campaign's own `campaign-$N/` branches and the worktrees on them in the
+container, the container's single working tree, and every checkout under
+`repos/` one at a time, with the briefs in `runtime/handover/` named beside
+them. Do not re-derive any of that here; a second reader of one question is what
+drifts (§ Completion and liveness).
 
 ```sh
-if [ -d "$CAMPAIGN_DIR/repos" ]; then
-find "$CAMPAIGN_DIR/repos" -mindepth 1 -maxdepth 1 -type d >| /tmp/checkouts-$N ||
-  echo "REFUSE: repos/ did not enumerate; nothing was checked"
-while read -r R; do
-  echo "== $R"
-  git -C "$R" status --porcelain --ignored=matching
-  git -C "$R" log --oneline --branches HEAD --not --remotes
-  git -C "$R" stash list
-  git -C "$R" worktree list | tail -n +2
-  base=$(git -C "$R" symbolic-ref --quiet --short refs/remotes/origin/HEAD) ||
-    base=origin/$(git -C "$R" ls-remote --symref origin HEAD |
-                  sed -n 's|^ref: refs/heads/\([^[:space:]]*\).*|\1|p')
-  [ "$base" != "origin/" ] || { echo "!! cannot resolve the default branch of $R"; continue; }
-  git -C "$R" branch --no-merged "$base"
-done < /tmp/checkouts-$N
-fi
+"$CONTAINER/scripts/campaign-local-work" "$N" "$CAMPAIGN_DIR" >| /tmp/local-work-$N
+cat /tmp/local-work-$N
 ```
 
-Keep all three shapes: the `[ -d ]` wrapper tells "no member repository" from
-"cannot look", the enumeration goes to a file so `find`'s own failure survives,
-and `-type d` is the per-row guard. A repository whose default branch will not
-resolve is reported, not skipped.
+**Exit 1 is the reading having failed, not a clean tree**: print the `-- REFUSE:`
+line it ends on, stop, and conclude nothing. On exit 0 the last line is the
+verdict and the rows above it are the report.
 
-Report one row per thing at risk, never one per check — the checks overlap on
-purpose, so merge only the report. A branch `--no-merged` names is not a blocker
-if it is pushed, nor if it was squash-merged (see the gotchas); say which of the
-three each row is.
+- An unmarked row is counted, and one counted row refuses the close. The refusal
+  is the script's own output, then: *Nothing was deleted. Clear every counted
+  row, or say to discard it, then re-run.*
+- A `~` row is named and not counted — pushed, landed over a squash merge, or a
+  clean worktree, which is the one the closer is usually standing in.
+- A `-- REPORT:` line is for the person to read and blocks nothing: an
+  unattributed edit in the container's one working tree, a handover brief
+  nobody has accounted for, a repository whose default branch would not resolve.
+- `0 item(s) … clear` is the pass.
 
-Refuse in this shape, so two refusals written on different days can be read side
-by side:
+Each row carries its `<kind>`, the `found by` checks that overlap on it and what
+`clears` it, so two refusals written on different days read side by side without
+the shape being retyped here.
 
-```text
-REFUSE: <count> item(s) exist only on this machine: under <CAMPAIGN_DIR>, or on
-this campaign's own campaign-<N>/ branches in <CONTAINER>.
-
-  <owner/repo>  <kind>  <identifier>
-    found by  <check>[, <check>]
-    clears by <push | merge | discard>
-
-Nothing was deleted. Clear every row, or say to discard it, then re-run.
-```
-
-`<kind>` is one of: uncommitted, ignored, unpushed commit, stash, worktree,
-unmerged branch. `<check>` is the command that found it. `<count>` counts rows,
-not checks.
+Holds when: `campaign-local-work` exited 0 over this campaign and this directory,
+and its last line read clear — either on the first run, or on a re-run after
+every counted row was pushed, merged, or discarded on the person's word.
 
 ### 3. Settle or dispose of every open subtask
 
@@ -470,21 +433,18 @@ handover brief — by design, since nothing off this machine reads them. Say so.
 
 The probes and the failures behind these: `references/gotchas.md`.
 
-- Enumerate `repos/` with `find`, never a `repos/*/` glob: unmatched, bash leaves
-  it literal and zsh aborts the loop, and both read as a gate that passed.
+- Three failures step 2 used to have to get right — an unmatched `repos/*/`
+  glob, a squash merge making a landed branch read unmerged forever, and
+  `git status --porcelain` never listing an ignored file — belong to
+  `scripts/campaign-local-work` now, and its docstring is where they are stated.
 - `dropped` covers four closes and its note says which; only `not planned` is
   abandonment, so quote the note, not the word.
 - `state_reason` is lowercase from `gh api` and uppercase from `gh issue list
   --json stateReason`, and the wrong one reads every subtask as unsettled.
-- After a squash merge — the default here — `git branch --no-merged` reports a
-  landed branch as unmerged forever. The discriminator is content: an empty
-  `git -C <repo> diff --stat <base>..<branch>`. Report such a row as landed.
 - `set -- $var` does not word-split in zsh, so a gate built on it tests nothing;
   split with `${spec%%:*}` and `${spec##*:}` instead.
 - `diff` is shadowed in a Claude Code shell on this machine, and a gate that
   errors out is a gate that tested nothing. Write `command diff`.
-- `git status --porcelain` never lists ignored files, so it answers clean over a
-  checkout holding a `.env` or a build directory. Only `--ignored` is evidence.
 - Two sessions given the same slug on the same day build the same path, so this
   delete may hit another session's live workspace. `runtime/holder` catches that
   in step 1; the herdr gate cannot, because it matches an agent's `cwd`. A
