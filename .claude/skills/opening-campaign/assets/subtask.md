@@ -6,5 +6,6 @@ Campaign: kalaluthien/agent-workspace#<N>
 subtask, a decision already made, a file that is off limits. Bullets or numbered
 steps.>
 
-Done when <the condition that settles this issue, readable off the merged pull
-request rather than off a claim>.
+Done when <the condition that settles this issue, readable off the closed issue —
+the merged pull request, or for a repo-less subtask the closing comment — rather
+than off a claim>.

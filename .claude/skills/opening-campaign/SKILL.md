@@ -12,11 +12,10 @@ to work in.
 Finished when all of these hold:
 
 - An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
-  no parent, and the sections of the anchor template `assets/README.md`, with
-  a `## Repos` list that `scripts/campaign-repos` reads without complaint — a
-  plain `- owner/repo` list, or the single entry `- none` for a campaign with no
-  member repository. That script is the only reader of the list, and `AGENTS.md`
-  says why each of its four refusals is a refusal.
+  no parent, and the sections of the anchor template `assets/README.md`, with a
+  `## Repos` list that `scripts/campaign-repos` reads without complaint.
+  That script is the one reader; its refusals are listed in `AGENTS.md`
+  § Running a campaign.
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
   `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/holder`,
@@ -299,6 +298,11 @@ Then finish it:
   deliberate `- none`. Absent, the file makes step 5's redirection fail loudly
   instead.
 
+  **And that is why step 5 reads a file rather than a pipe.** A file that exists
+  only after a successful read is what makes a failed read loud; piping the
+  reader straight into `while read` would swallow its exit status and run the
+  loop zero times, which is what a legitimate `- none` also does.
+
   `>|`, not `>` — see the redirect gotcha below.
 - **Take the campaign, in `runtime/holder`.** It is what every later session
   reads to know whether this machine's copy already has a holding session:
@@ -407,14 +411,8 @@ git -C "$CAMPAIGN/repos/<name>" switch -c campaign-<N>/<issue>-<topic> \
   --track origin/campaign-<N>/<issue>-<topic>
 ```
 
-**Resolve the sha into a variable and check it, never inline.** Without
-`origin/main` — a single-branch clone, a repository whose default branch is not
-`main`, a fetch that has not run — `git rev-parse` exits non-zero but still
-prints the string `origin/main`, and inside `$(...)` on the `gh` line nothing
-reads that exit status: the literal string goes up as the sha, GitHub answers
-`422`, and this skill teaches that `422` means the subtask is already claimed.
-The subtask is then silently abandoned by an executor that believes somebody
-else has it. `--verify` plus `|| exit 1` is what turns that into a stop.
+The sha is resolved into a variable and checked rather than written inline; the
+gotcha below says what an inline `rev-parse` does when `origin/main` is missing.
 
 Put the branch name in the handover brief; the delegate finds its branch
 already on the remote, which is also how a reader on any machine knows the
@@ -466,14 +464,17 @@ campaign `README.md`, sync that to the anchor body, and acquire it as in step 5.
 The list is what a later open reads to know what to clone; the index does not
 depend on it.
 
-**Adding the first repository replaces `- none`; it never joins it.** The list
-is `- none` alone or it is repositories, and a mixed list is refused by
-`scripts/campaign-repos` — run it over the README before you sync, because a
-mixed list otherwise passes every gate here and then hands the literal string
-`none` to `acquire-repo` on the next machine that opens the campaign:
+**Adding the first repository replaces `- none`; it never joins it**, and
+`scripts/campaign-repos` refuses the mixed list — `AGENTS.md` § Running a
+campaign says why. Run the reader over the README before you sync, the same way
+step 4 does:
 
 ```sh
-"$CONTAINER/scripts/campaign-repos" "$CAMPAIGN/README.md" >| "$CAMPAIGN/runtime/repos"
+"$CONTAINER/scripts/campaign-repos" "$CAMPAIGN/README.md" \
+  >| "$CAMPAIGN/runtime/repos.tmp" &&
+  mv "$CAMPAIGN/runtime/repos.tmp" "$CAMPAIGN/runtime/repos" ||
+  { rm -f "$CAMPAIGN/runtime/repos.tmp"
+    echo "REFUSE: the ## Repos list did not read; nothing was synced"; }
 ```
 
 The campaign stops being repo-less at that moment, and everything that was
@@ -512,6 +513,16 @@ auth-refactor-260828/
 
 ## Gotchas
 
+- **An inline `sha=$(git rev-parse origin/main)` sends the literal string up as
+  a sha.** Without that ref — a single-branch clone, a repository whose default
+  branch is not `main`, a fetch that has not run — `git rev-parse` exits
+  non-zero and still prints `origin/main`, and inside `$(...)` on the `gh` line
+  nothing reads that exit status. GitHub answers `422`, and this skill teaches
+  that `422` means the subtask is already claimed, so the subtask is abandoned
+  by an executor that believes somebody else holds it. `--verify` plus
+  `|| exit 1` into a variable is what turns that into a stop, and a repo-less
+  campaign takes the sha from `gh api .../commits/main` because it has no
+  checkout to ask.
 - A request that sounds new is usually a follow-up. Step 1 is the step this
   procedure exists for; skipping it produces a second campaign over the same
   scope, and nothing errors — you get two anchor issues that both look right.
