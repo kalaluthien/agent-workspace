@@ -132,27 +132,30 @@ work yourself; a member-repository subtask makes you the *launcher* of a
 delegate. That decision names the branch you are about to claim and the process
 that will hold it, so it cannot come after the claim.
 
-Then claim the branch, and send the holding session
-
-```
-CLAIMED campaign-<N>/<issue>-<topic> <your ListAgents name> <your $CLAUDE_PID>
-```
-
-— the branch of whichever process ends up holding the claim, your own if you are
-working it and the delegate's if you launched one. Then stop running this skill:
-from here you are an agent, and § Talking to a repository agent is your half of
-it. Nothing below this line is yours — you do not scaffold, sync, or close.
-
-Skipping the announcement is not a small omission. It is the only thing that
-puts you in `<campaign>/runtime/executors/`, and that directory is the only
+**Working it yourself** — claim the branch, then send the holding session
+`CLAIMED <branch> <your ListAgents name> <your $CLAUDE_PID>`, whose format and
+fields are § Talking to a repository agent in the container's `AGENTS.md`. Read
+your own name off the first line of `ListAgents`, which names the calling
+session. Skipping the announcement is not a small omission: it is the only thing
+that puts you in `<campaign>/runtime/executors/`, and that directory is the only
 place the holder's close gate looks for you.
+
+**Launching a delegate** — send no `CLAIMED`. The claim is the delegate's, its
+`--name` is its branch, and `herdr agent list` is where the holder reads it;
+announcing it under your name would give one process two addresses. Step 5 below
+*is* yours in this case — the delegate needs its repository checked out — and §
+Delegating to a repository agent in the container's `AGENTS.md` is the launch.
+
+Either way, stop there: from here you are an agent, and § Talking to a
+repository agent is your half of it. You do not scaffold, sync, or close.
 
 Dead, missing, or your own — you are the holding session; rewrite the file as
 step 4 does and carry on in that directory. **When a `CLAIMED` reaches you**,
 record it before doing anything else, because a message is gone with the session
 that received it. The record's three fields and the `printf` that writes them are
-§ Talking to a repository agent in the container's `AGENTS.md`; run it under
-`$CAMPAIGN/runtime/executors/<issue>` after `mkdir -p` on that directory.
+§ Talking to a repository agent in the container's `AGENTS.md`; write it to
+`$CAMPAIGN/runtime/executors/<issue>`, after `mkdir -p "$CAMPAIGN/runtime/executors"`
+if this campaign was scaffolded before that directory existed.
 
 No directory at all — the campaign exists on GitHub but not on this machine, so
 run steps 2, 4 and 5 for it, taking its ID and body from the anchor issue. Skip
@@ -290,9 +293,10 @@ different campaign, or unreadable — stop and ask the person.
 
 Then finish it:
 
-- `mkdir -p runtime/executors`. It is where a received `CLAIMED` is recorded,
-  and `closing-campaign` refuses a close when that directory is missing — an
-  empty one says no executor announced, an absent one says nothing at all.
+- Confirm `runtime/executors/` came with the copy — it holds a `.gitkeep` and
+  nothing else. It is where a received `CLAIMED` is recorded, and
+  `closing-campaign` refuses a close when it is missing: an empty one says no
+  executor announced, an absent one says nothing at all.
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
 - Delete `subtask.md`. It came along with the copy, but a subtask is filed from
   the skill's own copy at `assets/subtask.md`; a second copy sitting in a
@@ -446,7 +450,7 @@ auth-refactor-260828/
   AGENTS.md      copied from assets/agents/migration.md
   CLAUDE.md      @AGENTS.md
   README.md      issue #7's body, section for section
-  runtime/handover/ scripts/
+  runtime/handover/ runtime/executors/ scripts/
   runtime/anchor-body-derived.md  issue #7's body as the README was derived from
   runtime/holder                  the session holding #7 on this machine
   repos/api/     on the default branch; #31 is worked on campaign-7/31-token-refresh

@@ -78,11 +78,12 @@
  * the same directory, and is by definition not the holder. The holder deletes
  * the tree under it having broken no rule (R3d, SAT).
  *
- * Assuming the missing half closes it (R3e, UNSAT; control R3f, SAT), and the
- * half is not a file: being the holder is recorded in `runtime/holder`, and
- * whether another session is working the tree is a fact about a peer that
- * nothing on disk carries. agent.als's `Addressed` is what makes it readable,
- * and A1 there measures the same gap from the close gate's side.
+ * The missing half is not a file this layer can add: being the holder is
+ * recorded in `runtime/holder`, and whether another session is working the tree
+ * is a fact about a peer that nothing on disk carries. agent.als's `Addressed`
+ * is what makes it readable, and checkable there rather than assumed here --
+ * A11 is UNSAT with the record read at the delete, A12 is its control, and A1
+ * measures the same gap from the close gate's side.
  *
  *
  * WHY CONCURRENCY IS CHEAP RATHER THAN CORRECT

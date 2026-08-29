@@ -32,18 +32,17 @@ what to skip.
 ## Procedure
 
 The order is load-bearing: each gate is cheaper than the one after it, and step
-5 is irreversible. Run 0–4 without asking — with one exception: step 3 reads and
-refuses on its own, but the disposition of an open subtask is the person's
-choice, and this skill acts on GitHub only once they have made it. Run 5 only on
-explicit confirmation.
+5 is irreversible. Run 0–4 without asking, with one exception — step 3 reads and
+refuses on its own, but an open subtask's disposition is the person's choice and
+this skill acts on GitHub only once they have made it. Run 5 only on explicit
+confirmation.
 
 ### 0. Bind the campaign, once
 
-**The ID first.** Every step from 3 on reads `$N`, and nothing in the campaign
-directory carries it: the README *is* the anchor body, and a body does not know
-its own issue number. Take it from the person, or resolve it from the open
-anchors and say which one you matched — the `campaign` label is what they are
-listed by.
+**The ID first.** Every step from 3 on reads `$N`, and nothing in the directory
+carries it: the README *is* the anchor body, and a body does not know its own
+issue number. Take it from the person, or resolve it from the open anchors and
+say which one you matched — the `campaign` label is what they are listed by.
 
 ```sh
 gh issue list -R kalaluthien/agent-workspace --label campaign --state open
@@ -69,7 +68,8 @@ in the container's `AGENTS.md`.
 **Then the directory, if this machine has one.** A campaign legitimately has
 none here (§ Who is a campaign session, Directory). That is not a failure and
 not a reason to stop: say so, skip steps 1, 2 and 4, and close the issue in step
-5, where the delete then has nothing to do.
+5, where the delete then has nothing to do. Closing the issue is what closes the
+campaign; deleting a directory is dropping a cache.
 
 Every later step reads `$CAMPAIGN_DIR`, and two fail silently if it is relative
 or wrong: step 1 compares it against herdr's absolute `cwd`, so a relative value
@@ -158,10 +158,23 @@ leave one trace — work in a checkout that is not on a remote.
 
 Deleting the directory destroys these and nothing recovers them, and step 1's
 two unenumerable cases land here too: an executor nothing recorded still leaves
-its work in a checkout. Check every checkout under `repos/`, one at a time —
-never one git command across member repositories — and read
-`$CAMPAIGN_DIR/runtime/handover/` beside it, saying which briefs you cannot
-account for.
+its work in a checkout.
+
+**The container checkout first.** A container subtask — the one kind an executor
+session works with its own hands — is worked there or in a worktree of it, never
+under `repos/`, so the loop below cannot see it. No `--ignored` here: the
+container ignores every campaign directory and would report each as a blocker.
+The delete spares this work, but step 5 closes the anchor indexing it.
+
+```sh
+git -C "$CONTAINER" status --porcelain
+git -C "$CONTAINER" log --oneline --branches HEAD --not --remotes
+git -C "$CONTAINER" worktree list | tail -n +2
+```
+
+**Then every checkout under `repos/`**, one at a time — never one git command
+across member repositories — reading `$CAMPAIGN_DIR/runtime/handover/` beside
+them and saying which briefs you cannot account for.
 
 ```sh
 for R in "$CAMPAIGN_DIR"/repos/*/; do
@@ -179,21 +192,16 @@ done
 ```
 
 Each line finds what the others miss: `--ignored=matching` reaches a `.env` or a
-downloaded fixture that plain `status` hides; `HEAD` alongside `--branches`
-reaches a commit made on a detached head; `tail -n +2` drops the main worktree,
-which always prints and would otherwise flag every repository. A repository
-whose default branch will not resolve is reported, never skipped quietly.
+downloaded fixture that plain `status` hides; `HEAD` alongside `--branches` reaches
+a commit on a detached head; `tail -n +2` drops the main worktree, which always
+prints. A repository whose default branch will not resolve is reported, not skipped.
 
-Report one row per thing at risk, never one per check. An unpushed commit on a
-topic branch is found twice — once by `log --not --remotes`, once by `branch
---no-merged` — and is still one blocker. Keep both checks and merge only the
-report: the overlap is what makes the check hard to fool, while two rows make a
-reader counting blockers see two problems where there is one.
-
-A branch listed by `--no-merged` is not a blocker if it is pushed, and also not
-a blocker if it was squash-merged — see the gotcha below, because that case is
-gone from the remote and looks exactly like the real thing. Say which of the
-three each row is.
+Report one row per thing at risk, never one per check: an unpushed commit is
+found twice, by `log --not --remotes` and by `branch --no-merged`, and is still
+one blocker. Keep both — the overlap is what makes them hard to fool — and merge
+only the report. A branch `--no-merged` names is not a blocker if it is pushed,
+nor if it was squash-merged, which looks exactly like the real thing (see the
+gotcha); say which of the three each row is.
 
 Refuse in this shape, so two refusals written on different days can be read side
 by side:
@@ -241,11 +249,12 @@ cat /tmp/settlement-$N
 
 It reads the anchor's sub-issue index in one paginated call — every member
 repository at once, public or private — and prints one row per subtask, then
-whether the campaign is closable. Keep the output in a file: the rest of this
-step is read off it by machine.
+whether the campaign is closable. Keep it in a file: the rest of this step is
+read off it by machine.
 
 Read the note beside a `dropped` row before repeating the word: it covers four
 closes and only one is an abandonment.
+
 **Then every `open` row gets a disposition, and this step refuses without one.**
 A campaign may close over unfinished work; it may not close over *unexamined*
 work. A leftover nobody named is work that vanishes with the close — the anchor
@@ -274,10 +283,9 @@ awk 'NF && $2 !~ /^(finish|not-planned|reparent)$/ { print "REFUSE: unknown disp
 awk 'NF && $2 != "finish" && NF < 3 { print "REFUSE: no reason or target: " $0 }' "$DISPOSITIONS"
 ```
 
-`command diff`, not `diff` — see the shadowed-`diff` gotcha below. A `<` line is
-an open subtask nobody disposed of and it stops the close; a `>` line names a
-subtask that is not open, so the list was written against a stale reading and
-the script must be re-run before anything is acted on.
+`command diff`, not `diff` — see the gotcha below. A `<` line is an open subtask
+nobody disposed of and it stops the close; a `>` line names one that is not open,
+so the list was written against a stale reading and the script must be re-run.
 
 ```text
 REFUSE: <count> open subtask(s) under #<N> have no disposition.
@@ -288,9 +296,9 @@ Nothing was closed. Give each one finish, not-planned with a reason, or
 reparent with the anchor that inherits it, then re-run.
 ```
 
-`/tmp/dispositions-$N` is scratch and dies with the run. The durable record of
-each disposition is the act itself: the merged pull request, the reason in the
-close comment, or the new parent. Nothing here is written into the anchor body —
+`/tmp/dispositions-$N` is scratch and dies with the run; the durable record of
+each disposition is the act itself — the merged pull request, the reason in the
+close comment, the new parent. Nothing here is written into the anchor body:
 progress is derived from the index, and the body is a charter.
 
 **Carry them out, then read the same script again.** The dispositions are
@@ -305,11 +313,10 @@ grep -q '; closable$' /tmp/settlement-after-$N ||
   echo "REFUSE: open subtasks remain after the dispositions were carried out"
 ```
 
-`; closable$` and not `closable`, because the failing line ends
-`NOT closable: open subtasks remain` and a bare match reads it as a pass. The
-empty-index line is the second accepted reading: a campaign with no subtasks
-prints no settlement count at all, and refusing it would leave such a campaign
-unclosable.
+`; closable$` and not `closable`, because the failing line ends `NOT closable:
+open subtasks remain` and a bare match reads it as a pass. The empty-index line
+is the second accepted reading: a campaign with no subtasks prints no settlement
+count at all, and refusing it would leave such a campaign unclosable.
 
 A `-- REPORT:` line about nested sub-issues is not covered by this gate. A
 subtask that is itself an anchor hides its own members, so run the script on it
@@ -318,10 +325,9 @@ and dispose of those rows too before you count this one settled.
 ### 4. Validate the README, compare, then overwrite the anchor issue body
 
 The README and the anchor body are the same anchor template filled in —
-`.claude/skills/opening-campaign/assets/README.md` — so the sync is an
-overwrite. That makes the README the only thing standing between a malformed
-heading and the loss of the campaign's repository index, which step 5 then
-deletes the last copy of. Validate before writing.
+`.claude/skills/opening-campaign/assets/README.md` — so the sync is an overwrite.
+That makes the README the only thing standing between a malformed heading and the
+loss of the repository index whose last copy step 5 deletes. Validate first.
 
 ```sh
 README="$CAMPAIGN_DIR/README.md"
@@ -359,9 +365,8 @@ gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/b
 command diff -u "$DERIVED" /tmp/body-now && echo "the body has not moved; safe to write"
 ```
 
-`command diff`, not `diff` — see the shadowed-`diff` gotcha below.
-
-Read the diff, not the exit status alone — it names what the other session did.
+`command diff`, not `diff` — see the gotcha below. Read the diff and not the
+exit status alone: it names what the other session did.
 
 ```text
 REFUSE: the anchor body has moved since this README was derived from it.
@@ -372,16 +377,15 @@ Nothing was written. Fold those changes into <CAMPAIGN_DIR>/README.md, refresh
 runtime/anchor-body-derived.md from /tmp/body-now, then re-run.
 ```
 
-Refuse the same way when `runtime/anchor-body-derived.md` is missing — a
-campaign scaffolded before the file existed, or a directory built by hand. There
-is no cheap substitute: without it, "has the body moved?" has no answer, and
-guessing it has not is exactly the write this step exists to stop. Say so, read
-the body and the README side by side yourself, and once they agree write
-`/tmp/body-now` to `runtime/anchor-body-derived.md` and re-run.
+Refuse the same way when `runtime/anchor-body-derived.md` is missing — a campaign
+scaffolded before the file existed, or a directory built by hand. There is no
+cheap substitute: without it "has the body moved?" has no answer, and guessing it
+has not is the write this step exists to stop. Say so, read the body and the
+README side by side yourself, then write `/tmp/body-now` to the derived path and
+re-run.
 
-Only then overwrite — and read the index back out of what GitHub actually
-stored, then refresh the derived copy so the next write compares against this
-one:
+Only then overwrite — reading the index back out of what GitHub actually stored,
+and refreshing the derived copy so the next write compares against this one:
 
 ```sh
 gh issue edit "$N" -R kalaluthien/agent-workspace --body-file "$README"
@@ -400,8 +404,9 @@ Only after the person confirms.
 **Say it on the anchor issue first, and read who answers.** Step 1's gate is
 local, and under the principle that covers everything legitimate: every agent
 and every executor session of this campaign is on the machine it is `BOUND` to,
-and step 1 saw them. What it cannot see is a machine working this campaign
-against the binding, and no cheap local check can. The anchor issue is the one
+and step 1 saw every one that announced, while step 2 read the container and
+`repos/` for the work of one that did not. What neither can see is a machine
+working this campaign against the binding, and no cheap local check can. The anchor issue is the one
 place every machine can read, so announce there and read the comments back —
 this is the guard for a broken principle, not a routine handshake.
 
@@ -411,13 +416,12 @@ gh issue comment "$N" -R kalaluthien/agent-workspace \
 gh issue view "$N" -R kalaluthien/agent-workspace --comments
 ```
 
-Another session's note saying it is working or closing: stop, name it, and let
-the person resolve it — and say that it should not have been there, because the
-campaign is bound here. This narrows the window rather than closing it: a
-session that never comments is invisible either way. What keeps that survivable
-is not this check but the rule that a delegate pushes its branch as soon as it
-has one commit, so a tree deleted underneath it costs uncommitted work and
-nothing more.
+Another session's note saying it is working or closing: stop, name it, let the
+person resolve it, and say it should not have been there, because the campaign is
+bound here. This narrows the window rather than closing it — a session that never
+comments is invisible either way — and what keeps that survivable is the rule
+that a delegate pushes as soon as it has one commit, so a tree deleted underneath
+it costs uncommitted work and nothing more.
 
 Then close, in this order — the issue first, because a failed close leaves the
 directory to retry from, while the reverse leaves nothing. The comment states
@@ -449,6 +453,11 @@ ls -A "$CAMPAIGN_DIR"
 rm -rf -- "$CAMPAIGN_DIR"
 ```
 
+`runtime/` goes with it — `holder`, every `executors/<issue>` record, every
+handover brief — by design and not as a loss: nothing off this machine reads
+them, which is why they were allowed to be files. Say so rather than assuming
+the person knows.
+
 ## Gotchas
 
 - **`dropped` covers four closes and its note says which**: `not planned`,
@@ -461,23 +470,21 @@ rm -rf -- "$CAMPAIGN_DIR"
   rather than in prose here.
 - **After a squash merge, ancestry is the wrong test, and squash is the default
   merge here.** `git branch --no-merged <base>` walks ancestry, and a squash
-  merge writes a *new* commit onto the base, so the topic branch stays
-  "unmerged" forever. Pair that with `--delete-branch` and the branch is also
-  absent from the remote — the exact signature of work that exists only on this
-  machine — so a fully landed campaign reports one false blocker per member
-  repository. The discriminator is content, not
-  ancestry: `git -C <repo> diff --stat <base>..<branch>` empty means the branch
-  changes nothing the base lacks, however the ancestry reads. Check the paths the
-  subtask actually touched too, since a branch cut before the base moved on
+  merge writes a *new* commit onto the base, so the topic branch stays "unmerged"
+  forever; pair that with `--delete-branch` and it is absent from the remote too
+  — the exact signature of work that exists only on this machine — so a fully
+  landed campaign reports one false blocker per member repository. The
+  discriminator is content: `git -C <repo> diff --stat <base>..<branch>` empty
+  means the branch changes nothing the base lacks, however ancestry reads. Check
+  the paths the subtask touched too, since a branch cut before the base moved on
   diffs non-empty on files it never edited. Report such a row as landed.
 - **`set -- $var` does not word-split in zsh, and this skill is made of gates.**
-  This machine's shell leaves unquoted parameters unsplit, so
-  `for pair in a:1 b:2; do set -- $pair` leaves `$2` empty. Here it failed loudly
-  — `gh` answered `invalid issue format: ""` — but the same construct inside a
-  check whose empty result reads as "nothing to report" passes having tested
-  nothing. Split with a parameter expansion (`repo=${spec%%:*}`,
-  `num=${spec##*:}`), and make any gate that can return empty say which of the
-  two it means.
+  Unquoted parameters stay unsplit, so `for pair in a:1 b:2; do set -- $pair`
+  leaves `$2` empty. Here it failed loudly — `gh` answered `invalid issue format:
+  ""` — but the same construct inside a check whose empty result reads as
+  "nothing to report" passes having tested nothing. Split with a parameter
+  expansion (`repo=${spec%%:*}`), and make any gate that can return empty say
+  which of the two it means.
 - **`diff` is shadowed in a Claude Code shell on this machine** by a zsh
   autoload stub with no file behind it, so a plain `diff` dies with
   `(eval):1: diff: function definition file not found` — which reads like a

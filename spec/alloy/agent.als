@@ -1,5 +1,5 @@
 /*
- * The executor: launch, work, the four messages, retirement -- and the whole
+ * The executor: launch, work, the five messages, retirement -- and the whole
  * composition, since this is the top layer.
  *
  * ledger.als is spec/'s entry point and carries the orientation to all four
@@ -10,7 +10,7 @@
  * THIS LAYER
  *
  * How a campaign session and the executors it launched talk to each other.
- * Normative. AGENTS.md carries the short form -- four messages and the two-step
+ * Normative. AGENTS.md carries the short form -- five messages and the two-step
  * shutdown; this file is the whole contract, and the parts of it that can be
  * checked are checked below rather than asserted in prose.
  *
@@ -228,9 +228,11 @@
  *
  * One consequence does reach this layer, and it is why the rule is worth naming
  * at all: an executor session that draws a member-repository subtask becomes the
- * LAUNCHER of a delegate rather than the executor of it, and the CLAIMED it
- * sends names that delegate's branch. So `peer` is a property of the executor
- * that ends up holding the claim, not of the session that took the subtask.
+ * LAUNCHER of a delegate rather than the executor of it, and the delegate it
+ * launches has no `peer` -- it is Addressed at its launch from the `--name` its
+ * launcher chose, and nobody sends a CLAIMED for it. So `peer` is a property of
+ * the executor that ends up holding the claim, not of the session that took the
+ * subtask, and `announce` is guarded on it for exactly that reason.
  *
  * And one open risk, named rather than solved: retiring at "pull request open"
  * means nobody is watching the review. Until a board exists, the person is the
@@ -239,8 +241,8 @@
  *
  * VERDICTS
  *
- * Measured 2026-08-28 against this file. X is a counterexample; a check that
- * passes reads UNSAT.
+ * Measured 2026-08-28 against this file, A14 and A15 on 2026-08-29. X is a
+ * counterexample; a check that passes reads UNSAT.
  *
  *   NoLostWork                       pass  a death or a delete never un-completes
  *   NoOrphan                         X     nothing enforces the retirement rule
@@ -290,6 +292,11 @@
  *   A12_ReadableGateAdmitsTheDelete  SAT   control
  *   A13_PushAfterReviewUnReviews     SAT   a review is of a pull request at a
  *                                          revision, and a push retires it
+ *   A14_UnannouncedExecutorIsRetirable
+ *                                    SAT   `confirm` reads a tree, not the
+ *                                          executor, so silence resolved
+ *                                          externally still ends in a retire
+ *   A15_UnannouncedExecutorPRLands   SAT   and its pull request still lands
  *   Cov_*                            SAT   every own event fires in some trace
  *
  * Every green was proved able to fail, re-run 2026-08-28 against this model:
@@ -335,7 +342,10 @@
  *
  *   Addressability guarded STATUS alone, so four other holder-to-executor events
  *   fired against executors the holder could not reach. `reachable` is one
- *   predicate on all five now, and A2 is renamed for what that certifies.
+ *   predicate now, over the three events that CARRY A MESSAGE -- status, decide,
+ *   standDown -- and A2 is renamed for what that certifies. `confirm` and
+ *   `review` read a working tree and a pull request instead of the executor, so
+ *   they are not gated on it; A14 and A15 are what that costs when they are.
  *
  *   `announceAtClaim` was written over the step rather than per agent, which
  *   made it unsatisfiable for two unaddressed executors at once -- an artefact
@@ -788,9 +798,16 @@ pred decide[a: Agent] {
    request is open" has no passing form for an executor that correctly produced
    nothing durable, and a campaign session following it literally is stuck with
    nothing to verify. What is always checkable is the inverse, and that is the
-   `a not in Local` guard here. */
+   `a not in Local` guard here.
+
+   NO `reachable` GUARD, deliberately: this event reads a working tree on the
+   session's own machine and sends the executor nothing, so an address at the far
+   end is not what it needs. Gating it made an executor that never announced
+   impossible to CONFIRM, and every discipline that wants a confirmation before
+   the retire then made it impossible to retire and its pull request impossible
+   to land -- A14 and A15, both UNSAT with the guard in place and SAT without it,
+   measured 2026-08-29. */
 pred confirm[a: Agent] {
-  reachable[a]
   coLocated[By.actor, a]
   a.task in By.actor.holds.members
   a not in Local
@@ -806,10 +823,11 @@ pred confirm[a: Agent] {
    machine that could fail it. That is not a modelling shortcut; it is the
    defect, and TwoStepShutdownSuffices below is where it surfaces.
 
-   It carries no `reachable` guard either, and that is the same defect from the
-   same angle: `runtime/executors/` is on the bound machine, so a session
-   elsewhere cannot read it and does not know there is anything it cannot
-   address. */
+   It shares `confirm`'s absence of a `reachable` guard, but not for `confirm`'s
+   reason, and the guard would not have saved it either: `runtime/executors/` is
+   on the bound machine, so a session elsewhere cannot read it and does not know
+   there is anything it cannot address. What is wrong here is the tree it reads,
+   and no addressability rule reaches that. */
 pred confirmElsewhere[a: Agent] {
   not coLocated[By.actor, a]
   a.task in By.actor.holds.members
@@ -846,9 +864,12 @@ pred confirmElsewhere[a: Agent] {
    `Target.agent` names the executor whose work is reviewed, not the reviewer.
    The reviewer is a process, and this layer models processes only where their
    state matters; the reviewer's does not -- it leaves one durable mark, and that
-   mark is `Reviewed`. */
+   mark is `Reviewed`.
+
+   No `reachable` guard, for `confirm`'s reason: `/code-review <PR#>` reads
+   GitHub and `gh pr merge` needs only the number. An executor that skipped
+   CLAIMED is unaddressable, not unlandable, and no prose ever said otherwise. */
 pred review[a: Agent] {
-  reachable[a]
   Now.ev = Review
   Now.issue = a.task
   some a.task.pr and a.task.pr not in Reviewed
@@ -888,10 +909,17 @@ pred standDown[a: Agent] {
    skips every message in the protocol, which is exactly why the disciplines
    below guard the retire and not only the stand-down.
 
-   No `reachable` guard, and it is the one holder act that must not have one: an
-   executor whose record went with a deleted directory, or which never announced,
-   still has a workspace somebody has to be able to destroy. Retiring is the act
-   that needs no answer from the far end. */
+   No `reachable` guard, and it is the act that most obviously must not have one:
+   an executor whose record went with a deleted directory, or which never
+   announced, still has a workspace somebody has to be able to destroy. Retiring
+   needs no answer from the far end.
+
+   An unguarded `retire` was never the whole of that claim, though, and A14 is it
+   measured: a discipline that wants a CONFIRMATION first kept such an executor
+   alive forever while this predicate stood open, so `confirm` carries no guard
+   for the same reason. `twoStepShutdown` strands it anyway, because its other
+   conjunct is an ANSWER and an answer needs an address; `resolveSilenceExternally`,
+   the rule the design adopted, asks for the confirmation alone and lets it go. */
 pred retire[a: Agent] {
   (a in StoodDown or a not in Live) and a in Launched and a not in Retired
   a.task in By.actor.holds.members
@@ -1544,10 +1572,11 @@ pred A1_UnannouncedExecutorIsInvisible {
    becomes reachable. UNSAT at A1's own bounds.
 
    The name says what it certifies now rather than what the first draft claimed.
-   That draft guarded STATUS alone, so `standDown`, `decide`, `confirm` and
-   `review` still fired against executors the holder provably could not reach --
-   the green certified that one message was gated, not that the protocol was.
-   `reachable` is now the guard on all five, and this is that. */
+   That draft guarded STATUS alone, so `standDown` and `decide` still fired
+   against executors the holder provably could not reach -- the green certified
+   that one message was gated, not that the protocol was. `reachable` is the
+   guard on all three message-carrying acts now, and this is that. A14 and A15
+   are why `confirm` and `review` are not among them. */
 pred A2_AnnounceMakesEveryHolderActReachable {
   announceAtClaim and A1_UnannouncedExecutorIsInvisible
 }
@@ -1744,6 +1773,30 @@ pred Cov_Retire           { eventually Now.ev = Retire }
 pred Cov_AgentDie         { eventually Now.ev = AgentDie }
 pred Cov_GuardedRelease   { eventually Now.ev = Release }
 
+/* A14. AN EXECUTOR THAT NEVER ANNOUNCED IS STILL RETIRABLE, which is what
+   `retire`'s comment claims and could not make good while `confirm` was gated on
+   `reachable`. Under the rule the design adopted -- silence resolved externally,
+   the stand-down carried by the confirmation alone -- the holder walks up to the
+   tree, reads it clean, stands the executor down and retires it, having never
+   been able to address it. SAT, and UNSAT with the guard restored: that pair is
+   the finding these two commands were added for. */
+pred A14_UnannouncedExecutorIsRetirable {
+  resolveSilenceExternally and coLocatedShutdown
+  some a: Agent { always a not in Addressed
+                  eventually a in Retired }
+}
+
+/* A15. And its pull request still lands. `mergedByHolder` wants every executor
+   of the issue confirmed, so gating `confirm` made an unannounced executor's
+   work permanently unmergeable -- a consequence no prose stated and `gh pr
+   merge` does not have, since it needs only the number. SAT; UNSAT with the
+   guard. */
+pred A15_UnannouncedExecutorPRLands {
+  mergedByHolder
+  some a: Agent { always a not in Addressed
+                  eventually (Now.ev = MergePR and Now.issue = a.task) }
+}
+
 /* ---------------- commands ---------------- */
 
 check NoLostWork        for 3 Issue, 2 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps
@@ -1801,6 +1854,8 @@ run A10_DeleteUnderAnnouncedExecutor         for 3 Issue, 1 PR, 1 Campaign, 2 Se
 run A11_ReadableGateBlocksTheDelete          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
 run A12_ReadableGateAdmitsTheDelete          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
 run A13_PushAfterReviewUnReviews             for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
+run A14_UnannouncedExecutorIsRetirable       for 3 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
+run A15_UnannouncedExecutorPRLands           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
 
 run Cov_LaunchAgent      for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
 run Cov_Work             for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps

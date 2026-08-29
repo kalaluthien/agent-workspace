@@ -173,13 +173,17 @@ two survive unchanged, one holds by construction, and one inverts.
   holds nothing beyond `origin/main` may be released — deleted — only when no
   agent on *your* machine works it; a live agent elsewhere that has not pushed
   loses its claim to that rule, which is one more reason it pushes early.
-  The executor's every other name is this string projected: an agent is
-  `--name`d the branch with its slash flattened to a dash
-  (`campaign-1-31-executor-identity`), so nothing carries a second naming rule
-  to drift. Campaign sessions stay nameless on purpose: their durable trace is
-  what they filed and what they claimed, retirement authority is co-location
-  rather than ownership, and nothing durable reads a session name — so giving
-  one would be machinery, not structure.
+  A *delegate's* every other name is this string projected: it is `--name`d the
+  branch with its slash flattened to a dash
+  (`campaign-1-31-executor-identity`), so the name an address resolves and the
+  branch a reader meets are one string. An executor session is the case that
+  rule cannot reach — its harness named it before this campaign existed and only
+  a person can rename it — so it announces the name it has, and
+  `<campaign>/runtime/executors/<issue>` records that name durably. Two naming
+  rules, then, and one thing follows for every reader: **never test a name
+  against the branch.** A `campaign-<N>-` prefix test finds the delegates and
+  misses exactly what the record exists to catch. § Talking to a repository
+  agent carries the announcement.
 
 # Three planes
 
@@ -361,8 +365,9 @@ be spelled out in the brief rather than named.
 
 So an **executor session** can take only a container subtask or
 campaign-directory work. For a member-repository subtask it becomes the launcher
-of a delegate, and the `CLAIMED` it sends names that delegate's branch — the
-holder addresses whichever process is actually holding the claim.
+of a delegate, and the claim is then the delegate's: it is `--name`d its branch
+and `herdr agent list` carries it, so no `CLAIMED` is sent for it by anybody. §
+Talking to a repository agent says who sends that message and who never does.
 
 Then, within what the repository allows, choose by cost:
 
@@ -375,6 +380,10 @@ Then, within what the repository allows, choose by cost:
 - **A herdr repository agent in a clone under `<campaign>/repos/<repo>/`** when
   the work needs the repository's own conventions and toolchain, when it will
   take many turns, or when two repositories must move at once.
+
+An executor session is a fourth executor and not a fourth mode, because nobody
+chooses it: a session that arrives in the container root to a live holder simply
+is one. What it then chooses is which of these three carries its subtask.
 
 All of them carry the same mechanics. The branch is
 `campaign-<N>/<issue>-<topic>`, claimed on the remote by create-ref after the
@@ -581,20 +590,30 @@ stale.
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
 
-- **`CLAIMED` carries the two things only the executor knows**, and nothing else.
-  The branch and the subtask are already GitHub facts anyone with the anchor can
-  read; the `ListAgents` name is how to reach it, and the pid is what makes its
-  liveness a local `kill -0` rather than a guess — the same argument
-  `runtime/holder` makes for carrying one. **The executor reads its own pid from
-  `$CLAUDE_PID`**, which is the `claude` process; `$$` is the shell one tool call
-  runs in and is dead before the next one starts.
+- **`CLAIMED` is sent by the process that holds the claim, and only where nobody
+  chose its name.** That is exactly one case: an executor session working a
+  container subtask or campaign-directory work with its own hands. A launched
+  delegate sends none — its `--name` *is* its branch, chosen before the process
+  existed, and `herdr agent list` carries its liveness — and neither does the
+  executor session that launched one, because announcing a claim it does not hold
+  would give one process two addresses and the close gate would count it twice.
+  So the two liveness readings partition: `herdr agent list` names every
+  delegate, `runtime/executors/` names every executor session, nothing is in
+  both, and neither list is a substitute for the other. A running session can be
+  renamed, but only by a person typing `/rename` into its pane (probed
+  2026-08-28), so renaming to the flattened branch is an optional courtesy and
+  `CLAIMED` is the mechanism.
 
-  A launched delegate needs no such message — its `--name` *is* its branch, chosen
-  before the process existed, and `herdr agent list` carries its liveness. An
-  executor session was named by nobody the holder knows, so it says so. A running
-  session can be renamed, but only by a person typing `/rename` into its pane
-  (probed 2026-08-28), so renaming to the flattened branch is an optional
-  courtesy and `CLAIMED` is the mechanism.
+- **The message is `CLAIMED <branch> <ListAgents name> <pid>`**, and this is the
+  one place that format is written. The branch and the subtask are already GitHub
+  facts anyone with the anchor can read; the name is how to reach the session,
+  and the pid is what makes its liveness a local `kill -0` rather than a guess —
+  the same argument `runtime/holder` makes for carrying one. **The executor reads
+  its own pid from `$CLAUDE_PID`**, which is the `claude` process; `$$` is the
+  shell one tool call runs in and is dead before the next one starts. **It reads
+  its own name from `ListAgents`, whose first line names the calling session**
+  before it lists the peers — the harness named the session, so a name it guessed
+  instead would address nobody.
 
 - **The holder writes it down.** This is the record's one definition, and every
   other site points here:
