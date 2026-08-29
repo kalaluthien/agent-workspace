@@ -205,8 +205,16 @@ def read_worktrees(repo, name, rep, prefix=None):
                 branch = line.split(" ", 1)[1].removeprefix("refs/heads/")
         if not path or (prefix and not (branch or "").startswith(prefix)):
             continue
+        # What a worktree puts at risk is its uncommitted edits. Commits it
+        # holds are already the branch's own row, so a clean one is named for
+        # the person who has to remove it and is not a blocker -- otherwise
+        # every close is refused by the worktree the closer is standing in.
+        dirty = git(path, "status", "--porcelain", check=False).splitlines()
+        where = f"on {branch}" if branch else "detached"
         rep.add(name, "worktree", path, "git worktree list", "discard",
-                note=f"on {branch}" if branch else "detached")
+                note=(f"{where}; {len(dirty)} uncommitted path(s)" if dirty
+                      else f"{where}; clean, so removing it loses nothing"),
+                counted=bool(dirty))
 
 
 def read_container(cont, n, rep):
