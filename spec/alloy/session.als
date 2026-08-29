@@ -20,7 +20,7 @@
  * This layer implements the two skills:
  *
  *   event                     performed by
- *   Survey                    opening-campaign step 1: list the open anchors,
+ *   Survey                    AGENTS.md's routing gate: list the open anchors,
  *                             `gh issue list --label campaign --state open`
  *   FileAnchor (actor)        opening-campaign step 3, which also posts BOUND
  *   Adopt                     opening-campaign step 4 on a campaign that exists,
@@ -207,7 +207,7 @@ open repos
 /* ---------------- static structure ---------------- */
 
 /* The standing request a person arrives with, and the campaigns whose Scope
-   section would be judged to cover it in opening-campaign step 1. `covers` sits
+   section would be judged to cover it by AGENTS.md's routing gate. `covers` sits
    on Req rather than on Campaign because Campaign is ledger's signature and a
    layer above it may not add a field to it. */
 one sig Req { covers: set Campaign }
@@ -329,7 +329,7 @@ pred sessionFrame {
   and bound' = bound and holder' = holder
 }
 
-/* opening-campaign step 1: list the open campaign anchors and read their Scope.
+/* AGENTS.md's routing gate: list the open campaign anchors and read their Scope.
    The result is remembered; nothing keeps it fresh. */
 pred survey[s: Session] {
   let X = { c: Campaign | c in Filed and c.anchor in Open and c in Req.covers } |

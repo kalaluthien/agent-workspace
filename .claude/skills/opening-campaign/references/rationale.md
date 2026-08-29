@@ -11,7 +11,10 @@ forbids fails because a correct Requirements section quotes things like
 `issues/<N>/sub_issues`, so it reports hits on a clean README — which is why the
 check is a reader scoped to the one section.
 
-## Step 1 — deciding new or follow-up
+## The gate — deciding new or follow-up
+
+The survey itself is `AGENTS.md` § Not every request is a campaign; this is why
+its two readings are shaped the way they are.
 
 **Read an unplaced issue for shape.** Which shape means which kind, and that the
 third kind is left alone rather than surveyed, joined, or edited, is `AGENTS.md`

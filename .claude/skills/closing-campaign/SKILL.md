@@ -44,7 +44,8 @@ campaign session in the container's `AGENTS.md`).
 
 ```sh
 gh api --paginate repos/kalaluthien/agent-workspace/issues/"$N"/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body' | tail -1
+  --jq '.[] | select(.body | startswith("BOUND ")) | .body
+        | split("\n")[0] | rtrimstr("\r")' | tail -1
 hostname -s
 ```
 
