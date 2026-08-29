@@ -715,7 +715,7 @@ stale.
 | --- | --- | --- |
 | `CLAIMED` | executor → campaign | `<branch> <ListAgents name> <pid>`, once, at the claim |
 | `STATUS` | campaign → agent | doing what, blocked on what, what exists only on this machine, safe to stop |
-| `REPORT` | agent → campaign | a pull request URL, once, unsolicited |
+| `REPORT` | agent → campaign | a pull request URL and the sha it sits at, once per round, unsolicited |
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
 
@@ -789,7 +789,25 @@ stale.
   collision, `A5`/`A7` the rule, `A8` the control, `A13` the re-push).
 
 - **A claim in a message is never evidence.** It says where to look; then look,
-  in GitHub, yourself.
+  in GitHub, yourself. It stays cheap to look only while the claim carries its
+  evidence: a `REPORT` names the sha it sits at and, for a fix round, the URL of
+  the comment holding its disposition table, so the holder's check is one fetch
+  and one compare. **A verdict, a fix report, or a `REPORT` that does not pin
+  its sha is unactionable.** Verdicts and pushes race — a review verdict
+  crossed a reconciliation push twice — and the crossing was harmless only
+  because each verdict named the sha it was read at.
+- **A fix round is: findings on the pull request, one executor, one `REPORT`.**
+  The executor verifies each finding at the site it names before touching
+  anything; a finding that does not reproduce is named with its reason, never
+  silently fixed — round 2 of #47 caught a false finding exactly there;
+  follow-up findings met on the way fold into the same round; and the round
+  ends in one `REPORT` carrying the sha and a per-finding disposition — fixed,
+  not reproduced, or deferred to a filed issue. The brief that says so to the
+  executor is `.claude/skills/opening-campaign/assets/handover.md`.
+- **Push every commit as it exists; the round's boundary is the `REPORT`, never
+  the push.** "One push per round" was read as "hold the commit local", and an
+  executor sat on a finished commit waiting for the round to close — which is
+  what push-early exists to forbid.
 - **Shutdown is two steps, and both are yours.** `STATUS`, verify durability in
   GitHub, then `STAND DOWN`. One-step "you're done, quit" makes the delegate's
   own account the reason for destroying its workspace. The session that verifies
