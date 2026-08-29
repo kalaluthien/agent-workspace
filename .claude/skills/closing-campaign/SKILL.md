@@ -446,10 +446,13 @@ that holds commits reported and not deleted.
 
 The probes and the failures behind these: `references/gotchas.md`.
 
-- Three failures step 2 used to have to get right — an unmatched `repos/*/`
-  glob, a squash merge making a landed branch read unmerged forever, and
-  `git status --porcelain` never listing an ignored file — belong to
+- The failures step 2 used to have to get right — a squash merge making a
+  landed branch read unmerged forever, `git status --porcelain` never listing
+  an ignored file, an unreadable `repos/` reading as a repo-less campaign, and
+  a checkout whose `.git` is a file leaving the verdict — belong to
   `scripts/campaign-local-work` now, and its docstring is where they are stated.
+  The one that stayed here is the unmatched `repos/*/` glob, because the script
+  does not glob and that failure is any shell line's, not the script's.
 - `dropped` covers four closes and its note says which; only `not planned` is
   abandonment, so quote the note, not the word.
 - `state_reason` is lowercase from `gh api` and uppercase from `gh issue list

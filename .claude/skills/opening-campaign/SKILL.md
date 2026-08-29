@@ -327,8 +327,10 @@ BRANCH=campaign-<N>/<issue>-<topic>
 CO="$CAMPAIGN/repos/<name>"        # leave it unset when the subtask has no checkout
 SHA=$(gh api repos/<owner>/<repo>/commits/main --jq .sha) || exit 1
 gh api repos/<owner>/<repo>/git/refs -f ref="refs/heads/$BRANCH" -f sha="$SHA"
-[ -d "${CO:-}" ] && git -C "$CO" fetch origin "$BRANCH" &&
-  git -C "$CO" switch -c "$BRANCH" --track "origin/$BRANCH"
+if [ -d "${CO:-}" ]; then
+  git -C "$CO" fetch origin "$BRANCH" &&
+    git -C "$CO" switch -c "$BRANCH" --track "origin/$BRANCH"
+fi
 ```
 
 The read goes into a variable and is checked, because a failed one that still
@@ -339,7 +341,10 @@ branch name in the handover brief.
 
 **A repo-less campaign files on the container tracker and claims there**, even
 when no container code will change: `<owner>/<repo>` is
-`kalaluthien/agent-workspace` and the last line has no `$CO` to run against.
+`kalaluthien/agent-workspace` and there is no `$CO` for the checkout side, which
+is why that side is an `if` rather than a `&&` chain — the chain's last command
+exits non-zero when there is no checkout, and the claim it just made would read
+as a failure to a `set -e` shell.
 Such a subtask runs by your own hands or in an in-process subagent rooted at the
 campaign directory; the delegate-in-a-clone mode needs a checkout. It closes as
 completed with no pull request, which `scripts/campaign-settlement` prints as

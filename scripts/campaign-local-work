@@ -34,7 +34,13 @@ error (all probed; the evidence is in
   a reading that failed. While the enumeration carried 2>/dev/null the two
   looked identical, and a close read a repo-less campaign where there were
   checkouts it was not allowed to see. Absent prints "no member checkout" and
-  the reading continues; unreadable exits 1.
+  the reading continues; unreadable exits 1, and so does an unreadable campaign
+  directory or runtime/handover/ one level up.
+
+  A checkout is what git says it is, never what `.git` looks like. With
+  --separate-git-dir, and in every linked worktree, `.git` is a file, so a
+  stat test drops the whole checkout from the verdict and the close reads clear
+  over uncommitted work.
 
   git status --porcelain never lists ignored files, so the obvious command for
   "nothing local is left" answers clean over a checkout holding a .env, a build
@@ -62,12 +68,19 @@ import subprocess
 import sys
 
 
+def refuse(why):
+    """Stop, on stdout -- step 2 keeps the redirected report, and a refusal that
+    went to stderr would leave that artifact reading like a truncated clean one."""
+    print(f"  -- REFUSE: {why}")
+    raise SystemExit(1)
+
+
 def run(cwd, *args, check=True):
     """Stdout of one command, or SystemExit -- a failed read is not an empty one."""
     out = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
     if out.returncode != 0 and check:
-        raise SystemExit(f"-- REFUSE: `{' '.join(args)}` failed in {cwd}; "
-                         f"nothing was checked\n{out.stderr.strip()}")
+        refuse(f"`{' '.join(args)}` failed in {cwd}; nothing was checked\n"
+               f"{out.stderr.strip()}")
     return out.stdout.rstrip("\n")
 
 
@@ -164,6 +177,10 @@ def read_branches(repo, name, rep, base, refspec="refs/heads/"):
             note, counted = landed(repo, br, base)
         else:
             note, counted = "no base to compare against", True
+        # An uncounted row is not work to move: saying "clears by push" over a
+        # branch already pushed or already landed sends the reader to do it again.
+        if not counted:
+            clears = "nothing to clear"
         for check in checks:
             rep.add(name, kind, br, check, clears, note=note, counted=counted)
 
@@ -194,8 +211,8 @@ def landed(repo, br, base):
 
 def read_worktrees(repo, name, rep, prefix=None):
     """Worktrees other than the main one; scoped to this campaign in the container."""
-    entries, path = run(repo, "git", "-C", repo, "worktree",
-                        "list", "--porcelain").split("\n\n"), None
+    entries = run(repo, "git", "-C", repo, "worktree",
+                  "list", "--porcelain").split("\n\n")
     for entry in entries[1:]:
         path = branch = None
         for line in entry.splitlines():
@@ -234,6 +251,7 @@ def read_container(cont, n, rep):
 
 
 def read_checkouts(campaign_dir, rep):
+    read_handover(campaign_dir, rep)
     repos = os.path.join(campaign_dir, "repos")
     if not os.path.isdir(repos):
         print(f"  -- no member checkout: {repos} does not exist")
@@ -241,10 +259,16 @@ def read_checkouts(campaign_dir, rep):
     try:
         found = sorted(e.path for e in os.scandir(repos) if e.is_dir())
     except OSError as e:
-        raise SystemExit(f"-- REFUSE: {repos} exists and did not enumerate "
-                         f"({e.strerror}); nothing was checked")
+        refuse(f"{repos} exists and did not enumerate ({e.strerror}); "
+               "nothing was checked")
     for repo in found:
-        if not os.path.isdir(os.path.join(repo, ".git")):
+        # Ask git, never stat `.git`. A checkout made with --separate-git-dir,
+        # and every linked worktree, has `.git` as a *file* holding a gitdir:
+        # pointer -- so an isdir() test calls it "not a checkout" and its
+        # uncommitted edits leave the verdict entirely. That is the false clean
+        # this script exists to end, and it read `0 item(s) ... clear` over a
+        # tree the close was about to delete.
+        if not git(repo, "rev-parse", "--git-dir", check=False):
             rep.report(f"REPORT: {repo} is not a checkout; read it by hand")
             continue
         name = slug(repo)
@@ -267,8 +291,14 @@ def read_checkouts(campaign_dir, rep):
             rep.add(name, "stash", line.split(":")[0], "git stash list", "discard")
         read_worktrees(repo, name, rep)
 
+def read_handover(campaign_dir, rep):
+    """Briefs are accounted for on every path: a repo-less campaign has them too."""
     handover = os.path.join(campaign_dir, "runtime", "handover")
-    briefs = sorted(os.listdir(handover)) if os.path.isdir(handover) else []
+    try:
+        briefs = sorted(os.listdir(handover)) if os.path.isdir(handover) else []
+    except OSError as e:
+        refuse(f"{handover} exists and did not enumerate ({e.strerror}); "
+               "nothing was checked")
     if briefs:
         rep.report(f"REPORT: {len(briefs)} brief(s) in runtime/handover/ "
                    f"({', '.join(briefs)}): say which subtask each was for")
@@ -280,8 +310,9 @@ def main():
     n = sys.argv[1]
     campaign_dir = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else ""
     if campaign_dir and not os.path.isdir(campaign_dir):
-        raise SystemExit(f"-- REFUSE: {campaign_dir} is not a directory; "
-                         "nothing was checked")
+        refuse(f"{campaign_dir} is not a directory; nothing was checked")
+    if campaign_dir and not os.access(campaign_dir, os.R_OK | os.X_OK):
+        refuse(f"{campaign_dir} cannot be read; nothing was checked")
 
     cont = container()
     rep = Report()

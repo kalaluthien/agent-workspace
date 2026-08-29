@@ -3,14 +3,30 @@
 The evidence behind the one-line gotchas in `SKILL.md`. Each is a failure that
 raises no error.
 
-## Step 2's three silent failures live in the script
+## Step 2's silent failures live in the script
 
-An unmatched `repos/*/` glob, a squash merge making a landed branch read
-unmerged forever, and `git status --porcelain` never listing an ignored file:
-each was a check in step 2 that could report nothing while testing nothing.
-Step 2 is one call to `scripts/campaign-local-work` now, so the three are the
-script's to get right and its docstring states each with its evidence. Nothing
-of them is restated here — two copies of a probe is how one of them goes stale.
+A squash merge making a landed branch read unmerged forever, `git status
+--porcelain` never listing an ignored file, an unreadable `repos/` that reads as
+a campaign with no member repository, and a checkout whose `.git` is a file
+dropping out of the verdict entirely: each could report nothing while testing
+nothing. Step 2 is one call to `scripts/campaign-local-work` now, so they are
+the script's to get right and its docstring states each with its evidence.
+Nothing of them is restated here — two copies of a probe is how one goes stale.
+
+## An unmatched `repos/*/` glob fails two different ways
+
+Kept here rather than in the script, because the script enumerates with
+`os.scandir` and never globs — this is a fact about any *shell* line a skill
+might grow back, and the skill is run by hand in whatever shell the person is in
+(all three probed):
+
+| shell | what an unmatched `repos/*/` does |
+| --- | --- |
+| bash, sh | leaves the glob literal, so the loop runs once on `.../repos/*/` and every git command fails against a path that does not exist — output that reads as an unresolvable repository blocking the close |
+| zsh | `no matches found`, and the whole `for` never runs — a gate that reported nothing because it tested nothing, and an abort outright under `set -e` |
+
+Neither `nullglob` nor a zsh `(N)` qualifier fixes it: each fixes one shell and
+breaks the other.
 
 ## `dropped` covers four closes
 
