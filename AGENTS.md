@@ -683,6 +683,22 @@ default. Feedback then goes to a *fresh* executor, briefed from the pull request
 and the review, because a pane held open across a multi-day review is the
 expensive thing.
 
+**The review's default shape: one reviewer per pull request, one verifier per
+fix round.** Every angle the review should take is a section of the one
+reviewer's brief, and the verifier reads the fix commit against the round's
+disposition table. Fan out into parallel reviewers only when the angles are
+genuinely independent *and* the budget is known to carry them: eight parallel
+angles per pull request died twice on the session limit, and one consolidated
+pass found findings of the same quality at a fraction of the spend (#52).
+
+**The pull request is the review's working memory.** A finding that exists only
+inside a running session is not yet found. The holder posts findings as a
+comment on the pull request the moment they consolidate, before launching
+anything else, and a reviewer that runs long writes findings out as it goes
+rather than only in its final report. Findings held in a session's context died
+with the session limit twice; findings on the pull request survived everything
+and let a fix start while the rest of the review was still running (#52).
+
 # Talking to a repository agent
 
 `spec/alloy/agent.als` is the contract; this is the short form. `ListAgents`
