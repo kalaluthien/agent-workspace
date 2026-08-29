@@ -28,8 +28,8 @@ Finished when all eight hold:
   `origin/main` is released, and any that holds commits is reported, not deleted.
 
 A campaign bound here with no directory is taken first — `opening-campaign`
-step 4, nothing to acquire — because the holder and executor records have no
-other home (§ Who is a campaign session, "Holding scaffolds"). One path, then.
+steps 2 and 4, nothing to acquire — because the holder and executor records have
+no other home (§ Who is a campaign session, "Holding scaffolds"). One path, then.
 
 ## Procedure
 
@@ -63,12 +63,17 @@ output means unbound, which is not consent either: let the person bind it here,
 or close it from the machine that has been working it.
 
 **Then the directory.** A campaign bound here may have none yet — not taken on
-this machine (§ Who is a campaign session, Directory). Take it first: run
-`opening-campaign` step 4, which scaffolds it from the anchor body and writes
-`runtime/holder`. The gates below read records that live only there.
+this machine (§ Who is a campaign session, Directory). Take it first, through
+`opening-campaign`'s "No directory at all" arrival: **steps 2 and 4**, because
+step 4 needs a slug and a kind and step 2 is where they are chosen — neither is
+recoverable from GitHub. That scaffolds the tree from the anchor body and writes
+`runtime/holder`. The gates below read records that live only there, and step 1
+says what they can and cannot see on this path.
 
 Bind `$CAMPAIGN_DIR` here, absolute, and never rebuild it later — steps 1 and 5
-both fail silently on a relative value.
+both fail silently on a relative value. If you created it in this step, set
+`TOOK_IT_HERE=1`: the gates in steps 1 and 2 then have nothing they *can* find,
+and they must report that rather than a pass (`references/rationale.md`).
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
@@ -101,6 +106,14 @@ kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
 Alive and not this session — print the file and stop. Missing or dead — you are
 the holding session, so say so, take the directory as `opening-campaign` step 4
 does, and carry on.
+
+**If `TOOK_IT_HERE` is set, this step and step 2 are not applicable, and that
+is what to report.** Step 0 created the tree seconds ago, so no herdr `cwd` can
+be under it, `runtime/executors/` is empty because it was just copied, and there
+is nothing uncommitted in it: the gates cannot fail, and a gate that cannot fail
+has not passed. Run them anyway — they cost two commands — and report "not
+applicable: this session created the directory in step 0". Why that is sound,
+and the one residue it leaves, is `references/rationale.md`.
 
 **Then the agents, both records** — `herdr agent list` for the delegates,
 `runtime/executors/` for the executor sessions, one alone being no reading at all

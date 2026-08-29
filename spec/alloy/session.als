@@ -262,9 +262,11 @@ fact BindingWellFormed {
   always all c: Campaign | lone Binding.bound[c]
   always all c: Campaign, m: Machine | lone Binding.holder[c][m]
   /* The record is a file in the directory, so it exists only where the
-     directory does. This is what makes "holding scaffolds" checkable rather
-     than hoped for: `init` may not seat a holder on a machine with no tree, and
-     `adopt` below writes one only where a tree is present. */
+     directory does. This is well-formedness, not the discipline: it stops
+     `init` seating a holder on a machine with no tree, and measured, removing
+     it changes no verdict in this file or in agent.als. What carries "holding
+     scaffolds" is `isHolder` needing the record and `adopt` writing one only
+     where a tree is present; R1m is that measured. */
   always all c: Campaign, m: Machine |
     some Binding.holder[c][m] implies some treeAt[c, m] & Present
 }

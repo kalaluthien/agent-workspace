@@ -120,7 +120,7 @@
  *      working tree, that nothing it holds exists only on this machine.
  *   3. Review the pull request, and land it or send it back. THE EXECUTOR
  *      NEVER MERGES ITS OWN PULL REQUEST and never reviews it. It pushes,
- *      REPORTs the URL once, and waits. The holding session launches a reviewer
+ *      REPORTs the URL and its sha once per round, and waits. The holding session launches a reviewer
  *      on it -- an in-process subagent by default, a herdr session only for a
  *      many-turn or `ultra` review -- reads the findings, and then either
  *      merges --
@@ -748,8 +748,10 @@ pred answer[a: Agent] {
 
 /* REPORT -- executor to campaign, unsolicited.
 
-   Sent once, when it has pushed a branch and opened or updated a pull request.
-   It names the pull request URL and stops.
+   Sent once per round, when it has pushed a branch and opened or updated a pull
+   request. It names the pull request URL and the sha that URL sits at, and
+   stops; a fix round adds the URL of the comment carrying its disposition
+   table. The sha is what makes a verdict and a later push survive crossing.
 
    A report is a prompt to verify, never the verification. The campaign session
    reads GitHub before believing it. An executor asserting it is finished is the
@@ -1157,8 +1159,9 @@ fun executorsOf[i: Issue]: set Agent { task.i }
 
    IT IS KEYED TO THE MERGER'S OWN CAMPAIGN, NOT THE ISSUE'S CURRENT MEMBERSHIP,
    and that is the second thing this predicate got wrong. Written as
-   `Now.ev = MergePR and some campaignOf[Now.issue] implies mayWrite[By.actor,
-   campaignOf[Now.issue]]`, it evaluated a MUTABLE relation: `removeMember` empties
+   `Now.ev = MergePR and some campaignOf[Now.issue] implies <roleCheck>[By.actor,
+   campaignOf[Now.issue]]` -- the role check of the day, `mayWrite`, since
+   retired by #52 -- it evaluated a MUTABLE relation: `removeMember` empties
    `campaignOf[i]`, the antecedent goes false, and the rule permits anything --
    so reparenting a subtask mid-review bought the executor a legal self-merge.
    A4 pinned `RemoveMember` out of its own trace, which measured the rule on the

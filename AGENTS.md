@@ -31,7 +31,7 @@ machine holds it.
 | what the two readings say | this session is |
 | --- | --- |
 | `BOUND` names another machine | **not in this campaign.** Stop before any write and before any launch, and name the machine that holds it. |
-| `BOUND` names this machine, and there is no directory or its holder is dead | **the holding session.** Take it: scaffold the directory if there is none (`opening-campaign` step 4), write `runtime/holder`, and carry on. |
+| `BOUND` names this machine, and there is no directory or its holder is dead | **the holding session.** Take it: scaffold the directory if there is none (`opening-campaign` steps 2 and 4 — step 4 needs the slug and kind step 2 picks), write `runtime/holder`, and carry on. |
 | `BOUND` names this machine, and `runtime/holder` names a live session | **an executor session** on one subtask; see below. |
 | there is no `BOUND` comment | **not bound yet.** Only a person's word binds an existing campaign; see below. |
 
@@ -106,8 +106,10 @@ reads the holder.
 
 **Holding scaffolds.** `runtime/holder` and `runtime/executors/` have no home
 but the campaign directory, so a session that takes a campaign on a machine
-with no directory creates one first — `opening-campaign` step 4, with nothing
-to acquire — and a held campaign has a directory from that moment. Campaign #1
+with no directory creates one first — `opening-campaign` steps 2 and 4, with
+nothing to acquire; step 4 builds `<slug>-<YYMMDD>/` and copies the kind's
+principles, so step 2, where both are chosen, cannot be skipped — and a held
+campaign has a directory from that moment. Campaign #1
 ran without one, and its first `CLAIMED` arrived with nowhere to be recorded
 (#52): the record half of the protocol did not exist on exactly the path #46
 had made first-class. The fix is the scaffold rather than a second home for the
@@ -624,8 +626,9 @@ repository's own, so a campaign `AGENTS.md` only ever *adds*; one that
 contradicts a repository's conventions puts the delegate in a conflict it
 cannot resolve.
 
-- **Write the brief to a file**, `<campaign>/runtime/handover/<issue>.md`, and
-  make the launched prompt one short sentence naming that path. herdr types its
+- **Write the brief to a file**, `<campaign>/runtime/handover/<issue>.md`, from
+  the template `.claude/skills/opening-campaign/assets/handover.md`, and make the
+  launched prompt one short sentence naming that path. herdr types its
   launch line into the pane, and a terminal silently drops a line past 1024
   bytes — nothing runs and the launch looks like a slow agent.
 - Choose the session UUID in advance (`claude --session-id`) so the transcript
