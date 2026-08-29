@@ -9,23 +9,13 @@ Delete a campaign directory only after everything in it also exists somewhere
 else. The directory is a scratch assembly of things versioned elsewhere, so
 closing is a checked demolition, not a decision.
 
-Finished when all eight hold:
-
-- the anchor's latest `BOUND` comment names this machine;
-- `gh issue view <N> -R kalaluthien/agent-workspace --json state` reports `CLOSED`;
-- every subtask in the anchor's index reads settled or has moved to another
-  anchor, each open one having been given a named disposition first;
-- the campaign directory does not exist;
-- no herdr agent's `cwd` was under the path it had, its `runtime/executors/`
-  existed and held no live pid, and no `runtime/holder` in it named a live
-  session other than this one;
-- the anchor issue body is the campaign README, `## Repos` list included, and
-  was compared against `runtime/anchor-body-derived.md` before it was written;
-- the closing comment carries the listing taken immediately before the delete:
-  every entry under the directory outside `runtime/` and `repos/`, files and
-  directories and symlinks alike, because `rm -rf` destroys all of them;
-- every `campaign-<N>/` claim ref on the container that still sits at
-  `origin/main` is released, and any that holds commits is reported, not deleted.
+Finished when the two facts no step owns hold — `gh issue view <N> -R
+kalaluthien/agent-workspace --json state` reports `CLOSED`, and `$CAMPAIGN_DIR`
+does not exist — and every step's `Holds when` line held when that step ran.
+Those lines are the rest of the predicate, one per step and in order, and
+`grep '^Holds when' SKILL.md` is the whole of them: the list is read off the
+procedure rather than kept beside it, so a step that changes cannot leave a
+predicate behind saying what it used to do.
 
 A campaign bound here with no directory is taken first — `opening-campaign`
 steps 2 and 4, nothing to acquire — because the holder and executor records have
@@ -93,6 +83,10 @@ esac
 Stop on either. They are what stop `..`, a nested path, and the container's own
 `docs/` from reaching step 5.
 
+Holds when: the anchor's latest `BOUND` comment names this machine, and
+`$CAMPAIGN_DIR` is absolute, a direct child of the container, and named
+`<slug>-<YYMMDD>`.
+
 ### 1. Refuse while another session holds it, or an agent is live under the tree
 
 **The holder first**, because only the holding session closes a campaign; an
@@ -144,6 +138,11 @@ executor announced, an absent one says nothing at all.
 Any row from either: print the rows, name the agent, stop. The person retires
 it; this skill never kills an agent. No rows still leaves two cases for step 2 — an agent herdr has forgotten, and an
 executor that never sent `CLAIMED` — both leaving work in a checkout.
+
+Holds when: `runtime/executors/` existed and held no live pid, no
+`runtime/holder` named a live session other than this one, and no herdr agent's
+`cwd` was under `$CAMPAIGN_DIR` — or `TOOK_IT_HERE` is set and this step reported
+all three as not applicable rather than as passed.
 
 ### 2. Refuse while work exists only on this machine
 
@@ -268,6 +267,10 @@ A `-- REPORT:` line about nested sub-issues is not covered by this gate: a
 subtask that is itself an anchor hides its own members, so run the script on it
 and dispose of those rows too.
 
+Holds when: `campaign-settlement` reads every subtask in the anchor's index as
+settled or moved to another anchor, each open one having been given a named
+disposition and had that act carried out first.
+
 ### 4. Validate the README, compare, then overwrite the anchor issue body
 
 The README and the anchor body are the same template filled in
@@ -336,6 +339,10 @@ cp /tmp/body-after "$DERIVED"
 ```
 
 Not identical: say so and stop before step 5, while the README still exists.
+
+Holds when: the anchor issue body is this campaign's README, `## Repos` list
+included, compared against `runtime/anchor-body-derived.md` before it was
+written and read back through `campaign-repos` after.
 
 ### 5. Say you are closing, then close, then delete the directory
 
@@ -428,6 +435,12 @@ rm -rf -- "$CAMPAIGN_DIR"
 
 `runtime/` goes with it — `holder`, every `executors/<issue>` record, every
 handover brief — by design, since nothing off this machine reads them. Say so.
+
+Holds when: the closing comment carries the listing taken immediately before the
+delete — every entry under the directory outside `runtime/` and `repos/`, files
+and directories and symlinks alike, because `rm -rf` destroys all of them — and
+every `campaign-<N>/` claim ref still sitting at `origin/main` is released, any
+that holds commits reported and not deleted.
 
 ## Gotchas
 
