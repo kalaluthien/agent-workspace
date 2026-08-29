@@ -369,6 +369,14 @@ gh issue comment "$N" -R kalaluthien/agent-workspace --body "$BODY"
 gh issue view "$N" -R kalaluthien/agent-workspace --comments
 ```
 
+**A directory and the file inside it both appear, and that is correct.** The
+scaffold ships `scripts/` holding a `.gitkeep`, so the listing carries both
+`scripts` and `scripts/.gitkeep`. `AGENTS.md` requires files, directories and
+symlinks alike, because `rm -rf` destroys all of them and a filter that guessed
+would drop the one entry somebody wanted — so do not narrow the `find` to
+`-type f`. A reader meeting the pair is meant to see the container and its
+contents, not a duplicate.
+
 **Unset or empty is step 0 not having run**, and it refuses; since #52 a
 campaign bound here has a directory by the time this step runs. The value must
 hold `runtime/`, the cheap test that it is not the container root. Keep `-prune`
