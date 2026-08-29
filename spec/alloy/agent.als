@@ -560,11 +560,11 @@ pred sameBranch[a1, a2: Agent] {
 
 /* ---------------- observable events ---------------- */
 
-one sig Work, Push, Announce, Status, Answer, Report, Blocked, Decide,
+one sig Work, Push, Status, Answer, Report, Blocked, Decide,
         Confirm, ConfirmElsewhere, Review, StandDown, Retire, AgentDie extends Event {}
 
 fun agentOwn: set Event {
-  Work + Push + Announce + Status + Answer + Report + Blocked + Decide
+  Work + Push + Status + Answer + Report + Blocked + Decide
   + Confirm + ConfirmElsewhere + Review + StandDown + Retire + AgentDie
 }
 /* `DeleteDir` is here because this layer has a bit with the directory's
@@ -601,63 +601,42 @@ pred launch[a: Agent] {
   treeAt[By.actor.holds, a.host].co[a.task.home] = a.topic
   Launched' = Launched + a
   Live'     = Live + a
-  /* A delegate is addressable the moment it exists: the launching session chose
-     its `--name`, so the launch IS the record. An executor session is not --
-     nothing the holder chose names it -- so it starts unaddressed and `announce`
-     is the only thing that changes that. */
-  (no a.peer implies Addressed' = Addressed + a else keepAddress)
+  /* Every executor is addressable the moment it exists (#59). A delegate is,
+     because the launching session chose its `--name`; a session working the
+     claim itself is, because THE CLAIMING SESSION WROTE ITS OWN RECORD,
+     `runtime/claims/<issue>`, at the claim -- which precedes every launch
+     (`claimBeforeLaunch`), so by the time the executor exists its address
+     does. No message, no relay hop, and no unaddressed state to fall into:
+     A1 below is the old gap measured closed. */
+  Addressed' = Addressed + a
   Local' = Local and Visible' = Visible and Confirmed' = Confirmed
   keepReview and keepMsgs and keepShutdown
   Target.agent = a
 }
 
-/* CLAIMED -- executor to campaign, sent once at the claim.
+/* CLAIMED, and the `announce` event that carried it, stood here and are
+   retired by #59: with the record written by the claiming session itself at
+   the claim, there is no holder to announce to and nothing left for a message
+   to carry. The record keeps everything the message used to establish -- the
+   branch, the address, the pid that makes its liveness a local `kill -0` --
+   and gains what the message never had: it is complete, because the session
+   that takes a claim is the one thing that always knows the claim was taken.
+   The header carries the retired protocol's final measurements (A1-A3). */
 
-   It carries `<branch> <ListAgents name> <pid>` and nothing else. The branch and
-   the subtask are already GitHub facts, readable by anyone with the anchor; the
-   address and the process id are the two things only the executor knows, which
-   is the same test every other message in this protocol has to pass. The pid
-   earns its place the way `runtime/holder`'s does -- it is what makes the
-   record's liveness a local `kill -0` rather than a guess -- and nothing but the
-   executor can supply it. AGENTS.md carries the rest, including why renaming the
-   session is not the mechanism.
-
-   WHAT THE HOLDER DOES WITH IT IS THE POINT, and it is why `Addressed` is not a
-   message bit. The holder writes `<campaign>/runtime/executors/<issue>` -- the
-   announced name, the pid, the branch -- because the holder is the thing that
-   must read it back later, at a close or a sweep, possibly in a different
-   session. So the record has `runtime/holder`'s argument and `runtime/holder`'s
-   lifetime: it is a file in the campaign directory on the bound machine, it
-   dies with that directory (`aDeleteDir` below), and nothing about it is keyed
-   to the session that received the announcement -- so a successor holder that
-   takes a dead holder's directory inherits every address in it. No event below
-   writes `Addressed` from a session's identity, which is that claim by
-   construction.
-
-   Guarded on `some a.peer` because a delegate has nothing to announce, and on
-   `a not in Addressed` because it is sent once. */
-pred announce[a: Agent] {
-  a in Live
-  some a.peer
-  a not in Addressed
-  Addressed' = Addressed + a
-  keepLife and keepReview and keepMsgs and keepShutdown and keepBorn
-  Now.ev = Announce and Now.issue = a.task and Target.agent = a and no By.actor
-}
-
-/* The campaign directory is deleted, and the executor records under `runtime/`
+/* The campaign directory is deleted, and the claim records under `runtime/`
    go with it. Every other bit this layer holds is about a process or a pull
    request and outlives the tree; `Addressed` is the one that does not, because
-   for an executor session it IS a file in the tree.
+   for a session working its own claim it IS a file in the tree,
+   `runtime/claims/<issue>`.
 
-   ONLY FOR AN EXECUTOR SESSION, and the `some a.peer` guard is the whole of it.
+   ONLY FOR SUCH A SESSION, and the `some a.peer` guard is the whole of it.
    A delegate's address is the `--name` its launcher chose, which lives in the
-   launch and in `herdr agent list`, not in `runtime/executors/` -- so a delegate
+   launch and in `herdr agent list`, not in `runtime/claims/` -- so a delegate
    is addressable for as long as it runs, whatever happens to the tree. Stripping
    it here would have made a live delegate permanently unreachable the moment a
-   directory it does not depend on was deleted, and `retire` -- the one holder act
-   deliberately left unguarded -- would then be the only thing left that could
-   touch it.
+   directory it does not depend on was deleted, and `retire` -- the one campaign
+   act deliberately left unguarded -- would then be the only thing left that
+   could touch it.
 
    Scoped to the deleted tree's own campaign and machine besides: `Present -
    Present'` is the tree that just went, so two campaigns sharing a machine do
@@ -846,47 +825,56 @@ pred confirmElsewhere[a: Agent] {
   Now.ev = ConfirmElsewhere and Now.issue = a.task and Target.agent = a
 }
 
-/* REVIEW -- `/code-review <PR#>` run against the executor's pull request.
+/* REVIEW -- `/code-review <PR#>` run against a subtask's pull request.
 
    The owner's rule: a pull request is reviewed before it is merged, and the
-   review is A REVIEWER THE HOLDER LAUNCHES. Two modes, and the default is the
-   cheaper one: an IN-PROCESS SUBAGENT running `/code-review <PR#>`, because a
-   review only reads and so needs none of what a process boundary is paid for --
-   no handover file, no canary, no pane, no sweep. A HERDR SESSION is for a
-   review that will take many turns, or an `ultra` review, which is
+   review is A REVIEWER A CAMPAIGN SESSION LAUNCHES. Two modes, and the default
+   is the cheaper one: an IN-PROCESS SUBAGENT running `/code-review <PR#>`,
+   because a review only reads and so needs none of what a process boundary is
+   paid for -- no handover file, no canary, no pane, no sweep. A HERDR SESSION
+   is for a review that will take many turns, or an `ultra` review, which is
    person-triggered only and is never the default. `/code-review` is
    model-invocable, so that command is the whole opening prompt either way.
 
-   The event does not distinguish them, for the reason the execution modes are
-   one `Launch`: nothing a model can say about reachable states differs between
-   a subagent and a pane. What differs is turn cost.
+   KEYED ON THE ISSUE, NOT ON AN AGENT (#59), because the review is of the pull
+   request: `/code-review <PR#>` reads GitHub, and neither the executor's
+   process nor its address is anywhere in that read. The old signature,
+   `review[a: Agent]`, made a hands-on subtask -- one worked by a session with
+   no Agent anywhere -- unreviewable, and `mergedByHolder` then blocked its
+   merge as a side effect of the same blindness (measured on the pre-#59 model,
+   2026-08-29: P1 in the header). A review is about work, and work does not
+   need a process attached to be read.
 
-   The reviewer is not the executor, and the guard here is that negative:
-   `By.actor != a.peer`. An executor reviewing its own pull request is the
-   delegate verifying its own work -- the same thing `report` refuses to be
-   evidence for, and the same thing `confirm` exists to replace. What the holder
-   does with the findings is two-valued and only one half is a model event: it
-   merges (guarded by `mergedByHolder`), or it briefs a fresh executor from the
-   pull request and the review and the loop runs again, which is `launch` on the
-   same subtask and needs no construct of its own.
+   THE REVIEWER IS A SEPARATE AGENT WHOEVER LAUNCHES IT, and that is why the
+   old guard `By.actor != a.peer` is gone rather than translated. What the
+   property needs is INDEPENDENCE OF JUDGEMENT, NOT INDEPENDENCE OF TASKING:
+   the reviewer that reads the diff is never the process that wrote it, and
+   that holds when the author-session launches it exactly as it holds when any
+   other session does -- the one-session campaign, the common case, has no
+   other session to launch it. The named limit, stated rather than modelled: the
+   launcher writes the reviewer's brief, so an author can scope a brief to what
+   it already believes and get a clean review of the wrong thing. That shape is
+   identical to a session briefing a reviewer of a delegate's work, nobody
+   wants to ban that, and no machinery here would tell them apart. (The old
+   guard also made the case issue #59 names -- a review the author commissioned
+   -- inexpressible outright: P2 in the header, UNSAT on the pre-#59 model.)
 
-   `Target.agent` names the executor whose work is reviewed, not the reviewer.
    The reviewer is a process, and this layer models processes only where their
-   state matters; the reviewer's does not -- it leaves one durable mark, and that
-   mark is `Reviewed`.
+   state matters; the reviewer's does not -- it leaves one durable mark, and
+   that mark is `Reviewed`. `no Target.agent` for the same reason: the event is
+   about no executor.
 
-   No `reachable` guard, for `confirm`'s reason: `/code-review <PR#>` reads
-   GitHub and `gh pr merge` needs only the number. An executor that skipped
-   CLAIMED is unaddressable, not unlandable, and no prose ever said otherwise. */
-pred review[a: Agent] {
+   No `reachable` guard either, for `confirm`'s reason: an executor whose
+   record died with the directory is unaddressable, not unlandable, and no
+   prose ever said otherwise. */
+pred review[i: Issue] {
   Now.ev = Review
-  Now.issue = a.task
-  some a.task.pr and a.task.pr not in Reviewed
-  a.task in By.actor.holds.members
-  By.actor != a.peer
-  Reviewed' = Reviewed + a.task.pr
+  Now.issue = i
+  some i.pr and i.pr not in Reviewed
+  i in By.actor.holds.members
+  Reviewed' = Reviewed + i.pr
   keepLife and keepMsgs and keepAddress and keepShutdown and keepBorn
-  Target.agent = a
+  no Target.agent
 }
 
 /* STAND DOWN -- campaign to executor.
@@ -974,10 +962,11 @@ pred agentInit {
 pred agentStep {
   (Now.ev = Stutter and agentFrame and no Target.agent)
   or (some a: Agent |
-        launch[a] or work[a] or push[a] or announce[a]
+        launch[a] or work[a] or push[a]
         or status[a] or answer[a] or report[a]
         or blocked[a] or decide[a] or confirm[a] or confirmElsewhere[a]
-        or review[a] or standDown[a] or retire[a] or agentDie[a])
+        or standDown[a] or retire[a] or agentDie[a])
+  or (some i: Issue | review[i])
   or aRelease
   or aDeleteDir
   /* every other event: this layer stands still and is about no executor */
@@ -1078,37 +1067,23 @@ pred closeDisciplineAsRead[c: Campaign] {
   always ((Now.ev = CloseIssue and Now.issue = c.anchor) implies closableAsRead[By.actor, c])
 }
 
-/* CLAIMED AT THE CLAIM, as a discipline, and QUANTIFIED PER AGENT.
-
-   Two readings, both per agent: an executor that is live and unaddressed will
-   announce, and it does not work before it has. A delegate satisfies both at
-   launch from its `--name` and is never bound further; what this binds is the
-   executor session, whose address nothing else carries.
-
-   The per-agent form matters and the first draft got it wrong. Written as
-   `always (all a | a in Live implies (a in Addressed or Now.ev = Announce and
-   Target.agent = a))` it says every live unaddressed executor is announcing in
-   THIS step -- and `Target.agent` is `lone`, so two of them at once is
-   unsatisfiable. That is a property of the observer, not of the design, and it
-   was invisible because every command using the discipline was scoped to one
-   Agent. The commands below run it at two. */
-pred announceAtClaim {
-  all a: Agent | always {
-    (a in Live and a not in Addressed) implies
-      eventually (Now.ev = Announce and Target.agent = a)
-    (Now.ev = Work and Target.agent = a) implies reachable[a]
-  }
-}
+/* `announceAtClaim` stood here -- CLAIMED at the claim, as a discipline an
+   executor session had to obey -- and is retired by #59 with the message it
+   disciplined. What it bought is now structural: `launch` writes `Addressed`
+   unconditionally, because the claim record was written by the claiming
+   session before any executor existed. A discipline binds only the obedient,
+   and A1 was exactly the disobedient case; a construction has no disobedient
+   case, which is the whole trade. The header carries the final measurements. */
 
 /* THE DELETE GATE, and it is where session.als's R3 finding is answered.
 
    session.als can say that a directory must not be deleted while another
-   session is working the campaign, and cannot say how anyone would know: being
-   the holder is a file, and a working peer is not. `runtime/executors/` is that
-   file, so the gate belongs here, keyed on the record rather than on the peer.
-
-   What it cannot cover is the executor that never announced, which is A1 from
-   the delete's side rather than the close's: the same gap, the same repair. */
+   session is working the campaign, and cannot say how anyone would know: a
+   working peer is a fact no file carried. `runtime/claims/` is that file now,
+   one record per claim written by the claiming session itself, so the gate
+   belongs here, keyed on the record rather than on the peer -- and since #59
+   the record is complete, because no claim exists without a session having
+   written its own record at the claim. */
 pred noDeleteUnderReadableExecutor {
   always (Now.ev = DeleteDir implies
             no a: Agent | a in Live and a.host = Site.mach and reachable[a]
