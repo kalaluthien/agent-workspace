@@ -151,9 +151,10 @@ checkout under `repos/`, one at a time — never one git command across member
 repositories.
 
 ```sh
-find "$CAMPAIGN_DIR/repos" -mindepth 1 -maxdepth 1 -type d 2>/dev/null |
+if [ -d "$CAMPAIGN_DIR/repos" ]; then
+find "$CAMPAIGN_DIR/repos" -mindepth 1 -maxdepth 1 -type d >| /tmp/checkouts-$N ||
+  echo "REFUSE: repos/ did not enumerate; nothing was checked"
 while read -r R; do
-  [ -d "$R" ] || continue
   echo "== $R"
   git -C "$R" status --porcelain --ignored=matching
   git -C "$R" log --oneline --branches HEAD --not --remotes
@@ -164,12 +165,12 @@ while read -r R; do
                   sed -n 's|^ref: refs/heads/\([^[:space:]]*\).*|\1|p')
   [ "$base" != "origin/" ] || { echo "!! cannot resolve the default branch of $R"; continue; }
   git -C "$R" branch --no-merged "$base"
-done
+done < /tmp/checkouts-$N
+fi
 ```
 
-**`find`, not `for R in "$CAMPAIGN_DIR"/repos/*/`, and that is about a campaign
-with no member repository having no `repos/` at all.** An unmatched glob fails
-two different ways and this skill is run by hand, in whatever shell the person
+**`find`, not `for R in "$CAMPAIGN_DIR"/repos/*/`.** An unmatched glob fails two
+different ways, and this skill is run by hand in whatever shell the person
 happens to be in (all three probed):
 
 | shell | what an unmatched `repos/*/` does |
@@ -177,10 +178,22 @@ happens to be in (all three probed):
 | bash, sh | leaves the glob literal, so the loop runs once on `.../repos/*/` and six git commands fail against a path that does not exist — output that reads as an unresolvable repository blocking the close |
 | zsh | `no matches found`, and the whole `for` never runs — a gate that reported nothing because it tested nothing, and an abort outright under `set -e` |
 
-`find` has neither failure, in any of the three, and it also covers a `repos/`
-that exists but is empty, which a `[ -d "$CAMPAIGN_DIR/repos" ]` wrapper would
-not. `[ -d "$R" ]` stays as the cheap per-row guard. Do not reach for `nullglob`
-or a zsh `(N)` qualifier: each fixes one shell and breaks the other.
+`find` has neither failure in any of the three, and over a `repos/` that exists
+but is empty it simply prints nothing. Do not reach for `nullglob` or a zsh
+`(N)` qualifier: each fixes one shell and breaks the other.
+
+**The `[ -d ]` wrapper is what tells "no member repository" from "cannot look".**
+A campaign with no member repository has no `repos/` at all, and that is
+legitimate — the wrapper skips the sweep and says nothing. A `repos/` that
+exists but cannot be read is not legitimate, and it looked identical while
+`find` carried `2>/dev/null`: an `EACCES` printed nothing, the loop ran zero
+times, and the close read a repo-less campaign where there were checkouts it was
+not allowed to see. The two are now different branches.
+
+**And the enumeration goes to a file, not through a pipe.** A pipeline's exit
+status is its last command's, so `find | while read` discards whatever `find`
+said; writing to `/tmp/checkouts-$N` puts `find`'s own failure back where a
+`||` can catch it. `-type d` is the per-row guard the loop used to repeat.
 
 Each line finds what the others miss: `--ignored=matching` reaches a `.env` or a
 downloaded fixture that plain `status` hides; `HEAD` alongside `--branches`
@@ -334,18 +347,31 @@ deletes the last copy of. Validate before writing.
 
 ```sh
 README="$CAMPAIGN_DIR/README.md"
-"$CONTAINER/scripts/campaign-repos" "$README" >| /tmp/repos-before ||
-  echo "REFUSE: the ## Repos list did not read; nothing was written"
+rm -f /tmp/repos-before /tmp/repos-after
+"$CONTAINER/scripts/campaign-repos" "$README" >| /tmp/repos-before.tmp &&
+  mv /tmp/repos-before.tmp /tmp/repos-before ||
+  { rm -f /tmp/repos-before.tmp
+    echo "REFUSE: the ## Repos list did not read; nothing was written"; }
 ```
 
 `scripts/campaign-repos` is the one reader of that list, and every refusal this
-step used to spell out by hand is inside it: no heading, an empty list, a
-surviving `<` placeholder, and `- none` mixed with repository entries. It prints
-one `owner/repo` per line, prints nothing and exits 0 for a list that is exactly
+step used to spell out by hand is inside it: no heading, a malformed line under
+it, an empty list, a surviving `<` placeholder, `- none` mixed with repository
+entries, and two entries whose checkout directory would collide. It prints one
+`owner/repo` per line, prints nothing and exits 0 for a list that is exactly
 `- none`, and exits 1 with its reason on stderr. Stop on a non-zero exit. Do not
 re-derive the list with `sed` here — the reason is the one `AGENTS.md` gives for
 `campaign-settlement`: two readers of one list drift, and this list is the
 campaign's repository index.
+
+**`.tmp` then `mv`, and both files removed first.** A refusal that has already
+truncated `/tmp/repos-before` leaves a zero-length file, and zero-length is what
+a legitimate `- none` leaves — so a failed read reads as a repo-less campaign,
+which is the one shape whose index is *meant* to be empty. Worse, the read-back
+below compares the two files: two failures leave two empty files and `cmp -s`
+prints "index survived" over a body nobody managed to read. Absent files make
+`cmp -s` exit 2, and the pre-emptive `rm -f` stops a leftover from an earlier
+run standing in for either of them.
 
 Empty output is therefore not a failure and not a special case. A repo-less
 campaign reads as no repositories, step 2's loop is guarded and finds no
@@ -403,8 +429,10 @@ one:
 ```sh
 gh issue edit "$N" -R kalaluthien/agent-workspace --body-file "$README"
 gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/body-after
-"$CONTAINER/scripts/campaign-repos" /tmp/body-after >| /tmp/repos-after ||
-  echo "REFUSE: the body GitHub stored does not read; the index may be lost"
+"$CONTAINER/scripts/campaign-repos" /tmp/body-after >| /tmp/repos-after.tmp &&
+  mv /tmp/repos-after.tmp /tmp/repos-after ||
+  { rm -f /tmp/repos-after.tmp
+    echo "REFUSE: the body GitHub stored does not read; the index may be lost"; }
 cmp -s /tmp/repos-before /tmp/repos-after && echo "index survived"
 cp /tmp/body-after "$DERIVED"
 ```

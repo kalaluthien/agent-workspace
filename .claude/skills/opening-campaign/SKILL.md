@@ -280,12 +280,24 @@ Then finish it:
   gh issue view <N> -R kalaluthien/agent-workspace --json body --jq .body \
     >| "$CAMPAIGN/README.md"
   cp "$CAMPAIGN/README.md" "$CAMPAIGN/runtime/anchor-body-derived.md"
-  "$CONTAINER/scripts/campaign-repos" "$CAMPAIGN/README.md" >| "$CAMPAIGN/runtime/repos"
+  "$CONTAINER/scripts/campaign-repos" "$CAMPAIGN/README.md" \
+    >| "$CAMPAIGN/runtime/repos.tmp" &&
+    mv "$CAMPAIGN/runtime/repos.tmp" "$CAMPAIGN/runtime/repos" ||
+    { rm -f "$CAMPAIGN/runtime/repos.tmp"
+      echo "REFUSE: the ## Repos list did not read; runtime/repos was not written"; }
   ```
 
   A non-zero exit there is a body that was never filled in, or a `## Repos` list
-  that is empty or self-contradictory; its one line on stderr says which. Stop
-  and fix the body before going on — step 5 reads the file it just wrote.
+  the reader refuses; its one line on stderr says which. Stop and fix the body
+  before going on.
+
+  **Write to `.tmp` and `mv` on success, so a failure leaves no file at all.**
+  Redirecting straight to `runtime/repos` truncates it before the reader runs,
+  so a refusal leaves a zero-length file — and a zero-length `runtime/repos` is
+  exactly what a campaign with no member repository leaves. Step 5 then loops
+  zero times, acquires nothing, and the failed read is indistinguishable from a
+  deliberate `- none`. Absent, the file makes step 5's redirection fail loudly
+  instead.
 
   `>|`, not `>` — see the redirect gotcha below.
 - **Take the campaign, in `runtime/holder`.** It is what every later session
@@ -332,6 +344,13 @@ done < "$CAMPAIGN/runtime/repos"
 the loop runs zero times, `repos/` is never created, and the close's sweep over
 it is guarded for exactly that. Say in the reply that no repository was
 acquired, so a campaign that was *meant* to have some is one line to correct.
+
+`${REPO##*/}` is safe here only because step 4 already ran the reader, which
+refuses two entries whose checkout directory would collide — `a/web` beside
+`b/Web` is one `repos/web/` and a second acquire silently over the first. The
+layout stays `repos/<name>/`, which is what `AGENTS.md` and every reader of a
+campaign tree expect; the collision is caught where the list is read, not worked
+around here.
 
 Safe to re-run. Do not clone by hand and do not read the script to work out what
 it does — its interface is the contract.
