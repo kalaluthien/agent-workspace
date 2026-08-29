@@ -295,7 +295,11 @@
  *   A14_UnannouncedExecutorIsRetirable
  *                                    SAT   `confirm` reads a tree, not the
  *                                          executor, so silence resolved
- *                                          externally still ends in a retire
+ *                                          externally still ends in a retire --
+ *                                          of an executor that already died
+ *   A14b_UnannouncedExecutorCannotBeStoodDown
+ *                                    UNSAT and never a stand-down: that one
+ *                                          carries a message, so it stays gated
  *   A15_UnannouncedExecutorPRLands   SAT   and its pull request still lands
  *   Cov_*                            SAT   every own event fires in some trace
  *
@@ -1777,13 +1781,35 @@ pred Cov_GuardedRelease   { eventually Now.ev = Release }
    `retire`'s comment claims and could not make good while `confirm` was gated on
    `reachable`. Under the rule the design adopted -- silence resolved externally,
    the stand-down carried by the confirmation alone -- the holder walks up to the
-   tree, reads it clean, stands the executor down and retires it, having never
-   been able to address it. SAT, and UNSAT with the guard restored: that pair is
-   the finding these two commands were added for. */
+   tree, reads it clean, and retires it, having never been able to address it.
+   SAT, and UNSAT with the guard restored: that pair is the finding these two
+   commands were added for.
+
+   READ THE WITNESS FOR WHAT IT IS, and A14b is why it needs reading: the trace
+   retires an executor that has already DIED. It cannot be stood down first --
+   `standDown` carries `reachable` and this executor is unaddressable by
+   construction -- so the only ending available to it is `retire`'s second
+   disjunct, the one that needs no answer from the far end. That is the honest
+   shape of the guarantee and it is the right one: an executor nobody can reach
+   cannot be ASKED to stop, and dropping the guard buys the ability to destroy
+   its workspace lawfully, not the ability to be polite about it. What it costs
+   is stated where it lands -- an unannounced executor that is still running is
+   not retirable at all, which is one more reason CLAIMED is not optional. */
 pred A14_UnannouncedExecutorIsRetirable {
   resolveSilenceExternally and coLocatedShutdown
   some a: Agent { always a not in Addressed
                   eventually a in Retired }
+}
+
+/* A14b. AND IT CANNOT BE STOOD DOWN, which is the half of A14 that reads like a
+   defect until it is stated. UNSAT at A14's own bounds: adding one stand-down to
+   A14's witness empties it, because `standDown` is one of the three acts that
+   carry a message and this executor has no address to carry one to. The command
+   exists so the sentence above is re-runnable rather than remembered. */
+pred A14b_UnannouncedExecutorCannotBeStoodDown {
+  A14_UnannouncedExecutorIsRetirable
+  some a: Agent { always a not in Addressed
+                  eventually (Now.ev = StandDown and Target.agent = a) }
 }
 
 /* A15. And its pull request still lands. `mergedByHolder` wants every executor
@@ -1855,6 +1881,7 @@ run A11_ReadableGateBlocksTheDelete          for 3 Issue, 1 PR, 1 Campaign, 2 Se
 run A12_ReadableGateAdmitsTheDelete          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
 run A13_PushAfterReviewUnReviews             for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
 run A14_UnannouncedExecutorIsRetirable       for 3 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
+run A14b_UnannouncedExecutorCannotBeStoodDown for 3 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
 run A15_UnannouncedExecutorPRLands           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
 
 run Cov_LaunchAgent      for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps

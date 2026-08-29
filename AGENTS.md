@@ -36,9 +36,12 @@ machine holds it.
 | there is no `BOUND` comment | **not bound yet.** Only a person's word binds an existing campaign; see below. |
 
 **An executor session is an agent, not a second campaign session.** It files the
-subtask it was given or takes the one it was handed, claims the branch, sends
-`CLAIMED` to the holding session — and from that moment it is in the protocol
-below: it answers `STATUS`, sends `REPORT` and `BLOCKED`, stops on `STAND DOWN`,
+subtask it was given or takes the one it was handed and claims the branch — and
+it announces itself with `CLAIMED` when the claim is its own to hold, which is
+the case where it works the subtask with its own hands. When it launches a
+delegate instead, the claim is the delegate's and its `--name` already says so,
+so nothing is announced; § Talking to a repository agent is the one statement of
+which is which. From the claim it is in the protocol below: it answers `STATUS`, sends `REPORT` and `BLOCKED`, stops on `STAND DOWN`,
 and never surveys, never syncs, never closes, and never lands its own work —
 § Talking to a repository agent has that last one in full. It works the subtask
 whichever way § Running a campaign allows, subject to the mode rule there; what
@@ -703,9 +706,12 @@ stale.
   existed, and `herdr agent list` carries its liveness — and neither does the
   executor session that launched one, because announcing a claim it does not hold
   would give one process two addresses and the close gate would count it twice.
-  So the two liveness readings partition: `herdr agent list` names every
-  delegate, `runtime/executors/` names every executor session, nothing is in
-  both, and neither list is a substitute for the other. A running session can be
+  So the two liveness readings partition the executors: `herdr agent list` names
+  every delegate, `runtime/executors/` names every executor session that holds
+  its own claim, nothing is in both, and neither list is a substitute for the
+  other. A launcher is in neither, and that is the intended reading rather than a
+  hole — it holds no claim and no working tree, so what the gate must see is its
+  delegate, which the first list names for as long as it runs. A running session can be
   renamed, but only by a person typing `/rename` into its pane (probed
   2026-08-28), so renaming to the flattened branch is an optional courtesy and
   `CLAIMED` is the mechanism.
@@ -717,9 +723,10 @@ stale.
   the same argument `runtime/holder` makes for carrying one. **The executor reads
   its own pid from `$CLAUDE_PID`**, which is the `claude` process; `$$` is the
   shell one tool call runs in and is dead before the next one starts. **It reads
-  its own name from `ListAgents`, whose first line names the calling session** (probed 2026-08-29: `This session is <name> [ref]`)
-  before it lists the peers — the harness named the session, so a name it guessed
-  instead would address nobody.
+  its own name from `ListAgents`, whose first line names the calling session**
+  before it lists the peers (probed 2026-08-29: `This session is <name> [ref]`).
+  The harness named the session, so a name it guessed instead would address
+  nobody.
 
 - **The holder writes it down.** This is the record's one definition, and every
   other site points here:

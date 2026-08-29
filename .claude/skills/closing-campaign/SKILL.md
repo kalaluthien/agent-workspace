@@ -184,11 +184,24 @@ The delete spares this work, but step 5 closes the anchor indexing it. For a
 repo-less campaign this is the whole of step 2: the sweep below has no `repos/`
 to enumerate, and this is where its executors' work actually is.
 
+**Scope it to `campaign-$N/`.** One container serves every campaign at once, so
+an unscoped read makes another campaign's live worktree a blocker on this close
+— and the refusal then tells the person to clear a row that is somebody else's
+work in flight.
+
 ```sh
+git -C "$CONTAINER" for-each-ref --format='%(refname:short)' "refs/heads/campaign-$N/" |
+  while read -r B; do
+    git -C "$CONTAINER" log --oneline "$B" --not --remotes | sed "s|^|$B  |"
+  done
+git -C "$CONTAINER" worktree list | tail -n +2 | grep "\[campaign-$N/" || true
 git -C "$CONTAINER" status --porcelain
-git -C "$CONTAINER" log --oneline --branches HEAD --not --remotes
-git -C "$CONTAINER" worktree list | tail -n +2
 ```
+
+The last line is the one that cannot be scoped: the container has a single
+working tree and an uncommitted edit in it carries no campaign. Print it, name it
+as unattributed, and do not count it as a blocker — this close deletes nothing
+that holds it. The first two are this campaign's own, and they are blockers.
 
 **Then every checkout under `repos/`**, one at a time — never one git command
 across member repositories — reading `$CAMPAIGN_DIR/runtime/handover/` beside
@@ -245,7 +258,8 @@ Refuse in this shape, so two refusals written on different days can be read side
 by side:
 
 ```text
-REFUSE: <count> item(s) under <CAMPAIGN_DIR> exist only on this machine.
+REFUSE: <count> item(s) exist only on this machine: under <CAMPAIGN_DIR>, or on
+this campaign's own campaign-<N>/ branches in <CONTAINER>.
 
   <owner/repo>  <kind>  <identifier>
     found by  <check>[, <check>]
@@ -464,8 +478,9 @@ local, and under the principle that covers everything legitimate: every agent
 and every executor session of this campaign is on the machine it is `BOUND` to,
 and step 1 saw every one that announced, while step 2 read the container and
 `repos/` for the work of one that did not. What neither can see is a machine
-working this campaign against the binding, and no cheap local check can. The anchor issue is the one
-place every machine can read, so announce there and read the comments back —
+working this campaign against the binding, and no cheap local check can. The
+anchor issue is the one place every machine can read, so announce there and read
+the comments back —
 this is the guard for a broken principle, not a routine handshake.
 
 **Say in the same comment what the delete will destroy.** The listing is every
@@ -658,8 +673,8 @@ the person knows.
   leaves `$2` empty. Here it failed loudly — `gh` answered `invalid issue format:
   ""` — but the same construct inside a check whose empty result reads as
   "nothing to report" passes having tested nothing. Split with a parameter
-  expansion (`repo=${spec%%:*}`), and make any gate that can return empty say
-  which of the two it means.
+  expansion (`repo=${spec%%:*}`, `num=${spec##*:}`), and make any gate that can
+  return empty say which of the two it means.
 - **`diff` is shadowed in a Claude Code shell on this machine** by a zsh
   autoload stub with no file behind it, so a plain `diff` dies with
   `(eval):1: diff: function definition file not found` — which reads like a
