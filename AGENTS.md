@@ -593,6 +593,26 @@ nothing. Neither a delegate nor an executor session writes the body at all.
 
 # Delegating to a repository agent
 
+**Every `herdr` command — the launches below, the liveness reads in § Completion
+and liveness, the retirement sweep in § Talking to a repository agent — is
+guarded by `test "${HERDR_ENV:-}" = 1`.** That is the herdr skill's own rule: an
+agent failing it says it is not running inside herdr and stops. It exempts
+nobody, and nobody here needs an exemption — measured 2026-08-29 on herdr 0.8.0,
+a campaign session, a peer executor session and a freshly `agent start`ed
+delegate each carry `HERDR_ENV=1` and their own `HERDR_PANE_ID`, while a process
+started outside any pane carries neither. So it passes on the container's daily
+path and bites exactly where it should: a session with no pane — cloud, cron, a
+bare `ssh` shell — reports that and stops rather than launching, listing or
+sweeping.
+
+**Check it, because failing it is not an error.** `agent list` and `pane list`
+answer normally from outside a pane; what degrades silently is the *target*.
+Caller context is what makes `--current` and an omitted target mean "me":
+stripped of `HERDR_*`, `herdr pane current --current` returned the **UI-focused**
+pane — a peer session's — where from inside the pane the same command returned
+the caller's own (both probed 2026-08-29). Name the target regardless:
+`--pane "$HERDR_PANE_ID"`, an explicit pane id, or a unique agent name.
+
 Launch it in `<campaign>/repos/<repo>/` with
 `--append-system-prompt-file <campaign>/AGENTS.md`.
 
@@ -686,8 +706,10 @@ Never answer one with the other.
   an executor session**, and a gate that reads only the first is blind to half
   its executors. A delegate is read from `herdr agent list` presence plus the
   session transcript — never from `agent_status` alone, which reports the screen
-  and calls a mid-turn pause `idle`. An executor session runs no herdr pane at
-  all, so it is read from the record the holder wrote when its `CLAIMED` arrived,
+  and calls a mid-turn pause `idle`. An executor session's pane, where it has
+  one, is not a pane the holder launched, so `herdr agent list` shows it without
+  saying which subtask it holds; it is read instead from the record the holder
+  wrote when its `CLAIMED` arrived,
   and its liveness from the `pid` in that file the way `runtime/holder` is read.
   **Both readings, every time**: the no-live-agent gate in `closing-campaign` and
   the retirement sweep below each run both.
