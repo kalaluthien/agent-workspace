@@ -135,7 +135,7 @@
  *
  * X is a counterexample; a check that passes reads UNSAT, and a run that finds
  * a witness reads SAT. Each row is restated beside its own command below; this
- * is the inventory, not the explanation. Measured 2026-08-28 against this file.
+ * is the inventory, not the explanation. Measured 2026-08-29 against this file.
  *
  *   ClosedImpliesComplete            X     closed is not completed
  *   IndexCoversMembers               pass  no member is missing from the index

@@ -373,17 +373,19 @@ refusing where the list is written.
 
 So the list has one reader and it is a script — `scripts/campaign-repos <path>`,
 which prints one `owner/repo` per line, prints nothing and exits 0 for a list
-that is exactly `- none`, and exits 1 with one line naming which of the six
-faults it found: no `## Repos` heading, a malformed line under it, an empty
-list, a surviving `<` placeholder, a mixed list, and two entries whose checkout
-directory `repos/<name>/` would collide. `opening-campaign` step 4 runs it and
-writes `runtime/repos`; step 5 reads that file; its passage on adding a
+that is exactly `- none`, and exits 1 with one line naming which of the five
+faults it found: no `## Repos` heading, a malformed line under it — anything
+that is not `- owner/repo` or `- none`, which is also what a surviving
+`<owner/repo>` placeholder is — an empty list, a mixed list, and two entries
+whose checkout directory `repos/<name>/` would collide. `opening-campaign` step
+4 runs it and writes `runtime/repos`; step 5 reads that file; its passage on
+adding a
 repository runs it again before the sync; and `closing-campaign` step 4 runs it
 over the README and over the body GitHub stored. A rule nothing must consume is
 a rule that drifts, and this one had drifted into three prose copies before it
 had a reader.
 
-Two of those six are about a wrong list reading as `- none` rather than as
+Two of those five are about a wrong list reading as `- none` rather than as
 wrong. A line under the heading that is not a `- ` item was silently skipped, so
 a list written `* owner/repo` was an empty list and an empty list is one bad
 write away from a lost index; and every entry becomes a checkout at

@@ -521,24 +521,34 @@ nothing more.
 campaign's subtasks are claimed by `campaign-<N>/<issue>-<topic>` branches on
 `kalaluthien/agent-workspace`, and a subtask that landed no commits leaves that
 branch sitting at `origin/main` forever — the campaign is closed and the claim
-outlives it. Step 1 has already established that no agent is live under this
-tree and step 0 that the campaign is bound here, which is what makes this
-release sighted rather than blind: `AGENTS.md` forbids deleting a claim ref
-while an agent on your machine works it, and this is the one place that has
-already been checked.
+outlives it. What makes this release sighted rather than blind is step 3, not
+step 1: every subtask is settled or disposed of by now, so no claim ref here can
+be an executor's live workspace — and step 3 runs on the no-directory path too,
+where step 1 was skipped, and it sees hands and subagent executors that no
+`herdr agent list` row would. `AGENTS.md` forbids deleting a claim ref while an
+agent on your machine works it; this is the one place where that has been
+established for every ref at once.
 
 ```sh
-MAIN=$(gh api repos/kalaluthien/agent-workspace/commits/main --jq .sha) || exit 1
 gh api "repos/kalaluthien/agent-workspace/git/matching-refs/heads/campaign-$N/" \
   --jq '.[] | "\(.ref)\t\(.object.sha)"' |
 while IFS="$(printf '\t')" read -r REF SHA; do
-  if [ "$SHA" = "$MAIN" ]; then
+  AHEAD=$(gh api "repos/kalaluthien/agent-workspace/compare/main...$SHA" --jq .ahead_by) || exit 1
+  if [ "$AHEAD" = 0 ]; then
     gh api -X DELETE "repos/kalaluthien/agent-workspace/git/$REF" && echo "released $REF"
   else
-    echo "REFUSE-ROW: $REF holds commits beyond main — push a PR or say to discard"
+    echo "REFUSE-ROW: $REF holds $AHEAD commit(s) beyond main — push a PR or say to discard"
   fi
 done
 ```
+
+**Ancestry, not equality.** A claim ref is created at the `main` of claim time,
+and `main` moves on; a zero-commit claim compared against today's `main` sha
+reads unequal and would be refused as holding work — which is exactly the ref
+this step exists to release. `compare/main...<sha>` answers the right question:
+`ahead_by` is the commits the ref holds that `main` does not, and `0` releases
+whatever `behind_by` says (probed: a claim four commits behind reads
+`ahead_by=0 behind_by=4 status=behind`).
 
 Print a row that holds commits; never delete it. Its branch is somebody's
 unlanded work and the anchor closing does not make it disposable — that is the
@@ -555,6 +565,15 @@ only what has already happened at the moment it is written.
 
 ```sh
 gh issue close "$N" -R kalaluthien/agent-workspace --comment "Campaign closed."
+```
+
+**Where this machine holds no directory, stop here** — `$CAMPAIGN_DIR` is empty
+from step 0, the delete has nothing to do, and every command below would run
+against `""` and print an error where every abnormal line of this skill is a
+refusal. Everything from here to the end of the step is under this guard:
+
+```sh
+[ -n "$CAMPAIGN_DIR" ] || { echo "no directory on this machine; nothing to delete"; exit 0; }
 ```
 
 **Check nobody else on this machine is in the directory**, and only then remove
