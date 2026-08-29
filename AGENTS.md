@@ -1,8 +1,8 @@
 # agent-workspace
 
 A container for running **campaigns** — units of work across the repositories
-they need — on repositories that live elsewhere. `README.md` says what the container is; this
-file is how to work inside it. `spec/alloy/ledger.als` says why these rules are
+they need — on repositories that live elsewhere. `README.md` says what the
+container is; this file is how to work inside it. `spec/alloy/ledger.als` says why these rules are
 what they are, in its comments, and points at the three layers stacked above
 it.
 
@@ -12,8 +12,8 @@ the decision back here.
 # What a campaign is
 
 One assignment a person is responsible for, worked across the repositories it
-needs, which may be none. Bigger than a ticket, no size ceiling — a week of migration or the
-whole life of a product. It splits into subtasks, and follow-up subtasks keep
+needs, which may be none. Bigger than a ticket, no size ceiling — a week of
+migration or the whole life of a product. It splits into subtasks, and follow-up subtasks keep
 arriving until someone decides it is over.
 
 A campaign is not a repository and not a ticket. It is what collects the
@@ -391,7 +391,7 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0
   cheap:
 
   ```sh
-  gh issue list -R kalaluthien/agent-workspace --state open \
+  gh issue list -R kalaluthien/agent-workspace --state open --limit 200 \
     --json number,title,parent --jq '.[] | select(.parent == null) | .number'
   ```
 

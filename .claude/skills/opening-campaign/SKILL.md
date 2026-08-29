@@ -130,7 +130,7 @@ Before scaffolding anything, because its number is the campaign ID.
 minutes old and two sessions that each checked before either filed both file.
 
 ```sh
-gh issue list -R kalaluthien/agent-workspace --label campaign --state open
+gh issue list -R kalaluthien/agent-workspace --label campaign --state open --limit 200
 gh issue create -R kalaluthien/agent-workspace \
   --label campaign --title "<title>" --body-file <path>
 ```

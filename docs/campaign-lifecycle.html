@@ -204,7 +204,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   <figcaption>하위 과제 하나는 두 명령으로 열린다. 첫 명령이 이슈와 색인을 함께 만들고, 둘째 명령이 그 이슈 번호로 브랜치를 청구한다.</figcaption>
 </figure>
 
-<p>하위 과제 하나는 GitHub 이슈 하나다. 이슈는 코드가 바뀌는 저장소에 산다. 리뷰어가 거기서 찾고, 풀 리퀘스트가 거기서 닫을 수 있기 때문이다. 캠페인은 저장소를 가로지르므로 이슈는 흩어진 채로 시작한다. <code>--parent</code> 가 그것을 하나의 색인으로 묶는다.</p>
+<p>하위 과제 하나는 GitHub 이슈 하나다. 이슈는 코드가 바뀌는 저장소에 산다. 리뷰어가 거기서 찾고, 풀 리퀘스트가 거기서 닫을 수 있기 때문이다. 캠페인이 여러 저장소에 걸칠 수 있으므로 이슈는 흩어진 채로 시작한다. <code>--parent</code> 가 그것을 하나의 색인으로 묶는다.</p>
 
 <p>색인은 한 번의 호출로 되읽는다. <code>gh api --paginate repos/kalaluthien/agent-workspace/issues/6/sub_issues</code> 는 캠페인 <code>#6</code> 의 구성원을 정확히 돌려준다. 저장소가 비공개여도 공개 부모 아래에서 올바르게 나열된다. 이 끝점은 서른 개에서 쪽을 나누고, 잘린 색인은 온전한 색인과 똑같이 읽히므로 <code>--paginate</code> 는 선택 사항이 아니다. 본문의 <code>Campaign: kalaluthien/agent-workspace#6</code> 줄은 사람이 읽는 산문이고, 색인이 아니다. <span class="src">AGENTS.md @ 24cb850</span></p>
 
