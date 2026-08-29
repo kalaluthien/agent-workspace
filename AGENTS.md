@@ -362,11 +362,20 @@ opens the campaign, which strands that open with nothing saying why.
 
 So the list has one reader and it is a script — `scripts/campaign-repos <path>`,
 which prints one `owner/repo` per line, prints nothing and exits 0 for a list
-that is exactly `- none`, and exits 1 with one line naming which of the four
-faults it found: no heading, an empty list, a surviving `<` placeholder, a mixed
-list. `opening-campaign` steps 4 and 5, its passage on adding a repository, and
-`closing-campaign` step 4 all call it. A rule nothing must consume is a rule that
-drifts, and this one had drifted into three prose copies before it had a reader.
+that is exactly `- none`, and exits 1 with one line naming which of the six
+faults it found: no `## Repos` heading, a malformed line under it, an empty
+list, a surviving `<` placeholder, a mixed list, and two entries whose checkout
+directory `repos/<name>/` would collide. `opening-campaign` steps 4 and 5, its
+passage on adding a repository, and `closing-campaign` step 4 all call it. A
+rule nothing must consume is a rule that drifts, and this one had drifted into
+three prose copies before it had a reader.
+
+Two of those six are about a wrong list reading as `- none` rather than as
+wrong. A line under the heading that is not a `- ` item was silently skipped, so
+a list written `* owner/repo` was an empty list and an empty list is one bad
+write away from a lost index; and every entry becomes a checkout at
+`repos/<name>/`, so `a/web` beside `b/Web` is one directory on this filesystem
+and the second acquire overwrites the first without a word.
 
 Its subtasks are filed on the container tracker, `kalaluthien/agent-workspace`,
 as sub-issues of the anchor exactly like any other — it is the only tracker

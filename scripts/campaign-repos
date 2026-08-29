@@ -8,36 +8,51 @@ with no member repository writes `- none` as the whole list, and for that list
 this prints nothing and exits 0 -- so a caller loops over the output and needs
 no special case of its own.
 
-Exits 1 with one line on stderr for the four ways the list is wrong: no
-`## Repos` heading, an empty list, a `<` placeholder, and `- none` mixed with
-repository entries. Why each of those is refused, and the retirement rule the
-last one enforces, is stated once in AGENTS.md (see "Running a campaign"); this
-is the reader that makes it true.
+Exits 1, with one line on stderr, for the six ways the list is wrong:
 
-This is the ONE reader of that list. opening-campaign step 5, closing-campaign
-step 4 and the passage on adding a repository mid-campaign all call it, for the
-reason AGENTS.md gives about scripts/campaign-settlement: two readers of one
-list drift, and this list is the campaign's repository index.
+  no `## Repos` heading      the section this reads does not exist
+  a malformed line           a non-blank line under the heading that is not a
+                             `- ` item. Dropping it silently is how a list turns
+                             into `- none` without anybody writing `- none`
+  an empty list              indistinguishable from a list a bad write dropped
+  a `<` placeholder          the template was never filled in
+  `- none` mixed with repos  the retirement rule: the first repository REPLACES
+                             `- none`, never joins it
+  a colliding basename       two entries whose checkout directory would be the
+                             same `repos/<name>/`, or the same entry twice.
+                             Case-folded, because the filesystem here is
+
+HTML comments are stripped before any of that, since the anchor template carries
+one under the heading and it is not a list entry.
+
+Why each refusal is a refusal is stated once in AGENTS.md (see "Running a
+campaign"); this is the reader that makes it true. It is the ONE reader of that
+list -- opening-campaign steps 4 and 5, its passage on adding a repository, and
+closing-campaign step 4 all call it -- for the reason AGENTS.md gives about
+scripts/campaign-settlement: two readers of one list drift, and this list is the
+campaign's repository index.
 """
 import re
 import sys
 
 HEADING = re.compile(r"^## Repos\s*$")
 NEXT_SECTION = re.compile(r"^## ")
+COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+ITEM = re.compile(r"^- (\S.*)$")
 
 
-def entries(text):
-    """The `- ` items under `## Repos`, or None when there is no such heading."""
+def section(text):
+    """The non-blank lines under `## Repos`, or None when there is no heading."""
     out, inside = [], False
-    for line in text.splitlines():
+    for line in COMMENT.sub("", text).splitlines():
         if HEADING.match(line):
             inside = True
             continue
         if inside:
             if NEXT_SECTION.match(line):
                 break
-            if line.startswith("- "):
-                out.append(line[2:].strip())
+            if line.strip():
+                out.append(line.rstrip())
     return out if inside else None
 
 
@@ -47,12 +62,20 @@ def main():
     path = sys.argv[1]
     try:
         with open(path, encoding="utf-8") as f:
-            items = entries(f.read())
+            lines = section(f.read())
     except OSError as e:
         sys.exit(f"campaign-repos: cannot read {path}: {e.strerror}")
 
-    if items is None:
+    if lines is None:
         sys.exit(f"campaign-repos: no `## Repos` heading in {path}")
+
+    items = []
+    for line in lines:
+        m = ITEM.match(line)
+        if not m:
+            sys.exit(f"campaign-repos: malformed line under ## Repos: {line}")
+        items.append(m.group(1).strip())
+
     if not items:
         sys.exit(f"campaign-repos: the ## Repos list is empty in {path}")
 
@@ -70,6 +93,19 @@ def main():
                      f" entr{plural}; the list is `- none` alone or repositories,"
                      " never both")
         return                     # `- none` alone: no repositories, and that is fine
+
+    # Every entry becomes a checkout at repos/<name>/, so two entries that end in
+    # the same name are one directory and the second acquire overwrites the
+    # first. Case-folded: the filesystem here does not tell `Web` from `web`.
+    seen = {}
+    for i in repos:
+        key = i.rsplit("/", 1)[-1].casefold()
+        if key in seen:
+            if seen[key] == i:
+                sys.exit(f"campaign-repos: duplicate entry under ## Repos: {i}")
+            sys.exit("campaign-repos: two entries share the checkout directory"
+                     f" repos/{i.rsplit('/', 1)[-1]}/: {seen[key]} and {i}")
+        seen[key] = i
 
     print("\n".join(repos))
 
