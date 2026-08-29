@@ -120,8 +120,12 @@ that directory existed.
 
 **No directory at all** — the campaign is on GitHub but not here, so run steps 2,
 4 and 5 with its ID and body from the anchor issue, and skip step 3, which exists
-only to mint an ID it already has. Step 2 still runs because neither the slug nor
-the kind is recoverable from GitHub; say which kind you picked.
+only to mint an ID it already has. Do this before launching or receiving
+anything: the directory is the only home `runtime/holder` and
+`runtime/executors/` have, so until it exists you are not the holder and a
+`CLAIMED` has nowhere to be recorded (§ Who is a campaign session, "Holding
+scaffolds"). Step 2 still runs because neither the slug nor the kind is
+recoverable from GitHub; say which kind you picked.
 
 ### 2. Name it and pick its kind
 

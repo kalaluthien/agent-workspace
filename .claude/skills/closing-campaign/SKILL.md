@@ -27,9 +27,9 @@ Finished when all eight hold:
 - every `campaign-<N>/` claim ref on the container that still sits at
   `origin/main` is released, and any that holds commits is reported, not deleted.
 
-Where this machine holds no directory, the first three and the last are the real
-conditions and the middle four are about a cache that does not exist; step 0 says
-what to skip.
+A campaign bound here with no directory is taken first — `opening-campaign`
+steps 2 and 4, nothing to acquire — because the holder and executor records have
+no other home (§ Who is a campaign session, "Holding scaffolds"). One path, then.
 
 ## Procedure
 
@@ -62,24 +62,25 @@ Another machine — refuse, naming both machines, and say nothing was closed. No
 output means unbound, which is not consent either: let the person bind it here,
 or close it from the machine that has been working it.
 
-**Then the directory, if this machine has one.** A campaign legitimately has none
-(§ Who is a campaign session, Directory): say so, skip steps 1, 2 and 4, and
-close the issue in step 5, where the delete has nothing to do.
+**Then the directory.** A campaign bound here may have none yet — not taken on
+this machine (§ Who is a campaign session, Directory). Take it first, through
+`opening-campaign`'s "No directory at all" arrival: **steps 2 and 4**, because
+step 4 needs a slug and a kind and step 2 is where they are chosen — neither is
+recoverable from GitHub. That scaffolds the tree from the anchor body and writes
+`runtime/holder`. The gates below read records that live only there, and step 1
+says what they can and cannot see on this path.
 
 Bind `$CAMPAIGN_DIR` here, absolute, and never rebuild it later — steps 1 and 5
-both fail silently on a relative value. Bind it on both paths, the empty string
-where there is no directory, because step 5 tells that apart from *unset*, which
-means step 0 never ran.
+both fail silently on a relative value. If you created it in this step, set
+`TOOK_IT_HERE=1`: the gates in steps 1 and 2 then have nothing they *can* find,
+and they must report that rather than a pass (`references/rationale.md`).
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-
-CAMPAIGN_DIR=$(cd "$CONTAINER/$SLUG" && pwd -P)   # this machine has one
-CAMPAIGN_DIR=                                     # or it has none
+CAMPAIGN_DIR=$(cd "$CONTAINER/$SLUG" && pwd -P)
 ```
 
-On the empty path steps 1, 2 and 4 are skipped and so are the assertions below.
-On the bound path, assert both facts `AGENTS.md` already pins.
+Then assert both facts `AGENTS.md` already pins.
 
 ```sh
 [ "$(dirname "$CAMPAIGN_DIR")" = "$CONTAINER" ] || echo "REFUSE: not a direct child of $CONTAINER"
@@ -105,6 +106,14 @@ kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
 Alive and not this session — print the file and stop. Missing or dead — you are
 the holding session, so say so, take the directory as `opening-campaign` step 4
 does, and carry on.
+
+**If `TOOK_IT_HERE` is set, this step and step 2 are not applicable, and that
+is what to report.** Step 0 created the tree seconds ago, so no herdr `cwd` can
+be under it, `runtime/executors/` is empty because it was just copied, and there
+is nothing uncommitted in it: the gates cannot fail, and a gate that cannot fail
+has not passed. Run them anyway — they cost two commands — and report "not
+applicable: this session created the directory in step 0". Why that is sound,
+and the one residue it leaves, is `references/rationale.md`.
 
 **Then the agents, both records** — `herdr agent list` for the delegates,
 `runtime/executors/` for the executor sessions, one alone being no reading at all
@@ -376,32 +385,25 @@ where it outlives the tree.
 
 ```sh
 HOST=$(hostname -s)
-case "${CAMPAIGN_DIR-unset}" in
-  unset)
-    echo "REFUSE: CAMPAIGN_DIR was never bound; step 0 did not run"; exit 1 ;;
-  "")
-    BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.\n\nNo campaign directory on %s: nothing here to delete, and nothing to list.\n' \
-      "$N" "$HOST" "$HOST") ;;
-  *)
-    [ -d "$CAMPAIGN_DIR/runtime" ] ||
-      { echo "REFUSE: $CAMPAIGN_DIR holds no runtime/; not a campaign directory"; exit 1; }
-    LEFTOVERS=$(find "$CAMPAIGN_DIR" -mindepth 1 \
-      \( -path "$CAMPAIGN_DIR/runtime" -o -path "$CAMPAIGN_DIR/repos" \) -prune -o -print \
-      | sed "s|^$CAMPAIGN_DIR/||" | sort \
-      | grep . || echo "no entries outside runtime/ and repos/")
-    BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these entries under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
-      "$N" "$HOST" "$LEFTOVERS") ;;
-esac
+[ -n "${CAMPAIGN_DIR-}" ] ||
+  { echo "REFUSE: CAMPAIGN_DIR was never bound; step 0 did not run"; exit 1; }
+[ -d "$CAMPAIGN_DIR/runtime" ] ||
+  { echo "REFUSE: $CAMPAIGN_DIR holds no runtime/; not a campaign directory"; exit 1; }
+LEFTOVERS=$(find "$CAMPAIGN_DIR" -mindepth 1 \
+  \( -path "$CAMPAIGN_DIR/runtime" -o -path "$CAMPAIGN_DIR/repos" \) -prune -o -print \
+  | sed "s|^$CAMPAIGN_DIR/||" | sort \
+  | grep . || echo "no entries outside runtime/ and repos/")
+BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these entries under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
+  "$N" "$HOST" "$LEFTOVERS")
 gh issue comment "$N" -R kalaluthien/agent-workspace --body "$BODY"
 gh issue view "$N" -R kalaluthien/agent-workspace --comments
 ```
 
-**Three states, announced in two.** `unset` is step 0 not having run, and it
-refuses; the empty string is a campaign with no directory here, so nothing to
-list but the announcement still goes up; a non-empty value must hold `runtime/`,
-the cheap test that it is not the container root. Keep `-prune` on the two exact
-paths and `-print` without `-type f`, so the listing names everything `rm -rf`
-destroys.
+**Unset or empty is step 0 not having run**, and it refuses; since #52 a
+campaign bound here has a directory by the time this step runs. The value must
+hold `runtime/`, the cheap test that it is not the container root. Keep `-prune`
+on the two exact paths and `-print` without `-type f`, so the listing names
+everything `rm -rf` destroys.
 
 **Read the listing knowing what is on it.** `AGENTS.md`, `CLAUDE.md`, `README.md`
 and `scripts/` are the scaffold copied at open and are the rows to skip; nothing
@@ -439,13 +441,6 @@ directory to retry from, while the reverse leaves nothing.
 
 ```sh
 gh issue close "$N" -R kalaluthien/agent-workspace --comment "Campaign closed."
-```
-
-**Where this machine holds no directory, stop here**, since every command below
-would run against `""`. Everything to the end of the step is under this guard.
-
-```sh
-[ -n "$CAMPAIGN_DIR" ] || { echo "no directory on this machine; nothing to delete"; exit 0; }
 ```
 
 **Check nobody else on this machine is in the directory**, because two sessions
