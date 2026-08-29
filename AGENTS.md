@@ -176,15 +176,19 @@ two survive unchanged, one holds by construction, and one inverts.
   subtask, because the launcher creates it on the remote before any work:
 
   ```sh
-  SHA=$(git -C <checkout> rev-parse --verify origin/main) || exit 1
+  SHA=$(gh api repos/<owner>/<repo>/commits/main --jq .sha) || exit 1
   gh api repos/<owner>/<repo>/git/refs \
     -f ref=refs/heads/campaign-<N>/<issue>-<topic> -f sha="$SHA"
   ```
 
-  The sha is resolved and checked before the create, never written inline:
-  without `origin/main` `git rev-parse` exits non-zero *and still prints the
-  string*, which then goes up as the sha and comes back as the 422 that means
-  "already claimed" — so the subtask reads as taken and is abandoned.
+  **The sha comes from the remote**, which is what the claim is cut from — not
+  from a checkout, whose `origin/main` may be stale, absent or unfetched, and
+  which a repo-less subtask does not have at all. One block claims every
+  subtask, and `opening-campaign` adds only the checkout-side `fetch` and
+  `switch` for a subtask that has one. It is resolved and checked before the
+  create, never written inline: a read that fails and still prints goes up as
+  the sha and comes back as the 422 that means "already claimed", so the subtask
+  reads as taken and is abandoned.
 
   create-ref refuses an existing ref server-side, at any SHA (probed
   2026-08-28: HTTP 422 "Reference already exists"), so the claim is atomic
