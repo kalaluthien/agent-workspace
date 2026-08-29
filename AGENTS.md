@@ -525,7 +525,11 @@ So the body is filled when the anchor is filed, and after that written at
 exactly two moments: a scope change, and the close — each through the
 compare-then-write below. Adding work is neither —
 filing a subtask touches only the subtask side, `gh issue create --parent` plus
-the branch claim, and the index carries it from there. Ticking a `## Plan`
+the branch claim, and the index carries it from there. **When a request reads
+both ways** — a change to what the person signed up for, or a subtask inside
+that scope — ask them with `AskUserQuestion` before writing either side: the two
+readings write different things, and only the person knows which they meant.
+Ticking a `## Plan`
 checkbox as a subtask settles is the anti-pattern this names: a hand copy of a
 listing that already exists, paid for with one lost-update window per write.
 
