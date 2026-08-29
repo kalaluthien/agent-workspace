@@ -159,10 +159,15 @@ two survive unchanged, one holds by construction, and one inverts.
   subtask, because the launcher creates it on the remote before any work:
 
   ```sh
+  SHA=$(git -C <checkout> rev-parse --verify origin/main) || exit 1
   gh api repos/<owner>/<repo>/git/refs \
-    -f ref=refs/heads/campaign-<N>/<issue>-<topic> \
-    -f sha=$(git -C <checkout> rev-parse origin/main)
+    -f ref=refs/heads/campaign-<N>/<issue>-<topic> -f sha="$SHA"
   ```
+
+  The sha is resolved and checked before the create, never written inline:
+  without `origin/main` `git rev-parse` exits non-zero *and still prints the
+  string*, which then goes up as the sha and comes back as the 422 that means
+  "already claimed" — so the subtask reads as taken and is abandoned.
 
   create-ref refuses an existing ref server-side, at any SHA (probed
   2026-08-28: HTTP 422 "Reference already exists"), so the claim is atomic
@@ -206,6 +211,24 @@ The campaign directory holds no plane of its own. It is a scratch assembly of
 things already versioned elsewhere, so it is git-ignored on purpose and nothing
 durable may live only there. `.gitignore` is an allowlist over the container
 row: a new tracked directory needs its own `!` line.
+
+**A campaign with no member repository does not bend that rule; it is the case
+that tests it.** Such a campaign's `<campaign>/scripts/` is tooling and scratch
+by design — a script written to answer this campaign's question, thrown away
+with the tree. Its lasting results live where any campaign's do: in the anchor
+issue and its sub-issues, in this container's memory pool, or in a repository it
+lands work in by hand. Making the container a member so that `scripts/` could
+survive is the other reading and it is rejected: it would make every repo-less
+campaign not repo-less, for the sake of committing scratch.
+
+So the close makes the claim checkable instead of hoped for. Before deleting the
+directory, `closing-campaign` lists every entry under it outside `runtime/` and
+`repos/` — files, directories, symlinks, because `rm -rf` destroys all of them —
+into the closing comment on the anchor, one comment, the one it already posts.
+The scaffold's own `AGENTS.md`, `CLAUDE.md`, `README.md` and `scripts/` are on
+every such listing, being template copies; the listing filters nothing, because
+a filter that guessed would be the thing that dropped the one file somebody
+wanted.
 
 **Resolve the container root one way, everywhere:**
 
@@ -346,6 +369,76 @@ is a markdown heading followed by a plain `- owner/repo` list, in the issue body
 and in the campaign `README.md` alike — the same heading, so a reader written
 against one works on the other.
 
+**A campaign with no member repository writes `- none` as the whole list**, body
+and `README.md` alike. An *empty* list stays refused, because an empty list is
+indistinguishable from a list a bad write dropped, and the list is the only copy
+of the campaign's repository index that the close does not delete. `- none` is a
+deliberate entry and reads as one.
+
+**`- none` is retired, never joined.** Adding the first repository replaces it:
+the list is `- none` alone or it is repositories, never both. A mixed list is
+refused because it is *ambiguous* — nothing in it says whether `none` is a
+sentinel somebody forgot to remove or a repository the list means to name — and
+neither reading can be acted on. The alternative, teaching `acquire-repo` to
+skip `none`, moves the refusal to the next machine that opens the campaign and
+several steps past the person who could have fixed it; refusing at the list is
+refusing where the list is written.
+
+So the list has one reader and it is a script — `scripts/campaign-repos <path>`,
+which prints one `owner/repo` per line, prints nothing and exits 0 for a list
+that is exactly `- none`, and exits 1 with one line naming which of the five
+faults it found: no `## Repos` heading, a malformed line under it — anything
+that is not `- owner/repo` or `- none`, which is also what a surviving
+`<owner/repo>` placeholder is — an empty list, a mixed list, and two entries
+whose checkout directory `repos/<name>/` would collide. `opening-campaign` step
+4 runs it and writes `runtime/repos`; step 5 reads that file; its passage on
+adding a
+repository runs it again before the sync; and `closing-campaign` step 4 runs it
+over the README and over the body GitHub stored. A rule nothing must consume is
+a rule that drifts, and this one had drifted into three prose copies before it
+had a reader.
+
+Two of those five are about a wrong list reading as `- none` rather than as
+wrong. A line under the heading that is not a `- ` item was silently skipped, so
+a list written `* owner/repo` was an empty list and an empty list is one bad
+write away from a lost index; and every entry becomes a checkout at
+`repos/<name>/`, so `a/web` beside `b/Web` is one directory on this filesystem
+and the second acquire overwrites the first without a word.
+
+Its subtasks are filed on the container tracker, `kalaluthien/agent-workspace`,
+as sub-issues of the anchor exactly like any other — it is the only tracker
+there is. **And the claim is create-ref on the container** for
+`campaign-<N>/<issue>-<topic>`, even when no container code will change: the
+branch is the claim before it is a workspace, and without it two executors on
+one subtask are serialized by nothing. It is released the way any claim is
+released — a claim whose branch holds nothing beyond `origin/main` may be
+released, deleted, **only when no agent on your machine works it**.
+
+Read that guard twice here. It rests on an agent being visible, and a repo-less
+subtask is worked by a session's own hands or by an in-process subagent, neither
+of which has a row in `herdr agent list`. So absence from that listing is not
+evidence that such a claim is abandoned. `<campaign>/runtime/executors/` is the
+reading that answers it — an executor session's `CLAIMED` names the branch it
+holds and the pid to test it by, which is what that record exists for — and only
+a claim named by no record and answered by no peer (`STATUS`) may be deleted.
+Leave it standing if nobody answers: deleting it costs the one thing keeping two
+executors off the subtask.
+
+**The one exception is the close.** `closing-campaign` step 5 releases every
+`campaign-<N>/` ref on the container that still sits at `origin/main`, and it is
+allowed to because by then step 0 has established the campaign is bound here and
+step 1 that nothing is live under its tree — by both records, `herdr agent list`
+and `runtime/executors/`, which is what makes the sweep sighted for a repo-less
+campaign whose executors are in the second list only. A ref holding commits is printed there, never deleted. Refs
+in member repositories are not swept: a merged pull request releases those.
+
+**Such a subtask closes as completed with no pull request**, and
+`scripts/campaign-settlement` prints that row as `dropped [completed, no merged
+pull request]`. That is the designed reading, stated in the script's own header:
+settled is "the issue is closed", and the merged pull request only says which
+kind. Quote the note, never the word, and do not add a second reading to the
+script to flatter this case.
+
 **Do it here, hand it to a subagent, or hand it to a delegate** — every subtask
 runs one of these ways, and the mode is chosen before the work starts.
 
@@ -383,7 +476,7 @@ Then, within what the repository allows, choose by cost:
 
 An executor session is a fourth executor and not a fourth mode, because nobody
 chooses it: a session that arrives in the container root to a live holder simply
-is one. What it then chooses is which of these three carries its subtask.
+is one. What it then chooses is which of the modes above carries its subtask.
 
 All of them carry the same mechanics. The branch is
 `campaign-<N>/<issue>-<topic>`, claimed on the remote by create-ref after the
@@ -391,7 +484,16 @@ subtask's issue exists because the number is minted there — a refusal means
 another executor holds the subtask. Work is pushed as soon as one commit
 exists, so a checkout that dies costs uncommitted work and nothing more. It
 lands by a pull request, and § Talking to a repository agent says who reviews and
-merges it.
+merges it — except for a subtask whose work lives only under
+`<campaign>/scripts/`, which has no commit to land: that one closes as completed
+with no pull request, its closing comment saying what was built and where the
+close listed it. How that reads in the settlement is above.
+
+**A repo-less campaign has the first two modes and not the third.** The
+delegate mode is a clone under `<campaign>/repos/<repo>/`, and there is no
+repository to clone; its subagent runs with the campaign directory as its
+working directory rather than a worktree of anything. The mechanics above are
+otherwise unchanged, the container branch being the claim.
 
 The subagent mode needs none of the delegate rules that exist to cross a
 process boundary: no handover file, because the brief is passed in-process and
@@ -555,6 +657,10 @@ Never answer one with the other.
   there cannot say which campaign a peer is in — which is why the record exists,
   and why an executor session that never announced can be live under a campaign
   that reads closable.
+
+  **A `cwd` filter cannot scope a campaign with no directory**, because every
+  campaign session's `cwd` is the container root: the session transcript is the
+  only discriminator, read through the session id herdr reports.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the campaign session retires it once

@@ -1,15 +1,15 @@
 # agent-workspace
 
-A container for running **campaigns** — cross-repository units of work — on
-repositories that live elsewhere.
+A container for running **campaigns** — units of work across the repositories
+they need — on repositories that live elsewhere.
 
-A campaign is one assignment a person is responsible for, worked across several
-repositories at once. It is bigger than a ticket and has no size ceiling. It
-usually gets a directory here — the repositories it needs are assembled inside
-it, and its subtasks are handed to agents — but that directory is optional, one
-machine's cache of a campaign that lives on GitHub. When it is over the
-directory is deleted and nothing is lost, because everything durable was already
-somewhere else.
+A campaign is one assignment a person is responsible for, worked across the
+repositories it needs, which may be none. It is bigger than a ticket and has no
+size ceiling. It usually gets a directory here — the repositories it needs are
+assembled inside it, and its subtasks are handed to agents — but that directory
+is optional, one machine's cache of a campaign that lives on GitHub. When it is
+over the directory is deleted and nothing is lost, because everything durable
+was already somewhere else.
 
 ## Shape
 
@@ -23,7 +23,8 @@ agent-workspace/
     AGENTS.md CLAUDE.md          engineering principles for this campaign
     README.md                    the anchor issue body, section for section
     runtime/                     data, state, artifacts, handover briefs
-    scripts/                     reusable scripts for this campaign
+    scripts/                     scripts built for this campaign; scratch,
+                                 listed at the close and deleted with the directory
     repos/api/  repos/web/       member repositories, each its own git repo
 ```
 
@@ -40,8 +41,9 @@ so a campaign can never be committed into the wrong repository by accident.
 | what a campaign is and how far along it is | GitHub issues |
 
 A campaign's identity is its **anchor issue** in this repository. Subtasks are
-issues on the repositories whose code changes, each filed as a sub-issue of that
-anchor — the link the creating command makes is the whole index. That makes
+issues on the repositories whose code changes — the container's own tracker when
+none does — each filed as a sub-issue of that anchor, and the link the creating
+command makes is the whole index. That makes
 GitHub the single record: a campaign can move from one machine to another, and a
 phone can read it, without anything local having to agree. It runs on one
 machine at a time, and the anchor's latest `BOUND` comment says which.

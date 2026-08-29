@@ -14,12 +14,12 @@
  * Four layers, each opening the one below, so the composed model is the top file
  * and there is no fifth integration file:
  *
- *   ledger.als    issues, the sub-issue index, settlement, the anchor body   32
+ *   ledger.als    issues, the sub-issue index, settlement, the anchor body   34
  *   repos.als     a member repository from one machine and on its remote    18
- *   session.als   a campaign session: which one holds the campaign          35
- *   agent.als     the executor: launch, the five messages, retirement       58
+ *   session.als   a campaign session: which one holds the campaign          36
+ *   agent.als     the executor: launch, the five messages, retirement       60
  *
- * (the trailing number is that file's command count; 143 in all)
+ * (the trailing number is that file's command count; 148 in all)
  *
  *   agent -> session -> repos -> ledger
  *
@@ -135,7 +135,7 @@
  *
  * X is a counterexample; a check that passes reads UNSAT, and a run that finds
  * a witness reads SAT. Each row is restated beside its own command below; this
- * is the inventory, not the explanation. Measured 2026-08-28 against this file.
+ * is the inventory, not the explanation. Measured 2026-08-29 against this file.
  *
  *   ClosedImpliesComplete            X     closed is not completed
  *   IndexCoversMembers               pass  no member is missing from the index
@@ -162,16 +162,25 @@
  *   S13c_ReopenWithPR                UNSAT the actual blocker
  *   S14_FollowUpAfterClose           SAT
  *   S16a_ContainerMemberUnderNarrowReading  UNSAT the narrow reading forbade it
+ *   S18_PlainContainerIssue          SAT   the tracker's third kind exists
+ *   S18a_PlainContainerIssueUnderClosedWorld  UNSAT control: the clause bites
  *   Cov_*                            SAT   every own event fires in some trace
  *
- * Every pass was proved able to fail by mutation, re-run 2026-08-28 against
- * this model: dropping `addMember`'s sub-issue write reddens all four index and
+ * Every pass was proved able to fail by mutation, re-run 2026-08-29 against
+ * this model as it now stands -- all four mutations, all seven checks red:
+ * dropping `addMember`'s sub-issue write reddens all four index and
  * reconstitution checks; removing `TerminationDisciplined`'s close-discipline
  * clause reddens it; dropping `weakFairness` reddens TerminationUnderSettlement.
  * `ledgerFrame` in the fall-through branch of `ledgerStep` is proved
  * load-bearing from above -- dropping it reddens repos.als's
  * MachineIndependence and agent.als's NoLostWork, which is the composition
  * idiom itself under test.
+ *
+ * The date is part of the claim. This file changed after the 2026-08-28 run --
+ * the container clause left `WellFormed`, and S18/S18a arrived -- so the proof
+ * was carried out again rather than inherited: a mutation score is about the
+ * model in front of you, and an older one silently claims something about a
+ * model that no longer exists.
  *
  * WHAT MOVED, AND WHAT CHANGED WITH IT
  *
@@ -306,20 +315,6 @@ var sig Filed  in Campaign {}   -- the anchor issue exists on GitHub
 fact WellFormed {
   all c: Campaign | c.anchor.home = Container
   all disj c1, c2: Campaign | c1.anchor != c2.anchor
-  /* THE WIDENING. This clause said `implies i in Campaign.anchor`, which
-     requires every container-homed issue to be SOME campaign's anchor. Read
-     precisely, that forbids an ordinary container subtask while still
-     permitting the odd case of one campaign's anchor being another campaign's
-     member -- so a coarse probe reads SAT and hides it. The probe that isolates
-     the real claim is "a container-homed member that is nobody's anchor", and
-     on the original model it is UNSAT. With a single campaign, which is the
-     actual situation, the clause rules the case out entirely.
-
-     Nothing in the three planes forbade the case -- the container plane is a
-     repository like any other -- so this was the model contradicting the
-     design, not the design being narrow. Widened 2026-08-28; no verdict changed,
-     and `containerIsAnchorOnly` below keeps the narrow reading runnable. */
-  all i: Issue | i.home = Container implies i in Campaign.anchor + Campaign.members
   always all p: PR | lone pr.p
   always all i: Issue | some i.pr implies i.pr' = i.pr    -- a PR link is never undone
   always all c: Campaign | c.anchor not in c.members
@@ -368,7 +363,36 @@ pred mergeClosed[s: set Issue] {
                      implies (some i.pr and i.pr in Merged))
 }
 
-/* D's original reading, kept runnable so the widening above stays visible. */
+/* THE CLAUSE THAT WAS A FACT TWICE, and is a scenario predicate now.
+
+   It says: an issue homed on the container belongs to some campaign, as an
+   anchor or as a member. As a global fact it sprang the same trap twice.
+
+   First it read `implies i in Campaign.anchor` -- every container-homed issue
+   must BE an anchor -- which forbade the container being a member of its own
+   campaign while still permitting the odd case of one campaign's anchor being
+   another's member, so a coarse probe read SAT and hid it. Widened 2026-08-28.
+
+   Then, widened, it still carried no `always`, so it was read at the initial
+   state and demanded that a container-homed subtask ALREADY be a member --
+   which `addMember` refuses. That made a container-homed subtask unfilable in
+   any trace that also files its campaign, and that is exactly the campaign with
+   no member repository: the container tracker is the only place its subtasks
+   can go. session.als's R4 is UNSAT against that form and SAT without it.
+
+   Both were the model contradicting the design, and the third reading is not
+   worth guessing at: AGENTS.md says the container's tracker holds THREE kinds
+   of issue -- anchors, subtasks, and a person's request or somebody else's bug
+   that no campaign flow touches. A global fact cannot admit the third kind and
+   still say anything, so this stops being one. It is stated here, conjoined by
+   the scenarios that actually depend on a closed world of campaign issues, and
+   `containerIsAnchorOnly` below keeps the original narrow reading runnable
+   beside it. */
+pred containerIssuesAreCampaignIssues {
+  all i: Issue | i.home = Container implies (i in Campaign.anchor or eventually i in Campaign.members)
+}
+
+/* D's original reading, kept runnable so the widenings above stay visible. */
 pred containerIsAnchorOnly { always all i: Issue | i.home = Container implies i in Campaign.anchor }
 
 fun campaignOf[i: Issue]: lone Campaign { members.i }
@@ -905,6 +929,28 @@ pred S16a_ContainerMemberUnderNarrowReading {
   some c: Campaign, i: c.members | i.home = Container
 }
 
+/* S18 -- numbered past S17c because S16b and S16c are repos.als's, and the
+   four files share one S-sequence once they are composed.
+
+   THE THIRD KIND. AGENTS.md says the container's tracker holds anchors,
+   subtasks, and issues no campaign flow touches at all -- a person's request,
+   somebody else's bug -- and says every reader leaves that third kind alone. So
+   the model has to admit one. It did not while
+   `containerIssuesAreCampaignIssues` was a clause of WellFormed: an issue that
+   never joins a campaign was UNSAT at any bound, and no verdict said so, which
+   is how the same clause trapped the design twice. SAT now. */
+pred S18_PlainContainerIssue {
+  some i: Issue | i.home = Container and always (i not in Campaign.anchor + Campaign.members)
+}
+
+/* S18a. Control for S18, and the reason the clause is kept rather than
+   deleted: conjoined as a predicate it still says exactly what it always said,
+   so a scenario that wants a closed world of campaign issues can still ask for
+   one. UNSAT, which is S18 forbidden on purpose rather than by accident. */
+pred S18a_PlainContainerIssueUnderClosedWorld {
+  containerIssuesAreCampaignIssues and S18_PlainContainerIssue
+}
+
 /* ---------------- reachability floor ----------------
  * Every event this layer owns fires in some trace. An event no trace can reach
  * would silently remove a whole question from the commands above, and an
@@ -948,6 +994,8 @@ run S13b_ReopenAnyClosed        for exactly 2 Issue, 1 PR, exactly 1 Campaign, e
 run S13c_ReopenWithPR           for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps
 run S14_FollowUpAfterClose      for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 2 Repo, 14 steps
 run S16a_ContainerMemberUnderNarrowReading for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 6 steps
+run S18_PlainContainerIssue              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps
+run S18a_PlainContainerIssueUnderClosedWorld for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps
 
 run Cov_FileAnchor   for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps
 run Cov_AddMember    for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps

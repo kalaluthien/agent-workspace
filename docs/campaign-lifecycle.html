@@ -245,6 +245,8 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
 
 <p>워크트리는 클론이 틀린 물건일 때 쓴다. 대상 저장소가 컨테이너 자신이면 클론해 넣을 곳이 없다. 캠페인 디렉터리가 선택 사항이라 없을 수 있기 때문이다. 워크트리는 잘라낸 체크아웃과 <code>.git</code> 하나를 공유하므로 잘라내는 순간에 뒤처질 수 없다. 서브에이전트는 프로세스 경계를 넘지 않으므로 인수인계 파일도, 카나리아도, herdr 생존 확인도 필요 없다. <span class="src">spec/alloy/repos.als, spec/alloy/agent.als @ d6cefab</span></p>
 
+<p>멤버 저장소가 없는 캠페인은 <code>## Repos</code> 에 <code>- none</code> 하나만 적고, 클론해 넣을 저장소가 없으므로 앞의 두 방식만 가지며, 하위 과제는 유일한 트래커인 컨테이너에 올려 컨테이너의 <code>campaign-&lt;N&gt;/&lt;issue&gt;-&lt;topic&gt;</code> ref로 청구한다. <span class="src">AGENTS.md, spec/alloy/session.als @ PR #46</span></p>
+
 <div class="pair">
   <div class="do">
     <h4>브리프를 파일로 넘긴다</h4>

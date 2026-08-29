@@ -50,6 +50,10 @@
  *   R2   DuplicateCampaign          SAT  two anchors over one scope
  *   R3   DeleteUnderWorkingSession  SAT  a directory deleted under a session
  *
+ * R4 is not a breakage. It is the case the design had never been walked
+ * through: a campaign with no member repository, opened, claimed and closed
+ * with every discipline on.
+ *
  *
  * WHAT REPAIRS THEM, AND WHAT IT DOES NOT
  *
@@ -144,6 +148,7 @@
  *                                    SAT   THE FINDING: one holder does not close it,
  *                                          and the repair is agent.als's A10-A12
  *   R3g_RecycledHolderBlocksTakeover SAT   a third residue: a PID is not identity
+ *   R4_RepolessCampaign              SAT   `- none` opens, claims and closes
  *   Cov_*                            SAT   every own event and every refinement
  *                                          this layer adds fires in some trace
  *
@@ -893,6 +898,57 @@ pred R3g_RecycledHolderBlocksTakeover {
   }
 }
 
+/* =================== 4. a campaign with no member repository =================== */
+
+/* R4. `## Repos` reads `- none`. What says the campaign has no member
+   repository is `always no c.body` and nothing else: `c.body` IS the `## Repos`
+   list, so an empty one for the whole trace is the list reading `- none`. Note
+   what the predicate does not say -- the container is in `c.members` here, as
+   the home of the subtask, because a repo-less campaign files on the container
+   tracker; "no member repository" is a claim about the list, not about which
+   repository an issue is homed on. Such subtasks are worked by the session's
+   own hands or by an in-process subagent in the campaign directory, the
+   delegate-in-a-clone mode wanting a checkout this campaign never has.
+
+   WITNESS, and it is the campaign's whole life in one trace: Survey,
+   FileAnchor, AddMember on a container-homed issue, Claim on the container's
+   own campaign-<N>/<issue>-<topic> ref, CloseIssue on that subtask with no pull
+   request behind it, CloseIssue on the anchor.
+
+   Two things it is checked WITH rather than instead of. The disciplines stay
+   on -- compare-then-write, re-survey-at-file, and the close discipline all
+   hold in the trace -- so what is witnessed is a repo-less campaign the design
+   admits, not one that got past the design by having a gate switched off. And
+   the claim is required, on the container: the branch is the claim before it is
+   a workspace, and dropping that conjunct would witness a campaign whose
+   subtasks nothing serializes.
+
+   The subtask closes with no merged pull request, which is what
+   scripts/campaign-settlement prints as `dropped [completed, no merged pull
+   request]`. `settled` covers it, so `closable` holds and the anchor closes on
+   it -- the designed reading, checked here for the case that has no pull
+   request to offer.
+
+   This run is why ledger.als's container clause is no longer a clause of
+   WellFormed: as a global fact it made a container-homed subtask unfilable, and
+   R4 was UNSAT against it. It survives there as
+   `containerIssuesAreCampaignIssues`, conjoined by the scenario that is about
+   it (S18/S18a), where it constrains what it meant to constrain and nothing
+   else. */
+pred R4_RepolessCampaign {
+  syncCAS and surveyAtFile
+  some s: Session, c: Campaign, i: Issue {
+    closeDisciplineHere[c]
+    always no c.body              -- `- none`: the list never names a repository
+    i.home = Container            -- the only tracker there is
+    eventually (Now.ev = FileAnchor and By.actor = s and Now.issue = c.anchor)
+    eventually (Now.ev = AddMember and By.actor = s and Now.issue = i)
+    eventually (Now.ev = Claim and By.actor = s and Now.issue = i)
+    eventually (Now.ev = CloseIssue and Now.issue = i and no i.pr)
+    eventually (Now.ev = CloseIssue and Now.issue = c.anchor)
+    eventually (campaignClosed[c] and i in c.members and dropped[i])
+  }
+}
 /* ---------------- reachability floor ----------------
  * The four events this layer introduces, and every refinement it adds to a
  * lower layer's event. A refinement that cannot be satisfied would make its
@@ -939,6 +995,8 @@ run R2c_SurveyAtFileAdmitsOne    for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Mac
 run R3_DeleteUnderWorkingSession for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
 run R3d_HolderOnlyStillDeletesUnderExecutor for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
 run R3g_RecycledHolderBlocksTakeover        for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
+
+run R4_RepolessCampaign          for 2 Issue, 1 PR, 1 Campaign, 1 Session, 1 Machine, 1 Repo, 1 Topic, 1 Tree, 12 steps
 
 run Cov_Survey            for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps
 run Cov_Adopt             for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps

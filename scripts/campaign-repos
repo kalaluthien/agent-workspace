@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Read the `## Repos` list of a campaign README or anchor issue body.
+
+    scripts/campaign-repos <path>
+
+The one reader of that list. Its refusals, and why each is a refusal, are stated
+in AGENTS.md, "Running a campaign"; this is what makes them true.
+
+The contract callers hold it to:
+
+  exit 0, one `owner/repo` per line   the list names repositories
+  exit 0, no output                   the list is exactly `- none`, so the
+                                      campaign has no member repository and a
+                                      caller loops zero times without a special
+                                      case
+  exit 1, one line on stderr          the list is wrong, and the line says how
+
+opening-campaign step 4 runs it and writes `runtime/repos`; step 5 reads that
+file. Its passage on adding a repository runs it again before the sync, and
+closing-campaign step 4 runs it over the README and over the body GitHub stored.
+"""
+import re
+import sys
+
+HEADING = re.compile(r"^## Repos\s*$")
+NEXT_SECTION = re.compile(r"^## ")
+COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+ITEM = re.compile(r"^- (\S.*)$")
+# An entry is `owner/repo` or the sentinel, and the sentinel is spelled exactly.
+ENTRY = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+NONE = "none"
+
+
+def section(text):
+    """The non-blank lines under `## Repos`, or None when there is no heading."""
+    out, inside = [], False
+    for line in COMMENT.sub("", text).splitlines():
+        if HEADING.match(line):
+            inside = True
+            continue
+        if inside:
+            if NEXT_SECTION.match(line):
+                break
+            if line.strip():
+                out.append(line.rstrip())
+    return out if inside else None
+
+
+def main():
+    if len(sys.argv) != 2:
+        raise SystemExit(__doc__)
+    path = sys.argv[1]
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = section(f.read())
+    except OSError as e:
+        sys.exit(f"campaign-repos: cannot read {path}: {e.strerror}")
+
+    if lines is None:
+        sys.exit(f"campaign-repos: no `## Repos` heading in {path}")
+
+    items = []
+    for line in lines:
+        m = ITEM.match(line)
+        if not m:
+            sys.exit(f"campaign-repos: malformed line under ## Repos: {line}")
+        entry = m.group(1).strip()
+        if entry != NONE and not ENTRY.match(entry):
+            # `<owner/repo>` from the template lands here too, and reads as what
+            # it is: a line that is neither a repository nor the sentinel.
+            sys.exit(f"campaign-repos: malformed line under ## Repos: - {entry}")
+        items.append(entry)
+
+    if not items:
+        sys.exit(f"campaign-repos: the ## Repos list is empty in {path}")
+
+    repos = [i for i in items if i != NONE]
+    if len(repos) != len(items):
+        if repos:
+            plural = "y" if len(repos) == 1 else "ies"
+            sys.exit(f"campaign-repos: `- none` is mixed with {len(repos)} repository"
+                     f" entr{plural}; the list is `- none` alone or repositories,"
+                     " never both")
+        return                     # `- none` alone: no repositories, and that is fine
+
+    # Every entry becomes a checkout at repos/<name>/, so two entries ending in
+    # the same name are one directory and the second acquire overwrites the
+    # first. Case-folded: the filesystem here does not tell `Web` from `web`.
+    seen = {}
+    for i in repos:
+        key = i.rsplit("/", 1)[-1].casefold()
+        if key in seen:
+            if seen[key] == i:
+                sys.exit(f"campaign-repos: duplicate entry under ## Repos: {i}")
+            sys.exit("campaign-repos: two entries share the checkout directory"
+                     f" repos/{i.rsplit('/', 1)[-1]}/: {seen[key]} and {i}")
+        seen[key] = i
+
+    print("\n".join(repos))
+
+
+main()
