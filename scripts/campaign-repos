@@ -3,34 +3,21 @@
 
     scripts/campaign-repos <path>
 
-Prints one `owner/repo` per line, in the order the list has them. A campaign
-with no member repository writes `- none` as the whole list, and for that list
-this prints nothing and exits 0 -- so a caller loops over the output and needs
-no special case of its own.
+The one reader of that list. Its refusals, and why each is a refusal, are stated
+in AGENTS.md, "Running a campaign"; this is what makes them true.
 
-Exits 1, with one line on stderr, for the six ways the list is wrong:
+The contract callers hold it to:
 
-  no `## Repos` heading      the section this reads does not exist
-  a malformed line           a non-blank line under the heading that is not a
-                             `- ` item. Dropping it silently is how a list turns
-                             into `- none` without anybody writing `- none`
-  an empty list              indistinguishable from a list a bad write dropped
-  a `<` placeholder          the template was never filled in
-  `- none` mixed with repos  the retirement rule: the first repository REPLACES
-                             `- none`, never joins it
-  a colliding basename       two entries whose checkout directory would be the
-                             same `repos/<name>/`, or the same entry twice.
-                             Case-folded, because the filesystem here is
+  exit 0, one `owner/repo` per line   the list names repositories
+  exit 0, no output                   the list is exactly `- none`, so the
+                                      campaign has no member repository and a
+                                      caller loops zero times without a special
+                                      case
+  exit 1, one line on stderr          the list is wrong, and the line says how
 
-HTML comments are stripped before any of that, since the anchor template carries
-one under the heading and it is not a list entry.
-
-Why each refusal is a refusal is stated once in AGENTS.md (see "Running a
-campaign"); this is the reader that makes it true. It is the ONE reader of that
-list -- opening-campaign steps 4 and 5, its passage on adding a repository, and
-closing-campaign step 4 all call it -- for the reason AGENTS.md gives about
-scripts/campaign-settlement: two readers of one list drift, and this list is the
-campaign's repository index.
+opening-campaign step 4 runs it and writes `runtime/repos`; step 5 reads that
+file. Its passage on adding a repository runs it again before the sync, and
+closing-campaign step 4 runs it over the README and over the body GitHub stored.
 """
 import re
 import sys
@@ -39,6 +26,9 @@ HEADING = re.compile(r"^## Repos\s*$")
 NEXT_SECTION = re.compile(r"^## ")
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 ITEM = re.compile(r"^- (\S.*)$")
+# An entry is `owner/repo` or the sentinel, and the sentinel is spelled exactly.
+ENTRY = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+NONE = "none"
 
 
 def section(text):
@@ -74,18 +64,17 @@ def main():
         m = ITEM.match(line)
         if not m:
             sys.exit(f"campaign-repos: malformed line under ## Repos: {line}")
-        items.append(m.group(1).strip())
+        entry = m.group(1).strip()
+        if entry != NONE and not ENTRY.match(entry):
+            # `<owner/repo>` from the template lands here too, and reads as what
+            # it is: a line that is neither a repository nor the sentinel.
+            sys.exit(f"campaign-repos: malformed line under ## Repos: - {entry}")
+        items.append(entry)
 
     if not items:
         sys.exit(f"campaign-repos: the ## Repos list is empty in {path}")
 
-    bad = [i for i in items if "<" in i]
-    if bad:
-        sys.exit(f"campaign-repos: placeholders survive in ## Repos: {bad[0]}")
-
-    # Case-folded, because `- None` reaching acquire-repo as a repository name
-    # is the failure the sentinel exists to prevent.
-    repos = [i for i in items if i.casefold() != "none"]
+    repos = [i for i in items if i != NONE]
     if len(repos) != len(items):
         if repos:
             plural = "y" if len(repos) == 1 else "ies"
@@ -94,7 +83,7 @@ def main():
                      " never both")
         return                     # `- none` alone: no repositories, and that is fine
 
-    # Every entry becomes a checkout at repos/<name>/, so two entries that end in
+    # Every entry becomes a checkout at repos/<name>/, so two entries ending in
     # the same name are one directory and the second acquire overwrites the
     # first. Case-folded: the filesystem here does not tell `Web` from `web`.
     seen = {}
