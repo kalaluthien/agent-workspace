@@ -86,14 +86,25 @@ printf 'session %s\npid %s\n' "$CLAUDE_CODE_SESSION_ID" "$CLAUDE_PID" \
 ```
 
 `CLAUDE_PID` is the `claude` process; `$$` is the shell one tool call runs in
-and is dead before the next one starts. Liveness is `kill -0` plus the process
-still being `claude` — both commands, and all three of their outcomes, probed
-2026-08-28:
+and is dead before the next one starts. Liveness has one reader,
+`scripts/campaign-session-alive`, and its three outcomes are `alive`, `dead` and
+`other`:
 
 ```sh
 PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
-kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
+"$CONTAINER/scripts/campaign-session-alive" "$PID"
 ```
+
+`CONTAINER` is resolved the one way § Three planes gives, which is also where
+both skills resolve it before calling this.
+
+**Never hand-roll the comparison.** It was four prose copies of `[ "$(ps -o
+comm= -p "$PID")" = claude ]`, and that test reads a live session as **dead**:
+`ps -o comm=` reports how a process was invoked, so the same build answers
+`claude` through a wrapper and its full path when exec'd by path. Measured
+2026-08-29 on three live sessions of one campaign, two shapes among them, while
+both readers below were about to run over them. The script reads `ucomm`, the
+kernel's accounting name, which says what the process *is*.
 
 Alive means you are an executor session; dead means you take over by rewriting
 the file. This is the one lock here that cannot rot, because staleness is a

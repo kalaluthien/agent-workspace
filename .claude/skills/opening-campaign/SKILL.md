@@ -98,7 +98,7 @@ read its `runtime/holder` before working in it:
 ```sh
 CAMPAIGN=$(cd "$CONTAINER/<the directory that matched>" && pwd -P)
 PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder" 2>/dev/null)
-kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
+"$CONTAINER/scripts/campaign-session-alive" "$PID"
 ```
 
 **Alive, and not this session — you are an executor session** on one subtask.

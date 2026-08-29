@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""Is this pid a live `claude` session?
+
+    scripts/campaign-session-alive <pid>
+
+The one reader of that question. `runtime/holder` and every record under
+`runtime/executors/` carry a pid, and two destructive gates turn on this answer:
+closing-campaign's no-live-agent refusal, and the holder takeover in both skills.
+
+The contract callers hold it to:
+
+  exit 0, prints `alive`     the pid is running and is a claude session
+  exit 1, prints `dead`      no process holds the pid
+  exit 1, prints `other`     a process holds it, but it is not claude --
+                             a recycled pid, so the caller must not take over
+
+Why it reads `ucomm` and not `comm`. `ps -o comm=` reports how the process was
+invoked, so the same claude build answers `claude` when exec'd through a wrapper
+and `/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe`
+when exec'd by path -- measured 2026-08-29 on three live sessions of one
+campaign, two of each shape. Comparing that against the literal `claude` called
+a live executor dead, which is the direction that deletes a working tree. `ucomm`
+is the kernel's accounting name, so it reports what the process *is* and answered
+`claude.exe` for all three. It pads to a fixed width, hence the strip.
+
+The residual error is deliberate and must stay: a pid recycled onto a DIFFERENT
+claude session reads `alive`, so a caller refuses to take over rather than
+overwriting a holder it cannot identify. Tightening this check to remove that is
+how the defect above gets re-introduced.
+"""
+import subprocess
+import sys
+
+ACCOUNTING_NAME = "claude.exe"
+
+
+def verdict(pid: str) -> str:
+    try:
+        out = subprocess.run(
+            ["ps", "-o", "ucomm=", "-p", pid],
+            capture_output=True, text=True, check=False,
+        )
+    except OSError as exc:                       # ps missing is not "dead"
+        sys.exit(f"campaign-session-alive: cannot run ps: {exc}")
+    name = out.stdout.strip()
+    if not name:
+        return "dead"
+    return "alive" if name == ACCOUNTING_NAME else "other"
+
+
+def main() -> int:
+    if len(sys.argv) != 2 or not sys.argv[1].isdigit():
+        sys.exit("usage: campaign-session-alive <pid>")
+    v = verdict(sys.argv[1])
+    print(v)
+    return 0 if v == "alive" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
