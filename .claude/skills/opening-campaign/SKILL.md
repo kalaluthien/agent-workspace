@@ -12,20 +12,25 @@ to work in.
 Finished when all of these hold:
 
 - An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
-  no parent, and the sections of the anchor template `assets/README.md`, with
-  `Repos` a plain `- owner/repo` list.
+  no parent, and the sections of the anchor template `assets/README.md`, with a
+  `## Repos` list that `scripts/campaign-repos` reads without complaint.
+  That script is the one reader; its refusals are listed in `AGENTS.md`
+  § Running a campaign.
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
-  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/holder`, and
-  `scripts/`, with `runtime/holder` naming this session and a live PID.
-- The campaign's `README.md` is the anchor issue body, and the `- ` entries
-  under its `## Repos` heading hold no `<`. Scope the check to that list: a
-  correct Requirements section quotes things like `issues/<N>/sub_issues`, so a
-  bare `grep '<'` over the whole file reports hits on a clean README.
+  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/holder`,
+  `runtime/repos`, and `scripts/`, with `runtime/holder` naming this session and
+  a live PID.
+- The campaign's `README.md` is the anchor issue body, and
+  `scripts/campaign-repos` reads its `## Repos` list and exits 0. Never a bare
+  `grep '<'` over the whole file: a correct Requirements section quotes things
+  like `issues/<N>/sub_issues`, so that reports hits on a clean README, which is
+  why the check is a reader scoped to the one section.
 - `runtime/anchor-body-derived.md` holds the body the README was derived from,
   byte for byte.
-- Every entry under `## Repos` resolves to a checkout at
-  `<campaign>/repos/<name>/`.
+- Every line `scripts/campaign-repos` prints resolves to a checkout at
+  `<campaign>/repos/<name>/` — vacuous under `- none`, where it prints nothing,
+  step 5 does nothing, and `repos/` is never created.
 - The reply names the campaign ID, the directory, and the anchor issue URL.
 
 ## Procedure
@@ -274,9 +279,29 @@ Then finish it:
   gh issue view <N> -R kalaluthien/agent-workspace --json body --jq .body \
     >| "$CAMPAIGN/README.md"
   cp "$CAMPAIGN/README.md" "$CAMPAIGN/runtime/anchor-body-derived.md"
-  sed -n '/^## Repos/,/^## /{/^- /p;}' "$CAMPAIGN/README.md" \
-    | grep -q '<' && echo "placeholders survive in ## Repos"
+  "$CONTAINER/scripts/campaign-repos" "$CAMPAIGN/README.md" \
+    >| "$CAMPAIGN/runtime/repos.tmp" &&
+    mv "$CAMPAIGN/runtime/repos.tmp" "$CAMPAIGN/runtime/repos" ||
+    { rm -f "$CAMPAIGN/runtime/repos.tmp"
+      echo "REFUSE: the ## Repos list did not read; runtime/repos was not written"; }
   ```
+
+  A non-zero exit there is a body that was never filled in, or a `## Repos` list
+  the reader refuses; its one line on stderr says which. Stop and fix the body
+  before going on.
+
+  **Write to `.tmp` and `mv` on success, so a failure leaves no file at all.**
+  Redirecting straight to `runtime/repos` truncates it before the reader runs,
+  so a refusal leaves a zero-length file — and a zero-length `runtime/repos` is
+  exactly what a campaign with no member repository leaves. Step 5 then loops
+  zero times, acquires nothing, and the failed read is indistinguishable from a
+  deliberate `- none`. Absent, the file makes step 5's redirection fail loudly
+  instead.
+
+  **And that is why step 5 reads a file rather than a pipe.** A file that exists
+  only after a successful read is what makes a failed read loud; piping the
+  reader straight into `while read` would swallow its exit status and run the
+  loop zero times, which is what a legitimate `- none` also does.
 
   `>|`, not `>` — see the redirect gotcha below.
 - **Take the campaign, in `runtime/holder`.** It is what every later session
@@ -309,13 +334,27 @@ Then finish it:
 
 ### 5. Acquire the member repositories
 
-For each entry under `## Repos`, by absolute path — step 4 has just created an
-empty `$CAMPAIGN/scripts/`, so a relative `scripts/acquire-repo` resolves there
-and fails:
+For each line `scripts/campaign-repos` printed in step 4, by absolute path —
+step 4 has just created an empty `$CAMPAIGN/scripts/`, so a relative
+`scripts/acquire-repo` resolves there and fails:
 
 ```sh
-"$CONTAINER/scripts/acquire-repo" <owner/repo> "$CAMPAIGN/repos/<name>"
+while read -r REPO; do
+  "$CONTAINER/scripts/acquire-repo" "$REPO" "$CAMPAIGN/repos/${REPO##*/}"
+done < "$CAMPAIGN/runtime/repos"
 ```
+
+`- none` needs no special case here and gets none: the reader printed nothing,
+the loop runs zero times, `repos/` is never created, and the close's sweep over
+it is guarded for exactly that. Say in the reply that no repository was
+acquired, so a campaign that was *meant* to have some is one line to correct.
+
+`${REPO##*/}` is safe here only because step 4 already ran the reader, which
+refuses two entries whose checkout directory would collide — `a/web` beside
+`b/Web` is one `repos/web/` and a second acquire silently over the first. The
+layout stays `repos/<name>/`, which is what `AGENTS.md` and every reader of a
+campaign tree expect; the collision is caught where the list is read, not worked
+around here.
 
 Safe to re-run. Do not clone by hand and do not read the script to work out what
 it does — its interface is the contract.
@@ -364,17 +403,51 @@ the remote before launching anyone onto it, and read a refusal as the subtask
 being already taken —
 
 ```sh
+SHA=$(git -C "$CAMPAIGN/repos/<name>" rev-parse --verify origin/main) || exit 1
 gh api repos/<owner>/<repo>/git/refs \
-  -f ref=refs/heads/campaign-<N>/<issue>-<topic> \
-  -f sha=$(git -C "$CAMPAIGN/repos/<name>" rev-parse origin/main)
+  -f ref=refs/heads/campaign-<N>/<issue>-<topic> -f sha="$SHA"
 git -C "$CAMPAIGN/repos/<name>" fetch origin campaign-<N>/<issue>-<topic>
 git -C "$CAMPAIGN/repos/<name>" switch -c campaign-<N>/<issue>-<topic> \
   --track origin/campaign-<N>/<issue>-<topic>
 ```
 
+The sha is resolved into a variable and checked rather than written inline; the
+gotcha below says what an inline `rev-parse` does when `origin/main` is missing.
+
 Put the branch name in the handover brief; the delegate finds its branch
 already on the remote, which is also how a reader on any machine knows the
 subtask is held before its first commit lands.
+
+**A repo-less campaign files on the container tracker and claims there.** With
+no member repository there is one tracker and one remote to claim on, so the
+subtask is `gh issue create -R kalaluthien/agent-workspace --parent <anchor
+url>` and the claim is create-ref on `kalaluthien/agent-workspace` for
+`campaign-<N>/<issue>-<topic>` — even when no container code will change. The
+branch is the claim before it is a workspace, and it is released the way
+`AGENTS.md` says any claim is released.
+
+**Take the sha from the API, not from a checkout.** There is no clone here at
+all, and the container checkout this session is running in is not a substitute:
+its `origin/main` may be stale, absent on a single-branch clone, or resolvable
+only after a fetch nobody ran — and the failure is the silent one described just
+above, where the string `origin/main` goes up as a sha and the `422` reads as
+somebody else's claim. The remote's own answer needs no checkout and cannot be
+stale:
+
+```sh
+SHA=$(gh api repos/kalaluthien/agent-workspace/commits/main --jq .sha) || exit 1
+gh api repos/kalaluthien/agent-workspace/git/refs \
+  -f ref=refs/heads/campaign-<N>/<issue>-<topic> -f sha="$SHA"
+```
+
+The create-ref call runs only after `SHA` is in hand.
+
+Such a subtask runs by your own hands or in an in-process subagent whose working
+directory is the campaign directory; the delegate-in-a-clone mode needs a
+checkout and is not available. It closes as completed with no pull request, and
+`scripts/campaign-settlement` prints that row as `dropped [completed, no merged
+pull request]` — the designed reading, stated in the script's own header, not a
+defect to work around.
 
 Read the campaign's subtasks back from the anchor, in one call, across every
 repository:
@@ -390,6 +463,23 @@ If the target repository is not in the anchor's `## Repos` list, add it to the
 campaign `README.md`, sync that to the anchor body, and acquire it as in step 5.
 The list is what a later open reads to know what to clone; the index does not
 depend on it.
+
+**Adding the first repository replaces `- none`; it never joins it**, and
+`scripts/campaign-repos` refuses the mixed list — `AGENTS.md` § Running a
+campaign says why. Run the reader over the README before you sync, the same way
+step 4 does:
+
+```sh
+"$CONTAINER/scripts/campaign-repos" "$CAMPAIGN/README.md" \
+  >| "$CAMPAIGN/runtime/repos.tmp" &&
+  mv "$CAMPAIGN/runtime/repos.tmp" "$CAMPAIGN/runtime/repos" ||
+  { rm -f "$CAMPAIGN/runtime/repos.tmp"
+    echo "REFUSE: the ## Repos list did not read; nothing was synced"; }
+```
+
+The campaign stops being repo-less at that moment, and everything that was
+vacuous for it — step 5, the close's sweep over `repos/*/` — starts having work
+to do.
 
 **Sync it now, and compare before you write.** Adding a repository is a scope
 change, which is one of the two moments the anchor body is written at all — the
@@ -423,6 +513,16 @@ auth-refactor-260828/
 
 ## Gotchas
 
+- **An inline `sha=$(git rev-parse origin/main)` sends the literal string up as
+  a sha.** Without that ref — a single-branch clone, a repository whose default
+  branch is not `main`, a fetch that has not run — `git rev-parse` exits
+  non-zero and still prints `origin/main`, and inside `$(...)` on the `gh` line
+  nothing reads that exit status. GitHub answers `422`, and this skill teaches
+  that `422` means the subtask is already claimed, so the subtask is abandoned
+  by an executor that believes somebody else holds it. `--verify` plus
+  `|| exit 1` into a variable is what turns that into a stop, and a repo-less
+  campaign takes the sha from `gh api .../commits/main` because it has no
+  checkout to ask.
 - A request that sounds new is usually a follow-up. Step 1 is the step this
   procedure exists for; skipping it produces a second campaign over the same
   scope, and nothing errors — you get two anchor issues that both look right.

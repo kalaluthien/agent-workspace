@@ -9,7 +9,7 @@ Delete a campaign directory only after everything in it also exists somewhere
 else. The directory is a scratch assembly of things versioned elsewhere, so
 closing is a checked demolition, not a decision.
 
-Finished when all six hold:
+Finished when all eight hold:
 
 - the anchor's latest `BOUND` comment names this machine;
 - `gh issue view <N> -R kalaluthien/agent-workspace --json state` reports
@@ -21,12 +21,19 @@ Finished when all six hold:
   `runtime/holder` in it named a live session other than this one;
 - the anchor issue body is the campaign README, `## Repos` list included, and
   the body was compared against `runtime/anchor-body-derived.md` before it was
-  written.
+  written;
+- the closing comment on the anchor carries the listing taken immediately
+  before the delete: every entry under the directory outside `runtime/` and
+  `repos/`, files and directories and symlinks alike, because `rm -rf` destroys
+  all of them;
+- every `campaign-<N>/` claim ref on the container that still sits at
+  `origin/main` is released, and any that holds commits is reported rather than
+  deleted.
 
-Where this machine holds no directory for the campaign, the first three are the
-real conditions — the binding, and two GitHub facts that read the same from any
-machine — and the other three are about a cache that does not exist. Step 0 says
-what to skip.
+Where this machine holds no directory for the campaign, the first three and the
+last are the real conditions — the binding, and three GitHub facts that read the
+same from any machine — and the middle four are about a cache that does not
+exist. Step 0 says what to skip.
 
 ## Procedure
 
@@ -84,12 +91,21 @@ nothing; step 5 then deletes relative to whatever directory the session happens
 to hold. Bind it here, from the slug the person gave, and never rebuild it later
 in the run.
 
+**Bind it on both paths — including the one where there is no directory.** Step
+5 has to tell three states apart, and *unset* is not one of them: unset means
+nobody ran this step, which is a different problem from a campaign this machine
+holds no cache of. So the no-directory path binds the empty string, explicitly.
+
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-CAMPAIGN_DIR=$(cd "$CONTAINER/$SLUG" && pwd -P)
+
+CAMPAIGN_DIR=$(cd "$CONTAINER/$SLUG" && pwd -P)   # this machine has one
+CAMPAIGN_DIR=                                     # or it has none
 ```
 
-Then assert both facts `AGENTS.md` already pins, so the assertions cost nothing:
+On the empty path steps 1, 2 and 4 are skipped and so are the two assertions
+below; step 5 posts its announcement with nothing to list. On the bound path,
+assert both facts `AGENTS.md` already pins, so the assertions cost nothing:
 
 ```sh
 [ "$(dirname "$CAMPAIGN_DIR")" = "$CONTAINER" ] || echo "REFUSE: not a direct child of $CONTAINER"
@@ -147,7 +163,10 @@ checkout under `repos/`, one at a time — never one git command across member
 repositories.
 
 ```sh
-for R in "$CAMPAIGN_DIR"/repos/*/; do
+if [ -d "$CAMPAIGN_DIR/repos" ]; then
+find "$CAMPAIGN_DIR/repos" -mindepth 1 -maxdepth 1 -type d >| /tmp/checkouts-$N ||
+  echo "REFUSE: repos/ did not enumerate; nothing was checked"
+while read -r R; do
   echo "== $R"
   git -C "$R" status --porcelain --ignored=matching
   git -C "$R" log --oneline --branches HEAD --not --remotes
@@ -158,8 +177,25 @@ for R in "$CAMPAIGN_DIR"/repos/*/; do
                   sed -n 's|^ref: refs/heads/\([^[:space:]]*\).*|\1|p')
   [ "$base" != "origin/" ] || { echo "!! cannot resolve the default branch of $R"; continue; }
   git -C "$R" branch --no-merged "$base"
-done
+done < /tmp/checkouts-$N
+fi
 ```
+
+`find` rather than a `repos/*/` glob is a portability fix; the gotcha below says
+what each shell does with an unmatched one.
+
+**The `[ -d ]` wrapper is what tells "no member repository" from "cannot look".**
+A campaign with no member repository has no `repos/` at all, and that is
+legitimate — the wrapper skips the sweep and says nothing. A `repos/` that
+exists but cannot be read is not legitimate, and it looked identical while
+`find` carried `2>/dev/null`: an `EACCES` printed nothing, the loop ran zero
+times, and the close read a repo-less campaign where there were checkouts it was
+not allowed to see. The two are now different branches.
+
+**And the enumeration goes to a file, not through a pipe.** A pipeline's exit
+status is its last command's, so `find | while read` discards whatever `find`
+said; writing to `/tmp/checkouts-$N` puts `find`'s own failure back where a
+`||` can catch it. `-type d` is the per-row guard the loop used to repeat.
 
 Each line finds what the others miss: `--ignored=matching` reaches a `.env` or a
 downloaded fixture that plain `status` hides; `HEAD` alongside `--branches`
@@ -313,14 +349,31 @@ deletes the last copy of. Validate before writing.
 
 ```sh
 README="$CAMPAIGN_DIR/README.md"
-grep -q '^## Repos' "$README" || echo "REFUSE: no ## Repos heading"
-sed -n '/^## Repos/,/^## /{/^- /p;}' "$README" >| /tmp/repos-before
-[ -s /tmp/repos-before ] || echo "REFUSE: the ## Repos list is empty"
-grep -q '<' /tmp/repos-before && echo "REFUSE: placeholders survive in ## Repos"
+rm -f /tmp/repos-before /tmp/repos-after
+"$CONTAINER/scripts/campaign-repos" "$README" >| /tmp/repos-before.tmp &&
+  mv /tmp/repos-before.tmp /tmp/repos-before ||
+  { rm -f /tmp/repos-before.tmp
+    echo "REFUSE: the ## Repos list did not read; nothing was written"; }
 ```
 
-The range is bounded to the section and takes only list items, so a link in an
-adjacent section cannot be read as a member repository.
+`scripts/campaign-repos` is the one reader of that list; its refusals are listed
+in `AGENTS.md` § Running a campaign. It prints one `owner/repo` per line, prints
+nothing and exits 0 for a list that is exactly `- none`, and exits 1 with one
+line on stderr. Stop on a non-zero exit, and do not re-derive the list with
+`sed` here.
+
+**`.tmp` then `mv`, and both files removed first.** A refusal that has already
+truncated `/tmp/repos-before` leaves a zero-length file, and zero-length is what
+a legitimate `- none` leaves — so a failed read reads as a repo-less campaign,
+which is the one shape whose index is *meant* to be empty. Worse, the read-back
+below compares the two files: two failures leave two empty files and `cmp -s`
+prints "index survived" over a body nobody managed to read. Absent files make
+`cmp -s` exit 2, and the pre-emptive `rm -f` stops a leftover from an earlier
+run standing in for either of them.
+
+Empty output is therefore not a failure and not a special case. A repo-less
+campaign reads as no repositories, step 2's loop is guarded and finds no
+checkouts, and the comparison below compares nothing with nothing.
 
 This step is also run mid-campaign, whenever a repository is added to the
 `## Repos` list — `opening-campaign`'s "Filing a subtask issue" sends you here.
@@ -374,7 +427,10 @@ one:
 ```sh
 gh issue edit "$N" -R kalaluthien/agent-workspace --body-file "$README"
 gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/body-after
-sed -n '/^## Repos/,/^## /{/^- /p;}' /tmp/body-after >| /tmp/repos-after
+"$CONTAINER/scripts/campaign-repos" /tmp/body-after >| /tmp/repos-after.tmp &&
+  mv /tmp/repos-after.tmp /tmp/repos-after ||
+  { rm -f /tmp/repos-after.tmp
+    echo "REFUSE: the body GitHub stored does not read; the index may be lost"; }
 cmp -s /tmp/repos-before /tmp/repos-after && echo "index survived"
 cp /tmp/body-after "$DERIVED"
 ```
@@ -393,11 +449,65 @@ against the binding, and no cheap local check can. The anchor issue is the one
 place every machine can read, so announce there and read the comments back —
 this is the guard for a broken principle, not a routine handshake.
 
+**Say in the same comment what the delete will destroy.** The listing is every
+entry under the campaign directory outside `runtime/` and `repos/`: `runtime/`
+is scratch by design and `repos/` is clones with their own remotes, and what is
+left is the scaffold plus whatever this campaign built on top of it. It is the
+record of what the delete destroys, posted where it outlives the tree. One
+comment, not two: the announcement carries it.
+
 ```sh
-gh issue comment "$N" -R kalaluthien/agent-workspace \
-  --body "Closing campaign #$N from $(hostname -s). Say so here if you are still in it."
+HOST=$(hostname -s)
+case "${CAMPAIGN_DIR-unset}" in
+  unset)
+    echo "REFUSE: CAMPAIGN_DIR was never bound; step 0 did not run"; exit 1 ;;
+  "")
+    BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.\n\nNo campaign directory on %s: nothing here to delete, and nothing to list.\n' \
+      "$N" "$HOST" "$HOST") ;;
+  *)
+    [ -d "$CAMPAIGN_DIR/runtime" ] ||
+      { echo "REFUSE: $CAMPAIGN_DIR holds no runtime/; not a campaign directory"; exit 1; }
+    LEFTOVERS=$(find "$CAMPAIGN_DIR" -mindepth 1 \
+      \( -path "$CAMPAIGN_DIR/runtime" -o -path "$CAMPAIGN_DIR/repos" \) -prune -o -print \
+      | sed "s|^$CAMPAIGN_DIR/||" | sort \
+      | grep . || echo "no entries outside runtime/ and repos/")
+    BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these entries under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
+      "$N" "$HOST" "$LEFTOVERS") ;;
+esac
+gh issue comment "$N" -R kalaluthien/agent-workspace --body "$BODY"
 gh issue view "$N" -R kalaluthien/agent-workspace --comments
 ```
+
+**Three states, and the announcement is posted in two of them.** `unset` is not
+a campaign without a directory — it is step 0 not having run, and it is the
+wrong-cwd hazard this guard exists for, so it refuses. The empty string is what
+step 0 binds when this machine holds no directory: there is nothing to list and
+nothing to delete, and the announcement still goes up, because the announcement
+is what a machine working this campaign against its `BOUND` would answer. A
+non-empty value must hold `runtime/`, which is the cheap test that it is a
+campaign directory and not the container root.
+
+**`-prune` on the two exact paths, not a `*/runtime*` pattern.** A pattern also
+hides `scripts/repos-helper.sh` and anything else whose name merely contains
+`repos` or `runtime` — an omission from a listing whose whole job is to omit
+nothing (probed: the pattern form drops exactly that file). And `-print` without
+`-type f`, because `rm -rf` destroys directories, symlinks and FIFOs too, and a
+file-only listing would not have named them.
+
+**`grep . || echo` rather than a `${LEFTOVERS:-...}` default**, so the words are
+written by a listing that really ran rather than by an assignment that never
+happened. That branch fires only for a directory whose scaffold was taken out by
+hand: an intact one always lists at least `AGENTS.md`, `CLAUDE.md`, `README.md`
+and `scripts/`.
+
+**Read the listing, and read it knowing what is on it.** Those four are the
+scaffold, copied from the skill's own `assets/` at open, so they appear on every
+listing and are the rows to skip. The listing omits nothing on purpose — telling
+a template copy from the one file this campaign wrote is a reader's job, not a
+filter's, because a filter that guessed would be the thing that dropped the file
+somebody wanted. And it is a record, not a to-do: the close is where the tree
+stops existing, so anything a person wants out of it is saved before they say
+close, not after they read the list.
 
 Another session's note saying it is working or closing: stop, name it, and let
 the person resolve it — and say that it should not have been there, because the
@@ -407,12 +517,63 @@ is not this check but the rule that a delegate pushes its branch as soon as it
 has one commit, so a tree deleted underneath it costs uncommitted work and
 nothing more.
 
+**Release the campaign's own claim refs on the container.** A repo-less
+campaign's subtasks are claimed by `campaign-<N>/<issue>-<topic>` branches on
+`kalaluthien/agent-workspace`, and a subtask that landed no commits leaves that
+branch sitting at `origin/main` forever — the campaign is closed and the claim
+outlives it. What makes this release sighted rather than blind is step 3, not
+step 1: every subtask is settled or disposed of by now, so no claim ref here can
+be an executor's live workspace — and step 3 runs on the no-directory path too,
+where step 1 was skipped, and it sees hands and subagent executors that no
+`herdr agent list` row would. `AGENTS.md` forbids deleting a claim ref while an
+agent on your machine works it; this is the one place where that has been
+established for every ref at once.
+
+```sh
+gh api "repos/kalaluthien/agent-workspace/git/matching-refs/heads/campaign-$N/" \
+  --jq '.[] | "\(.ref)\t\(.object.sha)"' |
+while IFS="$(printf '\t')" read -r REF SHA; do
+  AHEAD=$(gh api "repos/kalaluthien/agent-workspace/compare/main...$SHA" --jq .ahead_by) || exit 1
+  if [ "$AHEAD" = 0 ]; then
+    gh api -X DELETE "repos/kalaluthien/agent-workspace/git/$REF" && echo "released $REF"
+  else
+    echo "REFUSE-ROW: $REF holds $AHEAD commit(s) beyond main — push a PR or say to discard"
+  fi
+done
+```
+
+**Ancestry, not equality.** A claim ref is created at the `main` of claim time,
+and `main` moves on; a zero-commit claim compared against today's `main` sha
+reads unequal and would be refused as holding work — which is exactly the ref
+this step exists to release. `compare/main...<sha>` answers the right question:
+`ahead_by` is the commits the ref holds that `main` does not, and `0` releases
+whatever `behind_by` says (probed: a claim four commits behind reads
+`ahead_by=0 behind_by=4 status=behind`).
+
+Print a row that holds commits; never delete it. Its branch is somebody's
+unlanded work and the anchor closing does not make it disposable — that is the
+person's call, and it is the one row of this step that stops and asks.
+`matching-refs` returns an empty array rather than a 404 when a campaign claimed
+nothing (probed), so the loop runs zero times and says nothing. Member
+repositories' claim refs are out of scope here: theirs are released by the pull
+request merge that closes the subtask, and reaching into another repository's
+refs from a close is exactly the cross-repository sweep this container forbids.
+
 Then close, in this order — the issue first, because a failed close leaves the
 directory to retry from, while the reverse leaves nothing. The comment states
 only what has already happened at the moment it is written.
 
 ```sh
 gh issue close "$N" -R kalaluthien/agent-workspace --comment "Campaign closed."
+```
+
+**Where this machine holds no directory, stop here** — `$CAMPAIGN_DIR` is empty
+from step 0, the delete has nothing to do, and every command below would run
+against `""` and print an error where every abnormal line of this skill is a
+refusal. Everything from here to the end of the step is under this guard:
+
+```sh
+[ -n "$CAMPAIGN_DIR" ] || { echo "no directory on this machine; nothing to delete"; exit 0; }
 ```
 
 **Check nobody else on this machine is in the directory**, and only then remove
@@ -439,6 +600,18 @@ rm -rf -- "$CAMPAIGN_DIR"
 
 ## Gotchas
 
+- **An unmatched `repos/*/` glob fails two different ways, and this skill is run
+  by hand in whatever shell the person is in** — which is why step 2 enumerates
+  with `find` (all three probed):
+
+  | shell | what an unmatched `repos/*/` does |
+  | --- | --- |
+  | bash, sh | leaves the glob literal, so the loop runs once on `.../repos/*/` and six git commands fail against a path that does not exist — output that reads as an unresolvable repository blocking the close |
+  | zsh | `no matches found`, and the whole `for` never runs — a gate that reported nothing because it tested nothing, and an abort outright under `set -e` |
+
+  `find` has neither failure in any of the three, and over a `repos/` that exists
+  but is empty it simply prints nothing. Do not reach for `nullglob` or a zsh
+  `(N)` qualifier: each fixes one shell and breaks the other.
 - `agent_status: idle` is a screen reading. A mid-turn pause looks identical to
   a finished agent, so presence in the list is the gate, never the status word.
 - **`dropped` covers four closes and its note says which**: `not planned`,
