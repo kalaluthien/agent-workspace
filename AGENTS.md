@@ -477,6 +477,19 @@ Then, within what the repository allows, choose by cost:
   the work needs the repository's own conventions and toolchain, when it will
   take many turns, or when two repositories must move at once.
 
+**Weigh the setup against the work.** The delegate mode is the most specified
+and the least used: through campaign #1 every subtask ran by the holder's own
+hands or a worktree subagent, and the clone-plus-herdr path first ran on #52.
+Its price is fixed and paid per launch — a clone kept fresh at launch, a
+handover file, a canary round-trip, a pane read, a sweep at the end — and once
+the ancestor import is approved for the clone, the delegate loads every
+instruction file twice, the outer checkout's and the clone's, which disagree
+whenever the clone is behind (observed on #52). So for the container it is the
+mode of last resort: a worktree subagent gets the same conventions from the
+checkout it was started in at none of that cost. For a member repository it is
+the only mode that changes the code, and its price is the reason to give one
+delegate a subtask worth many turns rather than many delegates small ones.
+
 An executor session is a fourth executor and not a fourth mode, because nobody
 chooses it: a session that arrives in the container root to a live holder simply
 is one. What it then chooses is which of the modes above carries its subtask.
