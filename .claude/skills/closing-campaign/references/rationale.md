@@ -60,16 +60,10 @@ survived" over a body nobody managed to read. Absent files make `cmp -s` exit 2,
 and the pre-emptive `rm -f` stops a leftover from an earlier run standing in for
 either of them.
 
-**Why the compare survives one campaign, one machine.** The body has a single
-structural writer now, so the ceremony is no longer the everyday guard it was
-written as. It is demoted to catching the two things the principle does not
-cover, which from here look identical: a person editing the charter straight on
-GitHub, which is theirs to do, and a session writing from a machine the anchor is
-not `BOUND` to, which is the principle broken. Both are silent, and without the
-compare one silently discards the other — modelled and witnessed. The loss is
-worse than it looks, because a body write cannot touch a sub-issue link: the
-index goes on naming work in a repository the `## Repos` list has dropped, and
-the close then deletes that list's last copy.
+**Why the compare survives one campaign, one machine** — the two silent writers
+it is demoted to catching, and why the loss is worse than it looks — is
+`AGENTS.md` § Compare then write the anchor issue body, which states it in full
+and is the copy to correct.
 
 ## Step 5 — announce, close, delete
 

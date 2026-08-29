@@ -6,19 +6,18 @@ arbitrary, or when you are about to change it.
 ## Finished when — reading the `## Repos` list
 
 `scripts/campaign-repos` is the one reader of that list, and its refusals are
-listed in `AGENTS.md` § Running a campaign. Never check the README with a bare
-`grep '<'` over the whole file: a correct Requirements section quotes things like
-`issues/<N>/sub_issues`, so that reports hits on a clean README, which is why the
+listed in `AGENTS.md` § Running a campaign. The bare `grep '<'` that `SKILL.md`
+forbids fails because a correct Requirements section quotes things like
+`issues/<N>/sub_issues`, so it reports hits on a clean README — which is why the
 check is a reader scoped to the one section.
 
 ## Step 1 — deciding new or follow-up
 
-**Read an unplaced issue for shape.** The anchor template's sections mean the
-label was forgotten; a `Campaign: owner/repo#<N>` first line means a subtask filed
-without `--parent`; neither means an issue that is in no campaign at all, and that
-one you leave alone rather than survey, join, or edit. Every anchor is in the
-no-parent listing whether or not it was labelled, which is what makes the two
-readings cross-check each other.
+**Read an unplaced issue for shape.** Which shape means which kind, and that the
+third kind is left alone rather than surveyed, joined, or edited, is `AGENTS.md`
+§ When the container is a member of its own campaign. What that section leaves
+implicit for this step: every anchor is in the no-parent listing whether or not
+it was labelled, which is what makes the two readings cross-check each other.
 
 **Testing is a follow-up, and it is decided here.** The deliverable is not
 finished until it is shown to work, and the fixes land on the artifacts that
@@ -77,13 +76,12 @@ onto another branch under a delegate already working in it. Without it,
 
 ## Filing a subtask issue
 
-**The branch name's parts.** `campaign-<N>/<issue>-<topic>` — campaign number,
-subtask number, then a short topic. The campaign number keeps two campaigns
-apart; the subtask number keeps two subtasks of one campaign apart; the branch's
-existence keeps two executors off one subtask.
+**The branch name's parts** — what each of `campaign-<N>/<issue>-<topic>` keeps
+apart, and why the branch's existence is the claim — are the Branch bullet of
+`AGENTS.md` § Who is a campaign session.
 
-**Why the addition syncs immediately.** Leaving a new repository in a local
-`README.md` until the campaign closes hides it from every other session holding
-this campaign — one of them will open the campaign on its machine, clone the
-list, and have no checkout for the subtask just filed. And writing the body
-without comparing is how a repository gets dropped from the list for good.
+**Why the addition syncs immediately** is `AGENTS.md` § Running a campaign:
+adding a repository is a scope change, and holding it back to the close loses
+exactly what the delay was meant to protect. What that leaves implicit here: the
+session that opens the campaign on another machine clones the `## Repos` list and
+would have no checkout for the subtask just filed.

@@ -13,7 +13,8 @@ Finished when all of these hold:
 
 - An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
   no parent, and the sections of the anchor template `assets/README.md`, with a
-  `## Repos` list that `scripts/campaign-repos` reads and exits 0 on.
+  `## Repos` list that `scripts/campaign-repos` reads and exits 0 on — never a
+  bare `grep '<'` over the whole file, which reports hits on a clean README.
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
   `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/executors/`,
@@ -113,7 +114,9 @@ scaffold, sync, or close.
 step 4 does and carry on. Record a `CLAIMED` that reaches you before anything
 else, because a message dies with the session that received it: the fields and
 the `printf` are § Talking to a repository agent, written to
-`$CAMPAIGN/runtime/executors/<issue>`.
+`$CAMPAIGN/runtime/executors/<issue>` — after
+`mkdir -p "$CAMPAIGN/runtime/executors"` if this campaign was scaffolded before
+that directory existed.
 
 **No directory at all** — the campaign is on GitHub but not here, so run steps 2,
 4 and 5 with its ID and body from the anchor issue, and skip step 3, which exists
@@ -221,8 +224,8 @@ campaign, or unreadable — stop and ask.
 
 Then finish it:
 
-- Confirm `runtime/executors/` came with the copy; `closing-campaign` refuses a
-  close when it is missing.
+- Confirm `runtime/executors/` came with the copy — it holds a `.gitkeep` and
+  nothing else; `closing-campaign` refuses a close when it is missing.
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
 - Delete `subtask.md`: a subtask is filed from the skill's own copy, and a second
   copy in a git-ignored directory can be filled long after it has gone stale.

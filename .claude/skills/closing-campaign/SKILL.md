@@ -132,8 +132,8 @@ fi
 **A missing `runtime/executors/` is a refusal, not a pass**: an empty one says no
 executor announced, an absent one says nothing at all.
 
-Any row from either: print the rows, name the agent, stop; the person retires it.
-No rows still leaves two cases for step 2 — an agent herdr has forgotten, and an
+Any row from either: print the rows, name the agent, stop. The person retires
+it; this skill never kills an agent. No rows still leaves two cases for step 2 — an agent herdr has forgotten, and an
 executor that never sent `CLAIMED` — both leaving work in a checkout.
 
 ### 2. Refuse while work exists only on this machine
@@ -142,8 +142,9 @@ Deleting the directory destroys these and nothing recovers them.
 
 **The container checkout first**, because a container subtask is worked there,
 never under `repos/`. No `--ignored` here: the container ignores every campaign
-directory. **Scope it to `campaign-$N/`**, or another campaign's live worktree
-becomes a blocker on this close.
+directory. For a repo-less campaign this is the whole of step 2. **Scope it to
+`campaign-$N/`**, or another campaign's live worktree becomes a blocker on this
+close.
 
 ```sh
 git -C "$CONTAINER" for-each-ref --format='%(refname:short)' "refs/heads/campaign-$N/" |
@@ -191,6 +192,9 @@ purpose, so merge only the report. A branch `--no-merged` names is not a blocker
 if it is pushed, nor if it was squash-merged (see the gotchas); say which of the
 three each row is.
 
+Refuse in this shape, so two refusals written on different days can be read side
+by side:
+
 ```text
 REFUSE: <count> item(s) exist only on this machine: under <CAMPAIGN_DIR>, or on
 this campaign's own campaign-<N>/ branches in <CONTAINER>.
@@ -203,7 +207,8 @@ Nothing was deleted. Clear every row, or say to discard it, then re-run.
 ```
 
 `<kind>` is one of: uncommitted, ignored, unpushed commit, stash, worktree,
-unmerged branch. `<check>` is the command that found it. `<count>` counts rows.
+unmerged branch. `<check>` is the command that found it. `<count>` counts rows,
+not checks.
 
 ### 3. Settle or dispose of every open subtask
 
@@ -308,9 +313,10 @@ rm -f /tmp/repos-before /tmp/repos-after
 ```
 
 `scripts/campaign-repos` is the one reader of that list (`AGENTS.md` § Running a
-campaign lists its refusals). Stop on a non-zero exit, and read empty output as a
-repo-less campaign rather than a failure. Keep the `.tmp`-then-`mv` and the
-leading `rm -f`, or a failed read leaves what a legitimate `- none` leaves.
+campaign lists its refusals). Stop on a non-zero exit, do not re-derive the list
+with `sed` here, and read empty output as a repo-less campaign rather than a
+failure. Keep the `.tmp`-then-`mv` and the leading `rm -f`, or a failed read
+leaves what a legitimate `- none` leaves.
 
 This step also runs mid-campaign, whenever a repository is added to the
 `## Repos` list — `opening-campaign`'s "Filing a subtask issue" sends you here.
@@ -400,8 +406,10 @@ destroys.
 **Read the listing knowing what is on it.** `AGENTS.md`, `CLAUDE.md`, `README.md`
 and `scripts/` are the scaffold copied at open and are the rows to skip; nothing
 filters them, because telling a template copy from this campaign's one real file
-is a reader's job. Another session's note saying it is working or closing: stop,
-name it, and let the person resolve it.
+is a reader's job. It is a record, not a to-do: anything a person wants out of
+the tree is saved before they say close. Another session's note saying it is
+working or closing: stop, name it, let the person resolve it, and say it should
+not have been there, because the campaign is bound here.
 
 **Release the campaign's own claim refs on the container**, because a subtask
 that landed no commits leaves its branch at `origin/main` outliving the campaign.
@@ -484,4 +492,6 @@ The probes and the failures behind these: `references/gotchas.md`.
   checkout holding a `.env` or a build directory. Only `--ignored` is evidence.
 - Two sessions given the same slug on the same day build the same path, so this
   delete may hit another session's live workspace. `runtime/holder` catches that
-  in step 1; the herdr gate cannot, because it matches an agent's `cwd`.
+  in step 1; the herdr gate cannot, because it matches an agent's `cwd`. A
+  machine the campaign left at a migration may still hold a stale directory of
+  its own — `references/rationale.md`, step 5.
