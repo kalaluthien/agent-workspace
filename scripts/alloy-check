@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Run one spec/alloy module and compare every verdict against its header table.
+
+    scripts/alloy-check <file.als> [-o <dir>]
+
+Each module's header carries a VERDICTS table: one command per row, its
+measured verdict beside it. The table is the spec's claim about the model, and
+it goes stale the moment a predicate changes; this is the one reader that
+makes a stale row visible, so every round that touches a predicate ends with
+this command and not with a re-derived incantation.
+
+What it does:
+  1. runs `alloy exec -f -t text -c '*'` on the file, into <dir> (a fresh
+     temporary directory unless -o names one) -- the same run a person makes,
+     so the traces are there to digest afterwards with scripts/alloy-trace-digest;
+  2. parses the header table -- `pass`/`X` for a check, `SAT`/`UNSAT` for a run,
+     and one `Cov_*` row standing for every coverage command;
+  3. prints one line per command: `ok`, `MISMATCH`, `UNLISTED` (ran but has no
+     row), or `MISSING` (row but no command), then the command count against
+     ledger.als's per-file count table.
+
+Exit 0 when every command matches and both tables are complete, 1 otherwise;
+the Alloy run's own failure is exit 2 with its output.
+
+Vocabulary, as the headers use it: a check that passes reads UNSAT from the
+solver and `pass` in the table; a check with a counterexample reads SAT and `X`.
+A run reads what the solver says.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+ALLOY = os.path.expanduser("~/.local/bin/alloy")
+VERDICT = r"(pass|X|SAT|UNSAT)"
+# ` *   Name   verdict  note` and the wrapped form: ` *   Name` alone, then
+# ` *                      verdict  note` on the next line.
+ROW = re.compile(r"^ \*   (\S+)(?:\s+" + VERDICT + r"\b.*)?$")
+WRAPPED = re.compile(r"^ \*\s{4,}" + VERDICT + r"\b")
+BLANK = re.compile(r"^ \*\s*$")
+# `00. check Name   0   UNSAT` / `01. run   Name   0   1/1   SAT`
+RESULT = re.compile(r"^\d+\.\s+(check|run)\s+(\S+)\s+\d+\s+(?:\d+/\d+\s+)?(SAT|UNSAT)\s*$")
+# ledger.als's orientation table: `*   repos.als   ...   18`
+COUNT_ROW = re.compile(r"^ \*   (\w+)\.als\s.*?\s(\d+)\s*$")
+
+
+def header_table(path):
+    """{command: verdict} from the VERDICTS table, plus the Cov_* wildcard."""
+    lines = open(path).read().splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if l.strip() == "* VERDICTS")
+    except StopIteration:
+        raise SystemExit(f"{path}: no VERDICTS heading in the header")
+    # The table is the first run of ` *   Name` rows after the heading; it ends
+    # at the first blank comment line once it has begun.
+    table, pending, begun = {}, None, False
+    for line in lines[start + 1:]:
+        if line.startswith("*/") or line.strip() == "*/":
+            break
+        m = ROW.match(line)
+        if m:
+            begun = True
+            if pending:
+                raise SystemExit(f"{path}: row {pending} has no verdict")
+            name, verdict = m.group(1), m.group(2)
+            if verdict:
+                table[name] = verdict
+            else:
+                pending = name
+            continue
+        w = WRAPPED.match(line) if pending else None
+        if w:
+            table[pending] = w.group(1)
+            pending = None
+            continue
+        if begun and BLANK.match(line):
+            break
+    if pending:
+        raise SystemExit(f"{path}: row {pending} has no verdict")
+    return table
+
+
+def expected_count(path):
+    ledger = os.path.join(os.path.dirname(os.path.abspath(path)), "ledger.als")
+    stem = os.path.basename(path)[:-len(".als")]
+    if not os.path.exists(ledger):
+        return None
+    for line in open(ledger):
+        m = COUNT_ROW.match(line)
+        if m and m.group(1) == stem:
+            return int(m.group(2))
+    return None
+
+
+def run_alloy(path, outdir):
+    cmd = [ALLOY, "exec", "-f", "-o", outdir, "-t", "text", "-c", "*", path]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stdout + proc.stderr)
+        raise SystemExit(2)
+    results = {}
+    # The result lines go to stderr and a run's line carries backspaces from a
+    # progress counter (probed 2026-08-29, Alloy 6.2.0): read both, strip them.
+    for line in (proc.stdout + proc.stderr).replace("\b", "").splitlines():
+        m = RESULT.match(line)
+        if m:
+            results[m.group(2)] = (m.group(1), m.group(3))
+    if not results:
+        sys.stderr.write(proc.stdout + proc.stderr)
+        raise SystemExit(f"{path}: alloy printed no command results")
+    receipt = os.path.join(outdir, "receipt.json")
+    count = len(json.load(open(receipt))["commands"]) if os.path.exists(receipt) else len(results)
+    return results, count
+
+
+def as_header(kind, solver):
+    if kind == "check":
+        return "pass" if solver == "UNSAT" else "X"
+    return solver
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    path, outdir = argv[0], None
+    if len(argv) >= 3 and argv[1] == "-o":
+        outdir = argv[2]
+    if outdir is None:
+        outdir = tempfile.mkdtemp(prefix="alloy-" + os.path.basename(path)[:-4] + "-")
+    table = header_table(path)
+    results, count = run_alloy(path, outdir)
+
+    bad = 0
+    width = max(len(n) for n in list(results) + list(table))
+    for name in sorted(results):
+        kind, solver = results[name]
+        got = as_header(kind, solver)
+        row = table.get(name)
+        if row is None and name.startswith("Cov_") and "Cov_*" in table:
+            row = table["Cov_*"]
+        if row is None:
+            bad += 1
+            print(f"UNLISTED  {name:<{width}}  {got}")
+        elif row == got:
+            print(f"ok        {name:<{width}}  {got}")
+        else:
+            bad += 1
+            print(f"MISMATCH  {name:<{width}}  header {row}, measured {got}")
+    for name in sorted(table):
+        if name == "Cov_*" and any(n.startswith("Cov_") for n in results):
+            continue
+        if name not in results:
+            bad += 1
+            print(f"MISSING   {name:<{width}}  header {table[name]}, no such command")
+
+    want = expected_count(path)
+    if want is None:
+        print(f"commands  {count}  (no row for this file in ledger.als's count table)")
+    elif want == count:
+        print(f"commands  {count}  matches ledger.als")
+    else:
+        bad += 1
+        print(f"commands  {count}  ledger.als says {want}")
+    print(f"traces    {outdir}")
+    print("RESULT    " + ("all verdicts match" if bad == 0 else f"{bad} discrepancies"))
+    return 0 if bad == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

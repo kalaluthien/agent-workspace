@@ -31,7 +31,7 @@ machine holds it.
 | what the two readings say | this session is |
 | --- | --- |
 | `BOUND` names another machine | **not in this campaign.** Stop before any write and before any launch, and name the machine that holds it. |
-| `BOUND` names this machine, and there is no directory or its holder is dead | **the holding session.** Write `runtime/holder` and carry on. |
+| `BOUND` names this machine, and there is no directory or its holder is dead | **the holding session.** Take it: scaffold the directory if there is none (`opening-campaign` steps 2 and 4 — step 4 needs the slug and kind step 2 picks), write `runtime/holder`, and carry on. |
 | `BOUND` names this machine, and `runtime/holder` names a live session | **an executor session** on one subtask; see below. |
 | there is no `BOUND` comment | **not bound yet.** Only a person's word binds an existing campaign; see below. |
 
@@ -104,6 +104,19 @@ check errs towards refusing to take over: ask rather than overwrite. `runtime/`
 dies with the directory, which is the right lifetime — nothing off this machine
 reads the holder.
 
+**Holding scaffolds.** `runtime/holder` and `runtime/executors/` have no home
+but the campaign directory, so a session that takes a campaign on a machine
+with no directory creates one first — `opening-campaign` steps 2 and 4, with
+nothing to acquire; step 4 builds `<slug>-<YYMMDD>/` and copies the kind's
+principles, so step 2, where both are chosen, cannot be skipped — and a held
+campaign has a directory from that moment. Campaign #1
+ran without one, and its first `CLAIMED` arrived with nowhere to be recorded
+(#52): the record half of the protocol did not exist on exactly the path #46
+had made first-class. The fix is the scaffold rather than a second home for the
+record, because a record that outlives the tree it describes is what
+`runtime/`'s lifetime exists to forbid; `spec/alloy/session.als` R1m and R1n
+are the retired branch measured.
+
 Those two readings replace the rule that stood here, *several sessions may hold
 one campaign, on one machine or on several*, and they change what the four rules
 below are for. Each was written from a witnessed breakage; under the principle
@@ -143,18 +156,19 @@ two survive unchanged, one holds by construction, and one inverts.
   in nobody's listing and the next session opens a second campaign over the same
   scope.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, and
-  **optional**. A campaign is its anchor issue; the directory is one machine's
-  cache of it. A campaign legitimately has none here when this machine has not
-  scaffolded it yet, when another machine holds the only copy, or when it never
-  needed one — `#1`, which built this machinery, was worked from the container
-  root and never had a directory at all.
+  **optional off the holding machine**. A campaign is its anchor issue; the
+  directory is one machine's cache of it, and the machine that holds the
+  campaign always has one, because the holder and executor records live there
+  and nowhere else. A campaign legitimately has none here when this machine
+  does not hold it — not taken here yet, or bound elsewhere.
 
   So closing a campaign and deleting a directory are different acts that
   `closing-campaign` happens to perform in one step. Closing is the anchor issue
   changing state; deleting is a cache being dropped, and the campaign survives it
   — demonstrated, not assumed: the settlement listing reads the same from a
-  machine whose directory is gone. A campaign with no directory here is closed
-  by closing its issue, and the delete step has nothing to do.
+  machine whose directory is gone. A campaign bound here with no directory is
+  taken first — scaffolded, so the close's gates have a record to read — and
+  then closed; the delete removes what the take made.
 - **Branch** — `campaign-<N>/<issue>-<topic>` in every member repository, and it
   is the subtask's claim as well as its workspace. `<N>` keeps two campaigns
   from colliding on the remote; the issue number keeps two subtasks of one
@@ -477,6 +491,19 @@ Then, within what the repository allows, choose by cost:
   the work needs the repository's own conventions and toolchain, when it will
   take many turns, or when two repositories must move at once.
 
+**Weigh the setup against the work.** The delegate mode is the most specified
+and the least used: through campaign #1 every subtask ran by the holder's own
+hands or a worktree subagent, and the clone-plus-herdr path first ran on #52.
+Its price is fixed and paid per launch — a clone kept fresh at launch, a
+handover file, a canary round-trip, a pane read, a sweep at the end — and once
+the ancestor import is approved for the clone, the delegate loads every
+instruction file twice, the outer checkout's and the clone's, which disagree
+whenever the clone is behind (observed on #52). So for the container it is the
+mode of last resort: a worktree subagent gets the same conventions from the
+checkout it was started in at none of that cost. For a member repository it is
+the only mode that changes the code, and its price is the reason to give one
+delegate a subtask worth many turns rather than many delegates small ones.
+
 An executor session is a fourth executor and not a fourth mode, because nobody
 chooses it: a session that arrives in the container root to a live holder simply
 is one. What it then chooses is which of the modes above carries its subtask.
@@ -599,8 +626,9 @@ repository's own, so a campaign `AGENTS.md` only ever *adds*; one that
 contradicts a repository's conventions puts the delegate in a conflict it
 cannot resolve.
 
-- **Write the brief to a file**, `<campaign>/runtime/handover/<issue>.md`, and
-  make the launched prompt one short sentence naming that path. herdr types its
+- **Write the brief to a file**, `<campaign>/runtime/handover/<issue>.md`, from
+  the template `.claude/skills/opening-campaign/assets/handover.md`, and make the
+  launched prompt one short sentence naming that path. herdr types its
   launch line into the pane, and a terminal silently drops a line past 1024
   bytes — nothing runs and the launch looks like a slow agent.
 - Choose the session UUID in advance (`claude --session-id`) so the transcript
@@ -683,6 +711,22 @@ default. Feedback then goes to a *fresh* executor, briefed from the pull request
 and the review, because a pane held open across a multi-day review is the
 expensive thing.
 
+**The review's default shape: one reviewer per pull request, one verifier per
+fix round.** Every angle the review should take is a section of the one
+reviewer's brief, and the verifier reads the fix commit against the round's
+disposition table. Fan out into parallel reviewers only when the angles are
+genuinely independent *and* the budget is known to carry them: eight parallel
+angles per pull request died twice on the session limit, and one consolidated
+pass found findings of the same quality at a fraction of the spend (#52).
+
+**The pull request is the review's working memory.** A finding that exists only
+inside a running session is not yet found. The holder posts findings as a
+comment on the pull request the moment they consolidate, before launching
+anything else, and a reviewer that runs long writes findings out as it goes
+rather than only in its final report. Findings held in a session's context died
+with the session limit twice; findings on the pull request survived everything
+and let a fix start while the rest of the review was still running (#52).
+
 # Talking to a repository agent
 
 `spec/alloy/agent.als` is the contract; this is the short form. `ListAgents`
@@ -699,7 +743,7 @@ stale.
 | --- | --- | --- |
 | `CLAIMED` | executor → campaign | `<branch> <ListAgents name> <pid>`, once, at the claim |
 | `STATUS` | campaign → agent | doing what, blocked on what, what exists only on this machine, safe to stop |
-| `REPORT` | agent → campaign | a pull request URL, once, unsolicited |
+| `REPORT` | agent → campaign | a pull request URL and the sha it sits at, once per round, unsolicited |
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
 
@@ -773,7 +817,31 @@ stale.
   collision, `A5`/`A7` the rule, `A8` the control, `A13` the re-push).
 
 - **A claim in a message is never evidence.** It says where to look; then look,
-  in GitHub, yourself.
+  in GitHub, yourself. It stays cheap to look only while the claim carries its
+  evidence: a `REPORT` names the sha it sits at and, for a fix round, the URL of
+  the comment holding its disposition table, so the holder's check is one fetch
+  and one compare. **A verdict, a fix report, or a `REPORT` that does not pin
+  its sha is unactionable.** Verdicts and pushes race — a review verdict
+  crossed a reconciliation push twice — and the crossing was harmless only
+  because each verdict named the sha it was read at.
+- **A fix round is: findings on the pull request, one executor, one `REPORT`.**
+  The executor verifies each finding at the site it names before touching
+  anything; a finding that does not reproduce is named with its reason, never
+  silently fixed — round 2 of #47 caught a false finding exactly there;
+  follow-up findings met on the way fold into the same round; and the round
+  ends in one `REPORT` carrying the sha and a per-finding disposition — fixed,
+  not reproduced, or deferred to a filed issue. The brief that says so to the
+  executor is `.claude/skills/opening-campaign/assets/handover.md`.
+- **Push every commit as it exists; the round's boundary is the `REPORT`, never
+  the push.** "One push per round" was read as "hold the commit local", and an
+  executor sat on a finished commit waiting for the round to close — which is
+  what push-early exists to forbid.
+- **Between sessions, a relay is never the authority.** An owner's word that
+  arrives through a peer session — "the person says merge it", "they filed
+  #N" — is acted on through the durable artifact it points at, read on GitHub
+  yourself: the issue as filed, the branch as pushed. Or on the owner's word in
+  your own pane. Never on the relay. Twice a peer relayed an instruction, and
+  both times the artifact settled it (#52).
 - **Shutdown is two steps, and both are yours.** `STATUS`, verify durability in
   GitHub, then `STAND DOWN`. One-step "you're done, quit" makes the delegate's
   own account the reason for destroying its workspace. The session that verifies
@@ -800,6 +868,15 @@ delegate sitting on it was reported by `herdr agent start` as `idle` with
 pane once after every launch.** That is the only check that catches a delegate
 which stopped before it began. Then pair the `blocked` watch with a quiet timer,
 and treat a long quiet as a question to go and look at rather than as progress.
+
+**The session limit is a first-class cause of death, and it kills in batches.**
+An agent the limit stopped looks exactly like one still thinking — no
+`blocked`, no exit — and whatever it had not pushed or posted is gone. When
+several agents go quiet together, read the limit's reset time before anything
+else: that is an outage to schedule around, not a failure to retry now, since a
+retry launched into the same window dies the same way. What bounds the loss is
+the durability the rules above already demand — every commit pushed as it
+exists, every finding on the pull request as it consolidates.
 
 Retire finished agents as the campaign runs, not when it closes: a long-lived
 campaign finishes subtasks continuously, and panes accumulate until someone
@@ -829,6 +906,15 @@ executor sessions, its subagents and its delegates — and the branch claim is
 what serializes them. Survey before editing, scope edits so they do not collide
 with other worktrees, and rebase onto what landed rather than force-pushing over
 it.
+
+**Two open pull requests over the same normative files are normal, and the
+second to land reconciles.** When two container subtasks touch `AGENTS.md`, a
+skill, or a model at once: the holder publishes the overlap — which hunks of
+which files both touch — beside the first review verdict; the second lander
+merges `main` into its branch and resolves there; and the second pull request's
+final verification reads the *combined* state, because the clashes that matter
+are semantic — four surfaced only in the combination of #46 and #47 — and no
+hunk-level merge sees them.
 
 **The named cost: no concurrent cross-machine or cloud work on one campaign.**
 Another machine, a cloud session, or a phone may read a campaign and may open a

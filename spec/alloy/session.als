@@ -135,9 +135,10 @@
  *   R1f_HolderOnlyBlocksLoss         UNSAT one holder works, and works better
  *   R1g_HolderOnlyAdmitsSync         SAT   control
  *   R1h_UnboundMachineStillLoses     SAT   the residue: BOUND is a rule, not a lock
- *   R1m_NoDirectoryLosesAgain        SAT   and the second residue: no directory,
- *                                          no holder record, no serialization
- *   R1n_NoDirectoryCloseStillHappens SAT   control: such a campaign still closes
+ *   R1m_NoDirectoryCannotLose        UNSAT no directory, no holder, no write:
+ *                                          the optional-directory branch is gone
+ *   R1n_NoDirectoryTakesThenCloses   SAT   control: a campaign with no directory
+ *                                          here is taken -- scaffolded -- and closed
  *   R1j_TwoMomentStillLoses          SAT   two moments is a WHEN rule, not a HOW
  *   R1k_TwoMomentAdmitsScopeSync     SAT   control, and the close-only difference
  *   R2_DuplicateCampaign             SAT   two anchors, one scope
@@ -157,12 +158,18 @@
  * able to fail by a named mutation, run 2026-08-29 against this model and undone
  * afterwards:
  *
- *   R1f   narrowing `mayWrite` to its BOUND half alone, dropping the
+ *   R1f   narrowing `isHolder` to its BOUND half alone, dropping the
  *         `runtime/holder` conjunct: both sessions read as "the holder" of the
  *         machine and the loss returns (SAT). Dropping the no-live-holder guard
  *         from `holderOnly`'s Adopt clause instead does NOT redden it, which
  *         locates the load-bearing half precisely -- it is the holder reading on
  *         the write, not the guard on the arrival.
+ *   R1m   restoring the retired fallback -- `isHolder`'s record conjunct made
+ *         conditional on `hasDirHere` -- brings the loss back (SAT, run
+ *         2026-08-29). Dropping the record-implies-directory conjunct from
+ *         `BindingWellFormed` instead changes no verdict in this file: that
+ *         conjunct is well-formedness, keeping `init` from seating a record on a
+ *         machine with no directory, and R1m turns on the guard, not on it.
  *
  * WHAT THE FIRST DRAFT OF THIS FILE GOT WRONG
  *
@@ -171,9 +178,17 @@
  *
  *   `isHolder` was the guard everywhere, and it needs `runtime/holder`, which an
  *   OPTIONAL DIRECTORY never has -- so the model forbade closing a campaign that
- *   `closing-campaign` step 0 documents closing, campaign #1 among them.
- *   `mayWrite` is the reading with that branch, R1n is the case it restores, and
- *   R1m is what the branch costs.
+ *   `closing-campaign` step 0 documented closing, campaign #1 among them. The
+ *   second draft added `mayWrite`, a reading that fell back to the binding alone
+ *   where there was no directory, and named its price as R1m. The third draft,
+ *   #52, retired that branch: the price was larger than R1m measured, because
+ *   the executor record of agent.als has the same home as the holder record,
+ *   and on the branch neither existed -- campaign #1's first CLAIMED arrived
+ *   with nowhere to be written, and A1's gap was open again on exactly the path
+ *   #46 had made first-class. So HOLDING SCAFFOLDS: a session that takes a
+ *   campaign on a machine with no directory creates one, `isHolder` is the guard
+ *   everywhere again, and a directory-less close is a take followed by a close
+ *   (R1n). The directory stays optional off the holding machine.
  *
  *   `Cov_Bound` was `eventually some Binding.bound`, satisfiable at step 0 by
  *   `init` alone: it certified nothing about the event that writes the binding.
@@ -246,6 +261,14 @@ one sig Binding {
 fact BindingWellFormed {
   always all c: Campaign | lone Binding.bound[c]
   always all c: Campaign, m: Machine | lone Binding.holder[c][m]
+  /* The record is a file in the directory, so it exists only where the
+     directory does. This is well-formedness, not the discipline: it stops
+     `init` seating a holder on a machine with no tree, and measured, removing
+     it changes no verdict in this file or in agent.als. What carries "holding
+     scaffolds" is `isHolder` needing the record and `adopt` writing one only
+     where a tree is present; R1m is that measured. */
+  always all c: Campaign, m: Machine |
+    some Binding.holder[c][m] implies some treeAt[c, m] & Present
 }
 
 /* The role table in AGENTS.md § Who is a campaign session, as two predicates.
@@ -255,23 +278,18 @@ fact BindingWellFormed {
    campaign and is not this is an executor session -- #37's subject -- and it may
    claim, launch and work, but never write the anchor.
 
-   `mayWrite` is the reading that survives an OPTIONAL DIRECTORY, and it is what
-   the disciplines below actually use. `runtime/holder` is a file in the campaign
-   directory, and AGENTS.md says the directory is optional -- campaign #1, which
-   built this machinery, never had one. Requiring the holder record
-   unconditionally makes a directory-less campaign unclosable in the model while
-   the skill documents closing it, which is the model contradicting the design.
-   So where there is no directory here, the binding alone is the reading: the
-   person's word, and nothing local to disagree with it. R1m below is what that
-   branch costs. */
+   It is the guard everywhere, and it needs `runtime/holder`, which needs a
+   directory. That is deliberate since #52: holding scaffolds. A session that
+   takes a campaign on a machine with no directory creates one first
+   (opening-campaign step 4, with nothing to acquire), so the record has a home
+   at the moment anything could be recorded in it -- the holder itself, and
+   every executor's CLAIMED after it. The reading that fell back to the binding
+   alone where there was no directory (`mayWrite`, the second draft) is retired;
+   what it cost is in the header. */
 pred hasDirHere[s: Session, c: Campaign] { some treeAt[c, s.smach] & Present }
 pred isHolder[s: Session, c: Campaign] {
   Binding.bound[c] = s.smach
   Binding.holder[c][s.smach] = s
-}
-pred mayWrite[s: Session, c: Campaign] {
-  Binding.bound[c] = s.smach
-  hasDirHere[s, c] implies Binding.holder[c][s.smach] = s
 }
 
 /* This layer's observer: who did it. */
@@ -337,7 +355,12 @@ pred adopt[s: Session, c: Campaign] {
   readme' = readme - s->Repo + s->(c.body)
   seen'   = seen   - s->Repo + s->(c.body)
   saw' = saw and Surveyed' = Surveyed and claims' = claims
-  holder' = holder - Binding->c->s.smach->Session + Binding->c->s.smach->s
+  /* The record is written where there is a directory to hold it; with none,
+     the session holds the campaign in memory only until it scaffolds one
+     (`sCreateDir` writes the record), and until then it is not the holder. */
+  hasDirHere[s, c]
+    implies holder' = holder - Binding->c->s.smach->Session + Binding->c->s.smach->s
+    else    holder' = holder
   bound' = bound
   Now.ev = Adopt and no Now.issue and By.actor = s
 }
@@ -439,7 +462,12 @@ pred sDeleteDir[s: Session] {
   some s.holds
   Site.mach = s.smach
   some treeAt[s.holds, s.smach] and treeAt[s.holds, s.smach] not in Present'
-  sessionFrame
+  /* `runtime/holder` goes with the directory (closing-campaign step 5), which
+     `BindingWellFormed` now requires rather than merely records. */
+  holder' = holder - Binding->s.holds->s.smach->Session
+  bound' = bound
+  holds' = holds and saw' = saw and readme' = readme and seen' = seen
+  and claims' = claims and Surveyed' = Surveyed
   By.actor = s
 }
 
@@ -591,9 +619,9 @@ pred holderOnly {
                and no Binding.holder[c][By.actor.smach] - By.actor))
   always (Now.ev = CreateDir implies
             no Binding.holder[By.actor.holds][By.actor.smach] - By.actor)
-  always (Now.ev in WriteBody + DeleteDir implies mayWrite[By.actor, By.actor.holds])
+  always (Now.ev in WriteBody + DeleteDir implies isHolder[By.actor, By.actor.holds])
   always ((Now.ev = CloseIssue and Now.issue in Campaign.anchor) implies
-            mayWrite[By.actor, anchorOf[Now.issue]])
+            isHolder[By.actor, anchorOf[Now.issue]])
 }
 
 /* THE HALF THIS LAYER CANNOT SUPPLY. Being the holder says nothing about who
@@ -759,30 +787,32 @@ pred R1h_UnboundMachineStillLoses {
   }
 }
 
-/* R1m. WHAT THE OPTIONAL DIRECTORY COSTS, and it is a finding rather than a
-   concession. With no directory on the bound machine there is no
-   `runtime/holder` to read, so `mayWrite` falls back to the binding alone and
-   two sessions on that machine are unserialized again: the loss returns. SAT.
-
-   This is not an argument for making the directory mandatory. It is the reason
-   compare-then-write (R1c) stays in AGENTS.md beside the binding rather than
-   being retired by it -- one campaign, one machine, one holder covers the case
-   where a holder record exists, and compare-then-write covers this one and R1h. */
-pred R1m_NoDirectoryLosesAgain {
+/* R1m. WHAT THE OPTIONAL DIRECTORY USED TO COST, now UNSAT. Under the second
+   draft this read SAT: with no directory on the bound machine there was no
+   `runtime/holder` to read, `mayWrite` fell back to the binding alone, and two
+   sessions on that machine were unserialized again. Since #52 a session with no
+   directory is not the holder and cannot write at all -- `isHolder` needs the
+   record and the record needs the tree -- so the loss is unreachable on this
+   branch. R1n is what the branch became. Compare-then-write (R1c) still stays
+   in AGENTS.md beside the binding, for R1h and for a person editing on GitHub. */
+pred R1m_NoDirectoryCannotLose {
   holderOnly
   always no Present                    -- this machine never scaffolds the campaign
   R1_LostBodyUpdate
 }
 
-/* R1n. Control for the branch, and the case it was added for: a campaign with no
-   directory here still closes. Under the first draft's `isHolder`-everywhere
-   discipline this was UNSAT -- the model forbade what `closing-campaign` step 0
-   documents. SAT. */
-pred R1n_NoDirectoryCloseStillHappens {
+/* R1n. Control, and the case the retired branch was added for: a campaign with
+   no directory here still closes -- by being taken first. The session arrives to
+   no tree, scaffolds one (which writes the record and makes it the holder), and
+   closes the anchor from there. SAT. */
+pred R1n_NoDirectoryTakesThenCloses {
   holderOnly
-  always no Present
-  some c: Campaign, s: Session |
+  no Present
+  some c: Campaign, s: Session {
+    always Binding.bound[c] = s.smach
+    eventually (Now.ev = CreateDir and By.actor = s and s.holds = c)
     eventually (Now.ev = CloseIssue and Now.issue = c.anchor and By.actor = s)
+  }
 }
 
 /* R1j. The two-moment rule measured against the loss it is not for: SAT. Writing
@@ -981,8 +1011,8 @@ run R1c_CASBlocksLoss            for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Mac
 run R1d_CASAdmitsBothSyncs       for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 14 steps
 run R1e_CloseOnlyStillLoses      for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
 run R1f_HolderOnlyBlocksLoss     for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
-run R1m_NoDirectoryLosesAgain    for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
-run R1n_NoDirectoryCloseStillHappens for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
+run R1m_NoDirectoryCannotLose    for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
+run R1n_NoDirectoryTakesThenCloses for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
 run R1g_HolderOnlyAdmitsSync     for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 14 steps
 run R1h_UnboundMachineStillLoses for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
 run R1j_TwoMomentStillLoses      for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
