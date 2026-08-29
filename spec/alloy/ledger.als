@@ -166,14 +166,21 @@
  *   S16c_PlainContainerIssueUnderClosedWorld  UNSAT control: the clause still bites
  *   Cov_*                            SAT   every own event fires in some trace
  *
- * Every pass was proved able to fail by mutation, re-run 2026-08-28 against
- * this model: dropping `addMember`'s sub-issue write reddens all four index and
+ * Every pass was proved able to fail by mutation, re-run 2026-08-29 against
+ * this model as it now stands -- all four mutations, all seven checks red:
+ * dropping `addMember`'s sub-issue write reddens all four index and
  * reconstitution checks; removing `TerminationDisciplined`'s close-discipline
  * clause reddens it; dropping `weakFairness` reddens TerminationUnderSettlement.
  * `ledgerFrame` in the fall-through branch of `ledgerStep` is proved
  * load-bearing from above -- dropping it reddens repos.als's
  * MachineIndependence and agent.als's NoLostWork, which is the composition
  * idiom itself under test.
+ *
+ * The date is part of the claim. This file changed after the 2026-08-28 run --
+ * the container clause left `WellFormed`, and S16b/S16c arrived -- so the proof
+ * was carried out again rather than inherited: a mutation score is about the
+ * model in front of you, and an older one silently claims something about a
+ * model that no longer exists.
  *
  * WHAT MOVED, AND WHAT CHANGED WITH IT
  *
