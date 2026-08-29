@@ -150,10 +150,15 @@ two survive unchanged, one holds by construction, and one inverts.
   subtask, because the launcher creates it on the remote before any work:
 
   ```sh
+  SHA=$(git -C <checkout> rev-parse --verify origin/main) || exit 1
   gh api repos/<owner>/<repo>/git/refs \
-    -f ref=refs/heads/campaign-<N>/<issue>-<topic> \
-    -f sha=$(git -C <checkout> rev-parse origin/main)
+    -f ref=refs/heads/campaign-<N>/<issue>-<topic> -f sha="$SHA"
   ```
+
+  The sha is resolved and checked before the create, never written inline:
+  without `origin/main` `git rev-parse` exits non-zero *and still prints the
+  string*, which then goes up as the sha and comes back as the 422 that means
+  "already claimed" — so the subtask reads as taken and is abandoned.
 
   create-ref refuses an existing ref server-side, at any SHA (probed
   2026-08-28: HTTP 422 "Reference already exists"), so the claim is atomic
@@ -204,10 +209,13 @@ survive is the other reading and it is rejected: it would make every repo-less
 campaign not repo-less, for the sake of committing scratch.
 
 So the close makes the claim checkable instead of hoped for. Before deleting the
-directory, `closing-campaign` lists every file under it outside `runtime/` and
-`repos/` into the closing comment on the anchor — one comment, the one it
-already posts — so what the delete destroyed is on the record, and a file
-somebody still wants is caught while the tree is still there.
+directory, `closing-campaign` lists every entry under it outside `runtime/` and
+`repos/` — files, directories, symlinks, because `rm -rf` destroys all of them —
+into the closing comment on the anchor, one comment, the one it already posts.
+The scaffold's own `AGENTS.md`, `CLAUDE.md`, `README.md` and `scripts/` are on
+every such listing, being template copies; the listing filters nothing, because
+a filter that guessed would be the thing that dropped the one file somebody
+wanted.
 
 **Resolve the container root one way, everywhere:**
 
@@ -355,20 +363,25 @@ of the campaign's repository index that the close does not delete. `- none` is a
 deliberate entry and reads as one.
 
 **`- none` is retired, never joined.** Adding the first repository replaces it:
-the list is `- none` alone or it is repositories, never both. A mixed list looks
-right to every eye, passes a non-empty test and a placeholder test alike, and
-then hands the literal string `none` to `acquire-repo` on the next machine that
-opens the campaign, which strands that open with nothing saying why.
+the list is `- none` alone or it is repositories, never both. A mixed list is
+refused because it is *ambiguous* — nothing in it says whether `none` is a
+sentinel somebody forgot to remove or a repository the list means to name — and
+neither reading can be acted on. The alternative, teaching `acquire-repo` to
+skip `none`, moves the refusal to the next machine that opens the campaign and
+several steps past the person who could have fixed it; refusing at the list is
+refusing where the list is written.
 
 So the list has one reader and it is a script — `scripts/campaign-repos <path>`,
 which prints one `owner/repo` per line, prints nothing and exits 0 for a list
 that is exactly `- none`, and exits 1 with one line naming which of the six
 faults it found: no `## Repos` heading, a malformed line under it, an empty
 list, a surviving `<` placeholder, a mixed list, and two entries whose checkout
-directory `repos/<name>/` would collide. `opening-campaign` steps 4 and 5, its
-passage on adding a repository, and `closing-campaign` step 4 all call it. A
-rule nothing must consume is a rule that drifts, and this one had drifted into
-three prose copies before it had a reader.
+directory `repos/<name>/` would collide. `opening-campaign` step 4 runs it and
+writes `runtime/repos`; step 5 reads that file; its passage on adding a
+repository runs it again before the sync; and `closing-campaign` step 4 runs it
+over the README and over the body GitHub stored. A rule nothing must consume is
+a rule that drifts, and this one had drifted into three prose copies before it
+had a reader.
 
 Two of those six are about a wrong list reading as `- none` rather than as
 wrong. A line under the heading that is not a `- ` item was silently skipped, so
@@ -392,6 +405,13 @@ of which has a row in `herdr agent list`. So absence from that listing is not
 evidence that such a claim is abandoned: ask the peer sessions (`STATUS`) before
 deleting one, and leave it standing if nobody answers. Deleting it costs the one
 thing keeping two executors off the subtask.
+
+**The one exception is the close.** `closing-campaign` step 5 releases every
+`campaign-<N>/` ref on the container that still sits at `origin/main`, and it is
+allowed to because by then step 0 has established the campaign is bound here and
+step 1 that no agent is live under its tree — the two readings this guard asks
+for, already taken. A ref holding commits is printed there, never deleted. Refs
+in member repositories are not swept: a merged pull request releases those.
 
 **Such a subtask closes as completed with no pull request**, and
 `scripts/campaign-settlement` prints that row as `dropped [completed, no merged
@@ -418,7 +438,10 @@ All three carry the same mechanics. The branch is
 subtask's issue exists because the number is minted there — a refusal means
 another executor holds the subtask. Work is pushed as soon as one commit
 exists, so a checkout that dies costs uncommitted work and nothing more. It
-lands by pull request.
+lands by pull request — except for a subtask whose work lives only under
+`<campaign>/scripts/`, which has no commit to land: that one closes as completed
+with no pull request, its closing comment saying what was built and where the
+close listed it. How that reads in the settlement is above.
 
 **A repo-less campaign has the first two modes and not the third.** The
 delegate mode is a clone under `<campaign>/repos/<repo>/`, and there is no
@@ -578,54 +601,9 @@ Never answer one with the other.
   session transcript — never from `agent_status` alone, which reports the screen
   and calls a mid-turn pause `idle`.
 
-  **Finding a campaign's sessions is a weaker reading than that**, and what
-  makes it weak is worth stating rather than working around. There is no
-  registry and no name to match on: `name` is null for every interactive session
-  (probed 2026-08-28 — the key is absent from every row a container root was
-  holding), so all a campaign session leaves in `herdr agent list` is its `cwd`
-  and its session UUID.
-
-  **The one `cwd` filter is `closing-campaign` step 1's**, which compares whole
-  path segments against a campaign directory. Do not write a second one here.
-  That is the same rule this file states about `campaign-settlement`, and it is
-  the same reason: two readers of one signal drift, and the drift shows up as a
-  gate that passes having matched nothing.
-
-  **That filter cannot scope a campaign with no directory.** Every campaign
-  session's `cwd` is the container root whatever campaign it holds, so a filter
-  rooted there returns every campaign's sessions and attributes all of them to
-  whichever campaign you were asking about. #1 is that case, and so is every
-  repo-less campaign whose tree has been deleted. What tells those rows apart is
-  the transcript and nothing else: `agent_session.value` is the session UUID, and
-  it names `~/.claude/projects/<cwd with every / and . replaced by ->/<uuid>.jsonl`,
-  whose first `"type":"user"` record that is not a harness wrapper is the brief
-  that session was given.
-
-  ```sh
-  jq -rn 'first(inputs
-           | select(.type == "user")
-           | .message.content
-           | if type == "string" then . else (map(.text // "") | join(" ")) end
-           | select(test("^<(local-command|command-name)") | not))' \
-    ~/.claude/projects/<encoded cwd>/<uuid>.jsonl
-  ```
-
-  `-n` with `inputs`, never `-s`. Slurping parses the whole file before it
-  answers anything, and a transcript being appended to *right now* is the normal
-  state of a live session: the parse fails, the output is empty, and the live
-  session reads as one with nothing to say — the exact misreading this section
-  exists to forbid. `first(inputs)` stops at the record it wants and never
-  reaches the half-written tail. The wrapper filter is part of the recipe, not a
-  refinement of it: the literal first record is a `<local-command-caveat>` or a
-  `<command-name>` block often enough to be the common case.
-
-  **And a session found this way has no address.** What a message is sent to is
-  the `ListAgents` name, and that is null for exactly the interactive sessions
-  this finds; nothing joins a herdr row's session UUID to an address. Until
-  `CLAIMED` lands (kalaluthien/agent-workspace#37, #47), reaching the session
-  that works a subtask means asking the peer sessions — `STATUS` to each — and
-  letting the one holding it answer. Do not write a name lookup; there is none to
-  write.
+  **A `cwd` filter cannot scope a campaign with no directory**, because every
+  campaign session's `cwd` is the container root: the session transcript is the
+  only discriminator, read through the session id herdr reports.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the campaign session retires it once
