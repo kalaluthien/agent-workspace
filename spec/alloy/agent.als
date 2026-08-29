@@ -22,7 +22,8 @@
  *   Announce          CLAIMED, executor -> campaign, once at the claim
  *   Status            STATUS, campaign -> executor
  *   Answer            the executor's reply to an outstanding STATUS
- *   Report            REPORT, executor -> campaign, unsolicited
+ *   Report            REPORT, executor -> campaign, unsolicited: the pull
+ *                     request URL and the sha it sits at
  *   Blocked           BLOCKED, executor -> campaign, unsolicited
  *   Decide            the campaign session answers a BLOCKED
  *   Confirm           the session reads the executor's working tree ITSELF
@@ -756,8 +757,10 @@ pred answer[a: Agent] {
    so this event writes NOTHING but the claim itself. Everything a command below
    cares about is untouched by it, and that is the model's statement of rule 1.
 
-   A REPORT names a URL, which makes fabrication cheap to disprove; a false one
-   was caught in about two seconds by four independent checks. But the rule
+   A REPORT names a URL and the sha it sits at, which makes fabrication cheap to
+   disprove -- a false one was caught in about two seconds by four independent
+   checks -- and makes a verdict crossing a later push harmless, because each
+   names the revision it is about (#52). But the rule
    catches fabrication, not inadequacy: a real pushed branch with a real pull
    request that does not do what was asked passes every check. Verifying that the
    work exists is not reviewing it. */
@@ -1126,7 +1129,7 @@ fun executorsOf[i: Issue]: set Agent { task.i }
    carries the pull request URL and nothing about what happens next.
 
    Three conjuncts, and the last two are the ones worth arguing about. The merge
-   is the HOLDING session's (`mayWrite`, session.als's role reading), which is
+   is the HOLDING session's (`isHolder`, session.als's role reading), which is
    what excludes the executor -- an executor session is by definition not the
    holder of the campaign it works. The
    pull request has been REVIEWED, which is the owner's rule in item 9 and the
@@ -1164,7 +1167,7 @@ fun executorsOf[i: Issue]: set Agent { task.i }
    holds on every path and the scoping antecedent is gone with it. */
 pred mergedByHolder {
   always (Now.ev = MergePR implies
-            (mayWrite[By.actor, By.actor.holds]
+            (isHolder[By.actor, By.actor.holds]
              and Now.issue.pr in Reviewed
              and (all a: executorsOf[Now.issue] |
                     a in Confirmed and coLocated[By.actor, a])))
@@ -1644,14 +1647,14 @@ pred A13_PushAfterReviewUnReviews {
    pinned as a NON-holder, because a holding session that does a subtask with its
    own hands and merges it is the ordinary path, not the defect.
 
-   `hasDirHere` at the merge is the fourth pin and it was found by measurement:
-   without it A5 read SAT, because `mayWrite` falls back to the binding alone
-   where this machine has no campaign directory, and the escape was to delete the
-   tree first and merge afterwards. That is session.als's R1m residue reached
-   from the merge's side -- with no `runtime/holder` there is nothing local that
-   can tell a holder from an executor session, so no rule keyed on the difference
-   can hold. It is the optional directory's price, named in both layers rather
-   than patched in one. */
+   `hasDirHere` at the merge was a fourth pin, found by measurement while the
+   directory was optional on the holding machine: without it A5 read SAT,
+   because the role reading of that draft (`mayWrite`) fell back to the binding
+   alone where this machine had no campaign directory, and the escape was to
+   delete the tree first and merge afterwards. #52 retired that branch -- holding
+   scaffolds, and `isHolder` needs the record, which needs the tree -- so the pin
+   is gone and A5 holds without it; session.als's R1m is the same retirement
+   measured from the write's side. */
 pred A4_ExecutorMergesItsOwnPR {
   some c: Campaign, disj s1, s2: Session, a: Agent {
     a.peer = s2 and a.task in c.members
@@ -1661,8 +1664,7 @@ pred A4_ExecutorMergesItsOwnPR {
     always not isHolder[s2, c]
     eventually (Now.ev = Report and Target.agent = a)
     eventually (Now.ev = MergePR and By.actor = s2 and Now.issue = a.task
-                and a in Confirmed and a.task.pr in Reviewed
-                and hasDirHere[s2, c])
+                and a in Confirmed and a.task.pr in Reviewed)
   }
 }
 

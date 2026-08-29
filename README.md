@@ -5,11 +5,11 @@ they need — on repositories that live elsewhere.
 
 A campaign is one assignment a person is responsible for, worked across the
 repositories it needs, which may be none. It is bigger than a ticket and has no
-size ceiling. It usually gets a directory here — the repositories it needs are
-assembled inside it, and its subtasks are handed to agents — but that directory
-is optional, one machine's cache of a campaign that lives on GitHub. When it is
-over the directory is deleted and nothing is lost, because everything durable
-was already somewhere else.
+size ceiling. It gets a directory on the machine that holds it — the
+repositories it needs are assembled inside it, and its subtasks are handed to
+agents — and that directory is one machine's cache of a campaign that lives on
+GitHub. When it is over the directory is deleted and nothing is lost, because
+everything durable was already somewhere else.
 
 ## Shape
 

@@ -31,7 +31,7 @@ machine holds it.
 | what the two readings say | this session is |
 | --- | --- |
 | `BOUND` names another machine | **not in this campaign.** Stop before any write and before any launch, and name the machine that holds it. |
-| `BOUND` names this machine, and there is no directory or its holder is dead | **the holding session.** Write `runtime/holder` and carry on. |
+| `BOUND` names this machine, and there is no directory or its holder is dead | **the holding session.** Take it: scaffold the directory if there is none (`opening-campaign` step 4), write `runtime/holder`, and carry on. |
 | `BOUND` names this machine, and `runtime/holder` names a live session | **an executor session** on one subtask; see below. |
 | there is no `BOUND` comment | **not bound yet.** Only a person's word binds an existing campaign; see below. |
 
@@ -104,6 +104,17 @@ check errs towards refusing to take over: ask rather than overwrite. `runtime/`
 dies with the directory, which is the right lifetime — nothing off this machine
 reads the holder.
 
+**Holding scaffolds.** `runtime/holder` and `runtime/executors/` have no home
+but the campaign directory, so a session that takes a campaign on a machine
+with no directory creates one first — `opening-campaign` step 4, with nothing
+to acquire — and a held campaign has a directory from that moment. Campaign #1
+ran without one, and its first `CLAIMED` arrived with nowhere to be recorded
+(#52): the record half of the protocol did not exist on exactly the path #46
+had made first-class. The fix is the scaffold rather than a second home for the
+record, because a record that outlives the tree it describes is what
+`runtime/`'s lifetime exists to forbid; `spec/alloy/session.als` R1m and R1n
+are the retired branch measured.
+
 Those two readings replace the rule that stood here, *several sessions may hold
 one campaign, on one machine or on several*, and they change what the four rules
 below are for. Each was written from a witnessed breakage; under the principle
@@ -143,18 +154,19 @@ two survive unchanged, one holds by construction, and one inverts.
   in nobody's listing and the next session opens a second campaign over the same
   scope.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, and
-  **optional**. A campaign is its anchor issue; the directory is one machine's
-  cache of it. A campaign legitimately has none here when this machine has not
-  scaffolded it yet, when another machine holds the only copy, or when it never
-  needed one — `#1`, which built this machinery, was worked from the container
-  root and never had a directory at all.
+  **optional off the holding machine**. A campaign is its anchor issue; the
+  directory is one machine's cache of it, and the machine that holds the
+  campaign always has one, because the holder and executor records live there
+  and nowhere else. A campaign legitimately has none here when this machine
+  does not hold it — not taken here yet, or bound elsewhere.
 
   So closing a campaign and deleting a directory are different acts that
   `closing-campaign` happens to perform in one step. Closing is the anchor issue
   changing state; deleting is a cache being dropped, and the campaign survives it
   — demonstrated, not assumed: the settlement listing reads the same from a
-  machine whose directory is gone. A campaign with no directory here is closed
-  by closing its issue, and the delete step has nothing to do.
+  machine whose directory is gone. A campaign bound here with no directory is
+  taken first — scaffolded, so the close's gates have a record to read — and
+  then closed; the delete removes what the take made.
 - **Branch** — `campaign-<N>/<issue>-<topic>` in every member repository, and it
   is the subtask's claim as well as its workspace. `<N>` keeps two campaigns
   from colliding on the remote; the issue number keeps two subtasks of one
