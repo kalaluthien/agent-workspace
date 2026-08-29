@@ -709,8 +709,8 @@ Never answer one with the other.
   and calls a mid-turn pause `idle`. An executor session's pane, where it has
   one, is not a pane the holder launched, so `herdr agent list` shows it without
   saying which subtask it holds; it is read instead from the record the holder
-  wrote when its `CLAIMED` arrived,
-  and its liveness from the `pid` in that file the way `runtime/holder` is read.
+  wrote when its `CLAIMED` arrived, and its liveness from the `pid` in that file
+  the way `runtime/holder` is read.
   **Both readings, every time**: the no-live-agent gate in `closing-campaign` and
   the retirement sweep below each run both.
 
