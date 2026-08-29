@@ -175,7 +175,7 @@
   <figcaption>캠페인은 앵커 이슈가 만들어진 순간부터 존재한다. 디렉터리와 클론은 그 뒤에 오는 지역 사본이다.</figcaption>
   <ol class="keys">
     <li><span class="k">1</span><p><strong>요청 도착</strong> — 단계. 사람이 컨테이너 루트에 문장 하나, 이슈 번호, 또는 스크린샷을 들고 온다. <span class="hum">사람만 캠페인을 시작한다</span></p></li>
-    <li><span class="k">2</span><p><strong>앵커 확인</strong> — 판단. 열린 앵커 이슈를 먼저 읽는다. 어느 열린 캠페인의 범위도 이 요청을 덮지 않을 때만 새 캠페인이다. 덮으면 그 캠페인의 후속 하위 과제다.</p></li>
+    <li><span class="k">2</span><p><strong>앵커 확인</strong> — 판단. 열린 앵커 이슈를 먼저 읽는다. 세 갈래로 갈린다. 어느 열린 캠페인의 범위가 덮으면 그 캠페인의 후속 하위 과제다. 아무것도 덮지 않고 이 세션으로 끝나는 일이면 캠페인이 아니라 그냥 여기서 한다. 아무것도 덮지 않고 이 세션보다 오래 갈 일일 때만 새 캠페인이다. 크기는 판단 항목이 아니다.</p></li>
     <li><span class="k">3</span><p><strong>앵커 이슈 발행</strong> — 단계. <code>kalaluthien/agent-workspace</code> 에 앵커 이슈를 만들고 <span class="chip">campaign</span> 라벨을 단다. 그 이슈 번호가 캠페인 ID다. 앵커 이슈가 <code>#6</code> 이면 캠페인 ID는 <code>#6</code> 이다. 모든 조사가 그 라벨로 나열하므로, 라벨 없는 앵커는 아무 목록에도 없다.</p></li>
     <li><span class="k">4</span><p><strong>디렉터리와 클론</strong> — 단계, 그리고 선택 사항. 컨테이너 루트에 <code>&lt;slug&gt;-&lt;YYMMDD&gt;/</code> 를 만들고 멤버 저장소를 그 아래 <code>repos/</code> 로 가져온다. 캠페인 <code>#6</code> 의 디렉터리는 <code>lifecycle-drill-260828/</code> 이다. 캠페인 <code>#1</code> 은 컨테이너 루트에서 돌았고 디렉터리를 아예 가지지 않았다.</p></li>
   </ol>
