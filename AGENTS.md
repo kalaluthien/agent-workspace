@@ -176,15 +176,19 @@ two survive unchanged, one holds by construction, and one inverts.
   subtask, because the launcher creates it on the remote before any work:
 
   ```sh
-  SHA=$(git -C <checkout> rev-parse --verify origin/main) || exit 1
+  SHA=$(gh api repos/<owner>/<repo>/commits/main --jq .sha) || exit 1
   gh api repos/<owner>/<repo>/git/refs \
     -f ref=refs/heads/campaign-<N>/<issue>-<topic> -f sha="$SHA"
   ```
 
-  The sha is resolved and checked before the create, never written inline:
-  without `origin/main` `git rev-parse` exits non-zero *and still prints the
-  string*, which then goes up as the sha and comes back as the 422 that means
-  "already claimed" — so the subtask reads as taken and is abandoned.
+  **The sha comes from the remote**, which is what the claim is cut from — not
+  from a checkout, whose `origin/main` may be stale, absent or unfetched, and
+  which a repo-less subtask does not have at all. One block claims every
+  subtask, and `opening-campaign` adds only the checkout-side `fetch` and
+  `switch` for a subtask that has one. It is resolved and checked before the
+  create, never written inline: a read that fails and still prints goes up as
+  the sha and comes back as the 422 that means "already claimed", so the subtask
+  reads as taken and is abandoned.
 
   create-ref refuses an existing ref server-side, at any SHA (probed
   2026-08-28: HTTP 422 "Reference already exists"), so the claim is atomic
@@ -696,6 +700,13 @@ Never answer one with the other.
   **A `cwd` filter cannot scope a campaign with no directory**, because every
   campaign session's `cwd` is the container root: the session transcript is the
   only discriminator, read through the session id herdr reports.
+- **What exists only on this machine is the third question**, and
+  `scripts/campaign-local-work <N> [campaign-dir]` is its one reader — the
+  container's own `campaign-<N>/` branches and worktrees, the container's
+  working tree, and every checkout under the campaign's `repos/`. Its exit
+  status is about the reading and never the verdict, so a failed read cannot
+  read as a clean tree. `closing-campaign` step 2 is one call to it; a second
+  reader written out anywhere else drifts the way the settlement rule would.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the campaign session retires it once

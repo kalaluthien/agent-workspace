@@ -3,18 +3,23 @@
 The evidence behind the one-line gotchas in `SKILL.md`. Each is a failure that
 raises no error.
 
-## An inline `sha=$(git rev-parse origin/main)` sends the literal string up as a sha
+## Why the claim sha comes from the API, and what the checkout form did
 
-Without that ref — a single-branch clone, a repository whose default branch is not
+The claim block once read `git rev-parse --verify origin/main` in the subtask's
+checkout, with a second form for a repo-less campaign that had none. Without
+that ref — a single-branch clone, a repository whose default branch is not
 `main`, a fetch that has not run — `git rev-parse` exits non-zero and *still
-prints* `origin/main`, and inside `$(...)` on the `gh` line nothing reads that
-exit status. GitHub answers `422`, and this skill teaches that `422` means the
-subtask is already claimed, so the subtask is abandoned by an executor that
-believes somebody else holds it.
+prints* `origin/main`, and inside `$(...)` on the `gh` line nothing read that
+exit status. GitHub answered `422`, which this skill teaches means the subtask is
+already claimed, so the subtask was abandoned by an executor that believed
+somebody else held it; `--verify` plus `|| exit 1` into a variable turned it into
+a stop.
 
-`--verify` plus `|| exit 1` into a variable is what turns that into a stop. A
-repo-less campaign takes the sha from `gh api .../commits/main` because it has no
-checkout to ask.
+`gh api repos/<owner>/<repo>/commits/main --jq .sha` retires the failure rather
+than guarding it: the remote is what a claim is cut from, a repository with no
+`main` fails loudly instead of printing a ref name, and the two forms collapse
+into one block a repo-less subtask runs unchanged. The `|| exit 1` stays, for the
+same reason it was added — the sha is read before it is used, never inline.
 
 ## A request that sounds new is usually a follow-up
 

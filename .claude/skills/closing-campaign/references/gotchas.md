@@ -3,19 +3,30 @@
 The evidence behind the one-line gotchas in `SKILL.md`. Each is a failure that
 raises no error.
 
+## Step 2's silent failures live in the script
+
+A squash merge making a landed branch read unmerged forever, `git status
+--porcelain` never listing an ignored file, an unreadable `repos/` that reads as
+a campaign with no member repository, and a checkout whose `.git` is a file
+dropping out of the verdict entirely: each could report nothing while testing
+nothing. Step 2 is one call to `scripts/campaign-local-work` now, so they are
+the script's to get right and its docstring states each with its evidence.
+Nothing of them is restated here — two copies of a probe is how one goes stale.
+
 ## An unmatched `repos/*/` glob fails two different ways
 
-This skill is run by hand in whatever shell the person is in, which is why step 2
-enumerates with `find` (all three probed):
+Kept here rather than in the script, because the script enumerates with
+`os.scandir` and never globs — this is a fact about any *shell* line a skill
+might grow back, and the skill is run by hand in whatever shell the person is in
+(all three probed):
 
 | shell | what an unmatched `repos/*/` does |
 | --- | --- |
-| bash, sh | leaves the glob literal, so the loop runs once on `.../repos/*/` and six git commands fail against a path that does not exist — output that reads as an unresolvable repository blocking the close |
+| bash, sh | leaves the glob literal, so the loop runs once on `.../repos/*/` and every git command fails against a path that does not exist — output that reads as an unresolvable repository blocking the close |
 | zsh | `no matches found`, and the whole `for` never runs — a gate that reported nothing because it tested nothing, and an abort outright under `set -e` |
 
-`find` has neither failure in any of the three, and over a `repos/` that exists
-but is empty it simply prints nothing. Do not reach for `nullglob` or a zsh `(N)`
-qualifier: each fixes one shell and breaks the other.
+Neither `nullglob` nor a zsh `(N)` qualifier fixes it: each fixes one shell and
+breaks the other.
 
 ## `dropped` covers four closes
 
@@ -28,19 +39,6 @@ only the first is abandonment, so quote the note, not the word.
 Lowercase from `gh api`, uppercase from `gh issue list --json stateReason`. A
 comparison against the wrong one matches nothing and reads every subtask as
 unsettled — half of why the reading lives in one script rather than in prose.
-
-## After a squash merge, ancestry is the wrong test
-
-Squash is the default merge here. `git branch --no-merged <base>` walks ancestry,
-and a squash merge writes a *new* commit onto the base, so the topic branch stays
-"unmerged" forever; pair that with `--delete-branch` and it is absent from the
-remote too — the exact signature of work that exists only on this machine — so a
-fully landed campaign reports one false blocker per member repository.
-
-The discriminator is content: `git -C <repo> diff --stat <base>..<branch>` empty
-means the branch changes nothing the base lacks, however ancestry reads. Check
-the paths the subtask touched too, since a branch cut before the base moved on
-diffs non-empty on files it never edited.
 
 ## `set -- $var` does not word-split in zsh
 
@@ -56,8 +54,3 @@ By a zsh autoload stub with no file behind it, so a plain `diff` dies with
 input file, not a shadowed name. Write `command diff`; `cmp`, `sed`, `grep` and
 `cp` are unaffected.
 
-## `git status --porcelain` never lists ignored files
-
-So the obvious command for "nothing local is left" answers clean over a checkout
-holding a `.env`, a build directory, or a downloaded fixture — every one of which
-dies with the directory. Only `--ignored` is evidence.

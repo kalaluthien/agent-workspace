@@ -317,32 +317,34 @@ that line; the shape is what makes the issue readable as a subtask.
 **The issue number is half the branch name, and the branch is the claim**, so the
 branch cannot be named until the issue exists and this is the step that mints it.
 Create it on the remote before launching anyone onto it, and read a refusal as
-the subtask being already taken.
+the subtask being already taken. One block claims every subtask, in a member
+repository or on the container: **the sha comes from the remote**, which is what
+the claim is cut from, never from a checkout whose `origin/main` may be stale,
+absent or unfetched — and a repo-less subtask has no checkout to ask.
 
 ```sh
-SHA=$(git -C "$CAMPAIGN/repos/<name>" rev-parse --verify origin/main) || exit 1
-gh api repos/<owner>/<repo>/git/refs \
-  -f ref=refs/heads/campaign-<N>/<issue>-<topic> -f sha="$SHA"
-git -C "$CAMPAIGN/repos/<name>" fetch origin campaign-<N>/<issue>-<topic>
-git -C "$CAMPAIGN/repos/<name>" switch -c campaign-<N>/<issue>-<topic> \
-  --track origin/campaign-<N>/<issue>-<topic>
+BRANCH=campaign-<N>/<issue>-<topic>
+CO="$CAMPAIGN/repos/<name>"        # leave it unset when the subtask has no checkout
+SHA=$(gh api repos/<owner>/<repo>/commits/main --jq .sha) || exit 1
+gh api repos/<owner>/<repo>/git/refs -f ref="refs/heads/$BRANCH" -f sha="$SHA"
+if [ -d "${CO:-}" ]; then
+  git -C "$CO" fetch origin "$BRANCH" &&
+    git -C "$CO" switch -c "$BRANCH" --track "origin/$BRANCH"
+fi
 ```
 
-The sha is resolved into a variable and checked rather than written inline; the
-gotcha below says what an inline `rev-parse` does when `origin/main` is missing.
-Put the branch name in the handover brief.
+The read goes into a variable and is checked, because a failed one that still
+prints goes up as the sha and comes back as the `422` this skill teaches means
+"already claimed" — so the subtask reads as taken and is abandoned. What the
+checkout form did and why the API retires it: `references/gotchas.md`. Put the
+branch name in the handover brief.
 
 **A repo-less campaign files on the container tracker and claims there**, even
-when no container code will change, and **takes the sha from the API rather than
-a checkout**, there being no clone and this session's `origin/main` being
-possibly stale, absent, or unfetched — the silent failure above.
-
-```sh
-SHA=$(gh api repos/kalaluthien/agent-workspace/commits/main --jq .sha) || exit 1
-gh api repos/kalaluthien/agent-workspace/git/refs \
-  -f ref=refs/heads/campaign-<N>/<issue>-<topic> -f sha="$SHA"
-```
-
+when no container code will change: `<owner>/<repo>` is
+`kalaluthien/agent-workspace` and there is no `$CO` for the checkout side, which
+is why that side is an `if` rather than a `&&` chain — the chain's last command
+exits non-zero when there is no checkout, and the claim it just made would read
+as a failure to a `set -e` shell.
 Such a subtask runs by your own hands or in an in-process subagent rooted at the
 campaign directory; the delegate-in-a-clone mode needs a checkout. It closes as
 completed with no pull request, which `scripts/campaign-settlement` prints as
@@ -402,10 +404,6 @@ auth-refactor-260828/
 
 The probes and the failures behind these: `references/gotchas.md`.
 
-- **An inline `sha=$(git rev-parse origin/main)` sends the literal string up as a
-  sha**, because `rev-parse` exits non-zero and still prints it. GitHub answers
-  `422`, which this skill teaches means "already claimed", so the subtask is
-  abandoned. `--verify` plus `|| exit 1` into a variable turns that into a stop.
 - A request that sounds new is usually a follow-up, and skipping step 1 produces
   two anchor issues that both look right with nothing erroring.
 - **You may not be this campaign's session**, and the two reads in step 1 decide

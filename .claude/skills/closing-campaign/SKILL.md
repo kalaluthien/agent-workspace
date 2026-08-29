@@ -9,23 +9,13 @@ Delete a campaign directory only after everything in it also exists somewhere
 else. The directory is a scratch assembly of things versioned elsewhere, so
 closing is a checked demolition, not a decision.
 
-Finished when all eight hold:
-
-- the anchor's latest `BOUND` comment names this machine;
-- `gh issue view <N> -R kalaluthien/agent-workspace --json state` reports `CLOSED`;
-- every subtask in the anchor's index reads settled or has moved to another
-  anchor, each open one having been given a named disposition first;
-- the campaign directory does not exist;
-- no herdr agent's `cwd` was under the path it had, its `runtime/executors/`
-  existed and held no live pid, and no `runtime/holder` in it named a live
-  session other than this one;
-- the anchor issue body is the campaign README, `## Repos` list included, and
-  was compared against `runtime/anchor-body-derived.md` before it was written;
-- the closing comment carries the listing taken immediately before the delete:
-  every entry under the directory outside `runtime/` and `repos/`, files and
-  directories and symlinks alike, because `rm -rf` destroys all of them;
-- every `campaign-<N>/` claim ref on the container that still sits at
-  `origin/main` is released, and any that holds commits is reported, not deleted.
+Finished when the two facts no step owns hold — `gh issue view <N> -R
+kalaluthien/agent-workspace --json state` reports `CLOSED`, and `$CAMPAIGN_DIR`
+does not exist — and every step's `Holds when` line held when that step ran.
+Those lines are the rest of the predicate, one per step and in order, and
+`grep '^Holds when' SKILL.md` is the whole of them: the list is read off the
+procedure rather than kept beside it, so a step that changes cannot leave a
+predicate behind saying what it used to do.
 
 A campaign bound here with no directory is taken first — `opening-campaign`
 steps 2 and 4, nothing to acquire — because the holder and executor records have
@@ -93,6 +83,10 @@ esac
 Stop on either. They are what stop `..`, a nested path, and the container's own
 `docs/` from reaching step 5.
 
+Holds when: the anchor's latest `BOUND` comment names this machine, and
+`$CAMPAIGN_DIR` is absolute, a direct child of the container, and named
+`<slug>-<YYMMDD>`.
+
 ### 1. Refuse while another session holds it, or an agent is live under the tree
 
 **The holder first**, because only the holding session closes a campaign; an
@@ -145,79 +139,47 @@ Any row from either: print the rows, name the agent, stop. The person retires
 it; this skill never kills an agent. No rows still leaves two cases for step 2 — an agent herdr has forgotten, and an
 executor that never sent `CLAIMED` — both leaving work in a checkout.
 
+Holds when: `runtime/executors/` existed and held no live pid, no
+`runtime/holder` named a live session other than this one, and no herdr agent's
+`cwd` was under `$CAMPAIGN_DIR` — or `TOOK_IT_HERE` is set and this step reported
+all three as not applicable rather than as passed.
+
 ### 2. Refuse while work exists only on this machine
 
-Deleting the directory destroys these and nothing recovers them.
-
-**The container checkout first**, because a container subtask is worked there,
-never under `repos/`. No `--ignored` here: the container ignores every campaign
-directory. For a repo-less campaign this is the whole of step 2. **Scope it to
-`campaign-$N/`**, or another campaign's live worktree becomes a blocker on this
-close.
-
-```sh
-git -C "$CONTAINER" for-each-ref --format='%(refname:short)' "refs/heads/campaign-$N/" |
-  while read -r B; do
-    git -C "$CONTAINER" log --oneline "$B" --not --remotes | sed "s|^|$B  |"
-  done
-git -C "$CONTAINER" worktree list | tail -n +2 | grep "\[campaign-$N/" || true
-git -C "$CONTAINER" status --porcelain
-```
-
-The first two are this campaign's own and they are blockers. The last cannot be
-scoped — an uncommitted edit in the container's single working tree carries no
-campaign — so print it, name it as unattributed, and do not count it.
-
-**Then every checkout under `repos/`**, one at a time, never one git command
-across member repositories, reading `runtime/handover/` beside them and saying
-which briefs you cannot account for.
+Deleting the directory destroys these and nothing recovers them. One reader
+answers the whole question — `scripts/campaign-local-work`, which reads this
+campaign's own `campaign-$N/` branches and the worktrees on them in the
+container, the container's single working tree, and every checkout under
+`repos/` one at a time, with the briefs in `runtime/handover/` named beside
+them. Do not re-derive any of that here; a second reader of one question is what
+drifts (§ Completion and liveness).
 
 ```sh
-if [ -d "$CAMPAIGN_DIR/repos" ]; then
-find "$CAMPAIGN_DIR/repos" -mindepth 1 -maxdepth 1 -type d >| /tmp/checkouts-$N ||
-  echo "REFUSE: repos/ did not enumerate; nothing was checked"
-while read -r R; do
-  echo "== $R"
-  git -C "$R" status --porcelain --ignored=matching
-  git -C "$R" log --oneline --branches HEAD --not --remotes
-  git -C "$R" stash list
-  git -C "$R" worktree list | tail -n +2
-  base=$(git -C "$R" symbolic-ref --quiet --short refs/remotes/origin/HEAD) ||
-    base=origin/$(git -C "$R" ls-remote --symref origin HEAD |
-                  sed -n 's|^ref: refs/heads/\([^[:space:]]*\).*|\1|p')
-  [ "$base" != "origin/" ] || { echo "!! cannot resolve the default branch of $R"; continue; }
-  git -C "$R" branch --no-merged "$base"
-done < /tmp/checkouts-$N
-fi
+"$CONTAINER/scripts/campaign-local-work" "$N" "$CAMPAIGN_DIR" >| /tmp/local-work-$N
+cat /tmp/local-work-$N
 ```
 
-Keep all three shapes: the `[ -d ]` wrapper tells "no member repository" from
-"cannot look", the enumeration goes to a file so `find`'s own failure survives,
-and `-type d` is the per-row guard. A repository whose default branch will not
-resolve is reported, not skipped.
+**Exit 1 is the reading having failed, not a clean tree**: print the `-- REFUSE:`
+line it ends on, stop, and conclude nothing. On exit 0 the last line is the
+verdict and the rows above it are the report.
 
-Report one row per thing at risk, never one per check — the checks overlap on
-purpose, so merge only the report. A branch `--no-merged` names is not a blocker
-if it is pushed, nor if it was squash-merged (see the gotchas); say which of the
-three each row is.
+- An unmarked row is counted, and one counted row refuses the close. The refusal
+  is the script's own output, then: *Nothing was deleted. Clear every counted
+  row, or say to discard it, then re-run.*
+- A `~` row is named and not counted — pushed, landed over a squash merge, or a
+  clean worktree, which is the one the closer is usually standing in.
+- A `-- REPORT:` line is for the person to read and blocks nothing: an
+  unattributed edit in the container's one working tree, a handover brief
+  nobody has accounted for, a repository whose default branch would not resolve.
+- `0 item(s) … clear` is the pass.
 
-Refuse in this shape, so two refusals written on different days can be read side
-by side:
+Each row carries its `<kind>`, the `found by` checks that overlap on it and what
+`clears` it, so two refusals written on different days read side by side without
+the shape being retyped here.
 
-```text
-REFUSE: <count> item(s) exist only on this machine: under <CAMPAIGN_DIR>, or on
-this campaign's own campaign-<N>/ branches in <CONTAINER>.
-
-  <owner/repo>  <kind>  <identifier>
-    found by  <check>[, <check>]
-    clears by <push | merge | discard>
-
-Nothing was deleted. Clear every row, or say to discard it, then re-run.
-```
-
-`<kind>` is one of: uncommitted, ignored, unpushed commit, stash, worktree,
-unmerged branch. `<check>` is the command that found it. `<count>` counts rows,
-not checks.
+Holds when: `campaign-local-work` exited 0 over this campaign and this directory,
+and its last line read clear — either on the first run, or on a re-run after
+every counted row was pushed, merged, or discarded on the person's word.
 
 ### 3. Settle or dispose of every open subtask
 
@@ -305,6 +267,10 @@ A `-- REPORT:` line about nested sub-issues is not covered by this gate: a
 subtask that is itself an anchor hides its own members, so run the script on it
 and dispose of those rows too.
 
+Holds when: `campaign-settlement` reads every subtask in the anchor's index as
+settled or moved to another anchor, each open one having been given a named
+disposition and had that act carried out first.
+
 ### 4. Validate the README, compare, then overwrite the anchor issue body
 
 The README and the anchor body are the same template filled in
@@ -373,6 +339,10 @@ cp /tmp/body-after "$DERIVED"
 ```
 
 Not identical: say so and stop before step 5, while the README still exists.
+
+Holds when: the anchor issue body is this campaign's README, `## Repos` list
+included, compared against `runtime/anchor-body-derived.md` before it was
+written and read back through `campaign-repos` after.
 
 ### 5. Say you are closing, then close, then delete the directory
 
@@ -466,25 +436,31 @@ rm -rf -- "$CAMPAIGN_DIR"
 `runtime/` goes with it — `holder`, every `executors/<issue>` record, every
 handover brief — by design, since nothing off this machine reads them. Say so.
 
+Holds when: the closing comment carries the listing taken immediately before the
+delete — every entry under the directory outside `runtime/` and `repos/`, files
+and directories and symlinks alike, because `rm -rf` destroys all of them — and
+every `campaign-<N>/` claim ref still sitting at `origin/main` is released, any
+that holds commits reported and not deleted.
+
 ## Gotchas
 
 The probes and the failures behind these: `references/gotchas.md`.
 
-- Enumerate `repos/` with `find`, never a `repos/*/` glob: unmatched, bash leaves
-  it literal and zsh aborts the loop, and both read as a gate that passed.
+- The failures step 2 used to have to get right — a squash merge making a
+  landed branch read unmerged forever, `git status --porcelain` never listing
+  an ignored file, an unreadable `repos/` reading as a repo-less campaign, and
+  a checkout whose `.git` is a file leaving the verdict — belong to
+  `scripts/campaign-local-work` now, and its docstring is where they are stated.
+  The one that stayed here is the unmatched `repos/*/` glob, because the script
+  does not glob and that failure is any shell line's, not the script's.
 - `dropped` covers four closes and its note says which; only `not planned` is
   abandonment, so quote the note, not the word.
 - `state_reason` is lowercase from `gh api` and uppercase from `gh issue list
   --json stateReason`, and the wrong one reads every subtask as unsettled.
-- After a squash merge — the default here — `git branch --no-merged` reports a
-  landed branch as unmerged forever. The discriminator is content: an empty
-  `git -C <repo> diff --stat <base>..<branch>`. Report such a row as landed.
 - `set -- $var` does not word-split in zsh, so a gate built on it tests nothing;
   split with `${spec%%:*}` and `${spec##*:}` instead.
 - `diff` is shadowed in a Claude Code shell on this machine, and a gate that
   errors out is a gate that tested nothing. Write `command diff`.
-- `git status --porcelain` never lists ignored files, so it answers clean over a
-  checkout holding a `.env` or a build directory. Only `--ignored` is evidence.
 - Two sessions given the same slug on the same day build the same path, so this
   delete may hit another session's live workspace. `runtime/holder` catches that
   in step 1; the herdr gate cannot, because it matches an agent's `cwd`. A
