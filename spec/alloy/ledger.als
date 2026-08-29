@@ -23,9 +23,13 @@
  *
  *   agent -> session -> repos -> ledger
  *
- * Each file runs on its own and each carries its own verdict table:
+ * Each file runs on its own and each carries its own verdict table, and
+ * scripts/alloy-check is that table's one reader: it runs the file and prints
+ * ok or MISMATCH per command, plus the count against the table above, so a
+ * round that touches a predicate ends with one command rather than with the
+ * incantation re-derived (`alloy exec -f -o <dir> -t text -c '*' <file>`):
  *
- *   alloy exec -f -o /tmp/alloy-ledger -t text -c '*' spec/alloy/ledger.als
+ *   scripts/alloy-check spec/alloy/ledger.als -o /tmp/alloy-ledger
  *
  * A raw trace repeats every static signature in every state; condense it:
  *   scripts/alloy-trace-digest /tmp/alloy-ledger/Sanity-solution-0.txt
