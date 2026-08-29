@@ -835,6 +835,15 @@ pane once after every launch.** That is the only check that catches a delegate
 which stopped before it began. Then pair the `blocked` watch with a quiet timer,
 and treat a long quiet as a question to go and look at rather than as progress.
 
+**The session limit is a first-class cause of death, and it kills in batches.**
+An agent the limit stopped looks exactly like one still thinking — no
+`blocked`, no exit — and whatever it had not pushed or posted is gone. When
+several agents go quiet together, read the limit's reset time before anything
+else: that is an outage to schedule around, not a failure to retry now, since a
+retry launched into the same window dies the same way. What bounds the loss is
+the durability the rules above already demand — every commit pushed as it
+exists, every finding on the pull request as it consolidates.
+
 Retire finished agents as the campaign runs, not when it closes: a long-lived
 campaign finishes subtasks continuously, and panes accumulate until someone
 sweeps them, and the sweep reads both records the way § Completion and liveness
