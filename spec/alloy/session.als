@@ -523,13 +523,15 @@ pred R3_DeleteUnderWorkingSession {
 
 /* =================== 4. a campaign with no member repository =================== */
 
-/* R4. `## Repos` reads `- none`. The campaign has no member repository at all:
-   the container is the only repository in the universe and it is the tracker,
-   not a member, so `always no c.body` is the list saying `- none` and never
-   naming anything. Its subtasks are filed there because there is nowhere else,
-   and worked by the session's own hands or by an in-process subagent in the
-   campaign directory -- the delegate-in-a-clone mode wants a checkout this
-   campaign never has.
+/* R4. `## Repos` reads `- none`. What says the campaign has no member
+   repository is `always no c.body` and nothing else: `c.body` IS the `## Repos`
+   list, so an empty one for the whole trace is the list reading `- none`. Note
+   what the predicate does not say -- the container is in `c.members` here, as
+   the home of the subtask, because a repo-less campaign files on the container
+   tracker; "no member repository" is a claim about the list, not about which
+   repository an issue is homed on. Such subtasks are worked by the session's
+   own hands or by an in-process subagent in the campaign directory, the
+   delegate-in-a-clone mode wanting a checkout this campaign never has.
 
    WITNESS, and it is the campaign's whole life in one trace: Survey,
    FileAnchor, AddMember on a container-homed issue, Claim on the container's
@@ -554,7 +556,7 @@ pred R3_DeleteUnderWorkingSession {
    WellFormed: as a global fact it made a container-homed subtask unfilable, and
    R4 was UNSAT against it. It survives there as
    `containerIssuesAreCampaignIssues`, conjoined by the scenario that is about
-   it (S16b/S16c), where it constrains what it meant to constrain and nothing
+   it (S18/S18a), where it constrains what it meant to constrain and nothing
    else. */
 pred R4_RepolessCampaign {
   syncCAS and surveyAtFile

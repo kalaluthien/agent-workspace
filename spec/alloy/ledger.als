@@ -162,8 +162,8 @@
  *   S13c_ReopenWithPR                UNSAT the actual blocker
  *   S14_FollowUpAfterClose           SAT
  *   S16a_ContainerMemberUnderNarrowReading  UNSAT the narrow reading forbade it
- *   S16b_PlainContainerIssue         SAT   the tracker's third kind exists
- *   S16c_PlainContainerIssueUnderClosedWorld  UNSAT control: the clause still bites
+ *   S18_PlainContainerIssue          SAT   the tracker's third kind exists
+ *   S18a_PlainContainerIssueUnderClosedWorld  UNSAT control: the clause bites
  *   Cov_*                            SAT   every own event fires in some trace
  *
  * Every pass was proved able to fail by mutation, re-run 2026-08-29 against
@@ -177,7 +177,7 @@
  * idiom itself under test.
  *
  * The date is part of the claim. This file changed after the 2026-08-28 run --
- * the container clause left `WellFormed`, and S16b/S16c arrived -- so the proof
+ * the container clause left `WellFormed`, and S18/S18a arrived -- so the proof
  * was carried out again rather than inherited: a mutation score is about the
  * model in front of you, and an older one silently claims something about a
  * model that no longer exists.
@@ -929,23 +929,26 @@ pred S16a_ContainerMemberUnderNarrowReading {
   some c: Campaign, i: c.members | i.home = Container
 }
 
-/* S16b. THE THIRD KIND. AGENTS.md says the container's tracker holds anchors,
+/* S18 -- numbered past S17c because S16b and S16c are repos.als's, and the
+   four files share one S-sequence once they are composed.
+
+   THE THIRD KIND. AGENTS.md says the container's tracker holds anchors,
    subtasks, and issues no campaign flow touches at all -- a person's request,
    somebody else's bug -- and says every reader leaves that third kind alone. So
    the model has to admit one. It did not while
    `containerIssuesAreCampaignIssues` was a clause of WellFormed: an issue that
    never joins a campaign was UNSAT at any bound, and no verdict said so, which
    is how the same clause trapped the design twice. SAT now. */
-pred S16b_PlainContainerIssue {
+pred S18_PlainContainerIssue {
   some i: Issue | i.home = Container and always (i not in Campaign.anchor + Campaign.members)
 }
 
-/* S16c. Control for S16b, and the reason the clause is kept rather than
+/* S18a. Control for S18, and the reason the clause is kept rather than
    deleted: conjoined as a predicate it still says exactly what it always said,
    so a scenario that wants a closed world of campaign issues can still ask for
-   one. UNSAT, which is S16b forbidden on purpose rather than by accident. */
-pred S16c_PlainContainerIssueUnderClosedWorld {
-  containerIssuesAreCampaignIssues and S16b_PlainContainerIssue
+   one. UNSAT, which is S18 forbidden on purpose rather than by accident. */
+pred S18a_PlainContainerIssueUnderClosedWorld {
+  containerIssuesAreCampaignIssues and S18_PlainContainerIssue
 }
 
 /* ---------------- reachability floor ----------------
@@ -991,8 +994,8 @@ run S13b_ReopenAnyClosed        for exactly 2 Issue, 1 PR, exactly 1 Campaign, e
 run S13c_ReopenWithPR           for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps
 run S14_FollowUpAfterClose      for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 2 Repo, 14 steps
 run S16a_ContainerMemberUnderNarrowReading for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 6 steps
-run S16b_PlainContainerIssue              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps
-run S16c_PlainContainerIssueUnderClosedWorld for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps
+run S18_PlainContainerIssue              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps
+run S18a_PlainContainerIssueUnderClosedWorld for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps
 
 run Cov_FileAnchor   for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps
 run Cov_AddMember    for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps
