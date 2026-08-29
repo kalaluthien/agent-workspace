@@ -864,6 +864,15 @@ what serializes them. Survey before editing, scope edits so they do not collide
 with other worktrees, and rebase onto what landed rather than force-pushing over
 it.
 
+**Two open pull requests over the same normative files are normal, and the
+second to land reconciles.** When two container subtasks touch `AGENTS.md`, a
+skill, or a model at once: the holder publishes the overlap — which hunks of
+which files both touch — beside the first review verdict; the second lander
+merges `main` into its branch and resolves there; and the second pull request's
+final verification reads the *combined* state, because the clashes that matter
+are semantic — four surfaced only in the combination of #46 and #47 — and no
+hunk-level merge sees them.
+
 **The named cost: no concurrent cross-machine or cloud work on one campaign.**
 Another machine, a cloud session, or a phone may read a campaign and may open a
 different one; none of them may write this one's anchor or launch into it. A
