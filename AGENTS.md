@@ -611,7 +611,7 @@ stale.
   the same argument `runtime/holder` makes for carrying one. **The executor reads
   its own pid from `$CLAUDE_PID`**, which is the `claude` process; `$$` is the
   shell one tool call runs in and is dead before the next one starts. **It reads
-  its own name from `ListAgents`, whose first line names the calling session**
+  its own name from `ListAgents`, whose first line names the calling session** (probed 2026-08-29: `This session is <name> [ref]`)
   before it lists the peers — the harness named the session, so a name it guessed
   instead would address nobody.
 
