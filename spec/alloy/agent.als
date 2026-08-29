@@ -346,6 +346,16 @@
  *   and survived deleting its own headline conjunct. It is built the way A6 is
  *   built now: everything right except the one thing under test.
  *
+ *   `mergedByHolder` was keyed to `campaignOf[Now.issue]`, a MUTABLE relation, so
+ *   a reparent mid-review emptied the antecedent and permitted a self-merge. It
+ *   reads `By.actor.holds` now. The `RemoveMember` pin A4 carried to work around
+ *   it is gone, which means the rule is measured on every path rather than on the
+ *   one where its hole is shut.
+ *
+ *   `aDeleteDir` stripped every executor on the machine, delegates included, so a
+ *   live delegate went permanently unaddressable when a directory its `--name`
+ *   never depended on was deleted. It strips executor sessions only.
+ *
  *
  * TWO FINDINGS THE COMPOSITION PRODUCED
  *
@@ -588,11 +598,14 @@ pred launch[a: Agent] {
 
 /* CLAIMED -- executor to campaign, sent once at the claim.
 
-   It carries `<branch> <ListAgents name>` and nothing else. The branch and the
-   subtask are already GitHub facts, readable by anyone with the anchor; the
-   address is the one thing only the executor knows, which is the same test every
-   other message in this protocol has to pass. AGENTS.md carries the rest,
-   including why renaming the session is not the mechanism.
+   It carries `<branch> <ListAgents name> <pid>` and nothing else. The branch and
+   the subtask are already GitHub facts, readable by anyone with the anchor; the
+   address and the process id are the two things only the executor knows, which
+   is the same test every other message in this protocol has to pass. The pid
+   earns its place the way `runtime/holder`'s does -- it is what makes the
+   record's liveness a local `kill -0` rather than a guess -- and nothing but the
+   executor can supply it. AGENTS.md carries the rest, including why renaming the
+   session is not the mechanism.
 
    WHAT THE HOLDER DOES WITH IT IS THE POINT, and it is why `Addressed` is not a
    message bit. The holder writes `<campaign>/runtime/executors/<issue>` -- the
@@ -620,16 +633,26 @@ pred announce[a: Agent] {
 /* The campaign directory is deleted, and the executor records under `runtime/`
    go with it. Every other bit this layer holds is about a process or a pull
    request and outlives the tree; `Addressed` is the one that does not, because
-   it IS a file in the tree.
+   for an executor session it IS a file in the tree.
 
-   Scoped to the deleted tree's own campaign and machine: `Present - Present'` is
-   the tree that just went, so two campaigns sharing a machine do not clear each
-   other's records. That scoping is repos.als's MachineIndependence claim applied
-   to a bit this layer owns. */
+   ONLY FOR AN EXECUTOR SESSION, and the `some a.peer` guard is the whole of it.
+   A delegate's address is the `--name` its launcher chose, which lives in the
+   launch and in `herdr agent list`, not in `runtime/executors/` -- so a delegate
+   is addressable for as long as it runs, whatever happens to the tree. Stripping
+   it here would have made a live delegate permanently unreachable the moment a
+   directory it does not depend on was deleted, and `retire` -- the one holder act
+   deliberately left unguarded -- would then be the only thing left that could
+   touch it.
+
+   Scoped to the deleted tree's own campaign and machine besides: `Present -
+   Present'` is the tree that just went, so two campaigns sharing a machine do
+   not clear each other's records. That scoping is repos.als's
+   MachineIndependence claim applied to a bit this layer owns. */
 pred aDeleteDir {
   Now.ev = DeleteDir
   Addressed' = Addressed
-    - { a: Agent | a.host = Site.mach
+    - { a: Agent | some a.peer
+                   and a.host = Site.mach
                    and campaignOf[a.task] in (Present - Present').camp }
   keepLife and keepReview and keepMsgs and keepShutdown and keepBorn
   no Target.agent
@@ -1095,10 +1118,21 @@ fun executorsOf[i: Issue]: set Agent { task.i }
    an absence, checkable, and what the two-step shutdown is for. Review asks
    whether the work is any good, which nothing else in this model asks at all;
    ledger.als's header says adequacy is unmodelled, and this is the one place the
-   design puts a reader in front of it. */
+   design puts a reader in front of it.
+
+   IT IS KEYED TO THE MERGER'S OWN CAMPAIGN, NOT THE ISSUE'S CURRENT MEMBERSHIP,
+   and that is the second thing this predicate got wrong. Written as
+   `Now.ev = MergePR and some campaignOf[Now.issue] implies mayWrite[By.actor,
+   campaignOf[Now.issue]]`, it evaluated a MUTABLE relation: `removeMember` empties
+   `campaignOf[i]`, the antecedent goes false, and the rule permits anything --
+   so reparenting a subtask mid-review bought the executor a legal self-merge.
+   A4 pinned `RemoveMember` out of its own trace, which measured the rule on the
+   one path where the hole is shut and hid it everywhere else. `By.actor.holds`
+   is the session's own campaign and no reparent can move it, so the guard now
+   holds on every path and the scoping antecedent is gone with it. */
 pred mergedByHolder {
-  always ((Now.ev = MergePR and some campaignOf[Now.issue]) implies
-            (mayWrite[By.actor, campaignOf[Now.issue]]
+  always (Now.ev = MergePR implies
+            (mayWrite[By.actor, By.actor.holds]
              and Now.issue.pr in Reviewed
              and (all a: executorsOf[Now.issue] |
                     a in Confirmed and coLocated[By.actor, a])))
@@ -1567,10 +1601,13 @@ pred A13_PushAfterReviewUnReviews {
    the executor is confirmed: every conjunct of `mergedByHolder` holds except the
    identity of the merger, so A5 turns on that and the mutation reddens it.
 
-   `always Now.ev != RemoveMember` keeps the subtask in the campaign, because
-   `mergedByHolder` is scoped to a merge whose issue still has one and a subtask
-   reparented out of a campaign is unguarded by it -- the silent-reparent residue
-   ledger.als's header already names, reached from a new direction. And s2 is
+   `always s2.holds = c` replaces the `RemoveMember` pin the first draft carried.
+   That pin existed because `mergedByHolder` was scoped to the issue's CURRENT
+   membership, so a reparent made the rule vacuous and the scenario had to forbid
+   one to measure anything -- which measured the rule on the single path where its
+   hole is shut. The guard is keyed to `By.actor.holds` now, which no reparent
+   moves, so the scenario needs no such pin and a reparented subtask is covered
+   like any other. And s2 is
    pinned as a NON-holder, because a holding session that does a subtask with its
    own hands and merges it is the ordinary path, not the defect.
 
@@ -1586,7 +1623,7 @@ pred A4_ExecutorMergesItsOwnPR {
   some c: Campaign, disj s1, s2: Session, a: Agent {
     a.peer = s2 and a.task in c.members
     s1.smach = s2.smach
-    always Now.ev != RemoveMember
+    always s2.holds = c                -- an executor session works the campaign it holds
     always isHolder[s1, c]
     always not isHolder[s2, c]
     eventually (Now.ev = Report and Target.agent = a)
@@ -1616,9 +1653,11 @@ pred A5_MergedByHolderBlocksExecutorMerge {
    nothing off the machine ever reads it. Its cost is A10 -- after the delete
    the executor is unreachable again, which is why the delete is gated. */
 pred A9_RecordDiesWithTheDirectory {
-  some a: Agent |
+  some a: Agent {
+    some a.peer                        -- a delegate's address is its --name, not a file
     eventually (reachable[a] and Now.ev = DeleteDir and Site.mach = a.host
                 and after not reachable[a])
+  }
 }
 
 /* A10. THE DELETE, UNGATED, under an executor the holder CAN see. This is

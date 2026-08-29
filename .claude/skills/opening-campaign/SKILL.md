@@ -124,17 +124,24 @@ kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
 ```
 
 Alive, and not this session — you are an **executor session** on one subtask.
-File it or take the one you were given, claim its branch, and send the holding
-session
+File it or take the one you were given, and then, **before you claim anything**,
+decide the mode: § Running a campaign in the container's `AGENTS.md` says an
+executor that changes a repository runs in a process started in that
+repository's checkout. You may work a container subtask or campaign-directory
+work yourself; a member-repository subtask makes you the *launcher* of a
+delegate. That decision names the branch you are about to claim and the process
+that will hold it, so it cannot come after the claim.
+
+Then claim the branch, and send the holding session
 
 ```
-CLAIMED campaign-<N>/<issue>-<topic> <your ListAgents name>
+CLAIMED campaign-<N>/<issue>-<topic> <your ListAgents name> <your $CLAUDE_PID>
 ```
 
-Then stop running this skill: from here you are an agent, and § Talking to a
-repository agent in the container's `AGENTS.md` is your half of it, § Running a
-campaign the rule about which subtasks you may take at all. Nothing below this
-line is yours — you do not scaffold, sync, or close.
+— the branch of whichever process ends up holding the claim, your own if you are
+working it and the delegate's if you launched one. Then stop running this skill:
+from here you are an agent, and § Talking to a repository agent is your half of
+it. Nothing below this line is yours — you do not scaffold, sync, or close.
 
 Skipping the announcement is not a small omission. It is the only thing that
 puts you in `<campaign>/runtime/executors/`, and that directory is the only
@@ -143,13 +150,9 @@ place the holder's close gate looks for you.
 Dead, missing, or your own — you are the holding session; rewrite the file as
 step 4 does and carry on in that directory. **When a `CLAIMED` reaches you**,
 record it before doing anything else, because a message is gone with the session
-that received it:
-
-```sh
-mkdir -p "$CAMPAIGN/runtime/executors"
-printf 'session %s\npid %s\nbranch %s\n' "<name>" "<pid>" "<branch>" \
-  >| "$CAMPAIGN/runtime/executors/<issue>"
-```
+that received it. The record's three fields and the `printf` that writes them are
+§ Talking to a repository agent in the container's `AGENTS.md`; run it under
+`$CAMPAIGN/runtime/executors/<issue>` after `mkdir -p` on that directory.
 
 No directory at all — the campaign exists on GitHub but not on this machine, so
 run steps 2, 4 and 5 for it, taking its ID and body from the anchor issue. Skip
@@ -288,7 +291,8 @@ different campaign, or unreadable — stop and ask the person.
 Then finish it:
 
 - `mkdir -p runtime/executors`. It is where a received `CLAIMED` is recorded,
-  and `closing-campaign` refuses a close it cannot enumerate.
+  and `closing-campaign` refuses a close when that directory is missing — an
+  empty one says no executor announced, an absent one says nothing at all.
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
 - Delete `subtask.md`. It came along with the copy, but a subtask is filed from
   the skill's own copy at `assets/subtask.md`; a second copy sitting in a

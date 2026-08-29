@@ -598,7 +598,7 @@ pred holderOnly {
    records, and an executor session could satisfy the key only by accident of
    `init`. The record that does carry it is `<campaign>/runtime/executors/`, and
    `Agent` is agent.als's, so the repair is `noDeleteUnderReadableExecutor`
-   there. R3d states the gap; A10-A12 close it.
+   there. R3d states the gap; A10-A12 close it. */
 
 /* Re-run the new-versus-follow-up survey at the moment of filing.
 

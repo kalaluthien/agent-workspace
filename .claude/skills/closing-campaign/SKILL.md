@@ -17,9 +17,9 @@ Finished when all six hold:
 - every subtask in the anchor's index reads settled or has moved to another
   anchor, each open one having been given a named disposition first;
 - the campaign directory does not exist;
-- no herdr agent's `cwd` was under the path that directory had, no live pid was
-  left in its `runtime/executors/`, and no `runtime/holder` in it named a live
-  session other than this one;
+- no herdr agent's `cwd` was under the path that directory had, its
+  `runtime/executors/` existed and held no live pid, and no `runtime/holder` in
+  it named a live session other than this one;
 - the anchor issue body is the campaign README, `## Repos` list included, and
   the body was compared against `runtime/anchor-body-derived.md` before it was
   written.
@@ -112,17 +112,12 @@ the holding session by default, so say so, take the directory as
 `opening-campaign` step 4 does, and carry on. A live PID that is some other
 `claude` reads as held, which is the safe direction to be wrong in here.
 
-**Then the agents, and there are two records.** A delegate runs in a herdr pane
-and appears in `herdr agent list`; an executor session has no pane at all and
-appears in `runtime/executors/`, written when its `CLAIMED` arrived. Reading one
-of them passes the gate over every executor of the other kind.
-
-Presence is the signal, not `agent_status` — that reports the screen and calls a
-mid-turn pause `idle`. An agent listed under the tree blocks the close whatever
-its status says.
-
-Compare whole path segments. A bare prefix test matches a sibling whose name
-merely starts the same, and misses the directory itself.
+**Then the agents, both records** — `herdr agent list` for the delegates,
+`runtime/executors/` for the executor sessions (§ Completion and liveness in the
+container's `AGENTS.md` says why one alone is not a reading). Presence is the
+signal, not `agent_status`, which calls a mid-turn pause `idle`. Compare whole
+path segments: a bare prefix test matches a sibling whose name merely starts the
+same, and misses the directory itself.
 
 ```sh
 herdr agent list | jq -r --arg tree "$CAMPAIGN_DIR" \
@@ -130,36 +125,43 @@ herdr agent list | jq -r --arg tree "$CAMPAIGN_DIR" \
    | select(.cwd + "/" | startswith(($tree | sub("/$";"")) + "/"))
    | "\(.name // "unnamed")\t\(.agent_status)\t\(.cwd)"'
 
-for F in "$CAMPAIGN_DIR"/runtime/executors/*; do
-  [ -e "$F" ] || continue
-  P=$(awk '$1 == "pid" { print $2 }' "$F")
-  kill -0 "$P" 2>/dev/null && [ "$(ps -o comm= -p "$P")" = claude ] &&
-    { echo "live executor: $(basename "$F")"; cat "$F"; }
-done
+EXECDIR="$CAMPAIGN_DIR/runtime/executors"
+if [ ! -d "$EXECDIR" ]; then
+  echo "REFUSE: no $EXECDIR — executor sessions cannot be enumerated"
+else
+  find "$EXECDIR" -type f -print | while read -r F; do
+    P=$(awk '$1 == "pid" { print $2 }' "$F")
+    kill -0 "$P" 2>/dev/null && [ "$(ps -o comm= -p "$P")" = claude ] &&
+      { echo "live executor: $(basename "$F")"; cat "$F"; }
+  done
+fi
 ```
+
+**A missing directory is a refusal, not a pass.** An empty `runtime/executors/`
+says no executor announced; an absent one — any campaign scaffolded before the
+record existed — says nothing at all, and both read like a loop that skips what
+it cannot find. `find` rather than a glob for the same reason: an unmatched zsh
+glob aborts, and an aborted gate is a passed gate.
 
 **Do not match `ListAgents` names against the branch.** An executor session keeps
 whatever name its harness gave it and cannot rename itself, so a prefix test on
-`campaign-<N>-` finds the delegates and misses exactly the executors this record
-exists to catch. The record is the reading; the name in it is how you then
-address one.
+`campaign-<N>-` finds the delegates and misses what this record exists to catch.
 
-Any row from either: print the rows, say which agent holds the campaign, stop.
-The person retires it; this skill never kills an agent.
+Any row from either: print the rows, name the agent, stop. The person retires
+it; this skill never kills an agent.
 
-No rows still leaves two cases open, and both are for step 2 to settle rather
-than this one: an agent herdr has forgotten, and an executor session that never
-sent `CLAIMED` and so was never recorded. Neither can be enumerated here; both
-leave the same trace, which is work in a checkout that is not on a remote.
+No rows still leaves two cases for step 2: an agent herdr has forgotten, and an
+executor session that never sent `CLAIMED`. Neither is enumerable here, and both
+leave one trace — work in a checkout that is not on a remote.
 
 ### 2. Refuse while work exists only on this machine
 
-Deleting the directory destroys these and nothing recovers them, and this is
-also where step 1's two unenumerable cases land: an executor nothing recorded
-still leaves its work in a checkout, so the loop below is what finds it. Check
-every checkout under `repos/`, one at a time — never one git command across
-member repositories. Read `$CAMPAIGN_DIR/runtime/handover/` beside it and say
-which briefs you cannot account for.
+Deleting the directory destroys these and nothing recovers them, and step 1's
+two unenumerable cases land here too: an executor nothing recorded still leaves
+its work in a checkout. Check every checkout under `repos/`, one at a time —
+never one git command across member repositories — and read
+`$CAMPAIGN_DIR/runtime/handover/` beside it, saying which briefs you cannot
+account for.
 
 ```sh
 for R in "$CAMPAIGN_DIR"/repos/*/; do
@@ -240,10 +242,10 @@ cat /tmp/settlement-$N
 It reads the anchor's sub-issue index in one paginated call — every member
 repository at once, public or private — and prints one row per subtask, then
 whether the campaign is closable. Keep the output in a file: the rest of this
-step is read off it by machine, not by eye.
+step is read off it by machine.
 
-Read the note beside a `dropped` row before repeating the word to anyone: it
-covers four different closes and only one of them is an abandonment.
+Read the note beside a `dropped` row before repeating the word: it covers four
+closes and only one is an abandonment.
 **Then every `open` row gets a disposition, and this step refuses without one.**
 A campaign may close over unfinished work; it may not close over *unexamined*
 work. A leftover nobody named is work that vanishes with the close — the anchor
@@ -460,34 +462,32 @@ rm -rf -- "$CAMPAIGN_DIR"
 - **After a squash merge, ancestry is the wrong test, and squash is the default
   merge here.** `git branch --no-merged <base>` walks ancestry, and a squash
   merge writes a *new* commit onto the base, so the topic branch stays
-  "unmerged" forever. Pair that with `--delete-branch` and the local branch is
-  also absent from the remote — which is the exact signature of work that exists
-  only on this machine. A campaign whose work is fully landed then reports one
-  false blocker per member repository. The discriminator is content, not
+  "unmerged" forever. Pair that with `--delete-branch` and the branch is also
+  absent from the remote — the exact signature of work that exists only on this
+  machine — so a fully landed campaign reports one false blocker per member
+  repository. The discriminator is content, not
   ancestry: `git -C <repo> diff --stat <base>..<branch>` empty means the branch
   changes nothing the base lacks, however the ancestry reads. Check the paths the
   subtask actually touched too, since a branch cut before the base moved on
   diffs non-empty on files it never edited. Report such a row as landed.
 - **`set -- $var` does not word-split in zsh, and this skill is made of gates.**
-  This machine's shell leaves unquoted parameters unsplit, so the common
-  `for pair in a:1 b:2; do set -- $pair` idiom leaves `$2` empty. Here it failed
-  loudly — `gh` answered `invalid issue format: ""` — but the same construct
-  inside a check whose empty result reads as "nothing to report" passes the gate
-  having tested nothing, and a silent pass is indistinguishable from a clean
-  one. Split with a parameter expansion instead (`repo=${spec%%:*}`,
+  This machine's shell leaves unquoted parameters unsplit, so
+  `for pair in a:1 b:2; do set -- $pair` leaves `$2` empty. Here it failed loudly
+  — `gh` answered `invalid issue format: ""` — but the same construct inside a
+  check whose empty result reads as "nothing to report" passes having tested
+  nothing. Split with a parameter expansion (`repo=${spec%%:*}`,
   `num=${spec##*:}`), and make any gate that can return empty say which of the
   two it means.
 - **`diff` is shadowed in a Claude Code shell on this machine** by a zsh
   autoload stub with no file behind it, so a plain `diff` dies with
-  `(eval):1: diff: function definition file not found`. That reads like a
-  missing input file, not a shadowed name, and this step's whole purpose is a
-  comparison — a gate that errors out is a gate that tested nothing. Write
-  `command diff`. `cmp`, `sed`, `grep` and `cp` are unaffected.
+  `(eval):1: diff: function definition file not found` — which reads like a
+  missing input file, not a shadowed name, and a gate that errors out is a gate
+  that tested nothing. Write `command diff`; `cmp`, `sed`, `grep` and `cp` are
+  unaffected.
 - `git status --porcelain` never lists ignored files, so the obvious command for
-  "nothing local is left" answers clean over a checkout holding a `.env`, a
-  build directory, or a downloaded fixture — every one of which dies with the
-  directory. Run both forms over any repository with a `.gitignore` and they
-  disagree. Only `--ignored` is evidence, which is why step 2 uses
+  "nothing local is left" answers clean over a checkout holding a `.env`, a build
+  directory, or a downloaded fixture — every one of which dies with the
+  directory. Only `--ignored` is evidence, which is why step 2 uses
   `--ignored=matching`.
 - **Two sessions given the same slug on the same day build the same path**, so
   the directory this skill deletes may be another session's live workspace.

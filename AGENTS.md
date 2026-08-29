@@ -39,7 +39,8 @@ machine holds it.
 subtask it was given or takes the one it was handed, claims the branch, sends
 `CLAIMED` to the holding session — and from that moment it is in the protocol
 below: it answers `STATUS`, sends `REPORT` and `BLOCKED`, stops on `STAND DOWN`,
-and never surveys, never syncs, never closes, never merges. It works the subtask
+and never surveys, never syncs, never closes, and never lands its own work —
+§ Talking to a repository agent has that last one in full. It works the subtask
 whichever way § Running a campaign allows, subject to the mode rule there; what
 changes is only who it reports to.
 
@@ -380,8 +381,8 @@ All of them carry the same mechanics. The branch is
 subtask's issue exists because the number is minted there — a refusal means
 another executor holds the subtask. Work is pushed as soon as one commit
 exists, so a checkout that dies costs uncommitted work and nothing more. It
-lands by a pull request the holding session reviews and merges, never the
-executor.
+lands by a pull request, and § Talking to a repository agent says who reviews and
+merges it.
 
 The subagent mode needs none of the delegate rules that exist to cross a
 process boundary: no handover file, because the brief is passed in-process and
@@ -574,31 +575,36 @@ stale.
 
 | message | direction | carries |
 | --- | --- | --- |
-| `CLAIMED` | executor → campaign | `<branch> <ListAgents name>`, once, at the claim |
+| `CLAIMED` | executor → campaign | `<branch> <ListAgents name> <pid>`, once, at the claim |
 | `STATUS` | campaign → agent | doing what, blocked on what, what exists only on this machine, safe to stop |
 | `REPORT` | agent → campaign | a pull request URL, once, unsolicited |
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
 
-- **`CLAIMED` carries an address and nothing else.** The branch and the subtask
-  are already GitHub facts anyone with the anchor can read; the `ListAgents` name
-  is the one thing only the executor knows, which is the test every message here
-  has to pass. A launched delegate needs no such message — its `--name` *is* its
-  branch, chosen before the process existed. An executor session was named by
-  nobody the holder knows, so it says so. A running session can be renamed, but
-  only by a person typing `/rename` into its pane (probed 2026-08-28), so
-  renaming to the flattened branch is an optional courtesy and `CLAIMED` is the
-  mechanism.
+- **`CLAIMED` carries the two things only the executor knows**, and nothing else.
+  The branch and the subtask are already GitHub facts anyone with the anchor can
+  read; the `ListAgents` name is how to reach it, and the pid is what makes its
+  liveness a local `kill -0` rather than a guess — the same argument
+  `runtime/holder` makes for carrying one. **The executor reads its own pid from
+  `$CLAUDE_PID`**, which is the `claude` process; `$$` is the shell one tool call
+  runs in and is dead before the next one starts.
 
-- **The holder writes it down**, in `<campaign>/runtime/executors/<issue>` — one
-  file per announced subtask, holding `session <ListAgents name>`, `pid` and
-  `branch`:
+  A launched delegate needs no such message — its `--name` *is* its branch, chosen
+  before the process existed, and `herdr agent list` carries its liveness. An
+  executor session was named by nobody the holder knows, so it says so. A running
+  session can be renamed, but only by a person typing `/rename` into its pane
+  (probed 2026-08-28), so renaming to the flattened branch is an optional
+  courtesy and `CLAIMED` is the mechanism.
+
+- **The holder writes it down.** This is the record's one definition, and every
+  other site points here:
 
   ```sh
   printf 'session %s\npid %s\nbranch %s\n' "<name>" "<pid>" "<branch>" \
     >| "$CAMPAIGN/runtime/executors/<issue>"
   ```
 
+  One file per announced subtask, the three fields straight out of the message.
   The holder writes it because the holder is what must read it back — at a close,
   at a sweep, possibly from a later session, since a message received is gone the
   moment the session that received it is. That gives the record `runtime/holder`'s
@@ -608,12 +614,15 @@ stale.
   every address in it.
 
   **That directory is the only reader of executor-session liveness.** The close
-  gate and the retirement sweep enumerate it; nothing matches names by prefix,
-  because an executor session keeps whatever name its harness gave it and a
-  session cannot rename itself. An executor that skips `CLAIMED` is therefore
-  invisible rather than merely quiet — the holder sees a peer in `ListAgents` and
-  cannot tell which subtask it works, so the gate reads straight past it
-  (modelled: `spec/alloy/agent.als`, `A1`; the delete under it, `A10`).
+  gate and the retirement sweep enumerate it and read each `pid` the way
+  `runtime/holder` is read; nothing matches names by prefix, because an executor
+  session keeps whatever name its harness gave it and cannot rename itself. **A
+  campaign whose directory has no `runtime/executors/` cannot be enumerated at
+  all, and that is a refusal rather than a pass** — an empty directory says no
+  executor announced, a missing one says nothing. An executor that skips
+  `CLAIMED` is invisible rather than merely quiet: the holder sees a peer in
+  `ListAgents` and cannot tell which subtask it works, so the gate reads straight
+  past it (modelled: `spec/alloy/agent.als`, `A1`; the delete under it, `A10`).
 
 - **An executor never merges its own pull request, and never reviews it.** It
   pushes, `REPORT`s the URL once, and waits. The holding session verifies in
@@ -658,10 +667,9 @@ and treat a long quiet as a question to go and look at rather than as progress.
 
 Retire finished agents as the campaign runs, not when it closes: a long-lived
 campaign finishes subtasks continuously, and panes accumulate until someone
-sweeps them. **Sweep both records.** `herdr agent list` finds the delegates by
-their `cwd`; `<campaign>/runtime/executors/` names the executor sessions, which
-have no pane at all. A sweep that reads one of them leaves the other kind
-standing and reports nothing.
+sweeps them, and the sweep reads both records the way § Completion and liveness
+says the close gate does — one of them alone leaves every executor of the other
+kind standing and reports nothing.
 
 A campaign may not be closed while any agent is live under its tree, and a
 repository may not be dropped from a campaign while an agent is working one of
@@ -669,7 +677,7 @@ its subtasks.
 
 **That check is local, and under the principle that is nearly enough.** Every
 agent of a campaign runs on the machine it is `BOUND` to, so a local gate sees
-all of them — provided it reads both lists, and provided every executor session
+all of them — provided it reads both records and every executor session
 announced itself. What it cannot see is a machine working this campaign against
 that binding, and no cheap mechanism fixes it. What lowers the stakes instead: a
 delegate pushes its branch as soon as it has one commit, so a tree deleted
