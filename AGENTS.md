@@ -32,12 +32,24 @@ machine holds it.
 | --- | --- |
 | `BOUND` names another machine | **not in this campaign.** Stop before any write and before any launch, and name the machine that holds it. |
 | `BOUND` names this machine, and there is no directory or its holder is dead | **the holding session.** Write `runtime/holder` and carry on. |
-| `BOUND` names this machine, and `runtime/holder` names a live session | **an executor session** on one subtask: claim its branch, announce itself to the holding session, and never write the anchor. |
+| `BOUND` names this machine, and `runtime/holder` names a live session | **an executor session** on one subtask; see below. |
 | there is no `BOUND` comment | **not bound yet.** Only a person's word binds an existing campaign; see below. |
 
-The executor role is stated here as a role only. What that announcement is —
-`CLAIMED`, and what the protocol does with it — is pending in
-kalaluthien/agent-workspace#37, and this file gains it when that lands.
+**An executor session is an agent, not a second campaign session.** It files the
+subtask it was given or takes the one it was handed and claims the branch — and
+it announces itself with `CLAIMED` when the claim is its own to hold, which is
+the case where it works the subtask with its own hands. When it launches a
+delegate instead, the claim is the delegate's and its `--name` already says so,
+so nothing is announced; § Talking to a repository agent is the one statement of
+which is which. From the claim it is in the protocol below: it answers `STATUS`, sends `REPORT` and `BLOCKED`, stops on `STAND DOWN`,
+and never surveys, never syncs, never closes, and never lands its own work —
+§ Talking to a repository agent has that last one in full. It works the subtask
+whichever way § Running a campaign allows, subject to the mode rule there; what
+changes is only who it reports to.
+
+The holding session is the peer the person named. When nobody named one, the
+announcement goes to every peer session, and a peer that holds no campaign
+covering it ignores it.
 
 **`BOUND <machine>` is a comment on the anchor, and the latest one is
 authoritative.** Comments append, so writing one races nothing; that is why the
@@ -169,13 +181,17 @@ two survive unchanged, one holds by construction, and one inverts.
   holds nothing beyond `origin/main` may be released — deleted — only when no
   agent on *your* machine works it; a live agent elsewhere that has not pushed
   loses its claim to that rule, which is one more reason it pushes early.
-  The executor's every other name is this string projected: an agent is
-  `--name`d the branch with its slash flattened to a dash
-  (`campaign-1-31-executor-identity`), so nothing carries a second naming rule
-  to drift. Campaign sessions stay nameless on purpose: their durable trace is
-  what they filed and what they claimed, retirement authority is co-location
-  rather than ownership, and nothing durable reads a session name — so giving
-  one would be machinery, not structure.
+  A *delegate's* every other name is this string projected: it is `--name`d the
+  branch with its slash flattened to a dash
+  (`campaign-1-31-executor-identity`), so the name an address resolves and the
+  branch a reader meets are one string. An executor session is the case that
+  rule cannot reach — its harness named it before this campaign existed and only
+  a person can rename it — so it announces the name it has, and
+  `<campaign>/runtime/executors/<issue>` records that name durably. Two naming
+  rules, then, and one thing follows for every reader: **never test a name
+  against the branch.** A `campaign-<N>-` prefix test finds the delegates and
+  misses exactly what the record exists to catch. § Talking to a repository
+  agent carries the announcement.
 
 # Three planes
 
@@ -404,15 +420,19 @@ released, deleted, **only when no agent on your machine works it**.
 Read that guard twice here. It rests on an agent being visible, and a repo-less
 subtask is worked by a session's own hands or by an in-process subagent, neither
 of which has a row in `herdr agent list`. So absence from that listing is not
-evidence that such a claim is abandoned: ask the peer sessions (`STATUS`) before
-deleting one, and leave it standing if nobody answers. Deleting it costs the one
-thing keeping two executors off the subtask.
+evidence that such a claim is abandoned. `<campaign>/runtime/executors/` is the
+reading that answers it — an executor session's `CLAIMED` names the branch it
+holds and the pid to test it by, which is what that record exists for — and only
+a claim named by no record and answered by no peer (`STATUS`) may be deleted.
+Leave it standing if nobody answers: deleting it costs the one thing keeping two
+executors off the subtask.
 
 **The one exception is the close.** `closing-campaign` step 5 releases every
 `campaign-<N>/` ref on the container that still sits at `origin/main`, and it is
 allowed to because by then step 0 has established the campaign is bound here and
-step 1 that no agent is live under its tree — the two readings this guard asks
-for, already taken. A ref holding commits is printed there, never deleted. Refs
+step 1 that nothing is live under its tree — by both records, `herdr agent list`
+and `runtime/executors/`, which is what makes the sweep sighted for a repo-less
+campaign whose executors are in the second list only. A ref holding commits is printed there, never deleted. Refs
 in member repositories are not swept: a merged pull request releases those.
 
 **Such a subtask closes as completed with no pull request**, and
@@ -423,7 +443,29 @@ kind. Quote the note, never the word, and do not add a second reading to the
 script to flatter this case.
 
 **Do it here, hand it to a subagent, or hand it to a delegate** — every subtask
-runs one of three ways, and the mode is chosen before the work starts.
+runs one of these ways, and the mode is chosen before the work starts.
+
+**The mode is decided first by the repository, and only then by cost.** An
+executor that *changes* a repository runs in a process started in that
+repository's checkout: a herdr delegate in `<campaign>/repos/<repo>/` for a
+member repository, and the campaign session, an in-process subagent on a
+worktree, or an executor session for the container itself, which already has the
+container's skills. Reading any repository, and writing under `<campaign>/`
+— scripts, notes, fixtures — may run in any mode.
+
+The harness fact it rests on: an in-process subagent and an interactive session
+load the skills of the session or directory they were *started in*, never those
+of another repository however it is checked out; and a skill marked
+`disable-model-invocation: true` is unusable by any agent in any mode, so it must
+be spelled out in the brief rather than named.
+
+So an **executor session** can take only a container subtask or
+campaign-directory work. For a member-repository subtask it becomes the launcher
+of a delegate, and the claim is then the delegate's: it is `--name`d its branch
+and `herdr agent list` carries it, so no `CLAIMED` is sent for it by anybody. §
+Talking to a repository agent says who sends that message and who never does.
+
+Then, within what the repository allows, choose by cost:
 
 - **Your own hands** when the change is one small edit, holds in view at once,
   and needs nothing from that repository's build or test loop.
@@ -435,12 +477,17 @@ runs one of three ways, and the mode is chosen before the work starts.
   the work needs the repository's own conventions and toolchain, when it will
   take many turns, or when two repositories must move at once.
 
-All three carry the same mechanics. The branch is
+An executor session is a fourth executor and not a fourth mode, because nobody
+chooses it: a session that arrives in the container root to a live holder simply
+is one. What it then chooses is which of the modes above carries its subtask.
+
+All of them carry the same mechanics. The branch is
 `campaign-<N>/<issue>-<topic>`, claimed on the remote by create-ref after the
 subtask's issue exists because the number is minted there — a refusal means
 another executor holds the subtask. Work is pushed as soon as one commit
 exists, so a checkout that dies costs uncommitted work and nothing more. It
-lands by pull request — except for a subtask whose work lives only under
+lands by a pull request, and § Talking to a repository agent says who reviews and
+merges it — except for a subtask whose work lives only under
 `<campaign>/scripts/`, which has no commit to land: that one closes as completed
 with no pull request, its closing comment saying what was built and where the
 close listed it. How that reads in the settlement is above.
@@ -599,9 +646,20 @@ Never answer one with the other.
   kind — `complete`, or `dropped` for everything else that is closed. Do not
   hand-roll a second reader; two of them drift, and the campaign's central
   verdict is the worst place for that.
-- **Liveness is a herdr fact**, read from `herdr agent list` presence plus the
+- **Liveness is a herdr fact for a delegate and a `runtime/executors/` fact for
+  an executor session**, and a gate that reads only the first is blind to half
+  its executors. A delegate is read from `herdr agent list` presence plus the
   session transcript — never from `agent_status` alone, which reports the screen
-  and calls a mid-turn pause `idle`.
+  and calls a mid-turn pause `idle`. An executor session runs no herdr pane at
+  all, so it is read from the record the holder wrote when its `CLAIMED` arrived,
+  and its liveness from the `pid` in that file the way `runtime/holder` is read.
+  **Both readings, every time**: the no-live-agent gate in `closing-campaign` and
+  the retirement sweep below each run both.
+
+  `ListAgents` alone will not do it. It gives a name, not a subtask, so presence
+  there cannot say which campaign a peer is in — which is why the record exists,
+  and why an executor session that never announced can be live under a campaign
+  that reads closable.
 
   **A `cwd` filter cannot scope a campaign with no directory**, because every
   campaign session's `cwd` is the container root: the session transcript is the
@@ -609,26 +667,106 @@ Never answer one with the other.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the campaign session retires it once
-that work is durable. Review feedback gets a fresh session, briefed from the
-pull request — a pane held open across a multi-day review is the expensive
-thing.
+that work is durable.
+
+**Who reviews, and in which mode.** The reviewer is one the holder launches, and
+`/code-review <PR#>` is the whole opening prompt either way, because it is
+model-invocable. The default is an **in-process subagent**: a review only reads,
+so it needs none of what a process boundary is paid for — no handover file, no
+canary, no pane, no sweep. A **herdr session** is for a review that will take
+many turns, or an `ultra` review, which is person-triggered only and never the
+default. Feedback then goes to a *fresh* executor, briefed from the pull request
+and the review, because a pane held open across a multi-day review is the
+expensive thing.
 
 # Talking to a repository agent
 
-`spec/alloy/agent.als` is the contract; this is the short form. Address an
-agent by the name given at launch, which `ListAgents` resolves — herdr's pane
-label is not an address.
+`spec/alloy/agent.als` is the contract; this is the short form. `ListAgents`
+resolves the address; herdr's pane label is not one. Where the address comes from
+is the difference between the two kinds of executor — a delegate's was chosen at
+launch, an executor session's was announced — and § Who is a campaign session
+says which is which.
 
-Four messages, carrying **only what the agent alone knows**. Anything a message
+Five messages, carrying **only what the agent alone knows**. Anything a message
 says about finished work duplicates a GitHub fact, and the copy is what goes
 stale.
 
 | message | direction | carries |
 | --- | --- | --- |
+| `CLAIMED` | executor → campaign | `<branch> <ListAgents name> <pid>`, once, at the claim |
 | `STATUS` | campaign → agent | doing what, blocked on what, what exists only on this machine, safe to stop |
 | `REPORT` | agent → campaign | a pull request URL, once, unsolicited |
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
+
+- **`CLAIMED` is sent by the process that holds the claim, and only where nobody
+  chose its name.** That is exactly one case: an executor session working a
+  container subtask or campaign-directory work with its own hands. A launched
+  delegate sends none — its `--name` *is* its branch, chosen before the process
+  existed, and `herdr agent list` carries its liveness — and neither does the
+  executor session that launched one, because announcing a claim it does not hold
+  would give one process two addresses and the close gate would count it twice.
+  So the two liveness readings partition the executors: `herdr agent list` names
+  every delegate, `runtime/executors/` names every executor session that holds
+  its own claim, nothing is in both, and neither list is a substitute for the
+  other. A launcher is in neither, and that is the intended reading rather than a
+  hole — it holds no claim and no working tree, so what the gate must see is its
+  delegate, which the first list names for as long as it runs. A running session can be
+  renamed, but only by a person typing `/rename` into its pane (probed
+  2026-08-28), so renaming to the flattened branch is an optional courtesy and
+  `CLAIMED` is the mechanism.
+
+- **The message is `CLAIMED <branch> <ListAgents name> <pid>`**, and this is the
+  one place that format is written. The branch and the subtask are already GitHub
+  facts anyone with the anchor can read; the name is how to reach the session,
+  and the pid is what makes its liveness a local `kill -0` rather than a guess —
+  the same argument `runtime/holder` makes for carrying one. **The executor reads
+  its own pid from `$CLAUDE_PID`**, which is the `claude` process; `$$` is the
+  shell one tool call runs in and is dead before the next one starts. **It reads
+  its own name from `ListAgents`, whose first line names the calling session**
+  before it lists the peers (probed 2026-08-29: `This session is <name> [ref]`).
+  The harness named the session, so a name it guessed instead would address
+  nobody.
+
+- **The holder writes it down.** This is the record's one definition, and every
+  other site points here:
+
+  ```sh
+  printf 'session %s\npid %s\nbranch %s\n' "<name>" "<pid>" "<branch>" \
+    >| "$CAMPAIGN/runtime/executors/<issue>"
+  ```
+
+  One file per announced subtask, the three fields straight out of the message.
+  The holder writes it because the holder is what must read it back — at a close,
+  at a sweep, possibly from a later session, since a message received is gone the
+  moment the session that received it is. That gives the record `runtime/holder`'s
+  argument exactly, and `runtime/holder`'s lifetime: it is on the bound machine,
+  it dies with the directory, and nothing off the machine reads it. It is keyed
+  to no session, so a successor that takes a dead holder's directory inherits
+  every address in it.
+
+  **That directory is the only reader of executor-session liveness.** The close
+  gate and the retirement sweep enumerate it and read each `pid` the way
+  `runtime/holder` is read; nothing matches names by prefix, because an executor
+  session keeps whatever name its harness gave it and cannot rename itself. **A
+  campaign whose directory has no `runtime/executors/` cannot be enumerated at
+  all, and that is a refusal rather than a pass** — an empty directory says no
+  executor announced, a missing one says nothing. An executor that skips
+  `CLAIMED` is invisible rather than merely quiet: the holder sees a peer in
+  `ListAgents` and cannot tell which subtask it works, so the gate reads straight
+  past it (modelled: `spec/alloy/agent.als`, `A1`; the delete under it, `A10`).
+
+- **An executor never merges its own pull request, and never reviews it.** It
+  pushes, `REPORT`s the URL once, and waits. The holding session verifies in
+  GitHub, launches a reviewer, reads the findings, and then either merges —
+  telling the executor the work is durable, which is what lets it drop its
+  worktree — or briefs a fresh executor from the pull request and the review,
+  until the review is clean. **The holder never merges unreviewed**, and a push
+  after a review retires that review: a review is of a pull request at a
+  revision. Witnessed 2026-08-28, which is why the rule is written: an executor
+  session squash-merged its own pull request in the same minute the holding
+  session sent a hold, and nothing on disk said who merges (modelled: `A4` the
+  collision, `A5`/`A7` the rule, `A8` the control, `A13` the re-push).
 
 - **A claim in a message is never evidence.** It says where to look; then look,
   in GitHub, yourself.
@@ -661,7 +799,9 @@ and treat a long quiet as a question to go and look at rather than as progress.
 
 Retire finished agents as the campaign runs, not when it closes: a long-lived
 campaign finishes subtasks continuously, and panes accumulate until someone
-sweeps them.
+sweeps them, and the sweep reads both records the way § Completion and liveness
+says the close gate does — one of them alone leaves every executor of the other
+kind standing and reports nothing.
 
 A campaign may not be closed while any agent is live under its tree, and a
 repository may not be dropped from a campaign while an agent is working one of
@@ -669,8 +809,9 @@ its subtasks.
 
 **That check is local, and under the principle that is nearly enough.** Every
 agent of a campaign runs on the machine it is `BOUND` to, so a local gate sees
-all of them. What it cannot see is a machine working this campaign against that
-binding, and no cheap mechanism fixes it. What lowers the stakes instead: a
+all of them — provided it reads both records and every executor session
+announced itself. What it cannot see is a machine working this campaign against
+that binding, and no cheap mechanism fixes it. What lowers the stakes instead: a
 delegate pushes its branch as soon as it has one commit, so a tree deleted
 underneath it costs uncommitted work and nothing more.
 
