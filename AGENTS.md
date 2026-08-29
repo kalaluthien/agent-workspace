@@ -92,19 +92,32 @@ and is dead before the next one starts. Liveness has one reader,
 
 ```sh
 PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
-"$CONTAINER/scripts/campaign-session-alive" "$PID"
+V=$("$CONTAINER/scripts/campaign-session-alive" "$PID") || V=unreadable
 ```
 
 `CONTAINER` is resolved the one way § Three planes gives, which is also where
 both skills resolve it before calling this.
 
+**Only `dead` lets you take over.** `alive` is the holder still working;
+`other` is a pid held by something whose name this install does not know, which
+is a recycled pid *or* a differently-named claude and nothing here can tell
+those apart; `unreadable` is the reading itself failing. Three of the four
+outcomes mean leave it alone, because the act on the other side is destroying a
+tree or overwriting a live holder, and only a confirmed absence is safe to act
+on. **Read the word, never the exit status** — the status is about the reading,
+as it is for `campaign-local-work`.
+
 **Never hand-roll the comparison.** It was four prose copies of `[ "$(ps -o
 comm= -p "$PID")" = claude ]`, and that test reads a live session as **dead**:
 `ps -o comm=` reports how a process was invoked, so the same build answers
 `claude` through a wrapper and its full path when exec'd by path. Measured
-2026-08-29 on three live sessions of one campaign, two shapes among them, while
-both readers below were about to run over them. The script reads `ucomm`, the
-kernel's accounting name, which says what the process *is*.
+2026-08-29 on three live sessions of one campaign, two through a wrapper and one
+by path, while both readers below were about to run over them. The script keeps
+`kill -0` for existence, because a syscall against your own process table cannot
+fail the transient way running `ps` can, and reads the name from `ucomm`, which
+is invariant across *how* a process was started. `ucomm` is the exec'd file's
+basename rather than an identity, so the names it matches are a fact about this
+install — which is why an unrecognised one is `other` and not `dead`.
 
 Alive means you are an executor session; dead means you take over by rewriting
 the file. This is the one lock here that cannot rot, because staleness is a

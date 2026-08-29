@@ -94,10 +94,13 @@ executor session came to work one subtask and this skill is not its to run.
 
 ```sh
 PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN_DIR/runtime/holder" 2>/dev/null)
-"$CONTAINER/scripts/campaign-session-alive" "$PID"
+V=$("$CONTAINER/scripts/campaign-session-alive" "$PID") || V=unreadable
+echo "$V"
 ```
 
-Alive and not this session — print the file and stop. Missing or dead — you are
+`alive`, `other` or `unreadable`, and not this session — print the file and
+stop; only `dead` is a confirmed absence, and a close is the most destructive
+act here. Missing or `dead` — you are
 the holding session, so say so, take the directory as `opening-campaign` step 4
 does, and carry on.
 
@@ -126,8 +129,12 @@ if [ ! -d "$EXECDIR" ]; then
 else
   find "$EXECDIR" -type f -print | while read -r F; do
     P=$(awk '$1 == "pid" { print $2 }' "$F")
-    "$CONTAINER/scripts/campaign-session-alive" "$P" >/dev/null &&
-      { echo "live executor: $(basename "$F")"; cat "$F"; }
+    V=$("$CONTAINER/scripts/campaign-session-alive" "$P" 2>&1) || V="unreadable ($V)"
+    case "$V" in
+      dead) ;;
+      alive|other) echo "live executor: $(basename "$F") [$V]"; cat "$F" ;;
+      *) echo "REFUSE: $(basename "$F") is $V"; cat "$F" ;;
+    esac
   done
 fi
 ```

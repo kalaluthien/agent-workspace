@@ -98,10 +98,14 @@ read its `runtime/holder` before working in it:
 ```sh
 CAMPAIGN=$(cd "$CONTAINER/<the directory that matched>" && pwd -P)
 PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder" 2>/dev/null)
-"$CONTAINER/scripts/campaign-session-alive" "$PID"
+V=$("$CONTAINER/scripts/campaign-session-alive" "$PID") || V=unreadable
+echo "$V"
 ```
 
-**Alive, and not this session — you are an executor session** on one subtask.
+**`alive`, `other` or `unreadable`, and the holder is not this session — you are
+an executor session** on one subtask. Only `dead` is a confirmed absence; the
+other two say the holder may be there and the reading cannot see it, and
+overwriting `runtime/holder` on a guess gives one campaign two holders.
 File it or take the one you were given, then decide the mode **before you claim
 anything**, because the mode names the branch and the process holding it: a
 container or campaign-directory subtask is yours to work and you announce
@@ -110,7 +114,7 @@ you the *launcher* of a delegate, which announces nothing and makes step 5 yours
 (§ Delegating to a repository agent). Either way stop there — you do not
 scaffold, sync, or close.
 
-**Dead, missing, or your own — you are the holding session**; rewrite the file as
+**`dead`, missing, or your own — you are the holding session**; rewrite the file as
 step 4 does and carry on. Record a `CLAIMED` that reaches you before anything
 else, because a message dies with the session that received it: the fields and
 the `printf` are § Talking to a repository agent, written to

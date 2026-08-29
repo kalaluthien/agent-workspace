@@ -1,60 +1,124 @@
 #!/usr/bin/env python3
-"""Is this pid a live `claude` session?
+"""Does a live claude session hold this pid?
 
     scripts/campaign-session-alive <pid>
 
 The one reader of that question. `runtime/holder` and every record under
-`runtime/executors/` carry a pid, and two destructive gates turn on this answer:
-closing-campaign's no-live-agent refusal, and the holder takeover in both skills.
+`runtime/executors/` carries a pid, and two destructive acts turn on the answer:
+closing-campaign's no-live-agent refusal, which deletes a campaign tree, and the
+holder takeover in both skills, which overwrites `runtime/holder`.
 
-The contract callers hold it to:
+    stdout   exit  meaning                              may the caller take over?
+    alive    0     a process holds the pid and its      no
+                   name is one this install runs
+    other    0     a process holds the pid and the      NO -- and not because the
+                   name is not recognised               session is there; because
+                                                        nothing here can tell a
+                                                        recycled pid from an
+                                                        install whose binary is
+                                                        named differently
+    dead     0     no process holds the pid             yes
+    (stderr) 2     the reading itself failed            no
 
-  exit 0, prints `alive`     the pid is running and is a claude session
-  exit 1, prints `dead`      no process holds the pid
-  exit 1, prints `other`     a process holds it, but it is not claude --
-                             a recycled pid, so the caller must not take over
+**Exit status is about the reading, never the verdict** -- the rule AGENTS.md
+states for `campaign-local-work`, and the reason is this script's own worst
+outcome: a failed read that exits like `dead` deletes a tree under a live
+session. So a caller compares the printed word and treats anything else, exit 2
+included, as a refusal.
 
-Why it reads `ucomm` and not `comm`. `ps -o comm=` reports how the process was
-invoked, so the same claude build answers `claude` when exec'd through a wrapper
-and `/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe`
-when exec'd by path -- measured 2026-08-29 on three live sessions of one
-campaign, two of each shape. Comparing that against the literal `claude` called
-a live executor dead, which is the direction that deletes a working tree. `ucomm`
-is the kernel's accounting name, so it reports what the process *is* and answered
-`claude.exe` for all three. It pads to a fixed width, hence the strip.
+Why `kill -0` decides existence. It is a syscall against the caller's own
+process table: it cannot fail transiently the way running `ps` can, and it
+answers the only question whose "no" is safe to act on.
 
-The residual error is deliberate and must stay: a pid recycled onto a DIFFERENT
-claude session reads `alive`, so a caller refuses to take over rather than
-overwriting a holder it cannot identify. Tightening this check to remove that is
-how the defect above gets re-introduced.
+Why the name is read from `ucomm` and not `comm`. `ps -o comm=` reports how a
+process was invoked, so one build answers `claude` through a wrapper and its full
+path when exec'd by path -- measured 2026-08-29 on three live sessions of one
+campaign, two through a wrapper and one by path. Comparing that against the
+literal `claude` called a live executor dead, which is the direction that deletes
+a working tree. `ucomm` is invariant across *how* a process was started, which is
+what fixes that bug.
+
+`ucomm` is NOT identity. It is the basename of the exec'd file, symlinks
+resolved, truncated to MAXCOMLEN -- probed by copying a binary to a new name and
+reading the new name back. So NAMES below is a fact about this install, not about
+claude, and it is why an unrecognised name is `other` rather than `dead`: the
+literal is allowed to be wrong without a tree being deleted for it. That failure
+mode is exactly the one this script was written to remove, and hardcoding a name
+would have reintroduced it one field over.
+
+Two residuals stay, and stay stated here rather than in a caller:
+
+  * A pid recycled onto a DIFFERENT claude session reads `alive`, so a caller
+    refuses a takeover it should have been allowed. That is the safe direction.
+    Tightening it away is how the deleting direction comes back.
+  * `alive` means a claude holds this pid, not that it is *this campaign's*
+    session. The record carries a `session` name that nothing here compares,
+    because a pid is all a record is guaranteed to carry. A caller that needs
+    the stronger question must ask it itself.
+
+A zombie -- exited, unreaped -- still answers `alive`: `kill -0` succeeds and
+`ucomm` is unchanged. A caller sees a live executor it cannot retire.
 """
+import os
 import subprocess
 import sys
 
-ACCOUNTING_NAME = "claude.exe"
+# What the exec'd binary is called on this install. Not a property of claude.
+NAMES = frozenset({"claude", "claude.exe"})
 
 
-def verdict(pid: str) -> str:
+def fail(message: str) -> "NoReturn":
+    print(f"campaign-session-alive: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def holds(pid: int) -> bool:
+    """Is any process holding this pid? A syscall, so it cannot fail loosely."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True                     # held by another user, so it is held
+    except (OSError, OverflowError) as exc:
+        fail(f"kill -0 {pid}: {exc}")
+    return True
+
+
+def name_of(pid: int) -> str:
     try:
         out = subprocess.run(
-            ["ps", "-o", "ucomm=", "-p", pid],
+            ["ps", "-o", "ucomm=", "-p", str(pid)],
             capture_output=True, text=True, check=False,
         )
-    except OSError as exc:                       # ps missing is not "dead"
-        sys.exit(f"campaign-session-alive: cannot run ps: {exc}")
+    except OSError as exc:
+        fail(f"cannot run ps: {exc}")
+    if out.returncode != 0:
+        fail(f"ps -o ucomm= -p {pid} exited {out.returncode}: "
+             f"{out.stderr.strip() or 'no message'}")
     name = out.stdout.strip()
     if not name:
-        return "dead"
-    return "alive" if name == ACCOUNTING_NAME else "other"
+        # The process existed a moment ago and does not now. Do not call that
+        # `dead`: it is a read that lost its race, and `dead` licenses a delete.
+        fail(f"ps reported no name for pid {pid}, which kill -0 says exists")
+    return name
 
 
 def main() -> int:
-    if len(sys.argv) != 2 or not sys.argv[1].isdigit():
-        sys.exit("usage: campaign-session-alive <pid>")
-    v = verdict(sys.argv[1])
-    print(v)
-    return 0 if v == "alive" else 1
+    if len(sys.argv) != 2:
+        fail("usage: campaign-session-alive <pid>")
+    arg = sys.argv[1]
+    if not arg.isascii() or not arg.isdigit():
+        fail(f"not a pid: {arg!r}")
+    pid = int(arg)
+    if pid <= 0:
+        fail(f"not a pid: {arg!r}")
+    if not holds(pid):
+        print("dead")
+    else:
+        print("alive" if name_of(pid) in NAMES else "other")
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
