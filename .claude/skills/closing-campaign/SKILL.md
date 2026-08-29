@@ -31,10 +31,10 @@ Finished when all eight hold:
   `origin/main` is released, and any that holds commits is reported rather than
   deleted.
 
-Where this machine holds no directory for the campaign, the first three and the
-last are the real conditions — the binding, and three GitHub facts that read the
-same from any machine — and the middle four are about a cache that does not
-exist. Step 0 says what to skip.
+A campaign bound here with no directory is taken first — `opening-campaign`
+step 4 with nothing to acquire — because the holder and executor records have
+no other home (§ Who is a campaign session in the container's `AGENTS.md`,
+"Holding scaffolds"). So step 0 always binds a directory, and there is one path.
 
 ## Procedure
 
@@ -72,11 +72,12 @@ bind it here, or close it from the machine that has been working it. The rule
 and the two occasions a session may post `BOUND` are § Who is a campaign session
 in the container's `AGENTS.md`.
 
-**Then the directory, if this machine has one.** A campaign legitimately has
-none here (§ Who is a campaign session, Directory). That is not a failure and
-not a reason to stop: say so, skip steps 1, 2 and 4, and close the issue in step
-5, where the delete then has nothing to do. Closing the issue is what closes the
-campaign; deleting a directory is dropping a cache.
+**Then the directory.** A campaign bound here may have none yet — not taken on
+this machine (§ Who is a campaign session, Directory). Take it first: run
+`opening-campaign` step 4 for it, which scaffolds the directory from the anchor
+body and writes `runtime/holder`, and carry on with the directory it made. The
+gates below read records that live only there, and a close that skipped them
+because the directory was missing was the path #52 retired.
 
 Every later step reads `$CAMPAIGN_DIR`, and two fail silently if it is relative
 or wrong: step 1 compares it against herdr's absolute `cwd`, so a relative value
@@ -84,21 +85,12 @@ matches nothing and the refusal passes having found nothing; step 5 then deletes
 relative to whatever directory the session happens to hold. Bind it here, from
 the slug the person gave, and never rebuild it later in the run.
 
-**Bind it on both paths — including the one where there is no directory.** Step
-5 has to tell three states apart, and *unset* is not one of them: unset means
-nobody ran this step, which is a different problem from a campaign this machine
-holds no cache of. So the no-directory path binds the empty string, explicitly.
-
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-
-CAMPAIGN_DIR=$(cd "$CONTAINER/$SLUG" && pwd -P)   # this machine has one
-CAMPAIGN_DIR=                                     # or it has none
+CAMPAIGN_DIR=$(cd "$CONTAINER/$SLUG" && pwd -P)
 ```
 
-On the empty path steps 1, 2 and 4 are skipped and so are the two assertions
-below; step 5 posts its announcement with nothing to list. On the bound path,
-assert both facts `AGENTS.md` already pins, so the assertions cost nothing:
+Then assert both facts `AGENTS.md` already pins, so the assertions cost nothing:
 
 ```sh
 [ "$(dirname "$CAMPAIGN_DIR")" = "$CONTAINER" ] || echo "REFUSE: not a direct child of $CONTAINER"
@@ -492,34 +484,24 @@ comment, not two: the announcement carries it.
 
 ```sh
 HOST=$(hostname -s)
-case "${CAMPAIGN_DIR-unset}" in
-  unset)
-    echo "REFUSE: CAMPAIGN_DIR was never bound; step 0 did not run"; exit 1 ;;
-  "")
-    BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.\n\nNo campaign directory on %s: nothing here to delete, and nothing to list.\n' \
-      "$N" "$HOST" "$HOST") ;;
-  *)
-    [ -d "$CAMPAIGN_DIR/runtime" ] ||
-      { echo "REFUSE: $CAMPAIGN_DIR holds no runtime/; not a campaign directory"; exit 1; }
-    LEFTOVERS=$(find "$CAMPAIGN_DIR" -mindepth 1 \
-      \( -path "$CAMPAIGN_DIR/runtime" -o -path "$CAMPAIGN_DIR/repos" \) -prune -o -print \
-      | sed "s|^$CAMPAIGN_DIR/||" | sort \
-      | grep . || echo "no entries outside runtime/ and repos/")
-    BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these entries under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
-      "$N" "$HOST" "$LEFTOVERS") ;;
-esac
+[ -n "${CAMPAIGN_DIR-}" ] ||
+  { echo "REFUSE: CAMPAIGN_DIR was never bound; step 0 did not run"; exit 1; }
+[ -d "$CAMPAIGN_DIR/runtime" ] ||
+  { echo "REFUSE: $CAMPAIGN_DIR holds no runtime/; not a campaign directory"; exit 1; }
+LEFTOVERS=$(find "$CAMPAIGN_DIR" -mindepth 1 \
+  \( -path "$CAMPAIGN_DIR/runtime" -o -path "$CAMPAIGN_DIR/repos" \) -prune -o -print \
+  | sed "s|^$CAMPAIGN_DIR/||" | sort \
+  | grep . || echo "no entries outside runtime/ and repos/")
+BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these entries under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
+  "$N" "$HOST" "$LEFTOVERS")
 gh issue comment "$N" -R kalaluthien/agent-workspace --body "$BODY"
 gh issue view "$N" -R kalaluthien/agent-workspace --comments
 ```
 
-**Three states, and the announcement is posted in two of them.** `unset` is not
-a campaign without a directory — it is step 0 not having run, and it is the
-wrong-cwd hazard this guard exists for, so it refuses. The empty string is what
-step 0 binds when this machine holds no directory: there is nothing to list and
-nothing to delete, and the announcement still goes up, because the announcement
-is what a machine working this campaign against its `BOUND` would answer. A
-non-empty value must hold `runtime/`, which is the cheap test that it is a
-campaign directory and not the container root.
+**Unset or empty is step 0 not having run** — the wrong-cwd hazard this guard
+exists for — so it refuses; since #52 a campaign bound here always has a
+directory by the time this step runs. The value must hold `runtime/`, which is
+the cheap test that it is a campaign directory and not the container root.
 
 **`-prune` on the two exact paths, not a `*/runtime*` pattern.** A pattern also
 hides `scripts/repos-helper.sh` and anything else whose name merely contains
@@ -598,15 +580,6 @@ only what has already happened at the moment it is written.
 
 ```sh
 gh issue close "$N" -R kalaluthien/agent-workspace --comment "Campaign closed."
-```
-
-**Where this machine holds no directory, stop here** — `$CAMPAIGN_DIR` is empty
-from step 0, the delete has nothing to do, and every command below would run
-against `""` and print an error where every abnormal line of this skill is a
-refusal. Everything from here to the end of the step is under this guard:
-
-```sh
-[ -n "$CAMPAIGN_DIR" ] || { echo "no directory on this machine; nothing to delete"; exit 0; }
 ```
 
 **Check nobody else on this machine is in the directory**, and only then remove

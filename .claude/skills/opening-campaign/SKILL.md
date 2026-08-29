@@ -164,7 +164,11 @@ if this campaign was scaffolded before that directory existed.
 No directory at all — the campaign exists on GitHub but not on this machine, so
 run steps 2, 4 and 5 for it, taking its ID and body from the anchor issue. Skip
 step 3: it exists only to mint an ID this campaign already has, and the campaign
-is already bound.
+is already bound. Do this before launching or receiving anything: the directory
+is the only home `runtime/holder` and `runtime/executors/` have, so until it
+exists you are not the holder and a `CLAIMED` has nowhere to be recorded
+(§ Who is a campaign session in the container's `AGENTS.md`, "Holding
+scaffolds").
 
 Step 2 still runs because neither the slug nor the kind is recoverable from
 GitHub — the kind lives in another machine's `AGENTS.md`, which nothing here can
