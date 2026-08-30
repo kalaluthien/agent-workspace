@@ -90,9 +90,9 @@ anything**, because the mode names the branch and the process holding it: a
 container or campaign-directory subtask is yours to work, so you write your own
 claim record to `$CAMPAIGN/runtime/claims/<issue>` at the claim (§ Talking to a
 repository agent has its four fields and the `printf`); a member-repository
-subtask makes you the *launcher* of a delegate, which needs no record — its
-`--name` is its branch — and makes step 5 yours (§ Delegating to a repository
-agent). Either way stop there — you do not scaffold, sync, or close.
+subtask makes you the *launcher* of a delegate, which writes its own record
+exactly as you would write yours, and makes step 5 yours (§ Delegating to a
+repository agent). You write none: you hold no claim. Either way stop there — you do not scaffold, sync, or close.
 
 **`none`, `dead`, or your own — you are the holding session**; rewrite the file as
 step 4 does and carry on. Then `mkdir -p "$CAMPAIGN/runtime/claims"` if this

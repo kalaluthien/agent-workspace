@@ -84,8 +84,9 @@ and is the copy to correct.
 
 **Why announce at all.** Step 1's gate is local, and under one campaign, one
 machine that covers everything legitimate: every agent and every executor session
-is on the bound machine, step 1 saw every one that announced, and step 2 read the
-container and `repos/` for the work of one that did not. A machine working this
+is on the bound machine, step 1 enumerates `runtime/claims/` and so sees every
+one that wrote a record, and step 2 read the container and `repos/` for the work
+of one that did not. A machine working this
 campaign against the binding is what neither can see, and no cheap local check
 fixes it. Announcing narrows that window rather than closing it — a session that
 never comments is invisible either way — and what keeps it survivable is that a

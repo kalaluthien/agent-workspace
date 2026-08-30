@@ -1255,7 +1255,27 @@ fun executorsOf[i: Issue]: set Agent { task.i }
    `isHolder` conjunct went with the role, and its membership scoping went with
    it -- `Reviewed` and `Confirmed` are keyed to the issue and its executors,
    which no reparent can move, so the silent-reparent hole the old rule had to
-   argue itself out of does not arise. */
+   argue itself out of does not arise.
+
+   TWO OF AGENTS.md's THREE MERGE CONDITIONS ARE UNMODELLED HERE, and both are
+   named rather than left to be discovered.
+
+   The NON-AUTHOR condition -- the review is written by an agent that did not
+   write the commits -- is axiomatized by `review`'s shape and by P2 in the
+   header, and there is no conjunct enforcing it. `Reviewed` is a bit on a pull
+   request; nothing in this model records WHO set it, so the condition cannot be
+   stated at all without a reviewer identity this layer does not carry. It is
+   therefore a discipline with no reader here and none on GitHub either, where
+   one account signs every session's comments. AGENTS.md says so at the rule.
+
+   The CONTAINS-CURRENT-MAIN condition is not expressible for a different
+   reason: this model has one pull request per issue and no notion of a shared
+   branch moving under another, so "two reviewed branches, both merged, combined
+   state read by nobody" -- the trace that condition exists to forbid -- cannot
+   be built. Extending the model to see it means giving `main` a state and
+   branches a base, which is a layer's worth of work and its own subtask (#95).
+   Until then the condition is enforced by GitHub's behind-count and by nothing
+   here, and A16/A16b measure only the sha half. */
 pred mergedOnCurrentReview {
   always (Now.ev = MergePR implies
             (Now.issue.pr in Reviewed
