@@ -48,9 +48,12 @@ would have reintroduced it one field over.
 
 Two residuals stay, and stay stated here rather than in a caller:
 
-  * A pid recycled onto a DIFFERENT claude session reads `alive`, so a caller
-    refuses a takeover it should have been allowed. That is the safe direction.
-    Tightening it away is how the deleting direction comes back.
+  * A pid recycled onto a DIFFERENT claude session reads `alive`, and a pid
+    recycled onto anything else reads `other`. Either way a caller refuses a
+    takeover it should have been allowed, which is the safe direction. The
+    second is wider than the residue `spec/alloy/session.als` records under R3g,
+    which names only the first. Tightening either away is how the deleting
+    direction comes back.
   * `alive` means a claude holds this pid, not that it is *this campaign's*
     session. The record carries a `session` name that nothing here compares,
     because a pid is all a record is guaranteed to carry. A caller that needs
@@ -67,7 +70,7 @@ import sys
 NAMES = frozenset({"claude", "claude.exe"})
 
 
-def fail(message: str) -> "NoReturn":
+def refuse(message):
     print(f"campaign-session-alive: {message}", file=sys.stderr)
     raise SystemExit(2)
 
@@ -81,7 +84,7 @@ def holds(pid: int) -> bool:
     except PermissionError:
         return True                     # held by another user, so it is held
     except (OSError, OverflowError) as exc:
-        fail(f"kill -0 {pid}: {exc}")
+        refuse(f"kill -0 {pid}: {exc}")
     return True
 
 
@@ -92,27 +95,27 @@ def name_of(pid: int) -> str:
             capture_output=True, text=True, check=False,
         )
     except OSError as exc:
-        fail(f"cannot run ps: {exc}")
+        refuse(f"cannot run ps: {exc}")
     if out.returncode != 0:
-        fail(f"ps -o ucomm= -p {pid} exited {out.returncode}: "
+        refuse(f"ps -o ucomm= -p {pid} exited {out.returncode}: "
              f"{out.stderr.strip() or 'no message'}")
     name = out.stdout.strip()
     if not name:
         # The process existed a moment ago and does not now. Do not call that
         # `dead`: it is a read that lost its race, and `dead` licenses a delete.
-        fail(f"ps reported no name for pid {pid}, which kill -0 says exists")
+        refuse(f"ps reported no name for pid {pid}, which kill -0 says exists")
     return name
 
 
 def main() -> int:
     if len(sys.argv) != 2:
-        fail("usage: campaign-session-alive <pid>")
+        refuse("usage: campaign-session-alive <pid>")
     arg = sys.argv[1]
     if not arg.isascii() or not arg.isdigit():
-        fail(f"not a pid: {arg!r}")
+        refuse(f"not a pid: {arg!r}")
     pid = int(arg)
     if pid <= 0:
-        fail(f"not a pid: {arg!r}")
+        refuse(f"not a pid: {arg!r}")
     if not holds(pid):
         print("dead")
     else:

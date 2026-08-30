@@ -87,25 +87,33 @@ printf 'session %s\npid %s\n' "$CLAUDE_CODE_SESSION_ID" "$CLAUDE_PID" \
 
 `CLAUDE_PID` is the `claude` process; `$$` is the shell one tool call runs in
 and is dead before the next one starts. Liveness has one reader,
-`scripts/campaign-session-alive`, and its three outcomes are `alive`, `dead` and
-`other`:
+`scripts/campaign-session-alive`, and a caller turns its outcomes into one of
+five words:
 
 ```sh
-PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
-V=$("$CONTAINER/scripts/campaign-session-alive" "$PID") || V=unreadable
+if [ ! -s "$CAMPAIGN/runtime/holder" ]; then V=none
+else
+  PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
+  V=$("$CONTAINER/scripts/campaign-session-alive" "$PID" 2>&1) || V="unreadable ($V)"
+fi
+echo "$V"
 ```
 
 `CONTAINER` is resolved the one way § Three planes gives, which is also where
 both skills resolve it before calling this.
 
-**Only `dead` lets you take over.** `alive` is the holder still working;
-`other` is a pid held by something whose name this install does not know, which
-is a recycled pid *or* a differently-named claude and nothing here can tell
-those apart; `unreadable` is the reading itself failing. Three of the four
-outcomes mean leave it alone, because the act on the other side is destroying a
-tree or overwriting a live holder, and only a confirmed absence is safe to act
-on. **Read the word, never the exit status** — the status is about the reading,
-as it is for `campaign-local-work`.
+**Only `none` and `dead` let you take over**, and they are the two confirmed
+absences: no holder was ever recorded, and the recorded pid is held by nobody.
+`alive` is the holder still working. `other` is a pid held by something whose
+name this install does not know — a recycled pid *or* a differently-named
+claude, and nothing here can tell those apart. `unreadable` is the reading
+itself failing, and it carries its reason. The last three mean leave it alone,
+because the act on the other side destroys a tree or overwrites a live holder,
+and only a confirmed absence is safe to act on. **Read the word, never the exit
+status** — the status is about the reading, as it is for `campaign-local-work`.
+Testing the file before the pid is what keeps a *missing* holder from arriving
+as `unreadable`, which would be an absence wearing the word for "I could not
+look".
 
 **Never hand-roll the comparison.** It was four prose copies of `[ "$(ps -o
 comm= -p "$PID")" = claude ]`, and that test reads a live session as **dead**:
@@ -119,12 +127,14 @@ is invariant across *how* a process was started. `ucomm` is the exec'd file's
 basename rather than an identity, so the names it matches are a fact about this
 install — which is why an unrecognised one is `other` and not `dead`.
 
-Alive means you are an executor session; dead means you take over by rewriting
-the file. This is the one lock here that cannot rot, because staleness is a
-local process fact rather than a guess about a machine you cannot see — which is
-what pinning the campaign to one machine was bought for. Its failure mode is a
-recycled PID belonging to a *different* `claude`, and that reads as live, so the
-check errs towards refusing to take over: ask rather than overwrite. `runtime/`
+This is the one lock here that cannot rot, because staleness is a local process
+fact rather than a guess about a machine you cannot see — which is what pinning
+the campaign to one machine was bought for. It errs towards refusing to take
+over, and does so two ways now: a pid recycled onto a different `claude` reads
+`alive`, and a pid recycled onto anything else reads `other`. The second is
+wider than the residue `spec/alloy/session.als` records under R3g, which names
+only the first — a claim phase 2 of #59 has to widen when it rewrites that
+model. Ask rather than overwrite. `runtime/`
 dies with the directory, which is the right lifetime — nothing off this machine
 reads the holder.
 
