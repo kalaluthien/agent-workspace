@@ -355,7 +355,8 @@ survive unchanged, one holds by construction, and one inverts.
 whatever it is doing.
 
 - `<anchor>` — the campaign's anchor issue number.
-- `<role>` — `executor` or `reviewer`.
+- `<role>` — `executor`. It is the only role; a review is a subagent of the
+  session that wants the merge, and has no session of its own to name.
 - `<n>` — a number distinguishing sessions that share the first two, assigned in
   the order they appear.
 
@@ -363,7 +364,6 @@ whatever it is doing.
 campaign-1-executor-1        an executor on campaign #1
 campaign-1-executor-2        another one
 campaign-61-executor-1       an executor on campaign #61
-campaign-1-reviewer-1        a reviewer on campaign #1
 ```
 
 **The subtask is deliberately not in the name.** A session works several
@@ -1091,7 +1091,7 @@ Never answer one with the other.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the session that launched it retires
-it once that work is durable.
+it once its work has landed.
 
 **Who reviews, and in which mode.** The reviewer is launched by the session that
 wants the merge, **and the author may be that session** — the non-author
@@ -1099,17 +1099,75 @@ condition (§ Talking to a repository agent, merge condition 2) is on who
 *writes* the review, never on who commissions it. That is the one-session
 landing, and the model pins it: `A16` is SAT, and the old guard forbidding a
 review commissioned by the author is gone precisely because it made the legal
-case inexpressible (`P2`). `/code-review <PR#>` is the whole opening prompt
-either way, because it is model-invocable. The default is an **in-process subagent**: a review only reads,
-so it needs none of what a process boundary is paid for — no handover file, no
-canary, no pane, no sweep. A **herdr session** is for a review that will take
-many turns, or an `ultra` review, which is person-triggered only and never the
-default. Feedback then goes to a *fresh* executor, briefed from the pull request
-and the review, because a pane held open across a multi-day review is the
-expensive thing.
+case inexpressible (`P2`).
 
-**The review's default shape: one reviewer per pull request, one verifier per
-fix round.** Every angle the review should take is a section of the one
+**Every review runs as an in-process subagent. There is no other way to run
+one.** Not a default and not the cheapest of several options — the one mode. A
+review changes no repository working tree, so it needs nothing a process
+boundary is paid for: no handover file, no canary, no pane, no liveness read, no
+retirement sweep. (It is not read-only — it posts its findings on the pull
+request, and that is the point of it.)
+
+```
+Agent(subagent_type: "general-purpose", model: "<named below>",
+      description: "Review PR <N>",
+      prompt: "/code-review <low|medium|high|xhigh|max> <PR#>\n\n…")
+```
+
+`general-purpose` because `fork` inherits the author's context and would review
+the author's own reasoning; `description` because the tool requires it;
+`isolation` unset, because a worktree or a remote environment buys a review
+nothing. **Name the model, always** — leaving `model` out inherits a default
+rather than expressing a choice, and there is no value meaning "whatever the
+launcher is". `ultra` is not a level; it is a person-only review mode, and
+putting it in that slot is the one way to write this block illegally.
+
+**Two knobs, and they answer different questions.** The **model** answers how
+hard the change is to reason about; the **level** answers how much reading the
+review has to do. Both are named on every launch.
+
+- **Model, by the depth of the change** — the general model-selection rule, on
+  the change rather than on the review. A change whose correctness is not local
+  (a state machine, a concurrency argument, an invariant spread across callers)
+  takes the heavier model, because a weaker reader returns "looks fine" on
+  exactly the reasoning that needed a reader. A change that is broad and shallow
+  takes a lighter one. Judge the change; the launcher's own model is not the
+  input, and a session running light does not get to license a lighter reviewer.
+- **Level, by how much there is to read** — many files, many call sites, a claim
+  to check everywhere it is stated. `medium` is the working baseline; a sweep
+  goes above it. **The level is the first token after the command and nowhere
+  else** — asking for it in the brief sets nothing, because only that token is
+  parsed. Omit it and the level falls back to a persisted setting and then to
+  the session's own effort, so the review runs at a level chosen by neither the
+  launcher nor the work.
+
+So a broad mechanical sweep is a lighter model at a higher level, and a subtle
+local change is a heavier model at a lower one. The knobs are independent, and a
+review needing both at their limit is a brief covering two reviews.
+
+**A reviewer that needs more than the brief allows is a brief written too wide.
+Split the brief.**
+
+**Three ways to get this wrong.** Handing the review to a peer session — it is
+not a reviewer, it costs a re-explanation of context the launching session
+already holds, and its findings arrive as a relay instead of on the pull
+request. Reading the diff yourself and calling it reviewed — merge condition 2
+is about who wrote the commits, so the author's own read is not a review at any
+length or care. And a herdr session — the process boundary buys nothing a review
+uses.
+
+The **one** exception is an `ultra` review, which a person triggers and no
+session may launch. A session that cannot start a subagent is **blocked**: it
+says so to the person and the pull request waits. That is never a licence to
+review some other way.
+
+The claim-holding executor waits for the verdict, because it is the one that
+merges. What it does not do is carry a *long* fix round: findings can go to a
+fresh executor briefed from the pull request and the review, and that is the
+call to make when the round is large or the wait has been days, since a
+worktree, a claim and a session all cost something for as long as they are held.
+
+**The shape: one reviewer per pull request, one verifier per fix round.** Every angle the review should take is a section of the one
 reviewer's brief, and the verifier reads the fix commit against the round's
 disposition table. Fan out into parallel reviewers only when the angles are
 genuinely independent *and* the budget is known to carry them: eight parallel
@@ -1246,8 +1304,8 @@ itself, not an announcement somebody must receive.
 
   1. a review has been read **at the sha being merged**;
   2. that review was written by **an agent that did not write the commits** —
-     a separate reviewer process or subagent, which the author may launch
-     itself; and
+     the subagent the author may launch itself, or a person-triggered `ultra`
+     review; and
   3. the branch **contains the current `main`** at the moment it merges.
 
   Whoever can satisfy all three may merge, the author included; a session that

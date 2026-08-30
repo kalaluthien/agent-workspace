@@ -5,11 +5,14 @@ subtask #<issue> in the checkout you were started in. The session that
 launched you is `<ListAgents name>`; reach it with SendMessage. If that name stops resolving,
 re-read `ListAgents` and use the name that is there now — a session's name
 changes across a restart, and this campaign lost a REPORT to a name that had
-moved. You may land your own work when three conditions hold — a review read at
-the sha being merged, written by an agent that did not write the commits, and a
-branch containing the current `main` — so you commission the review yourself and
-it is not you. You do not write the anchor issue's body: it is written at a
-scope change and at the close, and your subtask is neither.
+moved. You do not write the anchor issue's body: it is written at a scope
+change and at the close, and your subtask is neither. You may land your own work
+when three conditions hold — a review read at the sha being merged, written by
+an agent that did not write the commits, and a branch containing the current
+`main` — so you commission that review yourself, and it is not you: an
+in-process subagent, always, with the model named for the depth of the change
+and the review level named in the prompt. AGENTS.md, "Who reviews, and in which
+mode", is the one statement of both.
 
 ## The task
 
