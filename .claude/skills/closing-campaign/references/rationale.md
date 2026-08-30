@@ -40,10 +40,12 @@ A live PID that is some other `claude` reads as held. That is the safe direction
 to be wrong in here: refusing to take over costs a question, taking over a live
 session's directory costs its work.
 
-**Do not match `ListAgents` names against the branch.** An executor session keeps
-whatever name its harness gave it and cannot rename itself, so a prefix test on
-`campaign-<N>-` finds the delegates and misses exactly what `runtime/executors/`
-exists to catch. `AGENTS.md` § Who is a campaign session states the rule; this is
+**Do not match `ListAgents` names against the branch.** A name and a branch are
+two strings on purpose (`AGENTS.md` § Naming a session): a session is named
+`campaign-<anchor>[-<issue>]-<role>`, which carries the subtask but not the
+topic, and it can be changed while the claim cannot. So a test built on the
+branch string finds whatever happens to match and misses what
+`runtime/executors/` exists to catch. `AGENTS.md` § Who is a campaign session states the rule; this is
 where it bites.
 
 ## Step 2 — work only on this machine

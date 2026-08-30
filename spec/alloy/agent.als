@@ -95,10 +95,12 @@
  * the gap is UNSAT by construction -- A1 is the same scenario re-measured.
  *
  * A running session CAN be renamed -- by a person typing `/rename` into its
- * pane, or by another session driving that pane, which is the same act. What a
- * session cannot do is rename ITSELF: the permission classifier refuses a
- * session injecting `/rename` into its own pane (probed 2026-08-30, superseding
- * the 2026-08-28 reading that only a person could). Every session carries
+ * pane, or by another session driving that pane, which is the same act, its own
+ * pane included. This supersedes the 2026-08-28 reading that only a person
+ * could, which is dead. Whether a particular call is ALLOWED is a per-session
+ * permission decision rather than a property of the tool: on 2026-08-30 one
+ * session's self-rename was refused and the same call accepted later, while a
+ * peer's was accepted throughout. Every session carries
  * campaign-<N>[-<issue>]-<role>, AGENTS.md's one naming rule, so a name says what a
  * session does; the record stays the mechanism for tying that name to a claim,
  * because a name can be changed and the record is what a later reader has.

@@ -19,10 +19,13 @@ drifts.
     exit 2   a herdr call failed partway; what was applied is printed
 
 The harness half is `herdr agent prompt <pane> "/rename <name>"`, which is
-another session driving that pane -- the same act as a person typing it. A
-session cannot do this to its OWN pane: the permission classifier refuses it,
-which is why the pending rename of the calling session needs either this script
-run with approval or a person typing `/rename`.
+another session driving that pane -- the same act as a person typing it, and it
+works on the caller's own pane too. Whether a given call is PERMITTED is a
+per-session permission decision rather than a property of the tool, and it
+varies: measured 2026-08-30, one session's self-rename was refused and the same
+call was accepted later, while a peer's was accepted throughout. So this reports
+what was applied and what was not rather than assuming either, and the caller's
+own rename is the one most likely to need a person.
 """
 import json
 import re

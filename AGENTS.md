@@ -384,10 +384,16 @@ addresses, and what the claim record's `name` field holds. The first is what
 `herdr agent list` shows. A session renamed on one path only answers to two
 different names depending on who is asking.
 
-**A session cannot rename itself this way**, and that is a guard rather than a
-gap: the permission classifier refuses a session injecting `/rename` into its
-own pane. A person types it, or another session drives that pane — which is that
-pane's user acting, and is the same thing.
+**A rename that does not take is a permission question, not a tool guard.**
+`herdr agent prompt` drives any pane, the caller's own included; whether a given
+call is *allowed* is a per-session permission decision, and it varies. Measured
+2026-08-30, all on one machine within the hour: a session injecting `/rename`
+into its own pane was refused; the same session's same call was accepted later,
+after the owner approved the script that makes it; and a peer's self-injection
+was accepted throughout — that peer's name was first set exactly that way, with
+nobody typing it. So build on neither outcome. Run the script, read what it
+reports applied and not applied, and confirm with `ListAgents`; the rename most
+likely to need a person is the calling session's own.
 
 **This retires the rule that made a delegate's name its branch with the slash
 flattened.** One rule replaces two, so nothing has to remember which kind of
@@ -1101,8 +1107,8 @@ stale.
   **That directory is the only thing that can say which subtask an executor
   session holds.** The close gate and the retirement sweep enumerate it and
   read each `pid` the way `runtime/holder` is read; nothing matches names by
-  prefix, because an executor session keeps whatever name its harness gave it
-  and cannot rename itself. **A campaign whose directory has no
+  prefix, because a name is not a branch (§ Naming a session) and can be changed
+  while the claim it belongs to cannot. **A campaign whose directory has no
   `runtime/executors/` cannot be enumerated at all, and that is a refusal rather
   than a pass** — an empty directory says no
   executor announced, a missing one says nothing. An executor that skips
