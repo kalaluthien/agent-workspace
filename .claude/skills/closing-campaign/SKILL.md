@@ -35,7 +35,7 @@ body so nothing in the directory carries it. Take it from the person, or match i
 among the open anchors and say which.
 
 ```sh
-gh issue list -R kalaluthien/agent-workspace --label campaign --state open
+gh issue list -R kalaluthien/agent-workspace --label campaign --state open --limit 200
 ```
 
 **Then the binding, before any other gate**, because closing is the most
@@ -44,7 +44,8 @@ campaign session in the container's `AGENTS.md`).
 
 ```sh
 gh api --paginate repos/kalaluthien/agent-workspace/issues/"$N"/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body' | tail -1
+  --jq '.[] | select(.body | startswith("BOUND ")) | .body
+        | split("\n")[0] | rtrimstr("\r")' | tail -1
 hostname -s
 ```
 
@@ -93,11 +94,17 @@ Holds when: the anchor's latest `BOUND` comment names this machine, and
 executor session came to work one subtask and this skill is not its to run.
 
 ```sh
-PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN_DIR/runtime/holder" 2>/dev/null)
-kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
+if [ ! -s "$CAMPAIGN_DIR/runtime/holder" ]; then V=none
+else
+  PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN_DIR/runtime/holder")
+  V=$("$CONTAINER/scripts/campaign-session-alive" "$PID" 2>&1) || V="unreadable ($V)"
+fi
+echo "$V"
 ```
 
-Alive and not this session — print the file and stop. Missing or dead — you are
+`alive`, `other` or `unreadable`, and not this session — print the reading and
+stop; only `none` and `dead` are confirmed absences, and a close is the most
+destructive act here. `none` or `dead` — you are
 the holding session, so say so, take the directory as `opening-campaign` step 4
 does, and carry on.
 
@@ -126,8 +133,12 @@ if [ ! -d "$EXECDIR" ]; then
 else
   find "$EXECDIR" -type f -print | while read -r F; do
     P=$(awk '$1 == "pid" { print $2 }' "$F")
-    kill -0 "$P" 2>/dev/null && [ "$(ps -o comm= -p "$P")" = claude ] &&
-      { echo "live executor: $(basename "$F")"; cat "$F"; }
+    V=$("$CONTAINER/scripts/campaign-session-alive" "$P" 2>&1) || V="unreadable ($V)"
+    case "$V" in
+      dead) ;;
+      alive|other) echo "live executor: $(basename "$F") [$V]"; cat "$F" ;;
+      *) echo "REFUSE: $(basename "$F") is $V"; cat "$F" ;;
+    esac
   done
 fi
 ```
@@ -139,7 +150,7 @@ Any row from either: print the rows, name the agent, stop. The person retires
 it; this skill never kills an agent. No rows still leaves two cases for step 2 — an agent herdr has forgotten, and an
 executor that never sent `CLAIMED` — both leaving work in a checkout.
 
-Holds when: `runtime/executors/` existed and held no live pid, no
+Holds when: `runtime/executors/` existed, every record in it read `dead`, no
 `runtime/holder` named a live session other than this one, and no herdr agent's
 `cwd` was under `$CAMPAIGN_DIR` — or `TOOK_IT_HERE` is set and this step reported
 all three as not applicable rather than as passed.
@@ -296,7 +307,7 @@ leaves what a legitimate `- none` leaves.
 This step also runs mid-campaign, whenever a repository is added to the
 `## Repos` list — `opening-campaign`'s "Filing a subtask issue" sends you here.
 Those are the only two moments the body is written at (§ Running a campaign), so
-nothing in step 3 edits the body and `## Plan` is left as it was at opening.
+nothing in step 3 edits the body.
 
 **Then compare before you write.** `runtime/anchor-body-derived.md` is the body
 as it read when this README was derived from it, kept by `opening-campaign` step
@@ -368,6 +379,14 @@ BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.
 gh issue comment "$N" -R kalaluthien/agent-workspace --body "$BODY"
 gh issue view "$N" -R kalaluthien/agent-workspace --comments
 ```
+
+**A directory and the file inside it both appear, and that is correct.** The
+scaffold ships `scripts/` holding a `.gitkeep`, so the listing carries both
+`scripts` and `scripts/.gitkeep`. `AGENTS.md` requires files, directories and
+symlinks alike, because `rm -rf` destroys all of them and a filter that guessed
+would drop the one entry somebody wanted — so do not narrow the `find` to
+`-type f`. A reader meeting the pair is meant to see the container and its
+contents, not a duplicate.
 
 **Unset or empty is step 0 not having run**, and it refuses; since #52 a
 campaign bound here has a directory by the time this step runs. The value must
