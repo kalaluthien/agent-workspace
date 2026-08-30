@@ -151,9 +151,16 @@ def main():
         r = Repo(d)
         installer(r.root)
         body = r.hook("pre-commit").read_text()
+        # Assert on text that sits AFTER the backticks. Command substitution
+        # eats from the first backtick to the second, so a phrase before them
+        # survives the very corruption this case is named for -- which is how
+        # the first version of it pinned nothing.
         check("the installed hook keeps the comments the source writes",
-              "Word list, not string" in body and "EMPTY declaration" in body,
-              body[:200])
+              "followed by a space leaves" in body
+              and "EMPTY declaration refuses" in body,
+              body[:300])
+        check("...including the backticked words inside them",
+              "`# runs:`" in body, body[:300])
 
     # 4. A guard that cannot run refuses, and the escape hatch is the only way past.
     with tempfile.TemporaryDirectory() as d:
