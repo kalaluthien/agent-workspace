@@ -83,6 +83,15 @@ EXEMPTION_CASES = [
     ("an exemption does not reach a later indented block",
      "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n```sh\nps -o comm= -p 1\n```\n\n"
      "Then:\n\n    ps -o comm= -p 1\n", 1),
+    # A malformed exemption must be reported, never skipped. The strict owner
+    # token matches nothing in a prose owner, so without a loose detector the
+    # line is simply not an exemption and nothing says it was rejected.
+    ("an exemption naming a prose owner is reported",
+     "# t\n\n<!-- unguarded: AGENTS.md \u00a7 Naming a session -- x -->\n\n```sh\nps -o comm= -p 1\n```\n", 1,
+     "an exemption naming no script"),
+    ("an exemption naming a misspelled script is reported",
+     "# t\n\n<!-- unguarded: campaign-typo-session -- x -->\n\n```sh\nps -o comm= -p 1\n```\n", 1,
+     "an exemption naming no script"),
     ("an exemption inside an open fence exempts nothing",
      "# t\n\n```sh\n<!-- unguarded: campaign-session-alive -- x -->\nps -o comm= -p 1\n```\n", 1),
 ]
@@ -102,9 +111,15 @@ def run(body):
 
 def main():
     failures = 0
-    for name, body, want in CASES:
+    for case in CASES:
+        name, body, want = case[0], case[1], case[2]
+        expect = case[3] if len(case) > 3 else None
         code, out = run(body)
-        ok = code == want
+        # An exit code alone lets a case pass for the wrong reason: a fixture
+        # aimed at the exemption reporter is satisfied by the fence violation it
+        # also contains. Where a case names the text it expects, that is checked
+        # too.
+        ok = code == want and (expect is None or expect in out)
         print(f"{'ok  ' if ok else 'FAIL'}  {name}  (exit {code}, wanted {want})")
         if not ok:
             failures += 1

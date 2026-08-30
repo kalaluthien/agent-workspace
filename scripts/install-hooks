@@ -50,7 +50,10 @@ if [ -x "\$HOME/.claude/git-hooks/no-main-commits" ]; then
 fi
 # Same guard, same reason, against a different absence: this checkout may
 # predate the script, or be a worktree, a fresh clone, or a bisect.
-guard=\$(cd "\$(dirname "\$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)/scripts/check-rule-readers
+# --show-toplevel: the guard that judges a commit is the one in the checkout
+# making it. Resolving to the shared checkout runs whatever another worktree
+# happens to hold, committed or not, against an index it never wrote.
+guard=\$(git rev-parse --show-toplevel)/scripts/check-rule-readers
 if [ -x "\$guard" ]; then
 	exec "\$guard" --staged
 fi
