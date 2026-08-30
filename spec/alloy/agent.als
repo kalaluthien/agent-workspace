@@ -27,8 +27,8 @@
  *   Decide            the campaign session answers a BLOCKED
  *   Confirm           the session reads the executor's working tree ITSELF
  *   ConfirmElsewhere  the same check run from the wrong machine -- the defect
- *   Review            `/code-review <PR#>`, a reviewer a campaign session
- *                     launches -- any session, the author's included
+ *   Review            `/code-review <PR#>`, a reviewer the session that wants
+ *                     the merge launches -- the author's own included
  *   MergePR (guard)   on what terms it lands: this layer's half of session.als's
  *                     event
  *   StandDown         STAND DOWN, campaign -> executor
@@ -946,9 +946,9 @@ pred confirmElsewhere[a: Agent] {
    review changes no repository working tree and so needs none of what a process
    boundary is paid for -- no handover file, no canary, no pane, no sweep. A
    HERDR SESSION IS NOT A MODE. The one exception is an `ultra` review, which a
-   person triggers and no session may. The model is chosen by the reading: the
-   launcher's own where the difficulty is logic, a lighter one where it is
-   volume.
+   person triggers and no session may. Which model and level that subagent runs
+   at is an instruction to an operator rather than a property of this relation,
+   so it lives in AGENTS.md and not here.
 
    KEYED ON THE ISSUE, NOT ON AN AGENT (#59), because the review is of the pull
    request: `/code-review <PR#>` reads GitHub, and neither the executor's
@@ -1276,18 +1276,19 @@ fun executorsOf[i: Issue]: set Agent { task.i }
    state read by nobody" -- the trace that condition exists to forbid -- cannot
    be built. Extending the model to see it means giving `main` a state and
    branches a base, which is a layer's worth of work and its own subtask (#95).
-   Until then the condition is enforced by NOTHING, and that survived the
-   setting being switched on, which is why it is stated at this length.
+   The condition is unmodelled here, but it is no longer unenforced: #97 landed
+   a required status check on 2026-08-30, which is what `strict` had nothing to
+   modify before. Measured the same day -- a branch with a green check and
+   `behind=1` reads `BEHIND` and an admin merge is refused `HTTP 405`; with the
+   base merged in it reads CLEAN and merges. So what is missing here is the
+   model's ability to express the trace, not a refuser in the world.
 
-   The first draft of this comment claimed GitHub's behind-count enforced it.
-   `main` was then unprotected. It is protected as of 2026-08-30 WITH the
-   up-to-date requirement set -- `protected: true`,
-   `required_status_checks.strict: true` -- and it STILL enforces nothing:
-   "require branches to be up to date" modifies required status checks, and
-   `contexts` is empty, so it modifies nothing. Measured on a throwaway branch
-   one commit behind: `behind=1`, `mergeStateStatus: CLEAN`, mergeable. The
-   setting stores, reads back true, and refuses no merge. Making it bite needs
-   at least one required check, which means CI, which is the owner's call.
+   Two earlier drafts of this comment were wrong in opposite directions, which
+   is why the history is kept: the first claimed GitHub's behind-count enforced
+   it while `main` was unprotected; the second claimed protection alone did,
+   with `strict: true` and `contexts` empty -- measured then at `behind=1`,
+   `mergeStateStatus: CLEAN`, mergeable, because "require branches to be up to
+   date" modifies required status checks and there were none to modify.
    A16/A16b measure only the sha half. */
 pred mergedOnCurrentReview {
   always (Now.ev = MergePR implies

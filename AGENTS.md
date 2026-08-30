@@ -1071,7 +1071,8 @@ request, and that is the point of it.)
 
 ```
 Agent(subagent_type: "general-purpose", model: <see below>,
-      description: "Review PR <N>", prompt: "/code-review <PR#> …")
+      description: "Review PR <N>",
+      prompt: "/code-review <PR#>\n\nRun this at the <level> review level. …")
 ```
 
 `general-purpose` because `fork` inherits the author's context and would review
@@ -1087,7 +1088,18 @@ that needed a reader. A review whose difficulty is in the *volume* — many file
 a mechanical sweep, a claim checked against many call sites — runs on a lighter
 model, because the work is coverage rather than depth and the budget is better
 spent on more of it. The two are the general model-selection rule applied to a
-review; nothing here overrides it.
+review, where the depth being judged is the depth of the *change*, not of the
+reading. So the launcher's own model is a **floor** on the logic case rather
+than a match: a session that is itself running light does not get to hand its
+reviewer a lighter reader still.
+
+**Name the review level in the prompt, every time.** It is a separate knob from
+the model and it survived the constant that used to pin it: `/code-review` takes
+a level, and given none it reuses whatever was typed last, which in a fresh
+subagent is nothing. The two knobs move in opposite directions on the volume
+case — coverage is what the *level* buys, so a volume review is a lighter model
+at a **higher** level, and a logic review is the heavier model at whatever level
+the reading needs.
 
 **A reviewer that needs more than the brief allows is a brief written too wide.
 Split the brief.**
@@ -1105,9 +1117,10 @@ session may launch. A session that cannot start a subagent is **blocked**: it
 says so to the person and the pull request waits. That is never a licence to
 review some other way.
 
-Feedback then goes to a *fresh* executor, briefed from the pull request and the
-review, because a pane held open across a multi-day review is the expensive
-thing.
+Findings go to a *fresh* executor, briefed from the pull request and the review.
+The executor that wrote the code does not sit waiting through the review; what
+it holds — a worktree, a claim, a session — costs something for as long as it
+holds it, and a review can take days.
 
 **The shape: one reviewer per pull request, one verifier per fix round.** Every angle the review should take is a section of the one
 reviewer's brief, and the verifier reads the fix commit against the round's
@@ -1246,7 +1259,8 @@ itself, not an announcement somebody must receive.
 
   1. a review has been read **at the sha being merged**;
   2. that review was written by **an agent that did not write the commits** —
-     a subagent the author may launch itself; and
+     the subagent the author may launch itself, or a person-triggered `ultra`
+     review; and
   3. the branch **contains the current `main`** at the moment it merges.
 
   Whoever can satisfy all three may merge, the author included; a session that
