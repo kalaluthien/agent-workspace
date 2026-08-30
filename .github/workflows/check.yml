@@ -23,10 +23,12 @@
 #      release in a trailing comment -- a sha alone says nothing to a reader.
 #      A tag is mutable, so an unpinned `uses:` lets its owner change what
 #      every merge into `main` runs. `actions/permissions`
-#      `sha_pinning_required` is `true`, so unlike 1 and 2 this constraint has
-#      a second reader: breaking it is refused rather than left pending, and
-#      the recovery is to flip that setting back, not to touch branch
-#      protection.
+#      `sha_pinning_required` is `true`, so this constraint has a reader 1 and
+#      2 do not: the setting, rather than the required context. *How* it
+#      refuses is unmeasured -- if it refuses at startup there is no `check` at
+#      all, which is 2's pending case, so do not assume this one fails safely.
+#      The repair is pinning the sha; flipping the setting back is for wanting
+#      an unpinned action, not for recovering from one.
 #
 # It is also what makes branch protection bite. `strict` ("require branches to
 # be up to date") is a modifier on required status checks, so with no checks it
