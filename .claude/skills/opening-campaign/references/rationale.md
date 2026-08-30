@@ -72,9 +72,9 @@ that pair, so the collision is caught where the list is read rather than worked
 around here, and the layout stays `repos/<name>/`, which is what `AGENTS.md` and
 every reader of a campaign tree expect.
 
-**Why no `--branch`.** One checkout serves both an executor session and the
-holding session, so `--branch` here would make a re-run of this step switch it
-onto another branch under a delegate already working in it. Without it,
+**Why no `--branch`.** One checkout serves every session of the campaign, so
+`--branch` here would make a re-run of this step switch it onto another branch
+under a delegate already working in it. Without it,
 `acquire-repo` re-runs as a fetch and touches no branch.
 
 ## Filing a subtask issue

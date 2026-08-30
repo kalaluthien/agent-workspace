@@ -5,8 +5,11 @@ subtask #<issue> in the checkout you were started in. The holding session is
 `<ListAgents name>`; reach it with SendMessage. If that name stops resolving,
 re-read `ListAgents` and use the name that is there now — a session's name
 changes across a restart, and this campaign lost a REPORT to a name that had
-moved. You never merge, never review your own pull request, and never write the
-anchor issue's body.
+moved. You may land your own work when three conditions hold — a review read at
+the sha being merged, written by an agent that did not write the commits, and a
+branch containing the current `main` — so you commission the review yourself and
+it is not you. You do not write the anchor issue's body: it is written at a
+scope change and at the close, and your subtask is neither.
 
 ## The task
 
@@ -19,9 +22,11 @@ anchor issue's body.
   uncommitted work and nothing more.
 - Land by pull request against `main`. Merge `origin/main` into this branch
   before opening it; resolve here, never force-push.
-- `REPORT` to the holder once, unsolicited, when the pull request is open: its
-  URL and the sha it sits at. Send `BLOCKED` with the question when a decision
-  is not yours. Answer `STATUS` when asked.
+- `REPORT` once, unsolicited, when the pull request is open: its URL and the sha
+  it sits at, **and ask for the review there**, because a push retires any review
+  before it and nobody is named to notice. If you ask and nothing comes, say so
+  and stop; a silent wait reads exactly like work. Send `BLOCKED` with the
+  question when a decision is not yours. Answer `STATUS` when asked.
 
 ## A fix round
 
