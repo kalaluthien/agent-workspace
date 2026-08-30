@@ -22,13 +22,21 @@
 #   3. Every `uses:` names a 40-character commit sha, never a tag. A major
 #      tag is mutable, so an unpinned `uses:` lets that action's owner change
 #      what every merge into `main` runs, and no reader here can inspect it.
-#      The trailing `# vN.N.N` is the release the sha is -- a reader needs it
-#      because the sha alone says nothing, and Dependabot moves both together.
-#      `sha_pinning_required: true` on this repository is the second reader.
-#      It is also why the order matters: it refuses an unpinned `uses:`, and
-#      if that refusal lands before the run starts, no `check` is produced at
-#      all -- constraint 1's failure reached from a settings change instead of
-#      an edit. So pin first, land the pin, then switch the setting on.
+#      The trailing `# vN.N.N` is the release the sha is -- a reader needs it,
+#      because a sha alone says nothing. Dependabot understands this form and
+#      moves sha and comment together; this repository has no
+#      `.github/dependabot.yml`, so nothing proposes bumps today.
+#
+#      Nothing enforces this constraint yet. `actions/permissions`
+#      `sha_pinning_required` reads `false`, and switching it on is #108 --
+#      until then this is a convention, exactly the gap between a declared
+#      contract and an enforced one that the paragraph below measures for
+#      `strict`. Switching it on has a precondition beyond this file: a
+#      `pull_request` check is resolved from the merge ref, so it would refuse
+#      any open pull request whose merge with `main` still carries an unpinned
+#      `uses:` -- and a refusal that lands before the run starts produces no
+#      `check` at all, which is constraint 1's pending-forever failure reached
+#      from a settings change instead of an edit.
 #
 # It is also what makes branch protection bite. `strict` ("require branches to
 # be up to date") is a modifier on required status checks, so with no checks it
