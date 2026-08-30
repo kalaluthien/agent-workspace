@@ -42,8 +42,8 @@ session's directory costs its work.
 
 **Do not match `ListAgents` names against the branch.** A name and a branch are
 two strings on purpose (`AGENTS.md` § Naming a session): a session is named
-`campaign-<anchor>[-<issue>]-<role>`, which carries the subtask but not the
-topic, and it can be changed while the claim cannot. So a test built on the
+`campaign-<anchor>-<role>-<n>`, which carries no subtask at all, and it can be
+changed while the claim cannot. So a test built on the
 branch string finds whatever happens to match and misses what
 `runtime/executors/` exists to catch. `AGENTS.md` § Who is a campaign session states the rule; this is
 where it bites.

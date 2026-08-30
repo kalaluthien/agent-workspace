@@ -10,7 +10,7 @@ session answering to two different names depending on who is asking, so this
 sets both and reports each.
 
 It is also the naming rule's one consumer. `AGENTS.md` § Naming a session states
-`campaign-<anchor>[-<issue>]-<role>`; a name that does not match is refused here
+`campaign-<anchor>-<role>-<n>`; a name that does not match is refused here
 rather than half-applied, because a rule nothing must consume is a rule that
 drifts.
 
@@ -32,18 +32,12 @@ import re
 import subprocess
 import sys
 
-# The subtask is not optional per role, which a single "-<issue>?" pattern
-# cannot say: a holder holds the campaign and is on no subtask, while an
-# executor and a reviewer are each on exactly one. Written loosely, this
-# accepted `campaign-80-executor` -- an executor with no subtask, whose anchor
-# number is really a subtask number, which is the misreading the rule exists to
-# prevent.
-NAME = re.compile(
-    r"^campaign-(?:"
-    r"[0-9]+-holder"                      # campaign-<anchor>-holder
-    r"|[0-9]+-[0-9]+-(?:executor|reviewer)"   # campaign-<anchor>-<issue>-<role>
-    r")$"
-)
+# One shape, no branches. The subtask is deliberately absent: a session works
+# several subtasks, in parallel or one after another, and a name that tracked
+# the work in hand would go false at every handover -- witnessed the day this
+# was written, on the session that wrote it. <n> distinguishes sessions sharing
+# a campaign and a role.
+NAME = re.compile(r"^campaign-[0-9]+-(?:executor|reviewer)-[0-9]+$")
 
 
 def refuse(why):
@@ -74,9 +68,8 @@ def main():
     # not leave the first session renamed on one path and not the other.
     for pane, name in pairs:
         if not NAME.match(name):
-            refuse(f"{name!r} is not campaign-<anchor>[-<issue>]-<role>: a "
-                   "holder carries the anchor alone, an executor or a reviewer "
-                   "carries the anchor and its subtask; nothing was applied")
+            refuse(f"{name!r} is not campaign-<anchor>-<role>-<n> "
+                   "(role: executor, reviewer); nothing was applied")
 
     failed = False
     for pane, name in pairs:
