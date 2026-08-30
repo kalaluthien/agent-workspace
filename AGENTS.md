@@ -798,10 +798,24 @@ cannot resolve.
   values, and the run dies on "Input must be provided".
 - Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to this container's pool. A memory
   pool inside a git-ignored campaign directory dies with the directory.
-- **Deliver the opening prompt with `herdr agent prompt <pane> "<text>"`.** A
-  prompt put on the launch line is word-split: a launch ending with a whole
-  sentence delivered its first word alone, and the delegate reported it had been
-  given no brief while the launch looked successful.
+- **Deliver the opening prompt with `herdr agent prompt <pane> "<text>"`, and
+  give it a `--timeout`.** A prompt put on the launch line is word-split: a
+  launch ending with a whole sentence delivered its first word alone, and the
+  delegate reported it had been given no brief while the launch looked
+  successful. The timeout is about the other half: with `--wait` and no
+  `--timeout`, the settled-state wait is **indefinite** (measured at 0.8.2 from
+  the binary's own help), so the form this file used to give was a hang.
+
+  Three outcomes, and they are not the same news:
+
+  | outcome | what it means |
+  | --- | --- |
+  | `agent_blocked` | the agent was already at an approval or question dialog. **No input was sent** — the prompt is still yours to deliver once the dialog clears, and clearing it is the person's call. |
+  | `agent_prompt_stalled` | the prompt was accepted and nothing moved within 5000 ms. The agent has it; something is holding the turn. Go and look. |
+  | `timeout` | your `--timeout` elapsed while waiting for a settled state. The agent may be working normally — a long turn reads exactly like this — so read the pane before concluding anything. |
+
+  `agent_blocked` is the one that is safe to act on immediately, because it is
+  the only one that tells you the input never landed.
 
 # What silently stops a delegate before it starts
 
@@ -818,6 +832,25 @@ The launch line has three ways to eat a prompt, all quiet: the 1024-byte
 terminal ceiling, a variadic flag such as `--add-dir` swallowing a trailing
 prompt, and the word-splitting above. Put the prompt before any variadic flag,
 keep it short, and send the brief as a file path.
+
+**Two of those three are now caught by the tool at 0.8.2, and the third is not.**
+`agent prompt` refuses an agent already sitting at an approval or question
+dialog, returning `agent_blocked` **before sending any input** — so the shell
+permission prompt, and any dialog a delegate is parked on, reach you as a
+refusal rather than as text typed into a screen nobody is reading. And `agent
+start` waits for the new pane shell and the first-run prompt to be ready instead
+of reporting readiness early, which is what used to make a delegate stopped
+before it began look launched.
+
+What that does **not** retire is the row above it. The folder-trust dialog was
+seen once not to appear on a scratch delegate, and one observation is not a
+rule — it is a single sighting, in `/private/tmp`, of a dialog whose whole
+hazard is that it reports `idle` with `interactive_ready: true`. **Read the pane
+once after every launch** still stands, and it stands measured rather than
+provisionally: herdr's own Claude integration hook was the mechanism that would
+have replaced screen-reading, and it reports session identity, not state
+(`pane.report_agent_session` is its only call). Nothing infers `working` from
+anything but the screen.
 
 # Completion and liveness are different questions
 
