@@ -1042,33 +1042,35 @@ landing, and the model pins it: `A16` is SAT, and the old guard forbidding a
 review commissioned by the author is gone precisely because it made the legal
 case inexpressible (`P2`).
 
-**Every review runs as an in-process subagent, on Opus, at the `medium` review
-level. There is no other way to run one.** Not a default and not the cheapest of
-several options — the one mode. A review changes no repository working tree, so
-it needs nothing a process boundary is paid for: no handover file, no canary, no
-pane, no liveness read, no retirement sweep. (It is not read-only — it posts its
-findings on the pull request, and that is the point of it.)
-
-The launch, and every field of it is load-bearing:
+**Every review runs as an in-process subagent. There is no other way to run
+one.** Not a default and not the cheapest of several options — the one mode. A
+review changes no repository working tree, so it needs nothing a process
+boundary is paid for: no handover file, no canary, no pane, no liveness read, no
+retirement sweep. (It is not read-only — it posts its findings on the pull
+request, and that is the point of it.)
 
 ```
-Agent(subagent_type: "general-purpose", model: "opus",
-      description: "Review PR <N>",
-      prompt: "/code-review <PR#>\n\nRun this at the medium review level. …")
+Agent(subagent_type: "general-purpose", model: <see below>,
+      description: "Review PR <N>", prompt: "/code-review <PR#> …")
 ```
 
 `general-purpose` because `fork` inherits the author's context and would review
-the author's own reasoning; `opus` because a review carries out an approach
-already clear; `description` because the tool requires it. **The harness has no
-effort parameter**, and this repository defines no agent of its own, so the
-level is carried in the brief and nowhere else — a launch that omits it inherits
-whatever level was last used, which in a fresh subagent is undefined. `isolation`
-is left unset: a worktree or a remote environment buys a review nothing.
+the author's own reasoning; `description` because the tool requires it;
+`isolation` unset, because a worktree or a remote environment buys a review
+nothing.
 
-`medium` is a constant where the general rule picks effort by breadth and
-difficulty, and the escape is the brief rather than the model: **a reviewer that
-needs more than medium is a brief written too wide — split the brief, do not
-raise the level.**
+**Pick the model by the reading, not by a constant.** A review whose difficulty
+is in the *logic* — a state machine, a concurrency argument, a change whose
+correctness is not local — runs on the same model as the session launching it,
+because a weaker reader silently returns "looks fine" on exactly the reasoning
+that needed a reader. A review whose difficulty is in the *volume* — many files,
+a mechanical sweep, a claim checked against many call sites — runs on a lighter
+model, because the work is coverage rather than depth and the budget is better
+spent on more of it. The two are the general model-selection rule applied to a
+review; nothing here overrides it.
+
+**A reviewer that needs more than the brief allows is a brief written too wide.
+Split the brief.**
 
 **Three ways to get this wrong.** Handing the review to a peer session — it is
 not a reviewer, it costs a re-explanation of context the launching session

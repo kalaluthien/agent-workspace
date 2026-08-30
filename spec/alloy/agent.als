@@ -942,13 +942,13 @@ pred confirmElsewhere[a: Agent] {
 
    The owner's rule: a pull request is reviewed before it is merged, and the
    review is A REVIEWER THE SESSION THAT WANTS THE MERGE LAUNCHES. ONE MODE,
-   NOT A DEFAULT: an IN-PROCESS SUBAGENT on Opus at the `medium` review level,
-   running `/code-review <PR#>`, because a review changes no repository working
-   tree and so needs none of what a process boundary is paid for -- no handover
-   file, no canary, no pane, no sweep. A HERDR SESSION IS NOT A MODE. The one
-   exception is an `ultra` review, which a person triggers and no session may.
-   The level rides in the brief: the harness has no effort parameter, so a
-   launch that omits it inherits an undefined level.
+   NOT A DEFAULT: an IN-PROCESS SUBAGENT running `/code-review <PR#>`, because a
+   review changes no repository working tree and so needs none of what a process
+   boundary is paid for -- no handover file, no canary, no pane, no sweep. A
+   HERDR SESSION IS NOT A MODE. The one exception is an `ultra` review, which a
+   person triggers and no session may. The model is chosen by the reading: the
+   launcher's own where the difficulty is logic, a lighter one where it is
+   volume.
 
    KEYED ON THE ISSUE, NOT ON AN AGENT (#59), because the review is of the pull
    request: `/code-review <PR#>` reads GitHub, and neither the executor's
