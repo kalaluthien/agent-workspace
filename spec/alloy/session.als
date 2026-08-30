@@ -114,7 +114,7 @@
  *
  * VERDICTS
  *
- * Measured 2026-08-29 against this file.
+ * Measured 2026-08-30 against this file.
  *
  *   R1_LostBodyUpdate                SAT   the loss
  *   R1b_IndexOutlivesRepoList        SAT   and it is worse than it looks
@@ -138,7 +138,7 @@
  * Every UNSAT is proved a finding rather than an artefact by its own control:
  * R1d for R1c, R2c for R2b. R1c, promoted to the everyday guard by #59, was
  * additionally proved able to fail by a named mutation, run 2026-08-29 against
- * this model and undone afterwards:
+ * this model on a copy and undone with it:
  *
  *   R1c   emptying `syncCAS` -- the discipline present but comparing nothing --
  *         brings the loss back (SAT), so the green is the comparison itself and

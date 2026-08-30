@@ -251,7 +251,7 @@
  *
  * VERDICTS
  *
- * Measured 2026-08-29 against this file. X is a counterexample; a check that
+ * Measured 2026-08-30 against this file. X is a counterexample; a check that
  * passes reads UNSAT.
  *
  *   NoLostWork                       pass  a death or a delete never un-completes
@@ -329,7 +329,7 @@
  * an executor dies.
  *
  * The greens #59 added or re-derived were each proved able to fail by a named
- * mutation, run 2026-08-29 against this model and undone afterwards:
+ * mutation, run 2026-08-30 against this model on a copy and undone with it:
  *
  *   A1        restoring the conditional write at launch -- `no a.peer implies
  *             Addressed' = Addressed + a else keepAddress`, the pre-#59 rule
@@ -557,7 +557,7 @@ one sig Target { var agent: lone Agent }
 
 fact AgentWellFormed {
   all c: Campaign | c.anchor not in Agent.task
-  /* An executor session is its own launcher and runs on its own machine. */
+  /* A session working its own claim is its own launcher, on its own machine. */
   all a: Agent | some a.peer implies (a.launcher = a.peer and a.host = a.peer.smach)
   always Live in Launched
   always Retired in Launched
