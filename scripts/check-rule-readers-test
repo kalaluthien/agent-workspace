@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Prove check-rule-readers fires where it must and stays quiet where it must not.
+
+A guard is trusted only once it has been watched to fail. Every case below is a
+fixture written to a temporary tree and run through the real script, so what is
+tested is the shipped behaviour rather than a re-implementation of it -- which
+would be the second reader the guard itself exists to forbid.
+
+Usage: scripts/check-rule-readers-test
+"""
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+GUARD = Path(__file__).resolve().parent / "check-rule-readers"
+
+FENCED_COPY = """# t
+
+```sh
+PID=1; [ "$(ps -o comm= -p "$PID")" = claude ]
+```
+"""
+
+INLINE_MENTION = """# t
+
+`ps -o comm=` reports how a process was invoked, which is why it is wrong here.
+"""
+
+EXEMPTED = """# t
+
+<!-- unguarded: campaign-session-alive -- quoting the retired form on purpose -->
+
+```sh
+ps -o comm= -p 1
+```
+"""
+
+EXEMPTION_ORPHANED = """# t
+
+<!-- unguarded: campaign-session-alive -- this marks nothing -->
+
+Some prose intervenes, so the exemption below is not the fence's.
+
+```sh
+ps -o comm= -p 1
+```
+"""
+
+EXEMPTION_WRONG_OWNER = """# t
+
+<!-- unguarded: campaign-repos -- exempts a different rule -->
+
+```sh
+ps -o comm= -p 1
+```
+"""
+
+MENTION_IN_FENCE = """# t
+
+```sh
+echo "REFUSE: the ## Repos list did not read; nothing was written"
+```
+"""
+
+CASES = [
+    ("a hand-rolled copy inside a fence", FENCED_COPY, 1),
+    ("the same form mentioned in prose", INLINE_MENTION, 0),
+    ("a fence exempted by the line above it", EXEMPTED, 0),
+    ("an exemption separated from the fence by prose", EXEMPTION_ORPHANED, 1),
+    ("an exemption naming a different owner", EXEMPTION_WRONG_OWNER, 1),
+    ("a rule's name in an error message, not a parse", MENTION_IN_FENCE, 0),
+]
+
+
+def run(body):
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "fixture.md"
+        f.write_text(body)
+        out = subprocess.run(
+            [str(GUARD), str(f)], capture_output=True, text=True
+        )
+        return out.returncode, out.stdout
+
+
+def main():
+    failures = 0
+    for name, body, want in CASES:
+        code, out = run(body)
+        ok = code == want
+        print(f"{'ok  ' if ok else 'FAIL'}  {name}  (exit {code}, wanted {want})")
+        if not ok:
+            failures += 1
+            print("".join(f"        {l}\n" for l in out.splitlines()))
+    if failures:
+        print(f"\n{failures} of {len(CASES)} cases failed.", file=sys.stderr)
+        return 1
+    print(f"\nall {len(CASES)} cases pass.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

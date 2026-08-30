@@ -1,0 +1,36 @@
+#!/usr/bin/env sh
+# Install this repository's pre-commit guards. Idempotent; run it after a clone.
+#
+# The machine-wide guard at ~/.claude/git-hooks/no-main-commits occupies the
+# pre-commit slot by default, and says in its own header that a repository whose
+# hook already occupies that slot should call it first. So the installed hook
+# chains: the machine guard, then this repository's own.
+#
+# .git/hooks/ is not tracked, which is why this exists. A guard that ships only
+# as a file nobody runs is a third copy of the rule it was written to enforce.
+
+set -e
+
+root=$(git rev-parse --show-toplevel)
+hook=$root/.git/hooks/pre-commit
+
+cat > "$hook" <<'HOOK'
+#!/usr/bin/env sh
+# Installed by scripts/install-hooks. Re-run it after changing this file.
+set -e
+# `cmd && other` under `set -e` exits 1 when the test is false, so a machine
+# without the shared guard would have every commit blocked with no message.
+if [ -x "$HOME/.claude/git-hooks/no-main-commits" ]; then
+	"$HOME/.claude/git-hooks/no-main-commits" "$@"
+fi
+# Same guard, same reason: this checkout may predate the script, or be a
+# worktree, a fresh clone, or a bisect. A hook that blocks every commit where
+# its guard is missing is worse than the drift the guard was written to catch.
+guard=$(git rev-parse --show-toplevel)/scripts/check-rule-readers
+if [ -x "$guard" ]; then
+	exec "$guard"
+fi
+HOOK
+
+chmod +x "$hook"
+echo "installed: $hook"

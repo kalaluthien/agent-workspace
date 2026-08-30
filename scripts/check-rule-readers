@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Refuse a hand-rolled copy of a rule that one of this repository's scripts owns.
+
+AGENTS.md and four script docstrings each declare that some reading -- the
+liveness comparison, the `## Repos` parse, the settlement verdict, the
+local-only-work reading -- lives in exactly one script, and that a second reader
+written by hand somewhere else is what drifts. Nothing enforced that. The four
+prose copies of the liveness test that #65 removed are what the drift looks like
+once it has happened: four copies of one comparison, all wrong together.
+
+This is the authoring-side second reader ~/.claude/CLAUDE.md asks for. It is one
+check over every rule rather than one guard per script, because the rules share
+a single failure mode and a single fix.
+
+WHAT IT READS
+
+Only fenced code blocks, and only in tracked files outside scripts/. That line
+is the whole design. A deliberate mention of a retired form lives in prose as
+inline code -- AGENTS.md explains at length why `ps -o comm=` is wrong, and must
+go on being able to say so. A dangerous copy lives in a fence, because a fence
+is what makes it copy-pasteable, and copy-pasted is the only way a second reader
+gets written. Firing only inside fences separates the two with no allowlist to
+maintain and no judgement about what a paragraph means.
+
+A fence that must hold a form anyway is exempted by an HTML comment on the line
+above it:
+
+    <!-- unguarded: <owner> -- <why> -->
+
+Invisible in rendered markdown, greppable, and it names the owner it is
+exempting so a reader can check the claim. The exemption is per fence, not per
+file, so it does not widen as the file grows.
+
+EXIT
+
+0 with nothing printed when clean. 1 with one line per finding: the file, the
+line, the owning script, and the source line. The status is about the verdict,
+not about the reading -- an unreadable file is a crash, deliberately, because a
+guard that skips what it cannot read reports nothing and reads as a pass.
+
+Usage: scripts/check-rule-readers [<path> ...]      (default: every tracked file)
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# Each form is an *executable* shape, never a topic. `## Repos` in an error
+# message is a mention; `grep '## Repos'` is a second reader. The difference is
+# whether a tool is being pointed at the thing.
+FORMS = [
+    (
+        "campaign-session-alive",
+        re.compile(r"ps\s+(-\w+\s+)*-o\s+u?comm="),
+        "the process-name comparison",
+    ),
+    (
+        "campaign-repos",
+        re.compile(r"(grep|sed|awk|rg|jq)\b[^|;]*(##\s*Repos|owner/repo)"),
+        "the ## Repos parse",
+    ),
+    (
+        "campaign-settlement",
+        re.compile(r"(grep|sed|awk|rg|--jq|-q)\b[^|;]*(mergedAt|stateReason|state_reason)"),
+        "the settlement verdict",
+    ),
+    (
+        "campaign-local-work",
+        re.compile(r"git\s+(-C\s+\S+\s+)?(status\s+--porcelain|worktree\s+list)"),
+        "the local-only-work reading",
+    ),
+    (
+        "campaign-name-session",
+        re.compile(r"herdr\s+agent\s+rename\b|agent\s+prompt\b[^|;]*/rename"),
+        "the session-name shape",
+    ),
+]
+
+FENCE = re.compile(r"^\s*(```|~~~)")
+EXEMPT = re.compile(r"<!--\s*unguarded:\s*(?P<owner>[\w-]+)\s*--")
+
+
+def tracked():
+    out = subprocess.run(
+        ["git", "ls-files", "-z"], capture_output=True, text=True, check=True
+    )
+    return [p for p in out.stdout.split("\0") if p]
+
+
+def findings(path):
+    """Yield (line number, owner, what, source line) for one file."""
+    text = Path(path).read_text(encoding="utf-8")
+    inside = False
+    exempted = None          # owner exempted for the fence being opened or open
+    pending = None           # exemption seen, waiting for its fence
+    for n, line in enumerate(text.splitlines(), 1):
+        marker = EXEMPT.search(line)
+        if marker and not inside:
+            pending = marker.group("owner")
+            continue
+        if FENCE.match(line):
+            if inside:
+                inside, exempted = False, None
+            else:
+                inside, exempted, pending = True, pending, None
+            continue
+        if not inside:
+            # Blank lines may separate the exemption from the fence it marks;
+            # any other content between them means it marked nothing.
+            if line.strip():
+                pending = None
+            continue
+        for owner, form, what in FORMS:
+            if owner != exempted and form.search(line):
+                yield n, owner, what, line.strip()
+
+
+def main(argv):
+    paths = argv[1:] or tracked()
+    paths = [
+        p for p in paths
+        if p.endswith((".md", ".markdown")) and not p.startswith("scripts/")
+    ]
+    found = 0
+    for p in sorted(paths):
+        for n, owner, what, src in findings(p):
+            found += 1
+            print(f"{p}:{n}: {what} belongs to scripts/{owner}: {src}")
+    if found:
+        print(
+            f"\ncheck-rule-readers: {found} hand-rolled reading(s) of a rule a "
+            f"script owns.\nCall the script, or exempt the fence with a "
+            f"`<!-- unguarded: <owner> -- <why> -->` line above it.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

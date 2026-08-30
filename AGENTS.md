@@ -367,6 +367,8 @@ scripts/campaign-name-session <pane> <name> [<pane> <name> ...]
 Underneath it is the two herdr calls, which is what to run by hand if the script
 is not to hand:
 
+<!-- unguarded: campaign-name-session -- the documented fallback for when the script is unavailable, so this fence must hold the two calls it wraps -->
+
 ```sh
 herdr agent rename <pane> campaign-<anchor>-<role>-<n>
 herdr agent prompt <pane> "/rename campaign-<anchor>-<role>-<n>"
@@ -597,6 +599,24 @@ repository runs it again before the sync; and `closing-campaign` step 4 runs it
 over the README and over the body GitHub stored. A rule nothing must consume is
 a rule that drifts, and this one had drifted into three prose copies before it
 had a reader.
+
+**A reader a rule must pass through is only half of it.** Nothing stopped the
+next hand-rolled copy being written beside the script, which is how the liveness
+test came to have four prose copies that were all wrong together. So each rule a
+script owns has a second reader on the authoring side,
+`scripts/check-rule-readers`, wired in as a `pre-commit` guard by
+`scripts/install-hooks` — which a fresh clone runs once, because `.git/hooks/` is
+not tracked and a guard that ships as a file nobody runs is a third copy of the
+rule.
+
+It fires **only inside fenced code blocks**, and that line is the whole design. A
+retired form named in prose is a mention this file must go on being able to make;
+a copy in a fence is copy-pasteable, and copy-pasted is the only way a second
+reader gets written. A fence that must hold a form anyway says so on the line
+above it, `<!-- unguarded: <owner> -- <why> -->`, which is invisible when the
+markdown renders and names the owner it exempts so the claim can be checked.
+`scripts/check-rule-readers-test` is what makes the guard trustworthy: six cases,
+each watched to fail with the rule it names broken.
 
 Two of those five are about a wrong list reading as `- none` rather than as
 wrong. A line under the heading that is not a `- ` item was silently skipped, so

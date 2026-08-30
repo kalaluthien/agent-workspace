@@ -15,6 +15,11 @@ only says which kind. That is the reading spec/alloy/ledger.als pins and
 AGENTS.md states, and this script is its one implementation -- a second reader
 written by hand somewhere else is what drifts.
 
+scripts/check-rule-readers is the second reader that keeps this claim true: it
+refuses a commit that writes a settlement verdict computed by hand into a
+fenced code block anywhere outside scripts/. Removing the guard returns this
+line to being a hope.
+
 The anchor repository also holds subtasks -- it is a member of its own
 campaigns -- so the number handed in may be a subtask, and a subtask may be an
 anchor. Neither is visible in a settlement table, so both are reported.

@@ -72,6 +72,11 @@ Exit status is about the reading, never the verdict: 0 means the reading
 completed and the last line says clear or NOT clear; 1 means the reading itself
 failed and nothing may be concluded from it.
 
+scripts/check-rule-readers is the second reader that keeps this claim true: it
+refuses a commit that writes the local-only-work reading -- a `git status
+--porcelain` or a `git worktree list` -- into a fenced code block anywhere
+outside scripts/. Removing the guard returns this line to being a hope.
+
 Usage: scripts/campaign-local-work <anchor-issue-number> [campaign-dir]
 
 `campaign-dir` may be relative or absolute; the script resolves it. Callers do

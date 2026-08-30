@@ -14,6 +14,11 @@ It is also the naming rule's one consumer. `AGENTS.md` § Naming a session state
 rather than half-applied, because a rule nothing must consume is a rule that
 drifts.
 
+scripts/check-rule-readers is the second reader that keeps this claim true: it
+refuses a commit that writes the two herdr rename calls into a fenced code
+block anywhere outside scripts/. Removing the guard returns this line to being
+a hope.
+
     exit 0   every pair applied, both paths
     exit 1   nothing applied -- a name failed the rule, or the arguments are odd
     exit 2   a herdr call failed partway; what was applied is printed
