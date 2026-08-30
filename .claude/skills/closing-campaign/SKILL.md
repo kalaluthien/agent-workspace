@@ -420,6 +420,11 @@ while IFS="$(printf '\t')" read -r REF SHA; do
 done
 ```
 
+**No `--paginate`, on purpose**: `git/matching-refs` returns every matching ref
+in one response — measured, and the measurement is in `references/gotchas.md`
+because the docs say otherwise. Adding the flag here would tell the next reader
+the endpoint pages, which it does not.
+
 **Ancestry, not equality**: a claim ref is created at the `main` of claim time and
 `main` moves on, so `ahead_by` answers what a sha comparison gets wrong. Print a
 row that holds commits and never delete it — the one row here that stops and
