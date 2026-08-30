@@ -632,9 +632,29 @@ write away from a lost index; and every entry becomes a checkout at
 `repos/<name>/`, so `a/web` beside `b/Web` is one directory on this filesystem
 and the second acquire overwrites the first without a word.
 
-Its subtasks are filed on the container tracker, `kalaluthien/agent-workspace`,
-as sub-issues of the anchor exactly like any other — it is the only tracker
-there is. **And the claim is create-ref on the container** for
+**A reader a rule must pass through is only half of it.** Nothing stopped the
+next hand-rolled copy being written beside the script, which is how the liveness
+test came to have four prose copies that were all wrong together. So each rule a
+script owns has a second reader on the authoring side,
+`scripts/check-rule-readers`, wired in as a `pre-commit` guard by
+`scripts/install-hooks` — which a fresh clone runs once, because `.git/hooks/` is
+not tracked and a guard that ships as a file nobody runs is a third copy of the
+rule. It reads the index rather than the working tree, since a `pre-commit` hook
+must judge what is about to be committed and not what happens to be on disk.
+
+It fires on **markdown, and only where the text renders as code** — inside a
+fence, or under a four-space indent. That line is the whole design. A retired
+form named in prose is a mention this file must go on being able to make; a copy
+that renders as code is copy-pasteable, and copy-pasted is the only way a second
+reader gets written. A block that must hold a form anyway says so on the line
+above it; the script's own header is where that syntax is stated, and this is a
+pointer to it rather than a second copy. `scripts/check-rule-readers-test` is
+what makes the guard trustworthy, and its measure is not how many cases pass but
+how many ways of breaking the guard at least one case notices.
+
+A repo-less campaign's subtasks are filed on the container tracker,
+`kalaluthien/agent-workspace`, as sub-issues of the anchor exactly like any
+other — it is the only tracker there is. **And the claim is create-ref on the container** for
 `campaign-<N>/<issue>-<topic>`, even when no container code will change: the
 branch is the claim before it is a workspace, and without it two executors on
 one subtask are serialized by nothing. It is released the way any claim is
@@ -1257,25 +1277,74 @@ itself, not an announcement somebody must receive.
   lander is forced to know it is second, and the mechanism is the rule this
   file already had.
 
-  **Two of the three are GitHub facts; the second is not, and that is the
-  standing weakness of this rule.** Condition 1 is readable — the sha a review
-  comment names against the sha the merge lands. Condition 3 is *readable* — the branch's
-  behind-count against `main` — but **it is enforced by nothing here**, and the
-  way that survives a setting being switched on is worth the four lines.
+  **Condition 3 is enforced by GitHub as of 2026-08-30; condition 1 is readable
+  and read by nothing.** Condition 1 is the sha a review comment names against
+  the sha the merge lands. Condition 3 is `main`'s branch protection:
+  `required_status_checks` with `strict: true` and `contexts: ["check"]`, plus
+  `enforce_admins: true`, so a branch that does not contain the current `main`
+  is refused and no admin can override the refusal.
 
-  `main` is protected as of 2026-08-30 and the up-to-date requirement is set:
-  `protected: true`, `required_status_checks.strict: true`. **It enforces
-  nothing.** "Require branches to be up to date" is a *modifier on required
-  status checks*, and `contexts` is empty, so there is nothing for it to modify.
-  Measured the same day on a throwaway branch cut one commit behind: `behind=1`,
-  `mergeStateStatus: CLEAN`, mergeable. The setting stores, reads back `true`,
-  and refuses no merge.
+  **`strict` is a modifier on required status checks, so it enforces nothing
+  until `contexts` names one.** That was this repository's state for most of
+  the day the setting was applied: it stored, read back `true`, and refused no
+  merge — measured on a throwaway branch cut one commit behind, which read
+  `behind=1`, `mergeStateStatus: CLEAN`, mergeable. Emptying `contexts` restores
+  exactly that silence, and the settings page reads the same either way, so a
+  reader who wants to know whether condition 3 still bites reads `contexts`.
 
-  What protection did buy is real and unrelated: `main` now refuses force-pushes
-  and deletion. Making it enforce condition 3 needs at least one required status
-  check, which means CI on this repository — a larger change and the owner's to
-  decide. Until then condition 3 is a discipline with a cheap check, which is a
-  better place to be than condition 2 and is not the same as being enforced. **Condition 2 has no automatic reader
+  **A `pull_request` check is resolved from the merge commit, not from either
+  branch alone**, so a branch that predates the workflow still produces one.
+  Measured 2026-08-30 on a throwaway pull request whose base carried
+  `.github/workflows/check.yml` and whose head did not: `check` ran and
+  concluded `SUCCESS`. Read that before concluding a branch is stranded. The
+  reading that says otherwise is confounded, and it is the easy one to make —
+  four pull requests into a workflow-less `main` had check runs only on the one
+  carrying the workflow itself, which fits "the head decides" and "the merge
+  decides" equally well. It took a base that had the workflow to separate them.
+
+  **Three cases leave no run named `check` on the sha being merged, and a
+  required check makes each of them unmergeable with no override.** They
+  partition by *why* the run is absent, which is what makes the list closed
+  rather than a tally: the sha is a pull request head, but no `pull_request`
+  event has fired since the workflow became reachable; it was never a pull
+  request head at all; or an event fired and the merge commit yielded no run
+  under that name. The first two are a head that has not moved, since
+  `pull_request` fires on the head moving — `opened`, `synchronize`,
+  `reopened` — so a base advance dispatches nothing.
+
+  The first is a pull request already open when the base gained the workflow.
+  It keeps zero check runs until its next push, so turning a required check on
+  leaves every open pull request pending at once. Measured 2026-08-30: `main`
+  advanced while this branch's own pull request was open and no run was
+  created; the next run came only when the head pushed. Each clears on its next
+  push, which is the merge of `main` condition 3 demands anyway, so nothing is
+  stranded — but a reader who does not know this waits for a check that will
+  never arrive on its own.
+
+  The second is the branch with no pull request at all. A required check gates
+  direct pushes to a protected branch too, and a topic tip that has never been
+  in a pull request has no check run to satisfy it — so the fast-forward of
+  `main` that § Git prescribes after resolving in the topic branch is refused,
+  with `enforce_admins: true` leaving no override — measured 2026-08-30 on a
+  throwaway protected branch, where a commit created straight on it returned
+  `HTTP 409: Could not create file: Required status check "check" is expected.`
+  Land through the pull request instead; its head sha is what carries the check.
+
+  The third needs no still head: an event fires and the merge commit yields no
+  run *named* `check`. Deleting the workflow does it, so does making it
+  unparseable, so does renaming the job away from `check`, and so does a
+  `paths` or `branches` filter that excludes this pull request — which is why
+  `.github/workflows/check.yml` carries that prohibition beside the trigger it
+  guards, a constraint kept only here being one refactor from lost.
+
+  **A workflow that merely fails is not this case, and the difference decides
+  the recovery.** A failing job still reports `check`, red, and a push clears
+  it. Only an absent context needs anything else, and even then the first move
+  is a push that restores it — the same move as case one. Emptying `contexts`
+  is the last resort, for the pull request that means to remove the check
+  itself, and it switches off the protection everything here exists to install.
+
+  `main` also refuses force-pushes and deletion. **Condition 2 has no automatic reader
   on this machine**: one `gh` account signs every session's merges and comments,
   so GitHub cannot tell an author's review from a reviewer's, and
   `spec/alloy/agent.als` axiomatizes the separateness in `review`'s comment with
@@ -1409,7 +1478,7 @@ concurrent is concurrent *within* the bound machine — the holding session, its
 executor sessions, its subagents and its delegates — and two things serialize
 them, and only the first of them atomically: the branch claim, per subtask,
 which create-ref refuses server-side, and merge condition 3, per landing, which
-is a discipline nothing currently refuses. Survey before editing, scope edits so they do not collide
+branch protection refuses server-side. Survey before editing, scope edits so they do not collide
 with other worktrees, and rebase onto what landed rather than force-pushing over
 it.
 
@@ -1417,10 +1486,10 @@ it.
 second to land reconciles.** Merge condition 3 (§ Talking to a repository agent)
 is what tells the second lander it is second: it may not merge a branch that
 does not contain the current `main`, so once the first lands, the second merges
-`main` in and resolves there. **Today that is a discipline and not a refusal** —
-`main` is protected, but its up-to-date requirement enforces nothing while no
-status check is required, so GitHub stops no merge that skips condition 3 and
-the second lander has to run the check itself — and that merge is a push, which retires its
+`main` in and resolves there. **That is a refusal, not a discipline** — `main`
+requires the status check `check`, so GitHub itself stops a merge that skips
+condition 3, admins included, and the second lander is told it is second rather
+than having to check — and that merge is a push, which retires its
 review, so its next merge needs a review read at the *combined* sha. The
 reconciliation is forced by the conditions rather than assigned to anyone.
 

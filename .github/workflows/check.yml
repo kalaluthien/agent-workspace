@@ -1,0 +1,100 @@
+# The second reader for everything this repository states about itself.
+#
+# AGENTS.md says a declared contract stays true only while a second reader
+# enforces it. Three of this repository's checks were run because a rule said
+# to, which makes the person the reader -- and a person who forgets leaves no
+# trace. This runs them on every pull request instead.
+#
+# Two constraints on this file, because breaking either is quiet:
+#
+#   1. Never add `paths`, `paths-ignore`, or a `branches` filter to the
+#      `pull_request` trigger. A required check that a pull request does not
+#      produce is never "skipped" -- it stays pending forever, and with
+#      `enforce_admins` there is no override. A docs-only branch must still
+#      produce this check.
+#   2. Keep the job named `check`, and keep this file parseable. The required
+#      context is the job name, so renaming it, deleting this file, or leaving
+#      it unparseable produces no `check` at all -- which is pending forever,
+#      not red. A job that *fails* is fine: the context is reported, and a push
+#      clears it. Recovering an absent context means pushing one back; only a
+#      pull request that means to remove the check needs an admin to empty
+#      `required_status_checks.contexts` on `main`, land it, and restore them.
+#
+# It is also what makes branch protection bite. `strict` ("require branches to
+# be up to date") is a modifier on required status checks, so with no checks it
+# enforces nothing: measured 2026-08-30 on a branch one commit behind `main`,
+# which read MERGEABLE/CLEAN with `strict: true` and `contexts: []`. Naming this
+# job in `required_status_checks.contexts` is what gives merge condition 3 a
+# reader.
+
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rule readers have a second reader
+        run: |
+          scripts/check-rule-readers
+          scripts/check-rule-readers-test
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Pinned to the release asset, not to a package manager: this is the same
+      # build the machine runs, which is what makes a green run here mean what a
+      # green run there means. Identity is the sha256 below, verified on every
+      # run. A size match is not identity, and the cache is not trustworthy on
+      # its own -- any branch can seed this key, so a restored jar is checked
+      # exactly like a downloaded one.
+      - name: Cache the Alloy jar
+        id: alloy-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/alloy/alloy-6.2.0.jar
+          key: alloy-6.2.0-dist-jar
+
+      - name: Fetch the Alloy jar
+        if: steps.alloy-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local/share/alloy
+          curl -fsSL -o ~/.local/share/alloy/alloy-6.2.0.jar \
+            https://github.com/AlloyTools/org.alloytools.alloy/releases/download/v6.2.0/org.alloytools.alloy.dist.jar
+
+      # Runs on both paths, cache hit and fresh download alike.
+      - name: The jar is the build this repository checks against
+        run: |
+          echo "6b8c1cb5bc93bedfc7c61435c4e1ab6e688a242dc702a394628d9a9801edb78d  $HOME/.local/share/alloy/alloy-6.2.0.jar" \
+            | sha256sum -c -
+
+      # The same wrapper this machine has on PATH, so alloy-check is invoked
+      # exactly as a person invokes it rather than through a CI-only spelling.
+      - name: Install the alloy wrapper
+        run: |
+          mkdir -p ~/.local/bin
+          cat > ~/.local/bin/alloy <<'SH'
+          #!/bin/sh
+          exec java -Djava.awt.headless=true \
+            -jar "$HOME/.local/share/alloy/alloy-6.2.0.jar" "$@"
+          SH
+          chmod +x ~/.local/bin/alloy
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Every model matches its own verdict table
+        run: |
+          for m in spec/alloy/*.als; do
+            echo "== $m"
+            scripts/alloy-check "$m"
+          done
