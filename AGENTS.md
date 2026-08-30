@@ -336,7 +336,7 @@ two survive unchanged, one holds by construction, and one inverts.
   agent on *your* machine works it; a live agent elsewhere that has not pushed
   loses its claim to that rule, which is one more reason it pushes early.
   The branch is not a name. **Every session on this machine is named
-  `campaign-<anchor>[-<issue>]-<role>`** — see § Naming a session — so a name says what a
+  `campaign-<anchor>-<role>-<n>`** — see § Naming a session — so a name says what a
   session is doing, and a reader who wants the branch reads the claim record or
   GitHub. **Never test a name against a branch**: they are two strings on
   purpose, and a test that treats them as one finds whatever happens to match
@@ -344,35 +344,31 @@ two survive unchanged, one holds by construction, and one inverts.
 
 # Naming a session
 
-**`campaign-<anchor>[-<issue>]-<role>`.** One rule for every session on this
-machine, whatever it is doing.
+**`campaign-<anchor>-<role>-<n>`.** One rule for every session on this machine,
+whatever it is doing.
 
-- `<anchor>` is the campaign's anchor issue number. It is always present,
-  because the campaign is what a session belongs to for as long as it runs.
-- `<issue>` is the subtask the session is working, present only when it is on
-  one. A holder is not, so it has none.
-- `<role>` is `holder`, `executor`, or `reviewer`.
+- `<anchor>` — the campaign's anchor issue number.
+- `<role>` — `executor` or `reviewer`.
+- `<n>` — a number distinguishing sessions that share the first two, assigned in
+  the order they appear.
 
 ```
-campaign-1-holder            holds campaign #1
-campaign-1-80-executor       works subtask #80 of campaign #1
-campaign-1-82-reviewer       reviews the pull request for subtask #82
+campaign-1-executor-1        an executor on campaign #1
+campaign-1-executor-2        another one
+campaign-61-executor-1       an executor on campaign #61
+campaign-1-reviewer-1        a reviewer on campaign #1
 ```
 
-**The anchor leads because it is the part that lasts.** Subtasks keep arriving
-for as long as a campaign runs — that is what a campaign is — so a name that led
-with the subtask would lead with the field that turns over fastest, and
-`campaign-80-` would read as "campaign 80" for something that is not a campaign
-at all.
+**The subtask is deliberately not in the name.** A session works several
+subtasks — in parallel or one after another — and renaming it at each handover
+would make the name track the work in hand rather than the session. Witnessed
+the day this rule was written: a session named for subtask #80 picked up #88 an
+hour later, and its name was false from that moment. **A name identifies the
+session for as long as it runs; the claim record says which subtask it holds.**
 
-**A delegate is an executor**, and gets no role word of its own. Where it runs —
-a clone under `<campaign>/repos/`, rather than this checkout — changes how it is
-launched and how its liveness is read, not what it is doing. So a delegate on
-subtask #31 of campaign #1 is `campaign-1-31-executor`, exactly as a session
-working #31 with its own hands would be. **That cannot collide**: a subtask has
-one claim and a claim has one holder, so at most one process is entitled to the
-name at a time. A second process answering to it is a claim violation, which is
-worth seeing rather than hiding behind a different word.
+**A delegate is an executor** and gets no role word of its own. Where it runs — a
+clone under `<campaign>/repos/`, rather than this checkout — changes how it is
+launched and how its liveness is read, not what it is doing.
 
 **A session has two names and neither propagates to the other** (measured
 2026-08-30), so `scripts/campaign-name-session` sets both from one call and is
@@ -383,15 +379,12 @@ applying half of it:
 scripts/campaign-name-session <pane> <name> [<pane> <name> ...]
 ```
 
-It refuses `campaign-80-executor` (an executor with no subtask, whose anchor
-number is really a subtask number) and `campaign-1-80-holder` (a holder on a
-subtask), because the subtask is not optional *per role*: a holder is on none
-and an executor or a reviewer is on exactly one. Underneath it is the two herdr
-calls, which is what to run by hand if the script is not to hand:
+Underneath it is the two herdr calls, which is what to run by hand if the script
+is not to hand:
 
 ```sh
-herdr agent rename <pane> campaign-<anchor>[-<issue>]-<role>
-herdr agent prompt <pane> "/rename campaign-<anchor>[-<issue>]-<role>"
+herdr agent rename <pane> campaign-<anchor>-<role>-<n>
+herdr agent prompt <pane> "/rename campaign-<anchor>-<role>-<n>"
 ```
 
 The second is the harness name — what `ListAgents` resolves, what a peer
@@ -399,15 +392,19 @@ addresses, and what the claim record's `name` field holds. The first is what
 `herdr agent list` shows. A session renamed on one path only answers to two
 different names depending on who is asking.
 
-**A session cannot rename itself this way**, and that is a guard rather than a
-gap: the permission classifier refuses a session injecting `/rename` into its
-own pane. A person types it, or another session drives that pane — which is that
-pane's user acting, and is the same thing.
+**A rename that does not take is a permission question, not a tool guard.**
+`herdr agent prompt` drives any pane, the caller's own included; whether a given
+call is *allowed* is a permission decision, and it is not stable. Measured
+2026-08-30 on one machine: refused on one session, then accepted on that same
+session; accepted on a peer, then refused on that same peer minutes later. So
+build on no outcome at all. Run the script, read what it reports applied and not
+applied, and confirm with `ListAgents`.
 
 **This retires the rule that made a delegate's name its branch with the slash
 flattened.** One rule replaces two, so nothing has to remember which kind of
 session it is looking at, and **never test a name against a branch** survives as
-a consequence rather than as a workaround: they are two strings on purpose.
+a consequence rather than as a workaround: they are two strings on purpose, and
+under this rule the name does not carry the subtask at all.
 
 # Three planes
 
@@ -868,7 +865,7 @@ cannot resolve.
   launch line into the pane, and a terminal silently drops a line past 1024
   bytes — nothing runs and the launch looks like a slow agent.
 - Choose the session UUID in advance (`claude --session-id`) so the transcript
-  path is known before the agent starts, and `--name` it `campaign-<anchor>-<issue>-executor`,
+  path is known before the agent starts, and `--name` it `campaign-<anchor>-executor-<n>`,
   the one naming rule (§ Naming a session). `--name` sets the harness name only;
   give it the same herdr pane name too, because the two do not propagate.
 - Put the prompt **before** any variadic flag on the `claude` command line.
@@ -878,8 +875,44 @@ cannot resolve.
   pool inside a git-ignored campaign directory dies with the directory.
 - **Deliver the opening prompt with `herdr agent prompt <pane> "<text>"`.** A
   prompt put on the launch line is word-split: a launch ending with a whole
-  sentence delivered its first word alone, and the delegate reported it had been
-  given no brief while the launch looked successful.
+  sentence delivered its first word alone, and the delegate reported it had
+  been given no brief while the launch looked successful.
+
+  **This form submits and returns; it does not wait.** Every waiting behaviour
+  below belongs to `--wait`, which this form does not pass — checked against
+  0.8.2's help, where `--until` is defined as "after `--wait`" and the
+  indefinite wait is the *settled-state* wait that only `--wait` starts. Two
+  runs of this exact form in one session returned immediately.
+
+  **If you add `--wait`, add a `--timeout` with it**, because without one the
+  settled-state wait is indefinite and a driver that waits forever looks
+  exactly like an agent thinking.
+
+  Three outcomes, and they are not the same news. Only the first can reach a
+  caller who did not pass `--wait`:
+
+  | outcome | what it means |
+  | --- | --- |
+  | `agent_blocked` | the agent was already at an approval or question dialog. **No input was sent** — the prompt is still yours to deliver once the dialog clears, and clearing it is the person's call. This is a refusal to submit, so it does not need `--wait`. |
+  | `agent_prompt_stalled` | an accepted submission that started from a non-working state saw nothing move within 5000 ms. The agent has it; something is holding the turn. Go and look. |
+  | `timeout` | your `--timeout` elapsed. The agent may be working normally — a long turn reads exactly like this — so read the pane before concluding anything. |
+
+  `agent_blocked` is the one that is safe to act on immediately, because it is
+  the only one that tells you the input never landed.
+
+  **The last two overlap, and which one you get is your own choice of
+  `--timeout`.** The 5000 ms is the stall threshold, so a `--timeout` shorter
+  than it fires first and the same silence comes back as `timeout` instead of
+  `agent_prompt_stalled` — the more informative name lost to the smaller
+  number. Set it above 5000 ms to keep the two distinguishable. The help
+  states no default for `--timeout`, and this file does not invent one — herdr
+  does state one where it has one, so the absence is a fact rather than an
+  omission.
+
+  **`--wait` does not track turns.** If the agent is already working when the
+  prompt lands, that turn's completion may satisfy the wait — so a launch driver
+  can read a previous turn's settling as its own prompt finishing, and get a
+  success that means nothing.
 
 # What silently stops a delegate before it starts
 
@@ -896,6 +929,38 @@ The launch line has three ways to eat a prompt, all quiet: the 1024-byte
 terminal ceiling, a variadic flag such as `--add-dir` swallowing a trailing
 prompt, and the word-splitting above. Put the prompt before any variadic flag,
 keep it short, and send the brief as a file path.
+
+**0.8.2 narrows this, and by less than it first appears.** `agent prompt`
+refuses an agent that is *already* at an approval or question dialog, returning
+`agent_blocked` before sending any input. That catches a delegate you come back
+to and find parked — not the row above it, because the first shell-permission
+prompt appears *after* the opening prompt is accepted, mid-turn, when there was
+nothing to refuse. What would surface that one is `--wait` settling on
+`blocked`, which the documented form does not ask for. Whether herdr classifies
+the external-import dialog as blocked at all is unmeasured, and this file
+records its sibling as unrecognised.
+
+`agent start` narrows a different thing, and not the one previously claimed
+here: it does **not** wait for a new pane shell — it requires "an existing pane
+at an interactive shell prompt" and creates no layout — and no herdr surface
+mentions a first-run prompt. What it does is return only once herdr has detected
+the expected agent and judged it ready for input, with a startup timeout that
+**defaults to 30000 ms** (`agent start --timeout`, max 300000). An agent blocked
+during startup comes back as **`agent_not_ready`**, a fourth status name, and
+the name stays usable for `agent read` and `send-keys` (bundled skill at 0.8.2).
+That the default is stated here, where `agent prompt --timeout` states none, is
+itself the evidence that the absence over there is real.
+
+What none of it retires is the folder-trust row. That dialog was seen once not
+to appear on a scratch delegate, and one sighting is not a rule — least of all
+for the dialog § Talking to a repository agent already records as the one herdr
+misreports, which is where the reading rule for it lives and stays.
+
+That rule now stands **measured rather than provisional**. It was written
+against a gap a better mechanism would close, and the mechanism arrived and does
+not close it: herdr's own Claude integration hook reports session identity, not
+state — `pane.report_agent_session` is its only call, and it carries no status
+method. Nothing infers `working` from anything but the screen.
 
 # Completion and liveness are different questions
 
@@ -1074,8 +1139,8 @@ itself, not an announcement somebody must receive.
 
   **That directory is the only thing that can say which subtask a session
   holds.** The close gate and the retirement sweep enumerate it and read each
-  `pid`; nothing matches names by prefix, because a session keeps whatever name
-  its harness gave it. **A campaign whose directory has no `runtime/claims/`
+  `pid`; nothing matches names by prefix, because a name is not a branch
+  (§ Naming a session) and can be changed while the claim it belongs to cannot. **A campaign whose directory has no `runtime/claims/`
   cannot be enumerated at all, and that is a refusal rather than a pass** — an
   empty directory says no claim was taken, a missing one says nothing.
 
