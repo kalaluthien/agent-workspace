@@ -1264,10 +1264,15 @@ itself, not an announcement somebody must receive.
   carrying the workflow itself, which fits "the head decides" and "the merge
   decides" equally well. It took a base that had the workflow to separate them.
 
-  **Three cases still produce no check, and a required check makes each of them
-  unmergeable with no override.** The first two are a head that has not moved:
-  `pull_request` fires on the head moving — `opened`, `synchronize`,
-  `reopened` — so a base advance dispatches nothing.
+  **Three cases leave no run named `check` on the sha being merged, and a
+  required check makes each of them unmergeable with no override.** They
+  partition by *why* the run is absent, which is what makes the list closed
+  rather than a tally: the sha was never a pull request head; it was one, but
+  no `pull_request` event has fired since the workflow became reachable; or an
+  event fired and the merge commit yielded no run under that name. The first
+  two are a head that has not moved, since `pull_request` fires on the head
+  moving — `opened`, `synchronize`, `reopened` — so a base advance dispatches
+  nothing.
 
   The first is a pull request already open when the base gained the workflow.
   It keeps zero check runs until its next push, so turning a required check on
@@ -1287,12 +1292,19 @@ itself, not an announcement somebody must receive.
   `HTTP 409: Could not create file: Required status check "check" is expected.`
   Land through the pull request instead; its head sha is what carries the check.
 
-  The third is the one whose head *has* moved: a pull request that breaks or
-  deletes the workflow. Its merge commit then has no usable workflow, so it
-  produces no check and strands itself, and recovery is an admin emptying
-  `contexts`, landing the fix, and restoring it. That constraint is written in
-  `.github/workflows/check.yml` beside the trigger it guards, because a
-  constraint kept only here is one refactor away from being lost.
+  The third needs no still head: an event fires and the merge commit yields no
+  run *named* `check`. Deleting the workflow does it, so does making it
+  unparseable, so does renaming the job away from `check`, and so does a
+  `paths` or `branches` filter that excludes this pull request — which is why
+  `.github/workflows/check.yml` carries that prohibition beside the trigger it
+  guards, a constraint kept only here being one refactor from lost.
+
+  **A workflow that merely fails is not this case, and the difference decides
+  the recovery.** A failing job still reports `check`, red, and a push clears
+  it. Only an absent context needs anything else, and even then the first move
+  is a push that restores it — the same move as case one. Emptying `contexts`
+  is the last resort, for the pull request that means to remove the check
+  itself, and it switches off the protection everything here exists to install.
 
   `main` also refuses force-pushes and deletion. **Condition 2 has no automatic reader
   on this machine**: one `gh` account signs every session's merges and comments,

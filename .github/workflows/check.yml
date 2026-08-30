@@ -12,10 +12,13 @@
 #      produce is never "skipped" -- it stays pending forever, and with
 #      `enforce_admins` there is no override. A docs-only branch must still
 #      produce this check.
-#   2. A pull request that breaks or deletes this file strands itself, for the
-#      same reason and with no override. Recovery is an admin emptying
-#      `required_status_checks.contexts` on `main`, landing the fix, and
-#      putting it back.
+#   2. Keep the job named `check`, and keep this file parseable. The required
+#      context is the job name, so renaming it, deleting this file, or leaving
+#      it unparseable produces no `check` at all -- which is pending forever,
+#      not red. A job that *fails* is fine: the context is reported, and a push
+#      clears it. Recovering an absent context means pushing one back; only a
+#      pull request that means to remove the check needs an admin to empty
+#      `required_status_checks.contexts` on `main`, land it, and restore them.
 #
 # It is also what makes branch protection bite. `strict` ("require branches to
 # be up to date") is a modifier on required status checks, so with no checks it
