@@ -93,11 +93,17 @@ Holds when: the anchor's latest `BOUND` comment names this machine, and
 executor session came to work one subtask and this skill is not its to run.
 
 ```sh
-PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN_DIR/runtime/holder" 2>/dev/null)
-kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
+if [ ! -s "$CAMPAIGN_DIR/runtime/holder" ]; then V=none
+else
+  PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN_DIR/runtime/holder")
+  V=$("$CONTAINER/scripts/campaign-session-alive" "$PID" 2>&1) || V="unreadable ($V)"
+fi
+echo "$V"
 ```
 
-Alive and not this session — print the file and stop. Missing or dead — you are
+`alive`, `other` or `unreadable`, and not this session — print the reading and
+stop; only `none` and `dead` are confirmed absences, and a close is the most
+destructive act here. `none` or `dead` — you are
 the holding session, so say so, take the directory as `opening-campaign` step 4
 does, and carry on.
 
@@ -126,8 +132,12 @@ if [ ! -d "$EXECDIR" ]; then
 else
   find "$EXECDIR" -type f -print | while read -r F; do
     P=$(awk '$1 == "pid" { print $2 }' "$F")
-    kill -0 "$P" 2>/dev/null && [ "$(ps -o comm= -p "$P")" = claude ] &&
-      { echo "live executor: $(basename "$F")"; cat "$F"; }
+    V=$("$CONTAINER/scripts/campaign-session-alive" "$P" 2>&1) || V="unreadable ($V)"
+    case "$V" in
+      dead) ;;
+      alive|other) echo "live executor: $(basename "$F") [$V]"; cat "$F" ;;
+      *) echo "REFUSE: $(basename "$F") is $V"; cat "$F" ;;
+    esac
   done
 fi
 ```
@@ -139,7 +149,7 @@ Any row from either: print the rows, name the agent, stop. The person retires
 it; this skill never kills an agent. No rows still leaves two cases for step 2 — an agent herdr has forgotten, and an
 executor that never sent `CLAIMED` — both leaving work in a checkout.
 
-Holds when: `runtime/executors/` existed and held no live pid, no
+Holds when: `runtime/executors/` existed, every record in it read `dead`, no
 `runtime/holder` named a live session other than this one, and no herdr agent's
 `cwd` was under `$CAMPAIGN_DIR` — or `TOOK_IT_HERE` is set and this step reported
 all three as not applicable rather than as passed.
