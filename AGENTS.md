@@ -812,10 +812,17 @@ cannot resolve.
   | --- | --- |
   | `agent_blocked` | the agent was already at an approval or question dialog. **No input was sent** — the prompt is still yours to deliver once the dialog clears, and clearing it is the person's call. |
   | `agent_prompt_stalled` | the prompt was accepted and nothing moved within 5000 ms. The agent has it; something is holding the turn. Go and look. |
-  | `timeout` | your `--timeout` elapsed while waiting for a settled state. The agent may be working normally — a long turn reads exactly like this — so read the pane before concluding anything. |
+  | `timeout` | your `--timeout` elapsed. The agent may be working normally — a long turn reads exactly like this — so read the pane before concluding anything. |
 
   `agent_blocked` is the one that is safe to act on immediately, because it is
   the only one that tells you the input never landed.
+
+  **The last two overlap, and which one you get is your own choice of
+  `--timeout`.** The 5000 ms is the stall threshold, so a `--timeout` shorter
+  than it fires first and the same silence comes back as `timeout` instead of
+  `agent_prompt_stalled` — the more informative name lost to the smaller
+  number. Set it above 5000 ms to keep the two distinguishable. The help
+  states no default for `--timeout`, and this file does not invent one.
 
 # What silently stops a delegate before it starts
 
