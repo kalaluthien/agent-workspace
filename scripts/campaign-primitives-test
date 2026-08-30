@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Prove the inventory reports what is installed, and admits what it cannot read.
+
+The announcement is what makes deleting a rule from the prose safe, so the way
+it fails matters more than the way it succeeds. Two directions, not equally bad:
+over-calling makes a reader look for a guard that is not there, while reporting
+a deleted guard as installed makes a reader believe the tree is guarded when
+nothing guards it. Three earlier classifiers failed in that second direction.
+
+Usage: scripts/campaign-primitives-test
+"""
+import importlib.machinery
+import importlib.util
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+PRIM = Path(__file__).resolve().parent / "campaign-primitives"
+
+DECLARING = "#!/bin/sh\n# runs: check-rule-readers check-tree-shape\nfor g in $(sed ...); do :; done\n"
+# The same hook after an ordinary refactor of its loop. Both readers use the
+# declaration, so the loop's shape does not matter.
+REFACTORED = "#!/bin/sh\n# runs: check-rule-readers check-tree-shape\nG=$(sed ...)\nfor g in $G; do :; done\n"
+# A hook mentioning scripts in prose and declaring nothing. The classifier that
+# matched a name anywhere reported these as installed guards.
+PROSE_ONLY = "#!/bin/sh\n# see scripts/check-rule-readers and scripts/check-tree-shape\nexit 0\n"
+
+
+def load():
+    spec = importlib.util.spec_from_loader(
+        "prim", importlib.machinery.SourceFileLoader("prim", str(PRIM)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def main():
+    m = load()
+    ran, fails = [], []
+
+    def check(name, cond):
+        ran.append(name)
+        if not cond:
+            fails.append(name)
+
+    names = {"check-rule-readers", "check-tree-shape", "campaign-bound",
+             "install-hooks", "push-campaign-branch"}
+    both = {"check-rule-readers", "check-tree-shape"}
+
+    found, probs = m.hook_run({"pre-commit": DECLARING}, names)
+    check("a hook's declaration names its guards", found == both and not probs)
+    found, probs = m.hook_run({"pre-commit": REFACTORED}, names)
+    check("...and a refactor of the loop changes nothing",
+          found == both and not probs)
+
+    found, probs = m.hook_run({"pre-commit": PROSE_ONLY}, names)
+    check("a hook that only mentions guards in prose declares none",
+          found == set())
+    check("...and says so rather than reporting an unguarded tree as guarded",
+          any("declares no" in p for p in probs))
+
+    found, probs = m.hook_run({"pre-commit": "#!/bin/sh\n# runs: no-such\n"}, names)
+    check("a declaration naming a script that is not here is reported",
+          found == set() and any("not a script" in p for p in probs))
+
+    found, probs = m.hook_run({}, names)
+    check("no hook installed means no guard found", found == set() and not probs)
+
+    with tempfile.TemporaryDirectory() as d:
+        h = Path(d) / "hooks"
+        h.mkdir()
+        s = h / "pre-commit.sample"
+        s.write_text(DECLARING)
+        s.chmod(0o755)
+        check("git's shipped .sample hooks are not installed hooks",
+              m.installed_hooks(h) == {})
+        p = h / "pre-commit"
+        p.write_text(DECLARING)
+        check("a hook without the execute bit is not one git runs",
+              m.installed_hooks(h) == {})
+        p.chmod(0o755)
+        check("an executable hook is read", "pre-commit" in m.installed_hooks(h))
+        check("a hooks directory that does not exist is empty, not a crash",
+              m.installed_hooks(Path(d) / "absent") == {})
+        check("and neither is None", m.installed_hooks(None) == {})
+
+    with tempfile.TemporaryDirectory() as d:
+        def wrote(body):
+            q = Path(d) / "mystery"
+            q.write_text(body)
+            return q
+        check("a comment under the shebang is the summary",
+              m.summary(wrote("#!/bin/sh\n# what it does\n")) == "what it does")
+        check("a docstring is too",
+              m.summary(wrote('#!/usr/bin/env python3\n"""what it does."""\n'))
+              == "what it does.")
+        check("a script with no summary at all reports none, not a line of code",
+              m.summary(wrote("#!/bin/sh\nset -e\necho hi\n")) is None)
+        check("a file that cannot be read says so rather than returning none",
+              str(m.summary(Path(d) / "absent")).startswith("<unreadable"))
+
+    # This is the SessionStart hook's command, so it must deliver the listing
+    # whatever it found: a non-zero exit there drops stdout entirely, which
+    # suppressed the announcement in the one case the warning block is for.
+    r = subprocess.run([sys.executable, str(PRIM), "--brief"],
+                       capture_output=True, text=True)
+    out = r.stdout + r.stderr
+    check("it exits 0 so SessionStart delivers the listing", r.returncode == 0)
+    check("the push hook is announced, being a mechanism that acts unasked",
+          "push-campaign-branch" in out)
+    check("the two guards are announced",
+          "check-tree-shape" in out and "check-rule-readers" in out)
+    check("it separates what runs unasked from what a flow calls",
+          "run by a git hook, unasked" in out and "a flow calls these" in out)
+
+    # core.hooksPath: git looks there and nowhere else. Resolving the hooks
+    # directory by hand instead of asking git meant the inventory went on
+    # reporting two installed hooks while git ran none.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / ".git" / "hooks" / "pre-commit").write_text(DECLARING)
+        (root / ".git" / "hooks" / "pre-commit").chmod(0o755)
+        r = subprocess.run([sys.executable, str(PRIM)], cwd=root,
+                           capture_output=True, text=True)
+        check("a hook in the default place is found", "pre-commit" in r.stdout)
+        subprocess.run(["git", "config", "core.hooksPath", str(root / "nowhere")],
+                       cwd=root, check=True)
+        r = subprocess.run([sys.executable, str(PRIM)], cwd=root,
+                           capture_output=True, text=True)
+        check("core.hooksPath sends git elsewhere, and the listing follows it",
+              "NO git hook is installed" in r.stdout)
+
+    # The exit status, which is the SessionStart contract. A non-zero exit
+    # there drops stdout, suppressing the whole announcement in exactly the
+    # case the warning block is written for.
+    with tempfile.TemporaryDirectory() as d:
+        q = Path(d) / "mystery"
+        q.write_text("#!/bin/sh\nset -e\necho hi\n")
+        q.chmod(0o755)
+        r = subprocess.run([sys.executable, str(PRIM), "--scripts-dir", d],
+                           capture_output=True, text=True)
+        out2 = r.stdout + r.stderr
+    check("an unclassifiable script is reported", "could not be classified" in out2)
+    check("...and does not suppress the listing by exiting non-zero",
+          r.returncode == 0 and "Machine-decided here" in r.stdout)
+
+    if not ran:
+        print("FAIL  the suite ran no case at all")
+        return 1
+    for f in fails:
+        print(f"FAIL  {f}")
+    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

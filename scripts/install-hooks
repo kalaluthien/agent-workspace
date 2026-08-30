@@ -1,5 +1,17 @@
 #!/usr/bin/env sh
-# Install this repository's pre-commit guards. Idempotent; run it after a clone.
+# Install this repository's git hooks. Idempotent; run it after a clone.
+#
+# pre-commit runs two guards, split by question: check-rule-readers asks whether
+# a rule a script owns got a second reader written by hand, check-tree-shape
+# asks whether the tree still has the shape AGENTS.md describes.
+#
+# post-commit pushes a campaign branch as soon as it has the commit. AGENTS.md
+# asks for that in prose twice, and once it is a habit rather than a mechanism
+# an executor sits on a finished commit -- which is what push-early exists to
+# forbid, and what the session limit turns into lost work. It pushes only a
+# campaign-*/ branch: an ordinary topic branch is somebody's to publish when
+# they choose, and a hook that decided that for them would be the surprise this
+# repository has no reason to spring.
 #
 # The machine-wide guard at ~/.claude/git-hooks/no-main-commits occupies the
 # pre-commit slot by default, and says in its own header that a repository whose
@@ -28,8 +40,10 @@ set -e
 # would land where git never looks. AGENTS.md states this form.
 common=$(git rev-parse --path-format=absolute --git-common-dir)
 root=$(cd "$(dirname "$common")" && pwd -P)
-hook=$common/hooks/pre-commit
-ours="$root/scripts/check-rule-readers"
+hookdir=$common/hooks
+precommit=$hookdir/pre-commit
+postcommit=$hookdir/post-commit
+ours="$root/scripts/"
 marker='# Installed by scripts/install-hooks.'
 
 # The exit status, not the value: `core.hooksPath=""` is a *set* key that git
@@ -37,49 +51,117 @@ marker='# Installed by scripts/install-hooks.'
 if hooks_path=$(git config --get core.hooksPath); then
 	if [ -z "$hooks_path" ]; then
 		echo "refusing: core.hooksPath is set and empty, which disables" >&2
-		echo "every hook. Writing $hook would install nothing." >&2
+		echo "every hook. Writing $precommit would install nothing." >&2
 		echo "Unset it (git config --unset core.hooksPath) and re-run." >&2
 	else
 		echo "refusing: core.hooksPath is set to '$hooks_path'." >&2
-		echo "git runs hooks from there, so writing $hook installs nothing." >&2
+		echo "git runs hooks from there, so writing $precommit installs nothing." >&2
 		echo "Chain $ours from $hooks_path/pre-commit by hand, or unset the" >&2
 		echo "config for this repository and re-run." >&2
 	fi
 	exit 1
 fi
 
-if [ -L "$hook" ]; then
-	echo "refusing: $hook is a symlink to $(readlink "$hook")." >&2
-	echo "Writing through it would edit a file outside this repository." >&2
-	echo "Move it aside and re-run, or chain $ours from its target by hand." >&2
-	exit 1
-fi
+# Each hook gets the same two refusals, so a second hook cannot arrive with
+# weaker checks than the first. Both are about writing over somebody's decision
+# this script cannot read.
+check_slot() {
+	slot=$1
+	if [ -L "$slot" ]; then
+		echo "refusing: $slot is a symlink to $(readlink "$slot")." >&2
+		echo "Writing through it would edit a file outside this repository." >&2
+		echo "Move it aside and re-run, or chain $ours from its target by hand." >&2
+		exit 1
+	fi
+	if [ -e "$slot" ] && ! grep -qF "$marker" "$slot"; then
+		echo "refusing: $slot exists and was not written by this script." >&2
+		echo "Read it, then chain from it or move it aside:" >&2
+		echo "  mv '$slot' '$slot.bak' && scripts/install-hooks" >&2
+		exit 1
+	fi
+}
 
-if [ -e "$hook" ] && ! grep -qF "$marker" "$hook"; then
-	echo "refusing: $hook exists and was not written by this script." >&2
-	echo "Read it, then chain $ours from it or move it aside:" >&2
-	echo "  mv '$hook' '$hook.bak' && scripts/install-hooks" >&2
-	exit 1
-fi
+check_slot "$precommit"
+check_slot "$postcommit"
 
+hook=$precommit
 cat >"$hook" <<HOOK
 #!/usr/bin/env sh
 $marker Re-run it after changing this file.
+#
+# The line below is the ONE list of what this hook runs. The loop reads it, and
+# so does scripts/campaign-primitives when it tells a session what guards this
+# tree -- so there is no second copy to drift, and no shell parsing on the
+# reader's side. Add a guard by adding it here.
+# runs: check-rule-readers check-tree-shape
 set -e
 # \`cmd && other\` under \`set -e\` exits 1 when the test is false, so a machine
 # without the shared guard would have every commit blocked with no message.
 if [ -x "\$HOME/.claude/git-hooks/no-main-commits" ]; then
 	"\$HOME/.claude/git-hooks/no-main-commits" "\$@"
 fi
-# Same guard, same reason, against a different absence: this checkout may
-# predate the script, or be a worktree, a fresh clone, or a bisect.
 # --show-toplevel: the guard that judges a commit is the one in the checkout
 # making it. Resolving to the shared checkout runs whatever another worktree
 # happens to hold, committed or not, against an index it never wrote.
-guard=\$(git rev-parse --show-toplevel)/scripts/check-rule-readers
-if [ -x "\$guard" ]; then
-	exec "\$guard" --staged
+#
+# A guard that is absent or not executable REFUSES. The first draft skipped it
+# -- \`if [ -x ]\` with no else -- so a worktree at a commit predating the guard,
+# or one where the bit was lost, committed a violation and the post-commit hook
+# pushed it, with no output at all. A hook that is installed is a promise the
+# check ran; the only honest answer when it cannot is to stop and say which one.
+#
+# An EMPTY declaration refuses. Reading the list from the file moved finding
+# 2-1's failure -- a guard that is absent runs nothing and says nothing -- from
+# the \`if [ -x ]\` test to this \`sed\`: strip the line and the loop ran zero
+# times, and a violation committed with no output at all. A hook that cannot
+# tell what it is meant to run is a hook that has to stop.
+guards=\$(sed -n 's/^# runs: //p' "\$0")
+# Word list, not string: \`# runs:\` followed by a space leaves \$guards
+# non-empty and the loop running zero times, which is the silent skip this
+# refusal exists to stop -- one character from the form that was reported.
+set -- \$guards
+if [ \$# -eq 0 ]; then
+	echo "pre-commit: REFUSING -- this hook carries no '# runs:' line, so it" >&2
+	echo "  cannot tell which guards it is meant to run. Re-run" >&2
+	echo "  scripts/install-hooks. To commit anyway: SKIP_REPO_GUARDS=1" >&2
+	[ "\${SKIP_REPO_GUARDS:-}" = 1 ] || exit 1
+	echo "pre-commit: SKIP_REPO_GUARDS=1 -- committing with NO guard run." >&2
 fi
+for guard in \$guards; do
+	g=\$(git rev-parse --show-toplevel)/scripts/\$guard
+	if [ ! -x "\$g" ]; then
+		echo "pre-commit: REFUSING -- \$g is missing or not executable." >&2
+		echo "  This hook is installed, so the guard is expected to run." >&2
+		echo "  chmod +x it, or run scripts/install-hooks from a checkout" >&2
+		echo "  that has it. To commit anyway you have to say so out loud:" >&2
+		echo "    SKIP_REPO_GUARDS=1 git commit ..." >&2
+		[ "\${SKIP_REPO_GUARDS:-}" = 1 ] || exit 1
+		echo "pre-commit: SKIP_REPO_GUARDS=1 -- committing with \$guard unrun." >&2
+		continue
+	fi
+	"\$g" --staged || exit 1
+done
+HOOK
+
+chmod +x "$hook"
+echo "installed: $hook"
+
+hook=$postcommit
+cat >"$hook" <<'HOOK'
+#!/usr/bin/env sh
+# Installed by scripts/install-hooks. Re-run it after changing this file.
+# runs: push-campaign-branch
+for s in $(sed -n 's/^# runs: //p' "$0"); do
+	x=$(git rev-parse --show-toplevel)/scripts/$s
+	if [ ! -x "$x" ]; then
+		echo "post-commit: $x is missing or not executable." >&2
+		echo "  This commit was NOT pushed. Push it yourself, or run" >&2
+		echo "  scripts/install-hooks from a checkout that has the script." >&2
+		continue
+	fi
+	"$x"
+done
+exit 0
 HOOK
 
 chmod +x "$hook"

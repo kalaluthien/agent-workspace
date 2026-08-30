@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""Prove campaign-claim reads a record honestly and refuses to conclude from a
+dead pid.
+
+Only the readings are covered: `take` and the ref delete in `release` reach
+GitHub, and a fixture that mocked them would be testing the mock. What is here
+is the half that decides whether a claim gets deleted, which is the half whose
+failure destroys somebody's work.
+
+No case may reach the network. The first draft had one that did, and it created
+a branch on the real remote every time the suite ran -- a test that writes to
+production, hidden inside a green line of output.
+
+Usage: scripts/campaign-claim-test
+"""
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+CLAIM = Path(__file__).resolve().parent / "campaign-claim"
+DEAD = "78513"      # long gone; any absent pid does
+DEAD_REC = f"session s1\nname n1\npid {DEAD}\nbranch campaign-1/7-x\n"
+DIR = object()   # a fixture that is a directory rather than a file
+
+
+def run(args, files=None, mtime=None, env=None):
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        for name, body in (files or {}).items():
+            if body is DIR:
+                (claims / name).mkdir()
+                continue
+            if isinstance(body, bytes):
+                (claims / name).write_bytes(body)
+            else:
+                (claims / name).write_text(body)
+            if mtime is not None:
+                os.utime(claims / name, (mtime, mtime))
+        e = dict(os.environ, **(env or {}))
+        return subprocess.run([sys.executable, str(CLAIM), *args, "--dir", d],
+                              capture_output=True, text=True, env=e)
+
+
+OLD = 1767225600.0     # 2026-01-01, before any session on this machine
+CASES = []
+
+
+def case(name, args, files=None, mtime=None, env=None, want=None, code=None):
+    CASES.append((name, args, files, mtime, env, want, code))
+
+
+# The reading that says nothing is here, which must not read like a refusal.
+case("an empty claims directory is a reading, not an absence",
+     ["list"], want="0 claim(s)", code=0)
+case("no record for this subtask says so and names the path it read",
+     ["status", "7"], want="verdict none", code=0)
+
+# The verdict that costs work if it is wrong.
+case("a dead pid on an old record is stale?, never dead",
+     ["status", "7"], {"7": DEAD_REC}, OLD, want="verdict stale?", code=0)
+case("...and it says why, so the reader knows to ask",
+     ["status", "7"], {"7": DEAD_REC}, OLD, want="do not read this as free", code=0)
+case("a dead pid on a record written since the last restart is plain dead",
+     ["status", "7"], {"7": DEAD_REC}, None, want="verdict dead", code=0)
+
+# A record that cannot answer must say so rather than answer wrongly.
+case("a record with no pid is unreadable, not dead",
+     ["status", "7"], {"7": "session s1\nname n1\nbranch b\n"},
+     want="verdict unreadable", code=0)
+
+# The release gate.
+case("release refuses a dead pid with no confirmation",
+     ["release", "7"], {"7": DEAD_REC}, OLD, want="not proof the session is gone", code=1)
+case("release names the restart evidence when it refuses",
+     ["release", "7"], {"7": DEAD_REC}, OLD, want="a restart is likely", code=1)
+
+# A missing directory is not an empty one.
+case("a missing claims directory refuses rather than reading empty",
+     ["list"], want=None, code=None)
+
+# `take` is covered only up to the point where it would reach GitHub. The first
+# draft of this case ran the whole command and created campaign-1/7-x on the
+# real remote, which is the shape of test that quietly does damage: a suite is
+# run over and over, and every run of that one was a live write.
+# pid 1 exists on every machine this runs on and is not a claude, so
+# campaign-session-alive calls it `other` -- a liveness that is neither dead nor
+# alive, and the one the release gate must refuse by name. Hardcoding the wire
+# to "dead" changes this refusal's wording, which is what makes it a case.
+# A record whose bytes are not text. Three call sites used to hand this
+# straight to a traceback.
+# The trace and its notes on one stream, in order. Split across two they
+# reordered under a pipe, and the order is part of the evidence.
+case("the restart note is on stdout with the rest of the trace",
+     ["release", "7"], {"7": DEAD_REC}, OLD, want="note:", code=1)
+# A non-file entry under claims/ is counted apart, never dropped.
+case("a directory under claims/ is named by list, not skipped",
+     ["list"], {"7": DEAD_REC, "9": DIR}, want="is not a file", code=0)
+case("an undecodable record reads as unreadable, not as an absence",
+     ["status", "7"], {"7": b"\xff\xfe not text\n"}, want="will not decode",
+     code=0)
+case("release refuses a record whose pid belongs to something else",
+     ["release", "7"], {"7": "session s\nname n\npid 1\nbranch campaign-1/7-x\n"},
+     want="reads other", code=1)
+case("take refuses a subtask this machine already has a record for",
+     ["take", "1", "7", "x"], {"7": DEAD_REC},
+     want="already exists", code=1)
+
+
+PS = ("Fri Aug  7 13:37:53 2026     claude.exe\n"
+      "Mon Aug 31 02:00:00 2026     claude.exe\n"
+      "Mon Aug 31 02:00:00 2026     launchd\n")
+BEFORE_ALL = 1754000000.0    # Aug 2026, before both claude rows
+AFTER_ALL = 1790000000.0     # 2026-09, after both
+
+
+def pure_cases(m):
+    """The restart evidence, against a recorded process table. These two used to
+    pass only because a claude was running on this machine."""
+    # Counted as they run, never a constant. A hardcoded total is a suite that
+    # cannot report its own shrinkage -- deleting a case still prints the same
+    # "N/N pass". This file had one, twice.
+    ran, out = [], []
+
+    def c(name, cond):
+        ran.append(name)
+        if not cond:
+            out.append(name)
+
+    names = frozenset({"claude", "claude.exe"})
+    n, why = m.count_newer(PS, names, BEFORE_ALL)
+    c("a record older than every session sees them all", why is None and n == 2)
+    n, why = m.count_newer(PS, names, AFTER_ALL)
+    c("a record newer than every session sees none", why is None and n == 0)
+    n, why = m.count_newer(PS, frozenset({"claude"}), BEFORE_ALL)
+    c("a name list that misses this install's name finds nothing",
+      why is None and n == 0)
+    n, why = m.count_newer("not a timestamp     claude.exe\n", names, 0)
+    c("an unparseable start time is a why, not a zero", n is None and why)
+    n, why = m.count_newer("", names, 0)
+    c("an empty process table is zero, not a why", why is None and n == 0)
+
+    # The destructive path's decision, now that it is a calculation and the
+    # suite can reach it. The two blockers this pull request's review found both
+    # live here, and neither had a case: the effects around them touch GitHub,
+    # and the suite may not.
+    rec = {"session": "S1", "branch": "campaign-1/7-x"}
+    c("a live record is never releasable",
+      m.release_gate(rec, None, "asked the peer", "alive")[0] is None)
+    c("nor an `other` one, which is a pid this install cannot name",
+      m.release_gate(rec, None, "asked the peer", "other")[0] is None)
+    c("nor an unreadable one",
+      m.release_gate(rec, None, "asked the peer", "unreadable (x)")[0] is None)
+    c("a dead record without a confirmed absence is refused",
+      m.release_gate(rec, None, None, "dead")[0] is None)
+    c("...and the refusal says a restart renumbers pids",
+      "renumbers" in (m.release_gate(rec, None, None, "dead")[1] or ""))
+    c("a dead record with one proceeds, on the branch the record names",
+      m.release_gate(rec, None, "the peer said so", "dead")[0] == "campaign-1/7-x")
+
+    c("no record and no --branch is refused",
+      m.release_gate(None, None, "the peer said so", None)[0] is None)
+    c("no record with a branch but no confirmation is refused too",
+      m.release_gate(None, "campaign-1/7-x", None, None)[0] is None)
+    c("no record is the weaker evidence, so it needs the same confirmation",
+      m.release_gate(None, "campaign-1/7-x", "asked everyone", None)[0]
+      == "campaign-1/7-x")
+
+    # The blocker: compare and delete must name the same repository.
+    c("the comparison is asked of the repository named",
+      m.compare_path("a/b", "campaign-1/7-x").startswith("repos/a/b/"))
+    c("and the delete happens in that same one",
+      m.delete_path("a/b", "campaign-1/7-x").startswith("repos/a/b/"))
+    c("a member repository is never compared against the container",
+      "agent-workspace" not in m.compare_path("owner/web", "campaign-1/7-x"))
+
+    ok, why = m.ahead_verdict(1, "", "boom", "a/b", "x")
+    c("a comparison that failed is not an empty branch", not ok and "did not happen" in why)
+    ok, why = m.ahead_verdict(0, "", "", "a/b", "x")
+    c("an empty answer is not zero either", not ok)
+    ok, why = m.ahead_verdict(0, "3", "", "a/b", "x")
+    c("a branch ahead of main is reported, never deleted", not ok and "never deleted" in why)
+    ok, why = m.ahead_verdict(0, "0", "", "a/b", "x")
+    c("a branch at main is releasable", ok and why is None)
+    # The two halves of the guard overlap, so each needs a case that only it
+    # catches: a failed call whose stdout happens to read "0" is caught by the
+    # returncode half alone.
+    ok, why = m.ahead_verdict(1, "0", "boom", "a/b", "x")
+    c("a failed call is not empty even when its output says 0", not ok)
+    # The two halves change the same verdict, so only the *message* separates
+    # them: an answer that is not a number means the question was not answered,
+    # and reporting it as "N commits ahead" sends the reader to the wrong repair.
+    ok, why = m.ahead_verdict(0, "not a number", "", "a/b", "x")
+    c("an answer that is not a number is a failed question, not a count",
+      not ok and "did not happen" in why and "commit(s) ahead" not in why)
+
+    # A command that is not installed at all: a failed run carrying its reason,
+    # never a traceback. `gh` and `ps` both go through this.
+    r = m.run("no-such-command-xyz")
+    c("a missing command is a failed run, not an exception",
+      r.returncode != 0 and "FileNotFoundError" in r.stderr)
+
+    # The install's process names, read from the script that owns them. Loading
+    # this file as a module is what broke when importlib.machinery was
+    # referenced without being imported.
+    c("the session names come from the owning script",
+      isinstance(m.session_names(), frozenset) and m.session_names())
+
+    # A record that will not decode is a failed reading, not an absence.
+    c("an undecodable record is unreadable, never dead",
+      "unreadable" in (m.liveness_of({"unreadable": "UnicodeDecodeError"}) or ""))
+
+    # The wire into the release gate. Replacing it with the constant "dead"
+    # left the whole suite green and made a live claim deletable.
+    c("a record with no pid reads unreadable, not dead",
+      m.liveness_of({"session": "s"}) == "unreadable (no pid)")
+    c("no record has no liveness at all", m.liveness_of(None) is None)
+    return ran, out
+
+
+def main():
+    failed = 0
+    import importlib.machinery, importlib.util
+    spec = importlib.util.spec_from_loader(
+        "campaign_claim",
+        importlib.machinery.SourceFileLoader("campaign_claim", str(CLAIM)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    pure_ran, pure_failed = pure_cases(m)
+    for name in pure_failed:
+        print(f"FAIL  {name}")
+    failed += len(pure_failed)
+    for name, args, files, mtime, env, want, code in CASES:
+        if name.startswith("a missing claims directory"):
+            with tempfile.TemporaryDirectory() as d:
+                r = subprocess.run([sys.executable, str(CLAIM), "list", "--dir", d],
+                                   capture_output=True, text=True)
+            ok = r.returncode != 0 and "does not exist" in r.stdout + r.stderr
+            if not ok:
+                failed += 1
+                print(f"FAIL  {name}\n      got exit {r.returncode}: "
+                      f"{(r.stdout + r.stderr).strip()[:160]}")
+            continue
+        r = run(args, files, mtime, env)
+        out = r.stdout + r.stderr
+        ok = (want is None or want in out) and (code is None or r.returncode == code)
+        if not ok:
+            failed += 1
+            print(f"FAIL  {name}\n      wanted {want!r} and exit {code}, got "
+                  f"exit {r.returncode}:\n      {out.strip()[:200]}")
+    total = len(CASES) + len(pure_ran)
+    print(f"{total - failed}/{total} cases pass")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
