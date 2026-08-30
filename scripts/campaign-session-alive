@@ -8,6 +8,16 @@ The one reader of that question. `runtime/holder` and every record under
 closing-campaign's no-live-agent refusal, which deletes a campaign tree, and the
 holder takeover in both skills, which overwrites `runtime/holder`.
 
+scripts/check-rule-readers is the second reader that keeps this claim true: it
+refuses a commit that stages a `ps` whose `-o` selector *opens* with
+`comm`/`ucomm`, that selector passed as a Python list element, a bare quoted
+`ucomm=`, or a `pgrep` -- as code in any tracked markdown outside scripts/,
+inside a fence or a four-space indent, reading the index rather than the
+working tree. A selector that puts another field first, `-o pid,ucomm`, is
+outside the claim. It catches a
+pasted copy, not a re-implementation that names nothing; see its header.
+Removing the guard returns this line to being a hope.
+
     stdout   exit  meaning                              may the caller take over?
     alive    0     a process holds the pid and its      no
                    name is one this install runs

@@ -632,9 +632,29 @@ write away from a lost index; and every entry becomes a checkout at
 `repos/<name>/`, so `a/web` beside `b/Web` is one directory on this filesystem
 and the second acquire overwrites the first without a word.
 
-Its subtasks are filed on the container tracker, `kalaluthien/agent-workspace`,
-as sub-issues of the anchor exactly like any other — it is the only tracker
-there is. **And the claim is create-ref on the container** for
+**A reader a rule must pass through is only half of it.** Nothing stopped the
+next hand-rolled copy being written beside the script, which is how the liveness
+test came to have four prose copies that were all wrong together. So each rule a
+script owns has a second reader on the authoring side,
+`scripts/check-rule-readers`, wired in as a `pre-commit` guard by
+`scripts/install-hooks` — which a fresh clone runs once, because `.git/hooks/` is
+not tracked and a guard that ships as a file nobody runs is a third copy of the
+rule. It reads the index rather than the working tree, since a `pre-commit` hook
+must judge what is about to be committed and not what happens to be on disk.
+
+It fires on **markdown, and only where the text renders as code** — inside a
+fence, or under a four-space indent. That line is the whole design. A retired
+form named in prose is a mention this file must go on being able to make; a copy
+that renders as code is copy-pasteable, and copy-pasted is the only way a second
+reader gets written. A block that must hold a form anyway says so on the line
+above it; the script's own header is where that syntax is stated, and this is a
+pointer to it rather than a second copy. `scripts/check-rule-readers-test` is
+what makes the guard trustworthy, and its measure is not how many cases pass but
+how many ways of breaking the guard at least one case notices.
+
+A repo-less campaign's subtasks are filed on the container tracker,
+`kalaluthien/agent-workspace`, as sub-issues of the anchor exactly like any
+other — it is the only tracker there is. **And the claim is create-ref on the container** for
 `campaign-<N>/<issue>-<topic>`, even when no container code will change: the
 branch is the claim before it is a workspace, and without it two executors on
 one subtask are serialized by nothing. It is released the way any claim is
