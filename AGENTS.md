@@ -1051,8 +1051,8 @@ Never answer one with the other.
   reader written out anywhere else drifts the way the settlement rule would.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
-updating a pull request, then goes idle; the campaign session retires it once
-that work is durable.
+updating a pull request, then goes idle; it is retired once its work has
+landed.
 
 **Who reviews, and in which mode.** The reviewer is launched by the session that
 wants the merge, **and the author may be that session** — the non-author

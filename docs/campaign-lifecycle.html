@@ -341,7 +341,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   </ol>
 </figure>
 
-<p>세 시스템이 각각 다른 질문에 답한다. 일이 끝났는가는 GitHub이 답하고, 프로세스가 살아 있는가는 herdr이 답한다. 무엇을 하고 있으며 무엇을 기다리는가는 에이전트 자신만 안다. 이 프로토콜은 세 번째만 나른다. GitHub 사실이나 herdr 사실을 되풀이하는 메시지는 두 번째 사본을 만들고, 낡는 쪽은 언제나 사본이다. <span class="src">spec/alloy/agent.als @ d6cefab</span></p>
+<p>세 시스템이 각각 다른 질문에 답한다. 일이 끝났는가는 GitHub이 답하고, 프로세스가 살아 있는가는 herdr이 답한다. 무엇을 하고 있으며 무엇을 기다리는가는 에이전트 자신만 안다. 이 프로토콜은 세 번째만 나른다. GitHub 사실이나 herdr 사실을 되풀이하는 메시지는 두 번째 사본을 만들고, 낡는 쪽은 언제나 사본이다. <span class="src">spec/alloy/agent.als @ 82fcde1</span></p>
 
 <p>완료와 생존을 서로의 답으로 쓰지 않는다. 밀어 놓고 죽은 위임자는 성공한 것이다. 살아서 말이 많은 위임자는 아무것도 하지 않았을 수 있다. 생존은 <span class="ct">2&times; 기록</span> 에서 읽는다. 위임자는 <code>herdr agent list</code> 의 존재 여부와 세션 기록에서, 실행자 세션은 창이 아예 없으므로 <code>runtime/claims/</code> 의 <code>pid</code> 에서. 한쪽만 읽는 게이트는 다른 쪽 실행자를 통째로 지나치고 아무것도 보고하지 않는다. <code>ListAgents</code> 이름을 브랜치와 맞춰 보는 것으로는 안 된다. 실행자 세션은 하네스가 준 이름을 그대로 쓰고 스스로 이름을 바꿀 수 없으므로, 접두사로 거르면 위임자만 걸리고 이 기록이 잡으려던 실행자만 빠진다. <span class="chip">agent_status</span> 하나로는 읽지 않는다. 그 값은 화면을 보고하며 턴 중간의 멈춤을 <span class="chip">idle</span> 이라고 부른다. 대신 <span class="chip">blocked</span> 는 즉시 움직일 값이다. 다만 사용량 한도 메뉴도 창을 똑같이 막으면서 <span class="chip">idle</span> 로 보고하므로, 조용한 시간을 재는 타이머를 함께 둔다.</p>
 
@@ -409,7 +409,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   </ol>
 </figure>
 
-<p>끝난 에이전트는 캠페인이 닫힐 때가 아니라 캠페인이 도는 동안 물러난다. 오래 가는 캠페인은 하위 과제를 계속 끝내고, 창은 아무도 쓸지 않으면 쌓인다. 청구를 쥔 실행자는 리뷰 결과를 기다린다. 병합하는 쪽이 그쪽이기 때문이다. 새 세션으로 넘기는 것은 <em>긴</em> 고침 회차이고, 풀 리퀘스트와 리뷰로 브리핑한다. <span class="src">spec/alloy/agent.als @ d6cefab</span></p>
+<p>끝난 에이전트는 캠페인이 닫힐 때가 아니라 캠페인이 도는 동안 물러난다. 오래 가는 캠페인은 하위 과제를 계속 끝내고, 창은 아무도 쓸지 않으면 쌓인다. 청구를 쥔 실행자는 리뷰 결과를 기다린다. 병합하는 쪽이 그쪽이기 때문이다. 새 세션으로 넘기는 것은 <em>긴</em> 고침 회차이고, 풀 리퀘스트와 리뷰로 브리핑한다. <span class="src">spec/alloy/agent.als @ 82fcde1</span></p>
 
 <h2>캠페인이 가지지 않는 것</h2>
 
