@@ -15,7 +15,7 @@
  * can be checked are checked below rather than asserted in prose.
  *
  *   event             performed by
- *   Launch (executor) the `claude --session-id ... --name campaign-<N>-<issue>-<topic>`
+ *   Launch (executor) the `claude --session-id ... --name campaign-<issue>-executor`
  *                     that starts an executor on the claim its launcher made
  *   Work              the executor edits its checkout
  *   Push              git push -- the one act that makes work survivable
@@ -44,8 +44,9 @@
  * difference is one field, `peer`:
  *
  *   a herdr DELEGATE, launched into a clone by a campaign session, `--name`d
- *   its branch with the slash flattened -- so its address was chosen by its
- *   launcher and is known before the process exists; and
+ *   campaign-<issue>-executor -- a delegate is an executor and gets no role
+ *   word of its own -- so its address was chosen by its launcher and is known
+ *   before the process exists; and
  *
  *   a CAMPAIGN SESSION WORKING A CLAIM WITH ITS OWN HANDS -- under one role
  *   (#59) any session whose machine the campaign is BOUND to may take a
@@ -85,7 +86,7 @@
  * The harness's own peer messaging. ListAgents resolves the address; herdr's
  * pane label is not one. Where the address comes from is the difference between
  * the two kinds of executor: a delegate's was chosen at launch (claude --name,
- * the branch with its slash flattened: campaign-<N>-<issue>-<topic>), and a
+ * campaign-<issue>-executor), and a
  * session's own claim carries the address the session wrote for itself into
  * `runtime/claims/<issue>` at the claim -- its ListAgents name and its pid.
  * Before #59 that address travelled as a message, CLAIMED, whose absence was
@@ -93,10 +94,14 @@
  * and A1 below was that gap SAT. The record's write moved to the claimant and
  * the gap is UNSAT by construction -- A1 is the same scenario re-measured.
  *
- * A running session CAN be renamed, but only by a person typing `/rename` into
- * its pane; a session cannot do it for itself (probed 2026-08-28). So renaming
- * to the flattened branch stays an optional courtesy and the record stays the
- * mechanism.
+ * A running session CAN be renamed -- by a person typing `/rename` into its
+ * pane, or by another session driving that pane, which is the same act. What a
+ * session cannot do is rename ITSELF: the permission classifier refuses a
+ * session injecting `/rename` into its own pane (probed 2026-08-30, superseding
+ * the 2026-08-28 reading that only a person could). Every session carries
+ * campaign-<issue>-<role>, AGENTS.md's one naming rule, so a name says what a
+ * session does; the record stays the mechanism for tying that name to a claim,
+ * because a name can be changed and the record is what a later reader has.
  *
  * Two properties make it the right transport and both are load-bearing:
  *   - It is not the terminal screen. Reading a pane gives whatever happens to
