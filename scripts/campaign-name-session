@@ -17,8 +17,9 @@ drifts.
 scripts/check-rule-readers is the second reader that keeps this claim true: it
 refuses a commit that stages either of the two herdr rename calls as code in
 any tracked markdown outside scripts/ -- inside a fence or a four-space indent,
-reading the index rather than the working tree. It does not read source files,
-only documents. Removing the guard returns this line to being a hope.
+reading the index rather than the working tree. It catches a pasted copy, not a
+re-implementation that names nothing; see its header. Removing the guard
+returns this line to being a hope.
 
     exit 0   every pair applied, both paths
     exit 1   nothing applied -- a name failed the rule, or the arguments are odd

@@ -7,10 +7,13 @@ The one reader of that list. Its refusals, and why each is a refusal, are stated
 in AGENTS.md, "Running a campaign"; this is what makes them true.
 
 scripts/check-rule-readers is the second reader that keeps this claim true: it
-refuses a commit that stages a parse of the `## Repos` list as code in any
-tracked markdown outside scripts/ -- inside a fence or a four-space indent,
-reading the index rather than the working tree. It does not read source files,
-only documents. Removing the guard returns this line to being a hope.
+refuses a commit that stages a `grep`, `sed`, `awk`, `rg`, `jq` or Python
+line-reading parse naming `## Repos` or `owner/repo` -- as code in any tracked
+markdown outside scripts/, inside a fence or a four-space indent, reading the
+index rather than the working tree. A parse naming no tool, a bare `while read`
+with a `case`, is outside the claim. It
+catches a pasted copy, not a re-implementation that names nothing; see its
+header. Removing the guard returns this line to being a hope.
 
 The contract callers hold it to:
 

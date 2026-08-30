@@ -28,8 +28,37 @@ FORM_CASES = [
     ("session-alive: comm instead of ucomm", fence("ps -o comm= -p 1"), 1),
     ("session-alive: pgrep answers the same question", fence("pgrep -x claude"), 1),
     ("session-alive: no `=` on the selector", fence("ps -o comm -p 1"), 1),
+    # Round 3: the widening that answered round 2 was pinned by nothing --
+    # every part of it could be reverted and all 35 cases passed. One case per
+    # alternation, so a revert fails here instead of shipping quietly.
+    ("session-alive: the selector combined with other flags", fence("ps -axo ucomm="), 1),
+    ("session-alive: a quoted selector", fence('ps -o "ucomm" -p 1'), 1),
+    # Synthetic, and deliberately so: `\B` is what stops `-o` matching when a
+    # word character precedes the dash, and no realistic line exercises it. A
+    # narrowing nothing pins is a claim nothing holds, which is what this guard
+    # exists to refuse -- so the boundary gets a fixture even where the shape
+    # does not occur. Drop `\B` and this fires. It must hold no `|`, `;` or `&`:
+    # the form cannot cross one, so a piped fixture is quiet either way and
+    # would pin nothing -- which is how the first draft of this row passed.
+    ("session-alive: a dash inside a word is not the selector flag",
+     fence("ps -p 1 --color-o ucomm="), 0),
+    # Each of the next two is matched by exactly one alternation: the list-pair
+    # spelling carries no `=`, so only the list form sees it, and the bare
+    # selector names no `ps`, so only the quoted-constant form does. The
+    # obvious fixture -- a Python list holding `"ucomm="` -- is caught by both
+    # and therefore pins neither, which is how the first draft of these rows
+    # passed while both alternations could be deleted.
+    ("session-alive: a Python copy passing the selector as a list element",
+     fence('subprocess.run(["ps", "-o", "comm", "-p", pid])'), 1),
+    ("session-alive: the selector held in a constant",
+     fence('SELECTOR = "ucomm="'), 1),
+    # ...and the boundary the narrowed claim now names, so widening the form
+    # later has to move this row rather than pass silently.
+    ("session-alive: another field first is outside the claim", fence("ps -o pid,ucomm -p 1"), 0),
     ("repos: a shell parse of the list", fence("grep '^- ' README.md | grep owner/repo"), 1),
     ("repos: the heading named in an error message", fence('echo "REFUSE: the ## Repos list did not read"'), 0),
+    ("repos: a parse naming no tool is outside the claim",
+     fence("""while read -r l; do case $l in '## Repos') f=1;; esac; done < README.md"""), 0),
     ("settlement: a jq read of the verdict field", fence("gh issue view 1 --json stateReason | jq -r .stateReason"), 1),
     ("settlement: the REST spelling", fence("gh api issues/1 --jq .merged_at"), 1),
     ("settlement: `not planned` as a disposition, not a verdict", fence('gh issue close 1 --reason "not planned"'), 0),
@@ -41,6 +70,15 @@ FORM_CASES = [
     ("name-session: the herdr pane call", fence("herdr agent rename p1 campaign-1-executor-1"), 1),
     ("name-session: the harness call", fence('herdr agent prompt p1 "/rename campaign-1-executor-1"'), 1),
 ]
+
+# How far the pinning goes, stated because a reader would otherwise infer more:
+# every *form* is pinned by at least one case, and within `campaign-session-alive`
+# every alternation is pinned individually. Alternations of the other four forms
+# are not: an exhaustive per-alternation sweep found roughly fourteen deletable
+# with the suite green, including `mergedAt` -- the first spelling
+# campaign-settlement's own claim names -- and the `## Repos` half of
+# campaign-repos'. That is scope, and it is larger than the deferred-scope
+# comment on PR #91 first said, so do not read that comment as the list.
 
 # The parser decides what counts as code. Each of these was an unsafe silence:
 # the guard exited 0 on a violation that renders as code.
@@ -92,11 +130,46 @@ EXEMPTION_CASES = [
     ("an exemption naming a misspelled script is reported",
      "# t\n\n<!-- unguarded: campaign-typo-session -- x -->\n\n```sh\nps -o comm= -p 1\n```\n", 1,
      "an exemption naming no script"),
+    ("an exemption reaches a following indented block",
+     "# t\n\n<!-- unguarded: campaign-session-alive -- on purpose -->\n\n    ps -o comm= -p 1\n", 0),
+    ("an exemption spent on an indented block does not reach the next one",
+     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n    ps -o comm= -p 1\n\n"
+     "Then:\n\n    ps -o comm= -p 1\n", 1),
+    ("an exemption inside an indented block exempts nothing",
+     "# t\n\n    <!-- unguarded: campaign-session-alive -- x -->\n    ps -o comm= -p 1\n", 1),
+    # No prose between the fence and the indent: a prose line resets the
+    # exemption too, which masked the fence-close reset and let its case pass
+    # with that reset deleted -- while still carrying the name of the leak.
+    ("an exemption does not survive a closed fence into an indented block",
+     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n```sh\nps -o comm= -p 1\n```\n\n"
+     "    ps -o comm= -p 1\n", 1),
     ("an exemption inside an open fence exempts nothing",
      "# t\n\n```sh\n<!-- unguarded: campaign-session-alive -- x -->\nps -o comm= -p 1\n```\n", 1),
 ]
 
 CASES = FORM_CASES + PARSER_CASES + EXEMPTION_CASES
+
+
+def staged_case():
+    """The index branch has no other reader: exercise it through a real repo.
+
+    Deleting `content()`'s staged branch survived all 34 file-path cases,
+    because none of them passed --staged. This is the only case that fails when
+    the guard goes back to reading the working tree -- which is the whole point
+    of the hook running --staged.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        run_git = lambda *a: subprocess.run(
+            ["git", "-C", d, *a], capture_output=True, text=True, check=True)
+        run_git("init", "-q")
+        f = Path(d) / "doc.md"
+        f.write_text("# t\n\n```sh\nps -o comm= -p 1\n```\n")
+        run_git("add", "doc.md")
+        f.write_text("# t\n\nnothing to see\n")     # reverted on disk, still staged
+        out = subprocess.run([str(GUARD), "--staged"], cwd=d,
+                             capture_output=True, text=True)
+        clean = subprocess.run([str(GUARD)], cwd=d, capture_output=True, text=True)
+        return out.returncode, clean.returncode
 
 
 def run(body):
@@ -124,10 +197,17 @@ def main():
         if not ok:
             failures += 1
             print("".join(f"        {l}\n" for l in out.splitlines()))
+    staged, worktree = staged_case()
+    ok = staged == 1 and worktree == 0
+    print(f"{'ok  ' if ok else 'FAIL'}  a staged violation reverted on disk "
+          f"(--staged exit {staged}, wanted 1; working-tree exit {worktree}, wanted 0)")
+    if not ok:
+        failures += 1
+
     if failures:
-        print(f"\n{failures} of {len(CASES)} cases failed.", file=sys.stderr)
+        print(f"\n{failures} of {len(CASES) + 1} cases failed.", file=sys.stderr)
         return 1
-    print(f"\nall {len(CASES)} cases pass.")
+    print(f"\nall {len(CASES) + 1} cases pass.")
     return 0
 
 

@@ -17,9 +17,9 @@
  *   ledger.als    issues, the sub-issue index, settlement, the anchor body   34
  *   repos.als     a member repository from one machine and on its remote    18
  *   session.als   a campaign session: one role, bound to one machine       30
- *   agent.als     the executor: launch, the four messages, retirement       62
+ *   agent.als     the executor: launch, the four messages, retirement       64
  *
- * (the trailing number is that file's command count; 144 in all)
+ * (the trailing number is that file's command count; 146 in all)
  *
  *   agent -> session -> repos -> ledger
  *

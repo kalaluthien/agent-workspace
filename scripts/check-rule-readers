@@ -12,24 +12,42 @@ This is the authoring-side second reader ~/.claude/CLAUDE.md asks for. It is one
 check over every rule rather than one guard per script, because the rules share
 a single failure mode and a single fix.
 
+WHAT IT DOES NOT CATCH
+
+A re-implementation carrying no marker of the rule it copies. A Python loop that
+reads a README line by line and keeps the ones with a slash in them is a `##
+Repos` parse, and nothing in it names the list; catching that needs judgement
+about what a block of code means, which is the thing a grep-shaped guard cannot
+have and should not pretend to. So the guard is a floor, not a fence: it stops
+the copy somebody makes by pasting, which is how second readers actually get
+written, and it does not stop one somebody sets out to write.
+
+Stated here rather than fixed, because widening the forms until they match a
+paraphrase is how a guard starts firing on prose -- already met once, when
+matching "not planned" fired on closing-campaign's own disposition table.
+
 WHAT IT READS
 
-Only fenced code blocks, and only in tracked files outside scripts/. That line
-is the whole design. A deliberate mention of a retired form lives in prose as
-inline code -- AGENTS.md explains at length why `ps -o comm=` is wrong, and must
-go on being able to say so. A dangerous copy lives in a fence, because a fence
-is what makes it copy-pasteable, and copy-pasted is the only way a second reader
-gets written. Firing only inside fences separates the two with no allowlist to
-maintain and no judgement about what a paragraph means.
+Code blocks -- fenced, or under a four-space or tab indent -- and only in
+tracked files outside scripts/. That line is the whole design. A deliberate
+mention of a retired form lives in prose as inline code -- AGENTS.md explains at
+length why `ps -o comm=` is wrong, and must go on being able to say so. A
+dangerous copy lives in a code block, because that is what makes it
+copy-pasteable, and copy-pasted is the only way a second reader gets written.
+Firing only inside code separates the two with no allowlist to maintain and no
+judgement about what a paragraph means. Both shapes are read for the same
+reason and both can be exempted the same way, so neither is the special case.
 
-A fence that must hold a form anyway is exempted by an HTML comment on the line
-above it:
+A code block that must hold a form anyway -- fenced or indented -- is exempted
+by an HTML comment on the line above it:
 
     <!-- unguarded: <owner> -- <why> -->
 
 Invisible in rendered markdown, greppable, and it names the owner it is
-exempting so a reader can check the claim. The exemption is per fence, not per
-file, so it does not widen as the file grows.
+exempting so a reader can check the claim. The exemption is per block, not per
+file, so it does not widen as the file grows, and it is spent on the *next*
+block whichever shape that block has -- an exemption that reached only fences
+told an author under an indent to write the line they had just written.
 
 EXIT
 
@@ -54,7 +72,14 @@ FORMS = [
         # `ps` with a comm/ucomm selector in any argument order -- `-p $PID -o
         # ucomm=` is the script's own form and the first one a person writes --
         # and `pgrep`, which answers the same question a different way.
-        re.compile(r"\bps\b[^|;&]*-o\s+u?comm\b|\bpgrep\b|[\"']u?comm[\"']\s*,"),
+        # `-axo` and friends combine the selector with other flags; the
+        # selector may be quoted; and a Python copy passes it as a list
+        # element, where `ucomm=` carries its own `=`. The selector must
+        # *open* with the field -- `-o pid,ucomm` is not matched, and saying
+        # so is cheaper than a form that chases every field order.
+        re.compile(r"\bps\b[^|;&]*\B-\w*o\s+[\"']?u?comm\b|\bpgrep\b"
+                   r"|[\"']-?\w*o?[\"']\s*,\s*[\"']u?comm=?[\"']"
+                   r"|[\"']u?comm=[\"']"),
         "the process-name comparison",
     ),
     (
@@ -111,7 +136,7 @@ EXEMPT_LOOSE = re.compile(r"<!--\s*unguarded:\s*(?P<owner>.*?)\s*(?:--\s|-->)")
 INDENTED = re.compile(r"^(\t| {4,})\S")
 
 
-def tracked(staged):
+def tracked():
     """Every tracked markdown path outside scripts/, repo-root-relative.
 
     `git ls-files` prints paths relative to the *cwd*, so a run from a
@@ -179,6 +204,18 @@ def findings(text):
         elif fence:
             inside, exempted, pending = fence.group("run"), pending, None
             continue
+        elif INDENTED.match(line):
+            # An indented line is code, so it is scanned and never read as an
+            # exemption: CommonMark makes it literal content, and reading a
+            # marker there let a block exempt itself from the inside -- the
+            # mirror of `an exemption inside an open fence exempts nothing`.
+            if pending is not None:
+                # An exemption is spent on the next code block of either shape.
+                # Reaching only fences left an author who needs the form under
+                # an indent with no move the guard accepts, while the refusal
+                # advised the exemption they had already written.
+                exempted, pending = pending, None
+            code = True
         else:
             marker = EXEMPT.search(line)
             loose = EXEMPT_LOOSE.search(line)
@@ -196,9 +233,12 @@ def findings(text):
                 # belonging to more than one script.
                 pending = (pending or frozenset()) | {marker.group("owner")}
                 continue
-            code = bool(INDENTED.match(line))
-            if line.strip() and not code:
-                pending = None   # an exemption marks the next fence, not prose
+            code = False
+            if line.strip():
+                # An exemption marks the next code block, not prose -- and the
+                # same line ends an indented run, so the exemption it carried
+                # dies with it rather than leaking into the next block.
+                pending, exempted = None, None
         if not code:
             continue
         for owner, form, what in FORMS:
@@ -209,7 +249,7 @@ def findings(text):
 def main(argv):
     staged = "--staged" in argv[1:]
     given = [a for a in argv[1:] if a != "--staged"]
-    root, all_tracked = tracked(staged)
+    root, all_tracked = tracked()
     if given:
         paths, root = given, "."
     else:
