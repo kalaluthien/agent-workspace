@@ -28,8 +28,28 @@ FORM_CASES = [
     ("session-alive: comm instead of ucomm", fence("ps -o comm= -p 1"), 1),
     ("session-alive: pgrep answers the same question", fence("pgrep -x claude"), 1),
     ("session-alive: no `=` on the selector", fence("ps -o comm -p 1"), 1),
+    # Round 3: the widening that answered round 2 was pinned by nothing --
+    # every part of it could be reverted and all 35 cases passed. One case per
+    # alternation, so a revert fails here instead of shipping quietly.
+    ("session-alive: the selector combined with other flags", fence("ps -axo ucomm="), 1),
+    ("session-alive: a quoted selector", fence('ps -o "ucomm=" -p "$PID"'), 1),
+    # Each of the next two is matched by exactly one alternation: the list-pair
+    # spelling carries no `=`, so only the list form sees it, and the bare
+    # selector names no `ps`, so only the quoted-constant form does. The
+    # obvious fixture -- a Python list holding `"ucomm="` -- is caught by both
+    # and therefore pins neither, which is how the first draft of these rows
+    # passed while both alternations could be deleted.
+    ("session-alive: a Python copy passing the selector as a list element",
+     fence('subprocess.run(["ps", "-o", "comm", "-p", pid])'), 1),
+    ("session-alive: the selector held in a constant",
+     fence('SELECTOR = "ucomm="'), 1),
+    # ...and the boundary the narrowed claim now names, so widening the form
+    # later has to move this row rather than pass silently.
+    ("session-alive: another field first is outside the claim", fence("ps -o pid,ucomm -p 1"), 0),
     ("repos: a shell parse of the list", fence("grep '^- ' README.md | grep owner/repo"), 1),
     ("repos: the heading named in an error message", fence('echo "REFUSE: the ## Repos list did not read"'), 0),
+    ("repos: a parse naming no tool is outside the claim",
+     fence("""while read -r l; do case $l in '## Repos') f=1;; esac; done < README.md"""), 0),
     ("settlement: a jq read of the verdict field", fence("gh issue view 1 --json stateReason | jq -r .stateReason"), 1),
     ("settlement: the REST spelling", fence("gh api issues/1 --jq .merged_at"), 1),
     ("settlement: `not planned` as a disposition, not a verdict", fence('gh issue close 1 --reason "not planned"'), 0),

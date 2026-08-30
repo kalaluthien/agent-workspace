@@ -68,9 +68,11 @@ FORMS = [
         # `ps` with a comm/ucomm selector in any argument order -- `-p $PID -o
         # ucomm=` is the script's own form and the first one a person writes --
         # and `pgrep`, which answers the same question a different way.
-        # `-axo` and friends combine the selector with other flags; the selector
-        # may be quoted; and a Python copy passes it as a list element, where
-        # `ucomm=` carries its own `=`.
+        # `-axo` and friends combine the selector with other flags; the
+        # selector may be quoted; and a Python copy passes it as a list
+        # element, where `ucomm=` carries its own `=`. The selector must
+        # *open* with the field -- `-o pid,ucomm` is not matched, and saying
+        # so is cheaper than a form that chases every field order.
         re.compile(r"\bps\b[^|;&]*\B-\w*o\s+[\"']?u?comm\b|\bpgrep\b"
                    r"|[\"']-?\w*o?[\"']\s*,\s*[\"']u?comm=?[\"']"
                    r"|[\"']u?comm=[\"']"),
