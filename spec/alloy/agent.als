@@ -119,10 +119,11 @@
  *
  * An executor does not close itself. It finishes by pushing its branch and
  * opening or updating a pull request, then goes quiet. The campaign session
- * retires it once the work is durable -- the branch pushed, the pull request
- * open. It deliberately does not wait for the merge: review can take days, and
- * a pane held open across them is the expensive thing. Review feedback gets a
- * fresh session, briefed from the pull request.
+ * retires it once its work has landed. What retirement does not wait for is the
+ * campaign's CLOSE, not the merge: a claim-holding executor is the session that
+ * merges, so retiring it at pull-request open would remove the one thing that
+ * can. A long fix round may go to a fresh session instead, briefed from the
+ * pull request and the review.
  *
  * In a long-lived campaign subtasks finish continuously while the campaign
  * stays open, so retirement cannot wait for the close. The procedure is five
@@ -149,10 +150,9 @@
  *   4. STAND DOWN the confirmed ones. Leave the rest, and say why.
  *   5. Retire the workspace once the executor has acknowledged.
  *
- * Step 3 does not make retirement wait for the merge. A pull request that goes
- * to a review it cannot finish in one sitting is still retired at pull-request
- * open, and the feedback gets a fresh session; what the step fixes is WHO acts,
- * not how long the pane stays up.
+ * Step 3 does not make retirement wait for the campaign's close. What the step
+ * fixes is WHO acts. A review that will not finish in one sitting is handed on
+ * as a fix round to a fresh session rather than held open.
  *
  * Self-termination is refused for one reason: the only thing that can verify an
  * executor's work is something other than that executor. Self-merging and

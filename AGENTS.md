@@ -1072,8 +1072,7 @@ request, and that is the point of it.)
 ```
 Agent(subagent_type: "general-purpose", model: "<named below>",
       description: "Review PR <N>",
-      prompt: "/code-review <PR#>\n\nRun this at the <low|medium|high|xhigh|max>\n"
-              "review level. …")
+      prompt: "/code-review <low|medium|high|xhigh|max> <PR#>\n\n…")
 ```
 
 `general-purpose` because `fork` inherits the author's context and would review
@@ -1097,8 +1096,11 @@ review has to do. Both are named on every launch.
   input, and a session running light does not get to license a lighter reviewer.
 - **Level, by how much there is to read** — many files, many call sites, a claim
   to check everywhere it is stated. `medium` is the working baseline; a sweep
-  goes above it. Given no level, `/code-review` reuses the last one typed, which
-  in a fresh subagent is none at all.
+  goes above it. **The level is the first token after the command and nowhere
+  else** — asking for it in the brief sets nothing, because only that token is
+  parsed. Omit it and the level falls back to a persisted setting and then to
+  the session's own effort, so the review runs at a level chosen by neither the
+  launcher nor the work.
 
 So a broad mechanical sweep is a lighter model at a higher level, and a subtle
 local change is a heavier model at a lower one. The knobs are independent, and a
