@@ -41,6 +41,8 @@ about the action; every verdict is on stdout, and the reading that produced it
 is printed beside it.
 """
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -55,7 +57,14 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 def run(*args, **kw):
-    return subprocess.run(args, capture_output=True, text=True, **kw)
+    """A command that is not installed comes back as a failed run, not a
+    traceback: `gh` absent is the "I could not look" case this script is
+    written to report, and a stack trace loses the reason."""
+    try:
+        return subprocess.run(args, capture_output=True, text=True, **kw)
+    except (FileNotFoundError, PermissionError) as e:
+        return subprocess.CompletedProcess(
+            args, 127, "", f"{args[0]}: {e.__class__.__name__}: {e}")
 
 
 def campaign_dir(arg):
@@ -101,6 +110,19 @@ def write_record(path, name, branch):
     return body
 
 
+def liveness_of(rec):
+    """The record's liveness, or why it has none. Split out because the whole
+    release gate hangs off this one value and nothing pinned the wire: replacing
+    it with the constant "dead" left the suite green and made a live claim
+    deletable."""
+    if not rec:
+        return None
+    pid = rec.get("pid", "")
+    if not pid or pid == "unknown":
+        return "unreadable (no pid)"
+    return alive(pid)
+
+
 def read_record(path):
     if not path.exists():
         return None
@@ -128,7 +150,6 @@ def session_names():
     returned "no restart" instead of "I could not look". That is the exact
     failure this repository has a guard against, committed by the script meant
     to prevent it."""
-    import importlib.util
     spec = importlib.util.spec_from_loader(
         "session_alive",
         importlib.machinery.SourceFileLoader(
@@ -211,8 +232,13 @@ def cmd_status(args):
 
 def cmd_list(args):
     _, claims = campaign_dir(args.dir)
-    files = sorted(p for p in claims.iterdir() if p.is_file())
+    entries = sorted(claims.iterdir())
+    files = [p for p in entries if p.is_file()]
+    odd = [p for p in entries if not p.is_file()]
     print(f"read {claims} -- {len(files)} claim(s)")
+    for p in odd:
+        print(f"  !! {p.name} is not a file, so it holds no claim this can "
+              f"read -- counted apart, never dropped")
     if not files:
         print("  (empty: no claim was taken here. This is a reading, not a "
               "missing directory.)")
@@ -330,23 +356,23 @@ def cmd_release(args):
     _, claims = campaign_dir(args.dir)
     path = record_path(claims, args.issue)
     rec = read_record(path)
-    liveness = None
+    liveness = liveness_of(rec)
     if rec:
-        pid = rec.get("pid", "")
-        liveness = alive(pid) if pid and pid != "unknown" else "unreadable (no pid)"
         print(f"{path} reads {liveness}")
         if liveness == "dead":
             newer, why = restarted_since(path.stat().st_mtime)
+            # On stdout with the rest of the trace. Splitting the trace across
+            # two streams reordered it under a pipe, and for a script whose
+            # contract is "print what was read and which branch was taken" the
+            # order is part of the evidence.
             if why:
-                print(f"note: the restart check did not run ({why}).",
-                      file=sys.stderr)
+                print(f"note: the restart check did not run ({why}).")
             elif newer:
                 print(f"note: {newer} claude session(s) started after this "
-                      f"record was written, so a restart is likely.",
-                      file=sys.stderr)
+                      f"record was written, so a restart is likely.")
             else:
                 print("note: no claude session started after this record was "
-                      "written.", file=sys.stderr)
+                      "written.")
     else:
         print(f"no record at {path}; nothing on this machine attributes a "
               f"claim to a session.")
@@ -354,6 +380,7 @@ def cmd_release(args):
     branch, refusal = release_gate(rec, args.branch, args.confirmed_absent,
                                    liveness)
     if refusal:
+        sys.stdout.flush()
         print(f"refusing: {refusal}\n  Deleting a claim costs the one thing "
               f"keeping two executors off the subtask.", file=sys.stderr)
         return 1

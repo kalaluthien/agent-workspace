@@ -78,6 +78,13 @@ case("a missing claims directory refuses rather than reading empty",
 # draft of this case ran the whole command and created campaign-1/7-x on the
 # real remote, which is the shape of test that quietly does damage: a suite is
 # run over and over, and every run of that one was a live write.
+# pid 1 exists on every machine this runs on and is not a claude, so
+# campaign-session-alive calls it `other` -- a liveness that is neither dead nor
+# alive, and the one the release gate must refuse by name. Hardcoding the wire
+# to "dead" changes this refusal's wording, which is what makes it a case.
+case("release refuses a record whose pid belongs to something else",
+     ["release", "7"], {"7": "session s\nname n\npid 1\nbranch campaign-1/7-x\n"},
+     want="reads other", code=1)
 case("take refuses a subtask this machine already has a record for",
      ["take", "1", "7", "x"], {"7": DEAD_REC},
      want="already exists", code=1)
@@ -158,6 +165,17 @@ def pure_cases(m):
     c("a branch ahead of main is reported, never deleted", not ok and "never deleted" in why)
     ok, why = m.ahead_verdict(0, "0", "", "a/b", "x")
     c("a branch at main is releasable", ok and why is None)
+    # The two halves of the guard overlap, so each needs a case that only it
+    # catches: a failed call whose stdout happens to read "0" is caught by the
+    # returncode half alone.
+    ok, why = m.ahead_verdict(1, "0", "boom", "a/b", "x")
+    c("a failed call is not empty even when its output says 0", not ok)
+
+    # The wire into the release gate. Replacing it with the constant "dead"
+    # left the whole suite green and made a live claim deletable.
+    c("a record with no pid reads unreadable, not dead",
+      m.liveness_of({"session": "s"}) == "unreadable (no pid)")
+    c("no record has no liveness at all", m.liveness_of(None) is None)
     return ran, out
 
 

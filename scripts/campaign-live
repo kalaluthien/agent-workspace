@@ -46,7 +46,15 @@ HERE = Path(__file__).resolve().parent
 
 
 def run(*args):
-    return subprocess.run(args, capture_output=True, text=True)
+    """A command that is not installed at all comes back as a failed run, not a
+    traceback. `herdr` absent, or `gh` absent, is exactly the "I could not look"
+    case every reader here is written to report -- and reporting it as a Python
+    stack trace loses the reason the caller was about to print."""
+    try:
+        return subprocess.run(args, capture_output=True, text=True)
+    except (FileNotFoundError, PermissionError) as e:
+        return subprocess.CompletedProcess(
+            args, 127, "", f"{args[0]}: {e.__class__.__name__}: {e}")
 
 
 def parse_agents(text):
@@ -84,9 +92,13 @@ def herdr_sessions():
 
 
 def claim_records(claims):
-    recs = {}
+    """Returns (records, unreadable). A non-file entry is named rather than
+    dropped, exactly as parse_agents counts a row it cannot identify: the
+    number a close gate reads must not shrink because something was skipped."""
+    recs, odd = {}, []
     for p in sorted(claims.iterdir()):
         if not p.is_file():
+            odd.append(p.name)
             continue
         fields = {}
         for line in p.read_text().splitlines():
@@ -94,7 +106,7 @@ def claim_records(claims):
                 k, v = line.split(" ", 1)
                 fields[k] = v.strip()
         recs[p.name] = fields
-    return recs
+    return recs, odd
 
 
 def classify(recs, sessions):
@@ -148,30 +160,30 @@ def main():
     sessions, why = herdr_sessions()
     print(f"reading 1  herdr agent list -- "
           f"{'FAILED: ' + why if why else str(len(sessions)) + ' session(s) on this machine'}")
-    recs = claim_records(claims)
+    recs, odd = claim_records(claims)
     print(f"reading 2  {claims} -- {len(recs)} claim(s)")
+    for name in odd:
+        print(f"           !! {name} is not a file; it holds no claim this can "
+              f"read")
+    # Before the herdr gate: a record naming another campaign's branch is a
+    # defect in this directory, and surfacing it must not depend on the other
+    # reading having worked.
+    stray = stray_branches(recs, args.anchor)
+    if stray:
+        print(f"\n!! {len(stray)} record(s) here name a branch outside "
+              f"campaign-{args.anchor}:")
+        for i, r in stray:
+            print(f"  #{i:<6} {r.get('branch', '<no branch>')}")
+        print("  Either this directory is holding another campaign's records, "
+              "or a branch was\n  named wrongly. Neither is this script's to "
+              "fix.")
+
     if why:
         print("\nOne of the two readings did not happen, so no count below is "
               "safe to act on.", file=sys.stderr)
         return 1
 
     answered, orphan, idle = classify(recs, sessions)
-
-    # The anchor was declared and never used, so the output read as campaign
-    # scoped while being whatever the directory happened to hold. A campaign
-    # directory should hold only its own campaign's claims; a record whose
-    # branch names another anchor is a mixup worth saying out loud, and it is
-    # the only thing the anchor can honestly check here.
-    stray = stray_branches(recs, args.anchor)
-    if stray:
-        print(f"\n!! {len(stray)} record(s) in this directory name a branch "
-              f"outside campaign-{args.anchor}:")
-        for i, r in stray:
-            print(f"  #{i:<6} {r.get('branch', '<no branch>')}")
-        print("  Either the directory is holding another campaign's records, "
-              "or a branch was\n  named wrongly. Neither is this script's to "
-              "fix.")
-
     print(f"\nclaims answered by a live session ({len(answered)}) -- "
           f"joined on the session id, the one field a restart and a rename "
           f"both leave alone")

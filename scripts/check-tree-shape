@@ -63,7 +63,11 @@ from pathlib import Path
 RETIRED = [
     (re.compile(r"\bruntime/holder\b"), "#100 -- the holding session is retired"),
     (re.compile(r"\bruntime/executors\b"), "#59 -- renamed to runtime/claims/"),
-    (re.compile(r"^\s*CLAIMED\b|['\"]CLAIMED['\"]"), "#59 -- the claim is a record, not an announcement"),
+    # The bare word. The first form required a quote immediately after it, so
+    # `CLAIMED:`, `send(CLAIMED)` and `CLAIMED <issue>` all passed -- three of
+    # the five shapes the retired protocol actually used. R3 only ever reads
+    # code, so prose may still name the message.
+    (re.compile(r"\bCLAIMED\b"), "#59 -- the claim is a record, not an announcement"),
 ]
 
 FENCE = re.compile(r"^\s*(```|~~~)")
@@ -84,10 +88,10 @@ PROSE = {
     ".als":  {"block": [("/*", "*/")], "line": ["//", "--"]},
     ".yml":  {"block": [], "line": ["#"]},
     ".yaml": {"block": [], "line": ["#"]},
-    ".py":   {"block": [('"""', '"""')], "line": ["#"]},
+    ".py":   {"block": [('"""', '"""'), ("'''", "'''")], "line": ["#"]},
     ".html": {"block": [("<!--", "-->")], "line": []},
     ".json": {"block": [], "line": []},        # no comment syntax; all code
-    "":      {"block": [('"""', '"""')], "line": ["#"]},   # scripts/, shebanged
+    "":      {"block": [('"""', '"""'), ("'''", "'''")], "line": ["#"]},
 }
 
 
@@ -205,16 +209,23 @@ def main():
 
     # R2
     ignore = Path(".gitignore")
-    if not ignore.exists():
-        raise SystemExit("check-tree-shape: no .gitignore to read; cannot judge R2")
-    allowed = {l[2:].rstrip("/") for l in ignore.read_text().splitlines()
-               if l.startswith("!/")}
     tops = sorted({p.split("/")[0] for p in paths})
-    for t in tops:
-        if t not in allowed:
-            note("R2", t, "tracked but not in .gitignore's allowlist")
+    if not ignore.exists():
+        # Reported, not raised. Raising here discarded R1's findings and never
+        # ran R3 or R4 -- the same defect R0 was written for, in the rule two
+        # lines above it.
+        note("R0", ".gitignore", "absent, so the allowlist could not be read "
+                                 "and R2 did not run")
+        allowed = None
+    else:
+        allowed = {l[2:].rstrip("/") for l in ignore.read_text().splitlines()
+                   if l.startswith("!/")}
+        for t in tops:
+            if t not in allowed:
+                note("R2", t, "tracked but not in .gitignore's allowlist")
     if explain:
-        print(f"R2 read {len(allowed)} allowlist entries against {len(tops)} tracked top-level names")
+        print(f"R2 read {len(allowed) if allowed is not None else 'no'} "
+              f"allowlist entries against {len(tops)} tracked top-level names")
 
     # R3
     scanned = 0

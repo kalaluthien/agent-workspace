@@ -124,6 +124,33 @@ def main():
     check("and it still says both readings were made", "both readings were made" in out)
 
     # A run that asserted nothing is not a pass either.
+    # The wire from main() into stray_branches, which the pure cases above
+    # cannot reach: replacing the call with [] left the suite green. Run with
+    # PATH stripped so herdr cannot be found -- the stray report must not
+    # depend on the other reading having worked.
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        (claims / "9").write_text("session S9\nbranch campaign-2/9-y\n")
+        r = subprocess.run([sys.executable, str(LIVE), "1", "--dir", d],
+                           capture_output=True, text=True,
+                           env={"PATH": "/nonexistent"})
+        out = r.stdout + r.stderr
+    check("a record from another campaign is reported by the real run",
+          "campaign-2/9-y" in out and "outside campaign-1" in out)
+    check("...even when the herdr reading could not be made",
+          "did not happen" in out and r.returncode == 1)
+
+    # A non-file entry under claims/ is counted, not silently dropped.
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        (claims / "7").write_text("session S1\nbranch campaign-1/7-x\n")
+        (claims / "9").mkdir()
+        recs, odd = m.claim_records(claims)
+        check("a directory under claims/ is named, not dropped",
+              len(recs) == 1 and odd == ["9"])
+
     if not ran:
         print("FAIL  the suite ran no case at all")
         return 1

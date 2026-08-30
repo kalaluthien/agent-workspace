@@ -56,75 +56,124 @@ def summary(path):
     return None
 
 
-def installed_hooks(src):
-    """Which git hooks install-hooks writes, from its own `hook=$hookdir/<name>`
-    assignments. Pure, so it can be tested against a recorded file."""
-    return sorted(set(re.findall(r"^hook=\$hookdir/([a-z-]+)", src, re.M)))
+def hooks_dir():
+    """Where git actually looks for hooks in this checkout. Returns
+    (path, why_unreadable)."""
+    r = subprocess.run(["git", "rev-parse", "--path-format=absolute",
+                        "--git-common-dir"], capture_output=True, text=True)
+    if r.returncode != 0:
+        return None, f"git rev-parse failed: {r.stderr.strip()[:100]}"
+    return Path(r.stdout.strip()) / "hooks", None
 
 
-def hook_run(src, names):
-    """Which of these scripts git runs unasked.
+def installed_hooks(hdir):
+    """The hook files git will run, with their text. Reality, not intent.
 
-    A script's name appearing anywhere in install-hooks is the test, rather than
-    parsing the loop that happens to list them today. The first draft matched
-    `for guard in ...` only, so an ordinary shell refactor -- unrolling the
-    loop, or moving the names into a variable -- silently reclassified both
-    guards as things a flow has to call, which is the opposite of what they are.
+    Reading install-hooks instead was wrong twice over. Keyed on its guard loop,
+    an ordinary shell refactor reclassified both guards; keyed on a script's
+    name appearing anywhere in it, the header prose naming both guards made the
+    inventory report them as installed *after the entire loop was deleted* --
+    the failure that matters, because it tells a reader the tree is guarded when
+    nothing guards it. What git will run is a fact about this checkout, and it
+    is the question a session is actually asking.
     """
-    # install-hooks names itself in its own help text, and it is the installer
-    # rather than something git runs -- so it is excluded by name, which is the
-    # one special case this test needs and says so here rather than anywhere
-    # else.
-    return {n for n in names if n != "install-hooks" and n in src}
+    out = {}
+    if hdir is None or not hdir.is_dir():
+        return out
+    for p in sorted(hdir.iterdir()):
+        if p.suffix == ".sample" or not p.is_file():
+            continue
+        if not p.stat().st_mode & 0o111:
+            continue
+        try:
+            out[p.name] = p.read_text()
+        except (OSError, UnicodeDecodeError) as e:
+            out[p.name] = f"<unreadable: {e.__class__.__name__}>"
+    return out
+
+
+def hook_run(hook_texts, names):
+    """Which scripts the installed hooks declare they run.
+
+    Read from each hook's own `# runs:` line, which is also the list the hook
+    loops over -- one list, two readers, and no parsing of shell on this side.
+    Three earlier attempts failed on the same axis: scraping the loop broke
+    under an ordinary refactor, and matching a script's name anywhere in
+    install-hooks matched its header prose, so the inventory reported both
+    guards as installed after the whole loop had been deleted. That is the
+    failure that matters -- it tells a reader the tree is guarded when nothing
+    guards it. A declaration the hook itself consumes cannot say something the
+    hook does not do.
+
+    Returns (found, problems). A hook with no `# runs:` line is named, not
+    passed over: a hook this cannot read is not a hook that runs nothing.
+    """
+    found, problems = set(), []
+    for name, text in sorted(hook_texts.items()):
+        declared = re.findall(r"^# runs: (.+)$", text, re.M)
+        if not declared:
+            problems.append(f"{name} declares no `# runs:` line, so what it "
+                            f"runs is unknown")
+            continue
+        for word in " ".join(declared).split():
+            if word in names:
+                found.add(word)
+            else:
+                problems.append(f"{name} declares {word}, which is not a "
+                                f"script in this checkout")
+    return found, problems
 
 
 def main():
     brief = "--brief" in sys.argv
-    try:
-        src = (HERE / "install-hooks").read_text()
-    except OSError as e:
-        print(f"!! could not read install-hooks ({e.__class__.__name__}), so "
-              f"nothing below can be\n   classified as run-by-git. Treat the "
-              f"whole listing as unverified.")
-        src = ""
-    scripts = [p for p in sorted(HERE.iterdir())
+    # Which scripts to describe. Defaults to this script's own directory; named
+    # so another checkout can be listed, and so the unclassifiable case has a
+    # case at all -- it cannot be reached by planting a broken script in the
+    # real scripts/.
+    here = HERE
+    if "--scripts-dir" in sys.argv:
+        here = Path(sys.argv[sys.argv.index("--scripts-dir") + 1])
+    hdir, why = hooks_dir()
+    hook_texts = installed_hooks(hdir)
+    scripts = [p for p in sorted(here.iterdir())
                if not p.is_dir() and not p.name.endswith("-test")
                and p.stat().st_mode & 0o111]
-    runs = hook_run(src, {p.name for p in scripts})
-    hooks = installed_hooks(src)
+    runs, problems = hook_run(hook_texts, {p.name for p in scripts})
     guards, readers, unknown = [], [], []
     for p in scripts:
-        s = summary(p)
-        if s is None or s.startswith("<unreadable"):
-            unknown.append((p.name, s or "<no summary line under the shebang>"))
+        summ = summary(p)
+        if summ is None or summ.startswith("<unreadable"):
+            unknown.append((p.name, summ or "<no comment under the shebang>"))
         elif p.name in runs:
-            guards.append((p.name, s))
+            guards.append((p.name, summ))
         else:
-            readers.append((p.name, s))
-
-    if src and not runs:
-        print("!! install-hooks names none of these scripts, so the split "
-              "below is not real:")
-        print("   everything is listed as a reader. Read install-hooks before "
-              "believing it.")
+            readers.append((p.name, summ))
 
     print("Machine-decided here. Ask these before writing a check by hand.")
-    # The hooks themselves, not only the scripts they call. The push hook calls
-    # no script, so a listing built from script names alone left the one
-    # mechanism that acts on every commit entirely unannounced.
-    if hooks:
-        print(f"\n  git hooks installed by scripts/install-hooks "
-              f"({len(hooks)}): {', '.join(hooks)}")
+
+    if why:
+        print(f"\n  !! could not find this checkout's hooks ({why}), so nothing "
+              f"below is\n     known to run on its own.")
+    elif not hook_texts:
+        print(f"\n  !! NO git hook is installed in {hdir}. Nothing in this "
+              f"checkout is guarded.\n     Run scripts/install-hooks.")
     else:
-        print("\n  !! no git hook could be read out of install-hooks.")
-    print(f"\n  git runs these on its own ({len(guards)}):")
-    for n, s in guards:
-        print(f"    {n:24} {s}")
+        print(f"\n  git hooks installed ({len(hook_texts)}): "
+              f"{', '.join(sorted(hook_texts))}")
+        for w in problems:
+            print(f"     !! {w}")
+        if not runs:
+            print("     !! no hook declares a script named below, so nothing "
+                  "in this checkout is\n        known to be guarded.")
+
+    print(f"\n  run by a git hook, unasked ({len(guards)}):")
+    for n, summ in guards:
+        print(f"    {n:24} {summ}")
     print(f"\n  a flow calls these ({len(readers)}):")
     if brief:
         # Every session start pays for this, so the brief form spends its lines
-        # on the guards -- which act unasked -- and names the rest, since a
-        # name is enough to go and read one.
+        # on what acts unasked and names the rest -- a name is enough to go and
+        # read one.
         line, out = "   ", []
         for n, _ in readers:
             if len(line) + len(n) > 76:
@@ -135,13 +184,19 @@ def main():
         print("\n".join(out))
         print("\n  scripts/campaign-primitives says what each one answers.")
     else:
-        for n, s in readers:
-            print(f"    {n:24} {s}")
+        for n, summ in readers:
+            print(f"    {n:24} {summ}")
     if unknown:
         print(f"\n  !! {len(unknown)} could not be classified:")
-        for n, why in unknown:
-            print(f"    {n:24} {why}")
-    return 1 if unknown else 0
+        for n, w in unknown:
+            print(f"    {n:24} {w}")
+
+    # Always 0. This is the SessionStart hook's command, and a non-zero exit
+    # there is a non-blocking error: stderr surfaces and stdout is dropped. So
+    # exiting 1 on an unclassifiable script suppressed the entire announcement
+    # -- the one case the `!!` block exists for. The block is the report; the
+    # status is not.
+    return 0
 
 
 if __name__ == "__main__":

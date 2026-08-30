@@ -41,6 +41,8 @@ set -e
 common=$(git rev-parse --path-format=absolute --git-common-dir)
 root=$(cd "$(dirname "$common")" && pwd -P)
 hookdir=$common/hooks
+precommit=$hookdir/pre-commit
+postcommit=$hookdir/post-commit
 ours="$root/scripts/"
 marker='# Installed by scripts/install-hooks.'
 
@@ -49,11 +51,11 @@ marker='# Installed by scripts/install-hooks.'
 if hooks_path=$(git config --get core.hooksPath); then
 	if [ -z "$hooks_path" ]; then
 		echo "refusing: core.hooksPath is set and empty, which disables" >&2
-		echo "every hook. Writing $hook would install nothing." >&2
+		echo "every hook. Writing $precommit would install nothing." >&2
 		echo "Unset it (git config --unset core.hooksPath) and re-run." >&2
 	else
 		echo "refusing: core.hooksPath is set to '$hooks_path'." >&2
-		echo "git runs hooks from there, so writing $hook installs nothing." >&2
+		echo "git runs hooks from there, so writing $precommit installs nothing." >&2
 		echo "Chain $ours from $hooks_path/pre-commit by hand, or unset the" >&2
 		echo "config for this repository and re-run." >&2
 	fi
@@ -79,44 +81,42 @@ check_slot() {
 	fi
 }
 
-check_slot "$hookdir/pre-commit"
-check_slot "$hookdir/post-commit"
+check_slot "$precommit"
+check_slot "$postcommit"
 
-hook=$hookdir/pre-commit
-
+hook=$precommit
 cat >"$hook" <<HOOK
 #!/usr/bin/env sh
 $marker Re-run it after changing this file.
+#
+# The line below is the ONE list of what this hook runs. The loop reads it, and
+# so does scripts/campaign-primitives when it tells a session what guards this
+# tree -- so there is no second copy to drift, and no shell parsing on the
+# reader's side. Add a guard by adding it here.
+# runs: check-rule-readers check-tree-shape
 set -e
 # \`cmd && other\` under \`set -e\` exits 1 when the test is false, so a machine
 # without the shared guard would have every commit blocked with no message.
 if [ -x "\$HOME/.claude/git-hooks/no-main-commits" ]; then
 	"\$HOME/.claude/git-hooks/no-main-commits" "\$@"
 fi
-# Same guard, same reason, against a different absence: this checkout may
-# predate the script, or be a worktree, a fresh clone, or a bisect.
 # --show-toplevel: the guard that judges a commit is the one in the checkout
 # making it. Resolving to the shared checkout runs whatever another worktree
 # happens to hold, committed or not, against an index it never wrote.
-# Every guard here judges the same index, so they run one after another and
-# each says what it refused. No \`exec\` on the last: a guard added below it
-# would never run, and nothing would say so.
 #
 # A guard that is absent or not executable REFUSES. The first draft skipped it
 # -- \`if [ -x ]\` with no else -- so a worktree at a commit predating the guard,
-# or one where the bit was lost, committed a violation and auto-pushed it with
-# no output at all. A hook that is installed is a promise the check ran; the
-# only honest answer when it cannot is to stop and say which one.
-for guard in check-rule-readers check-tree-shape; do
+# or one where the bit was lost, committed a violation and the post-commit hook
+# pushed it, with no output at all. A hook that is installed is a promise the
+# check ran; the only honest answer when it cannot is to stop and say which one.
+for guard in \$(sed -n 's/^# runs: //p' "\$0"); do
 	g=\$(git rev-parse --show-toplevel)/scripts/\$guard
 	if [ ! -x "\$g" ]; then
 		echo "pre-commit: REFUSING -- \$g is missing or not executable." >&2
-		echo "  This hook is installed, so the guard is expected to run. A" >&2
-		echo "  checkout that predates it, or one where the bit was lost," >&2
-		echo "  commits unchecked otherwise, and nothing says so." >&2
-		echo "  chmod +x it, or run \$(git rev-parse --show-toplevel)/scripts/install-hooks" >&2
-		echo "  from a checkout that has it. To commit here anyway you have" >&2
-		echo "  to say so out loud: SKIP_REPO_GUARDS=1 git commit ..." >&2
+		echo "  This hook is installed, so the guard is expected to run." >&2
+		echo "  chmod +x it, or run scripts/install-hooks from a checkout" >&2
+		echo "  that has it. To commit anyway you have to say so out loud:" >&2
+		echo "    SKIP_REPO_GUARDS=1 git commit ..." >&2
 		[ "\${SKIP_REPO_GUARDS:-}" = 1 ] || exit 1
 		echo "pre-commit: SKIP_REPO_GUARDS=1 -- committing with \$guard unrun." >&2
 		continue
@@ -128,31 +128,21 @@ HOOK
 chmod +x "$hook"
 echo "installed: $hook"
 
-hook=$hookdir/post-commit
+hook=$postcommit
 cat >"$hook" <<'HOOK'
 #!/usr/bin/env sh
 # Installed by scripts/install-hooks. Re-run it after changing this file.
-#
-# Push a campaign branch the moment it has a commit, and say what happened
-# either way. A hook that pushes in silence is one a reader stops believing in;
-# a hook that fails in silence is worse, because the commit it was meant to make
-# durable is sitting on one disk and nothing said so.
-branch=$(git symbolic-ref --quiet --short HEAD) || exit 0
-case "$branch" in
-	campaign-*/*) ;;
-	*) exit 0 ;;
-esac
-# --no-verify is not passed and no force flag is: a rejected push is news, not
-# something to overrule. An amend or a rebase lands here too, and the right
-# answer for those is to be told, not to have the remote rewritten.
-if git push --quiet origin "$branch" 2>/tmp/push-$$; then
-	echo "post-commit: pushed $branch"
-else
-	echo "post-commit: could NOT push $branch -- the commit is local only." >&2
-	sed 's/^/  /' /tmp/push-$$ >&2
-	echo "  Push it yourself before anything reads this branch as landed." >&2
-fi
-rm -f /tmp/push-$$
+# runs: push-campaign-branch
+for s in $(sed -n 's/^# runs: //p' "$0"); do
+	x=$(git rev-parse --show-toplevel)/scripts/$s
+	if [ ! -x "$x" ]; then
+		echo "post-commit: $x is missing or not executable." >&2
+		echo "  This commit was NOT pushed. Push it yourself, or run" >&2
+		echo "  scripts/install-hooks from a checkout that has the script." >&2
+		continue
+	fi
+	"$x"
+done
 exit 0
 HOOK
 
