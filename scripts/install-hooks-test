@@ -119,7 +119,8 @@ def main():
         r.violate()
         c = r.commit()
         check("a hook with no `# runs:` line refuses instead of running nothing",
-              c.returncode != 0 and r.head() == before,
+              c.returncode != 0 and r.head() == before
+              and "carries no '# runs:' line" in c.stdout + c.stderr,
               f"exit {c.returncode}; {(c.stdout + c.stderr).strip()[:200]}")
 
     # 3b. A declaration that is present but names nothing. `[ -z "$guards" ]`
@@ -135,9 +136,24 @@ def main():
         before = r.head()
         r.violate()
         c = r.commit()
+        # The message, not only the status: a hook with a syntax error also
+        # exits non-zero and leaves HEAD alone, so a status-only assertion
+        # passes for a reason that has nothing to do with the declaration.
         check("a declaration naming nothing refuses too",
-              c.returncode != 0 and r.head() == before,
+              c.returncode != 0 and r.head() == before
+              and "carries no '# runs:' line" in c.stdout + c.stderr,
               f"exit {c.returncode}; {(c.stdout + c.stderr).strip()[:200]}")
+
+    # The installed hook is what a person reads. Unescaped backticks in the
+    # heredoc ran as command substitution and ate the comment explaining the
+    # very line that had been wrong three times.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        installer(r.root)
+        body = r.hook("pre-commit").read_text()
+        check("the installed hook keeps the comments the source writes",
+              "Word list, not string" in body and "EMPTY declaration" in body,
+              body[:200])
 
     # 4. A guard that cannot run refuses, and the escape hatch is the only way past.
     with tempfile.TemporaryDirectory() as d:
