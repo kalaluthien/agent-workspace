@@ -205,6 +205,23 @@
  *                                      event writes a stale record, and
  *                                      agent.als's `init` starts with none.
  *
+ *                                      TWO recycled outcomes, not one, and both
+ *                                      refuse. `campaign-session-alive` reads
+ *                                      the name from `ucomm` and answers
+ *                                      `alive` for a pid recycled onto a
+ *                                      DIFFERENT claude, and `other` for a pid
+ *                                      recycled onto anything else -- a name
+ *                                      this install does not know, which cannot
+ *                                      be told apart from a differently-named
+ *                                      claude. Phase 1 of #59 rewrote this note
+ *                                      naming only the first. Both are the same
+ *                                      residue and the same direction: a
+ *                                      takeover refused that should have been
+ *                                      allowed, which costs a stranded claim
+ *                                      and never a deleted tree. Tightening
+ *                                      either away is how the deleting
+ *                                      direction returns.
+ *
  * WHAT THE FIRST DRAFT OF THIS FILE GOT WRONG
  *
  * Three things, all found by review and all kept visible here because each is a

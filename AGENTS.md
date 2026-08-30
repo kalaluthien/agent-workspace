@@ -130,17 +130,31 @@ binding is a comment and not the body. Its first line is `BOUND <machine>` with
 the machine from `hostname -s`, and anything after that line is prose for a
 person — a migration says there why.
 
+**The reading has one reader, `scripts/campaign-bound <N>`**, and it prints one
+of three words:
+
 ```sh
-gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body
-        | split("\n")[0] | rtrimstr("\r")' | tail -1
+scripts/campaign-bound <N>      # here | elsewhere <machine> | unbound
 ```
 
-REST returns comments oldest first, so the last matching comment is the current
-binding, and taking each one's first line is what makes `tail -1` find it: over
-whole bodies `tail -1` takes the last *line*, which on an annotated binding is
-the prose (both probed 2026-08-29). `rtrimstr` guards a body stored with `\r\n`;
-the bindings probed here hold `\n`. No output means the campaign is not bound.
+`here` is the only one that licenses a write. `elsewhere` names the machine to
+say so with. `unbound` licenses asking the person, never binding on your own.
+**Read the word, never the exit status** — the status is about the reading, as
+it is for `campaign-local-work` and `campaign-session-alive`, and for the same
+reason: a failed read that exited like `unbound` would invite a session to bind
+a campaign another machine is working.
+
+Four things that reading has to get right, each of which is a way to be wrong,
+and all four now live in the script rather than in prose: `--paginate`, because
+comments page at thirty and a truncated listing reads exactly like a complete
+one; oldest-first, so the *last* match is the current binding and taking the
+first returns the original binding forever; the first line only, because a
+migration annotates its binding and `tail -1` over whole bodies takes the last
+line of that prose (probed 2026-08-29); and a trailing `\r`, which a body stored
+with CRLF leaves on the machine name so that it matches nothing. The script also
+folds in the comparison against `hostname -s`, which all three call sites ran as
+their next line and compared by eye.
+
 Read it before every write to the anchor — body, comment, or sub-issue link —
 and before launching any executor onto one of its subtasks.
 
@@ -218,11 +232,11 @@ the campaign to one machine was bought for — but a pid stops naming its sessio
 the moment the harness restarts, and nothing in the record distinguishes that
 from an exit. The session id is the field that survives, and only
 `runtime/holder` carries one. It errs towards refusing to take
-over, and does so two ways now: a pid recycled onto a different `claude` reads
-`alive`, and a pid recycled onto anything else reads `other`. The second is
-wider than the residue `spec/alloy/session.als` records under R3g, which names
-only the first — a claim phase 2 of #59 has to widen when it rewrites that
-model. Ask rather than overwrite. `runtime/`
+over, and does so two ways: a pid recycled onto a different `claude` reads
+`alive`, and a pid recycled onto anything else reads `other`. Both refuse, and
+`spec/alloy/session.als` states them together under R3g — the one place that
+residue is written, because a model is a reader that can be measured wrong and
+prose is a reader that cannot. Ask rather than overwrite. `runtime/`
 dies with the directory, which is the right lifetime — nothing off this machine
 reads the holder.
 

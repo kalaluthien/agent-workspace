@@ -43,11 +43,10 @@ destructive thing a session can do to a campaign it does not hold (§ Who is a
 campaign session in the container's `AGENTS.md`).
 
 ```sh
-gh api --paginate repos/kalaluthien/agent-workspace/issues/"$N"/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body
-        | split("\n")[0] | rtrimstr("\r")' | tail -1
-hostname -s
+"$CONTAINER"/scripts/campaign-bound "$N"     # here | elsewhere <machine> | unbound
 ```
+
+`here` — carry on. Anything else, including a failed read, refuses the close.
 
 Another machine — refuse, naming both machines, and say nothing was closed. No
 output means unbound, which is not consent either: let the person bind it here,

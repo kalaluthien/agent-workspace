@@ -49,11 +49,10 @@ one bound elsewhere is the mistake this read exists to stop (§ Who is a campaig
 session in the container's `AGENTS.md`).
 
 ```sh
-gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body
-        | split("\n")[0] | rtrimstr("\r")' | tail -1
-hostname -s
+"$CONTAINER"/scripts/campaign-bound <N>      # here | elsewhere <machine> | unbound
 ```
+
+`here` — carry on. Anything else, including a failed read, stops you.
 
 Another machine — stop: file nothing, scaffold nothing, launch nothing, and say
 which machine holds it and that only the person can move it. No output — the
