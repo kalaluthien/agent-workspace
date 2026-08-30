@@ -51,79 +51,155 @@ from pathlib import Path
 FORMS = [
     (
         "campaign-session-alive",
-        re.compile(r"ps\s+(-\w+\s+)*-o\s+u?comm="),
+        # `ps` with a comm/ucomm selector in any argument order -- `-p $PID -o
+        # ucomm=` is the script's own form and the first one a person writes --
+        # and `pgrep`, which answers the same question a different way.
+        re.compile(r"\bps\b[^|;&]*-o\s+u?comm\b|\bpgrep\b|[\"']u?comm[\"']\s*,"),
         "the process-name comparison",
     ),
     (
         "campaign-repos",
-        re.compile(r"(grep|sed|awk|rg|jq)\b[^|;]*(##\s*Repos|owner/repo)"),
+        re.compile(r"(\bgrep\b|\bsed\b|\bawk\b|\brg\b|\bjq\b|--jq|re\.|readlines|splitlines)"
+                   r"[^|;&]*(##\s*Repos|owner/repo)|(##\s*Repos|owner/repo)[^|;&]*(\bgrep\b|\bawk\b|\bjq\b)"),
         "the ## Repos parse",
     ),
     (
         "campaign-settlement",
-        re.compile(r"(grep|sed|awk|rg|--jq|-q)\b[^|;]*(mergedAt|stateReason|state_reason)"),
+        # The API field names only. The words "not planned" and "not-planned"
+        # appear as a disposition a person writes and as prose in an error
+        # message; neither computes a verdict, and matching them made the
+        # guard fire on `closing-campaign`'s own tables.
+        re.compile(r"\b(mergedAt|merged_at|stateReason|state_reason)\b"),
         "the settlement verdict",
     ),
     (
         "campaign-local-work",
-        re.compile(r"git\s+(-C\s+\S+\s+)?(status\s+--porcelain|worktree\s+list)"),
+        re.compile(r"\bgit\b[^|;&]*\b(status|worktree\s+list|for-each-ref|stash\s+list)\b"
+                   r"|\bgit\b[^|;&]*\bdiff\b[^|;&]*--quiet"
+                   r"|\bgit\b[^|;&]*\bbranch\b[^|;&]*--no-merged"),
         "the local-only-work reading",
     ),
     (
         "campaign-name-session",
-        re.compile(r"herdr\s+agent\s+rename\b|agent\s+prompt\b[^|;]*/rename"),
+        re.compile(r"herdr\s+agent\s+rename\b|agent\s+prompt\b[^|;&]*/rename"),
         "the session-name shape",
     ),
 ]
 
-FENCE = re.compile(r"^\s*(```|~~~)")
+
+# An opener is up to three spaces of indent then three or more backticks or
+# tildes. A closer is the same character, at least as many of them, and nothing
+# after it -- so a ``` line inside a ```` block, or a `~~~` line inside a ```
+# block, is content rather than a closer. Getting this wrong ends the block
+# early and everything after it stops being scanned, which is a silent miss.
+FENCE = re.compile(r"^ {0,3}(?P<run>`{3,}|~{3,})(?P<info>.*)$")
 EXEMPT = re.compile(r"<!--\s*unguarded:\s*(?P<owner>[\w-]+)\s*--")
 
+# A line indented four or more spaces renders as code too, so it carries the
+# same copy-paste hazard as a fence. Only lines that match a FORM are reported,
+# and no FORM matches prose, so scanning these costs no false positives on a
+# tree of documents -- measured before it was turned on.
+INDENTED = re.compile(r"^(\t| {4,})\S")
 
-def tracked():
+
+def tracked(staged):
+    """Every tracked markdown path outside scripts/, repo-root-relative.
+
+    `git ls-files` prints paths relative to the *cwd*, so a run from a
+    subdirectory silently scans a fraction of the tree and reports clean. The
+    -C root pins it.
+    """
+    root = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    root = str(Path(root).parent)
     out = subprocess.run(
-        ["git", "ls-files", "-z"], capture_output=True, text=True, check=True
+        ["git", "-C", root, "ls-files", "-z"],
+        capture_output=True, text=True, check=True,
     )
-    return [p for p in out.stdout.split("\0") if p]
+    return root, [p for p in out.stdout.split("\0") if p]
 
 
-def findings(path):
-    """Yield (line number, owner, what, source line) for one file."""
-    text = Path(path).read_text(encoding="utf-8")
-    inside = False
-    exempted = None          # owner exempted for the fence being opened or open
+def content(root, path, staged):
+    """The text to judge: the index's copy under --staged, the file's otherwise.
+
+    A pre-commit hook must read what is about to be committed. Reading the
+    working tree instead lets a violation be staged, reverted on disk, and
+    committed clean -- and makes an unstaged deletion of any tracked file crash
+    the hook for every commit.
+    """
+    if staged:
+        out = subprocess.run(
+            ["git", "-C", root, "show", f":{path}"],
+            capture_output=True, check=False,
+        )
+        if out.returncode != 0:
+            return None          # not in the index: being deleted, or unmerged
+        return out.stdout.decode("utf-8", errors="replace")
+    f = Path(root) / path
+    if not f.exists():
+        return None
+    return f.read_text(encoding="utf-8", errors="replace")
+
+
+def findings(text):
+    """Yield (line number, owner, what, source line) for one document."""
+    inside = None            # the opener's run, while a fence is open
+    exempted = None          # owner exempted for the open fence
     pending = None           # exemption seen, waiting for its fence
     for n, line in enumerate(text.splitlines(), 1):
-        marker = EXEMPT.search(line)
-        if marker and not inside:
-            pending = marker.group("owner")
+        fence = FENCE.match(line)
+        if inside is not None:
+            run = fence.group("run") if fence else ""
+            closes = (
+                fence is not None
+                and run[0] == inside[0]
+                and len(run) >= len(inside)
+                and not fence.group("info").strip()
+            )
+            if closes:
+                inside, exempted = None, None
+                continue
+            code = True
+        elif fence:
+            inside, exempted, pending = fence.group("run"), pending, None
             continue
-        if FENCE.match(line):
-            if inside:
-                inside, exempted = False, None
-            else:
-                inside, exempted, pending = True, pending, None
-            continue
-        if not inside:
-            # Blank lines may separate the exemption from the fence it marks;
-            # any other content between them means it marked nothing.
-            if line.strip():
-                pending = None
+        else:
+            marker = EXEMPT.search(line)
+            if marker:
+                # Two exemptions in a row both apply: a fence may hold forms
+                # belonging to more than one script.
+                pending = (pending or frozenset()) | {marker.group("owner")}
+                continue
+            code = bool(INDENTED.match(line))
+            if line.strip() and not code:
+                pending = None   # an exemption marks the next fence, not prose
+        if not code:
             continue
         for owner, form, what in FORMS:
-            if owner != exempted and form.search(line):
+            if form.search(line) and owner not in (exempted or frozenset()):
                 yield n, owner, what, line.strip()
 
 
 def main(argv):
-    paths = argv[1:] or tracked()
+    staged = "--staged" in argv[1:]
+    given = [a for a in argv[1:] if a != "--staged"]
+    root, all_tracked = tracked(staged)
+    if given:
+        paths, root = given, "."
+    else:
+        paths = all_tracked
     paths = [
         p for p in paths
         if p.endswith((".md", ".markdown")) and not p.startswith("scripts/")
     ]
     found = 0
     for p in sorted(paths):
-        for n, owner, what, src in findings(p):
+        text = content(root, p, staged and not given)
+        if text is None:
+            continue
+        for n, owner, what, src in findings(text):
             found += 1
             print(f"{p}:{n}: {what} belongs to scripts/{owner}: {src}")
     if found:

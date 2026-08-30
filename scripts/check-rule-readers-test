@@ -15,62 +15,79 @@ from pathlib import Path
 
 GUARD = Path(__file__).resolve().parent / "check-rule-readers"
 
-FENCED_COPY = """# t
+def fence(body, lang="sh"):
+    return f"# t\n\n```{lang}\n{body}\n```\n"
 
-```sh
-PID=1; [ "$(ps -o comm= -p "$PID")" = claude ]
-```
-"""
 
-INLINE_MENTION = """# t
-
-`ps -o comm=` reports how a process was invoked, which is why it is wrong here.
-"""
-
-EXEMPTED = """# t
-
-<!-- unguarded: campaign-session-alive -- quoting the retired form on purpose -->
-
-```sh
-ps -o comm= -p 1
-```
-"""
-
-EXEMPTION_ORPHANED = """# t
-
-<!-- unguarded: campaign-session-alive -- this marks nothing -->
-
-Some prose intervenes, so the exemption below is not the fence's.
-
-```sh
-ps -o comm= -p 1
-```
-"""
-
-EXEMPTION_WRONG_OWNER = """# t
-
-<!-- unguarded: campaign-repos -- exempts a different rule -->
-
-```sh
-ps -o comm= -p 1
-```
-"""
-
-MENTION_IN_FENCE = """# t
-
-```sh
-echo "REFUSE: the ## Repos list did not read; nothing was written"
-```
-"""
-
-CASES = [
-    ("a hand-rolled copy inside a fence", FENCED_COPY, 1),
-    ("the same form mentioned in prose", INLINE_MENTION, 0),
-    ("a fence exempted by the line above it", EXEMPTED, 0),
-    ("an exemption separated from the fence by prose", EXEMPTION_ORPHANED, 1),
-    ("an exemption naming a different owner", EXEMPTION_WRONG_OWNER, 1),
-    ("a rule's name in an error message, not a parse", MENTION_IN_FENCE, 0),
+# One per FORM, in the shape a competent person actually writes it -- the flag
+# order the owning script itself uses, and the sibling command that answers the
+# same question. Every one of these slipped past the first version of the
+# regexes; three of the five forms had no case at all.
+FORM_CASES = [
+    ("session-alive: the script's own flag order", fence('ps -p "$PID" -o ucomm='), 1),
+    ("session-alive: comm instead of ucomm", fence("ps -o comm= -p 1"), 1),
+    ("session-alive: pgrep answers the same question", fence("pgrep -x claude"), 1),
+    ("session-alive: no `=` on the selector", fence("ps -o comm -p 1"), 1),
+    ("repos: a shell parse of the list", fence("grep '^- ' README.md | grep owner/repo"), 1),
+    ("repos: the heading named in an error message", fence('echo "REFUSE: the ## Repos list did not read"'), 0),
+    ("settlement: a jq read of the verdict field", fence("gh issue view 1 --json stateReason | jq -r .stateReason"), 1),
+    ("settlement: the REST spelling", fence("gh api issues/1 --jq .merged_at"), 1),
+    ("settlement: `not planned` as a disposition, not a verdict", fence('gh issue close 1 --reason "not planned"'), 0),
+    ("local-work: short porcelain", fence("git status -s"), 1),
+    ("local-work: the long spelling", fence("git status --porcelain"), 1),
+    ("local-work: diff --quiet asks the same thing", fence("git diff --quiet"), 1),
+    ("local-work: unmerged branches", fence("git branch --no-merged main"), 1),
+    ("local-work: for-each-ref over campaign refs", fence("git for-each-ref refs/heads/campaign-1/"), 1),
+    ("name-session: the herdr pane call", fence("herdr agent rename p1 campaign-1-executor-1"), 1),
+    ("name-session: the harness call", fence('herdr agent prompt p1 "/rename campaign-1-executor-1"'), 1),
 ]
+
+# The parser decides what counts as code. Each of these was an unsafe silence:
+# the guard exited 0 on a violation that renders as code.
+PARSER_CASES = [
+    ("prose mentioning a retired form", "# t\n\n`ps -o comm=` is wrong, and here is why.\n", 0),
+    ("a four-space indented code block", "# t\n\nLike so:\n\n    ps -o comm= -p 1\n", 1),
+    ("a tab-indented code block", "# t\n\nLike so:\n\n\tps -o comm= -p 1\n", 1),
+    # The violation sits *after* the impostor closer and before the real one,
+    # so a parser that ends the block early stops scanning and reports clean.
+    # With the violation in a later fence both parsers catch it, and the case
+    # proves nothing -- which is how the first version of these two passed.
+    ("a ``` run does not close a ```` fence",
+     "# t\n\n````sh\n```\nps -o comm= -p 1\n````\n", 1),
+    ("a ~~~ run does not close a ``` fence",
+     "# t\n\n```sh\n~~~\nps -o comm= -p 1\n```\n", 1),
+    ("a ~~~ opener closed by ~~~", "# t\n\n~~~sh\nps -o comm= -p 1\n~~~\n", 1),
+    ("`~~~ text` is not a closer", "# t\n\n~~~\n~~~ still open\nps -o comm= -p 1\n~~~\n", 1),
+    ("an unclosed fence keeps scanning", "# t\n\n```sh\nps -o comm= -p 1\n", 1),
+    ("CRLF line endings", "# t\r\n\r\n```sh\r\nps -o comm= -p 1\r\n```\r\n", 1),
+]
+
+# The exemption is the one way to say "this fence must hold the form". Every
+# way it could silently exempt more than it names is a hole in the guard.
+EXEMPTION_CASES = [
+    ("a fence exempted by the line above it",
+     "# t\n\n<!-- unguarded: campaign-session-alive -- on purpose -->\n\n```sh\nps -o comm= -p 1\n```\n", 0),
+    ("an exemption separated from the fence by prose",
+     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\nProse intervenes.\n\n```sh\nps -o comm= -p 1\n```\n", 1),
+    ("an exemption naming a different owner",
+     "# t\n\n<!-- unguarded: campaign-repos -- x -->\n\n```sh\nps -o comm= -p 1\n```\n", 1),
+    ("two exemptions in a row both apply",
+     "# t\n\n<!-- unguarded: campaign-repos -- x -->\n<!-- unguarded: campaign-session-alive -- y -->\n\n"
+     "```sh\nps -o comm= -p 1\ngrep '^- ' r.md | grep owner/repo\n```\n", 0),
+    ("an exemption does not survive to the next fence",
+     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n```sh\nps -o comm= -p 1\n```\n\n"
+     "```sh\nps -o comm= -p 1\n```\n", 1),
+    # An indented block after an exempted fence is the one path on which a
+    # stale `exempted` is reachable: every fence opener reassigns it, so a
+    # fence-only fixture cannot tell a leak from a reset.
+    ("an exemption does not reach a later indented block",
+     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n```sh\nps -o comm= -p 1\n```\n\n"
+     "Then:\n\n    ps -o comm= -p 1\n", 1),
+    ("an exemption inside an open fence exempts nothing",
+     "# t\n\n```sh\n<!-- unguarded: campaign-session-alive -- x -->\nps -o comm= -p 1\n```\n", 1),
+]
+
+CASES = FORM_CASES + PARSER_CASES + EXEMPTION_CASES
 
 
 def run(body):

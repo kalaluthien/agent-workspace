@@ -8,27 +8,51 @@
 #
 # .git/hooks/ is not tracked, which is why this exists. A guard that ships only
 # as a file nobody runs is a third copy of the rule it was written to enforce.
+#
+# It refuses rather than overwrites. An existing hook is somebody's decision this
+# script cannot read; a symlinked one is worse, because writing through the link
+# edits a file outside this repository -- a machine wiring the shared guard by
+# symlink would lose it for every repository at once.
 
 set -e
 
-root=$(git rev-parse --show-toplevel)
-hook=$root/.git/hooks/pre-commit
+# --git-common-dir, never --show-toplevel: in a linked worktree the latter
+# returns the worktree, while hooks live in the main checkout, so the install
+# would land where git never looks. AGENTS.md states this form.
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+root=$(cd "$(dirname "$common")" && pwd -P)
+hook=$common/hooks/pre-commit
+ours="$root/scripts/check-rule-readers"
+marker='# Installed by scripts/install-hooks.'
 
-cat > "$hook" <<'HOOK'
-#!/usr/bin/env sh
-# Installed by scripts/install-hooks. Re-run it after changing this file.
-set -e
-# `cmd && other` under `set -e` exits 1 when the test is false, so a machine
-# without the shared guard would have every commit blocked with no message.
-if [ -x "$HOME/.claude/git-hooks/no-main-commits" ]; then
-	"$HOME/.claude/git-hooks/no-main-commits" "$@"
+if [ -L "$hook" ]; then
+	echo "refusing: $hook is a symlink to $(readlink "$hook")." >&2
+	echo "Writing through it would edit a file outside this repository." >&2
+	echo "Move it aside and re-run, or chain $ours from its target by hand." >&2
+	exit 1
 fi
-# Same guard, same reason: this checkout may predate the script, or be a
-# worktree, a fresh clone, or a bisect. A hook that blocks every commit where
-# its guard is missing is worse than the drift the guard was written to catch.
-guard=$(git rev-parse --show-toplevel)/scripts/check-rule-readers
-if [ -x "$guard" ]; then
-	exec "$guard"
+
+if [ -e "$hook" ] && ! grep -qF "$marker" "$hook"; then
+	echo "refusing: $hook exists and was not written by this script." >&2
+	echo "Read it, then chain $ours from it or move it aside:" >&2
+	echo "  mv '$hook' '$hook.bak' && scripts/install-hooks" >&2
+	exit 1
+fi
+
+cat >"$hook" <<HOOK
+#!/usr/bin/env sh
+$marker Re-run it after changing this file.
+set -e
+# \`cmd && other\` under \`set -e\` exits 1 when the test is false, so a machine
+# without the shared guard would have every commit blocked with no message.
+if [ -x "\$HOME/.claude/git-hooks/no-main-commits" ]; then
+	"\$HOME/.claude/git-hooks/no-main-commits" "\$@"
+fi
+# Same guard, same reason, against a different absence: this checkout may
+# predate the script, or be a worktree, a fresh clone, or a bisect.
+guard=\$(cd "\$(dirname "\$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)/scripts/check-rule-readers
+if [ -x "\$guard" ]; then
+	exec "\$guard" --staged
 fi
 HOOK
 

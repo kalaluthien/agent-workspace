@@ -9,9 +9,11 @@ closing-campaign's no-live-agent refusal, which deletes a campaign tree, and the
 holder takeover in both skills, which overwrites `runtime/holder`.
 
 scripts/check-rule-readers is the second reader that keeps this claim true: it
-refuses a commit that writes the process-name comparison into a fenced code
-block anywhere outside scripts/. Removing the guard returns this line to being
-a hope.
+refuses a commit that stages the process-name comparison, `ps -o
+comm=`/`ucomm=` or a `pgrep` as code in any tracked markdown outside scripts/
+-- inside a fence or a four-space indent, reading the index rather than the
+working tree. It does not read source files, only documents. Removing the guard
+returns this line to being a hope.
 
     stdout   exit  meaning                              may the caller take over?
     alive    0     a process holds the pid and its      no
