@@ -1264,12 +1264,25 @@ itself, not an announcement somebody must receive.
   carrying the workflow itself, which fits "the head decides" and "the merge
   decides" equally well. It took a base that had the workflow to separate them.
 
-  **What that costs is only the branch with no pull request.** A required check
-  gates direct pushes to a protected branch too, and a topic tip that has never
-  been in a pull request has no check run to satisfy it — so the fast-forward
-  of `main` that § Git prescribes after resolving in the topic branch is
-  refused, with `enforce_admins: true` leaving no override. Land through the
-  pull request instead; its head sha is what carries the check.
+  **Two cases still produce no check, and both are about a head that has not
+  moved.** `pull_request` fires on the head moving — `opened`, `synchronize`,
+  `reopened` — so a base advance dispatches nothing.
+
+  The first is a pull request already open when the base gained the workflow.
+  It keeps zero check runs until its next push, so turning a required check on
+  leaves every open pull request pending at once. Measured 2026-08-30: `main`
+  advanced while this branch's own pull request was open and no run was
+  created; the next run came only when the head pushed. Each clears on its next
+  push, which is the merge of `main` condition 3 demands anyway, so nothing is
+  stranded — but a reader who does not know this waits for a check that will
+  never arrive on its own.
+
+  The second is the branch with no pull request at all. A required check gates
+  direct pushes to a protected branch too, and a topic tip that has never been
+  in a pull request has no check run to satisfy it — so the fast-forward of
+  `main` that § Git prescribes after resolving in the topic branch is refused,
+  with `enforce_admins: true` leaving no override. Land through the pull
+  request instead; its head sha is what carries the check.
 
   `main` also refuses force-pushes and deletion. **Condition 2 has no automatic reader
   on this machine**: one `gh` account signs every session's merges and comments,
