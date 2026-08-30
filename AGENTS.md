@@ -1054,7 +1054,7 @@ The launch, and every field of it is load-bearing:
 ```
 Agent(subagent_type: "general-purpose", model: "opus",
       description: "Review PR <N>",
-      prompt: "/code-review <PR#> … state the review level in the brief …")
+      prompt: "/code-review <PR#>\n\nRun this at the medium review level. …")
 ```
 
 `general-purpose` because `fork` inherits the author's context and would review
@@ -1064,6 +1064,11 @@ effort parameter**, and this repository defines no agent of its own, so the
 level is carried in the brief and nowhere else — a launch that omits it inherits
 whatever level was last used, which in a fresh subagent is undefined. `isolation`
 is left unset: a worktree or a remote environment buys a review nothing.
+
+`medium` is a constant where the general rule picks effort by breadth and
+difficulty, and the escape is the brief rather than the model: **a reviewer that
+needs more than medium is a brief written too wide — split the brief, do not
+raise the level.**
 
 **Three ways to get this wrong.** Handing the review to a peer session — it is
 not a reviewer, it costs a re-explanation of context the launching session

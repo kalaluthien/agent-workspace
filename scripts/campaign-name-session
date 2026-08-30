@@ -71,7 +71,7 @@ def main():
     for pane, name in pairs:
         if not NAME.match(name):
             refuse(f"{name!r} is not campaign-<anchor>-<role>-<n> "
-                   "(role: executor, reviewer); nothing was applied")
+                   "(role: executor, the only one); nothing was applied")
 
     failed = False
     for pane, name in pairs:
