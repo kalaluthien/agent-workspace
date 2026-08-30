@@ -637,25 +637,34 @@ nothing. Neither a delegate nor an executor session writes the body at all.
 
 # Delegating to a repository agent
 
-**Every `herdr` command — the launches below, the liveness reads in § Completion
-and liveness, the retirement sweep in § Talking to a repository agent — is
-guarded by `test "${HERDR_ENV:-}" = 1`.** That is the herdr skill's own rule: an
-agent failing it says it is not running inside herdr and stops. It exempts
-nobody, and nobody here needs an exemption — measured 2026-08-29 on herdr 0.8.0,
-a campaign session, a peer executor session and a freshly `agent start`ed
-delegate each carry `HERDR_ENV=1` and their own `HERDR_PANE_ID`, while a process
-started outside any pane carries neither. So it passes on the container's daily
-path and bites exactly where it should: a session with no pane — cloud, cron, a
-bare `ssh` shell — reports that and stops rather than launching, listing or
-sweeping.
+**A `herdr` command that drives a pane, or that resolves its target implicitly —
+`--current`, or a target left out — is guarded by `test "${HERDR_ENV:-}" = 1`.**
+That is the herdr skill's own rule: an agent failing it says it is not running
+inside herdr and stops. The launches below are guarded, and so is the retirement
+sweep in § Talking to a repository agent. **Listing is not**: `agent list` and
+`pane list` answer from outside a pane exactly as from inside, so the liveness
+reads in § Completion and liveness and `closing-campaign` step 1 need no guard
+and get none. The guard is against acting on somebody else's session, never
+against reading.
 
-**Check it, because failing it is not an error.** `agent list` and `pane list`
-answer normally from outside a pane; what degrades silently is the *target*.
-Caller context is what makes `--current` and an omitted target mean "me":
-stripped of `HERDR_*`, `herdr pane current --current` returned the **UI-focused**
-pane — a peer session's — where from inside the pane the same command returned
-the caller's own (both probed 2026-08-29). Name the target regardless:
-`--pane "$HERDR_PANE_ID"`, an explicit pane id, or a unique agent name.
+**What degrades outside a pane is the target, and it degrades silently.** Caller
+context is what makes `--current` and an omitted target mean "me": stripped of
+`HERDR_*`, `herdr pane current --current` returned the **UI-focused** pane — a
+peer session's — where from inside the pane the same command returned the
+caller's own (both probed 2026-08-29). So name the target on every
+pane-addressing command: `--pane "$HERDR_PANE_ID"`, an explicit pane id, or a
+unique agent name. `herdr agent list` is not one of them and could not be told a
+target if you wanted to — `Usage: herdr agent list`, no options at all.
+
+**That the guard passes on the container's daily path is a measurement, not a
+property, and the first plain-terminal or `-p` session here falsifies it.**
+Probed 2026-08-29 over three kinds of session on this machine — a campaign
+session, a peer executor session and a freshly `agent start`ed delegate — each
+carrying `HERDR_ENV=1` and its own `HERDR_PANE_ID`, while a process started
+outside any pane carried neither. The pin is herdr 0.8.2, client and server on
+protocol 20, `compatible: yes` (read 2026-08-30). A session the measurement does
+not cover is exactly what the guard is for: it reports that it has no pane and
+stops rather than driving one.
 
 Launch it in `<campaign>/repos/<repo>/` with
 `--append-system-prompt-file <campaign>/AGENTS.md`.
