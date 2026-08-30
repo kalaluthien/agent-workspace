@@ -360,7 +360,19 @@ name at a time. A second process answering to it is a claim violation, which is
 worth seeing rather than hiding behind a different word.
 
 **A session has two names and neither propagates to the other** (measured
-2026-08-30). Set both, always:
+2026-08-30), so `scripts/campaign-name-session` sets both from one call and is
+this rule's one consumer — it refuses a name the rule does not admit rather than
+applying half of it:
+
+```sh
+scripts/campaign-name-session <pane> <name> [<pane> <name> ...]
+```
+
+It refuses `campaign-80-executor` (an executor with no subtask, whose anchor
+number is really a subtask number) and `campaign-1-80-holder` (a holder on a
+subtask), because the subtask is not optional *per role*: a holder is on none
+and an executor or a reviewer is on exactly one. Underneath it is the two herdr
+calls, which is what to run by hand if the script is not to hand:
 
 ```sh
 herdr agent rename <pane> campaign-<anchor>[-<issue>]-<role>

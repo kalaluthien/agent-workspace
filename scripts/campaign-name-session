@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Set a session's two names, both paths, from one call.
+
+    scripts/campaign-name-session <pane> <name> [<pane> <name> ...]
+
+A session has two names and neither propagates to the other (measured
+2026-08-30): the herdr pane name that `herdr agent list` shows, and the harness
+name that `ListAgents` resolves and a peer addresses. Renaming one leaves the
+session answering to two different names depending on who is asking, so this
+sets both and reports each.
+
+It is also the naming rule's one consumer. `AGENTS.md` § Naming a session states
+`campaign-<anchor>[-<issue>]-<role>`; a name that does not match is refused here
+rather than half-applied, because a rule nothing must consume is a rule that
+drifts.
+
+    exit 0   every pair applied, both paths
+    exit 1   nothing applied -- a name failed the rule, or the arguments are odd
+    exit 2   a herdr call failed partway; what was applied is printed
+
+The harness half is `herdr agent prompt <pane> "/rename <name>"`, which is
+another session driving that pane -- the same act as a person typing it. A
+session cannot do this to its OWN pane: the permission classifier refuses it,
+which is why the pending rename of the calling session needs either this script
+run with approval or a person typing `/rename`.
+"""
+import json
+import re
+import subprocess
+import sys
+
+# The subtask is not optional per role, which a single "-<issue>?" pattern
+# cannot say: a holder holds the campaign and is on no subtask, while an
+# executor and a reviewer are each on exactly one. Written loosely, this
+# accepted `campaign-80-executor` -- an executor with no subtask, whose anchor
+# number is really a subtask number, which is the misreading the rule exists to
+# prevent.
+NAME = re.compile(
+    r"^campaign-(?:"
+    r"[0-9]+-holder"                      # campaign-<anchor>-holder
+    r"|[0-9]+-[0-9]+-(?:executor|reviewer)"   # campaign-<anchor>-<issue>-<role>
+    r")$"
+)
+
+
+def refuse(why):
+    print(f"campaign-name-session: {why}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def herdr(*args):
+    """One herdr call. Returns the parsed result, or None with the error printed."""
+    out = subprocess.run(["herdr", *args], capture_output=True, text=True)
+    if out.returncode != 0:
+        return None, (out.stderr.strip() or out.stdout.strip() or "no message")
+    try:
+        return json.loads(out.stdout), None
+    except json.JSONDecodeError:
+        # prompt returns json too, but do not fail the rename over a shape change
+        return {}, None
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or len(args) % 2:
+        refuse("usage: campaign-name-session <pane> <name> [<pane> <name> ...]")
+
+    pairs = list(zip(args[::2], args[1::2]))
+
+    # Validate every name before applying any, so a typo in the last pair does
+    # not leave the first session renamed on one path and not the other.
+    for pane, name in pairs:
+        if not NAME.match(name):
+            refuse(f"{name!r} is not campaign-<anchor>[-<issue>]-<role>: a "
+                   "holder carries the anchor alone, an executor or a reviewer "
+                   "carries the anchor and its subtask; nothing was applied")
+
+    failed = False
+    for pane, name in pairs:
+        res, err = herdr("agent", "rename", pane, name)
+        if err:
+            print(f"  {pane}  herdr name  FAILED: {err}")
+            failed = True
+            continue
+        got = (res.get("result", {}).get("agent", {}) or {}).get("name")
+        print(f"  {pane}  herdr name  {got or name}")
+
+        res, err = herdr("agent", "prompt", pane, f"/rename {name}")
+        if err:
+            print(f"  {pane}  harness     FAILED: {err}")
+            failed = True
+            continue
+        # The prompt is queued, not applied: the session runs /rename on its
+        # next turn. Report it as sent rather than as done, because the only
+        # honest confirmation is ListAgents afterwards.
+        print(f"  {pane}  harness     /rename sent (confirm with ListAgents)")
+
+    return 2 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
