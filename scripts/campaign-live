@@ -101,7 +101,12 @@ def claim_records(claims):
             odd.append(p.name)
             continue
         fields = {}
-        for line in p.read_text().splitlines():
+        try:
+            text = p.read_text()
+        except (OSError, UnicodeDecodeError) as e:
+            odd.append(f"{p.name} ({e.__class__.__name__}: will not decode)")
+            continue
+        for line in text.splitlines():
             if " " in line:
                 k, v = line.split(" ", 1)
                 fields[k] = v.strip()

@@ -114,6 +114,24 @@ def main():
     check("it separates what runs unasked from what a flow calls",
           "run by a git hook, unasked" in out and "a flow calls these" in out)
 
+    # core.hooksPath: git looks there and nowhere else. Resolving the hooks
+    # directory by hand instead of asking git meant the inventory went on
+    # reporting two installed hooks while git ran none.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / ".git" / "hooks" / "pre-commit").write_text(DECLARING)
+        (root / ".git" / "hooks" / "pre-commit").chmod(0o755)
+        r = subprocess.run([sys.executable, str(PRIM)], cwd=root,
+                           capture_output=True, text=True)
+        check("a hook in the default place is found", "pre-commit" in r.stdout)
+        subprocess.run(["git", "config", "core.hooksPath", str(root / "nowhere")],
+                       cwd=root, check=True)
+        r = subprocess.run([sys.executable, str(PRIM)], cwd=root,
+                           capture_output=True, text=True)
+        check("core.hooksPath sends git elsewhere, and the listing follows it",
+              "NO git hook is installed" in r.stdout)
+
     # The exit status, which is the SessionStart contract. A non-zero exit
     # there drops stdout, suppressing the whole announcement in exactly the
     # case the warning block is written for.

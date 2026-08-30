@@ -21,7 +21,11 @@ esac
 
 # mktemp, not /tmp/$$: /tmp is world-writable and a pid is guessable, so a
 # pre-planted symlink there is truncated and overwritten by the redirect.
-err=$(mktemp) || exit 0
+if ! err=$(mktemp); then
+	echo "push-campaign-branch: mktemp failed; NOT pushing $branch." >&2
+	echo "  The commit is local only. Push it yourself." >&2
+	exit 0
+fi
 trap 'rm -f "$err"' EXIT INT TERM
 
 # No force flag and no --no-verify: a rejected push is news, not something to

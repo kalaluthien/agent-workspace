@@ -109,7 +109,21 @@ fi
 # or one where the bit was lost, committed a violation and the post-commit hook
 # pushed it, with no output at all. A hook that is installed is a promise the
 # check ran; the only honest answer when it cannot is to stop and say which one.
-for guard in \$(sed -n 's/^# runs: //p' "\$0"); do
+#
+# An EMPTY declaration refuses. Reading the list from the file moved finding
+# 2-1's failure -- a guard that is absent runs nothing and says nothing -- from
+# the \`if [ -x ]\` test to this \`sed\`: strip the line and the loop ran zero
+# times, and a violation committed with no output at all. A hook that cannot
+# tell what it is meant to run is a hook that has to stop.
+guards=\$(sed -n 's/^# runs: //p' "\$0")
+if [ -z "\$guards" ]; then
+	echo "pre-commit: REFUSING -- this hook carries no '# runs:' line, so it" >&2
+	echo "  cannot tell which guards it is meant to run. Re-run" >&2
+	echo "  scripts/install-hooks. To commit anyway: SKIP_REPO_GUARDS=1" >&2
+	[ "\${SKIP_REPO_GUARDS:-}" = 1 ] || exit 1
+	echo "pre-commit: SKIP_REPO_GUARDS=1 -- committing with NO guard run." >&2
+fi
+for guard in \$guards; do
 	g=\$(git rev-parse --show-toplevel)/scripts/\$guard
 	if [ ! -x "\$g" ]; then
 		echo "pre-commit: REFUSING -- \$g is missing or not executable." >&2

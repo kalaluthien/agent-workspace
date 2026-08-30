@@ -22,6 +22,7 @@ from pathlib import Path
 CLAIM = Path(__file__).resolve().parent / "campaign-claim"
 DEAD = "78513"      # long gone; any absent pid does
 DEAD_REC = f"session s1\nname n1\npid {DEAD}\nbranch campaign-1/7-x\n"
+DIR = object()   # a fixture that is a directory rather than a file
 
 
 def run(args, files=None, mtime=None, env=None):
@@ -29,7 +30,13 @@ def run(args, files=None, mtime=None, env=None):
         claims = Path(d) / "runtime" / "claims"
         claims.mkdir(parents=True)
         for name, body in (files or {}).items():
-            (claims / name).write_text(body)
+            if body is DIR:
+                (claims / name).mkdir()
+                continue
+            if isinstance(body, bytes):
+                (claims / name).write_bytes(body)
+            else:
+                (claims / name).write_text(body)
             if mtime is not None:
                 os.utime(claims / name, (mtime, mtime))
         e = dict(os.environ, **(env or {}))
@@ -82,6 +89,18 @@ case("a missing claims directory refuses rather than reading empty",
 # campaign-session-alive calls it `other` -- a liveness that is neither dead nor
 # alive, and the one the release gate must refuse by name. Hardcoding the wire
 # to "dead" changes this refusal's wording, which is what makes it a case.
+# A record whose bytes are not text. Three call sites used to hand this
+# straight to a traceback.
+# The trace and its notes on one stream, in order. Split across two they
+# reordered under a pipe, and the order is part of the evidence.
+case("the restart note is on stdout with the rest of the trace",
+     ["release", "7"], {"7": DEAD_REC}, OLD, want="note:", code=1)
+# A non-file entry under claims/ is counted apart, never dropped.
+case("a directory under claims/ is named by list, not skipped",
+     ["list"], {"7": DEAD_REC, "9": DIR}, want="is not a file", code=0)
+case("an undecodable record reads as unreadable, not as an absence",
+     ["status", "7"], {"7": b"\xff\xfe not text\n"}, want="will not decode",
+     code=0)
 case("release refuses a record whose pid belongs to something else",
      ["release", "7"], {"7": "session s\nname n\npid 1\nbranch campaign-1/7-x\n"},
      want="reads other", code=1)
@@ -170,6 +189,28 @@ def pure_cases(m):
     # returncode half alone.
     ok, why = m.ahead_verdict(1, "0", "boom", "a/b", "x")
     c("a failed call is not empty even when its output says 0", not ok)
+    # The two halves change the same verdict, so only the *message* separates
+    # them: an answer that is not a number means the question was not answered,
+    # and reporting it as "N commits ahead" sends the reader to the wrong repair.
+    ok, why = m.ahead_verdict(0, "not a number", "", "a/b", "x")
+    c("an answer that is not a number is a failed question, not a count",
+      not ok and "did not happen" in why and "commit(s) ahead" not in why)
+
+    # A command that is not installed at all: a failed run carrying its reason,
+    # never a traceback. `gh` and `ps` both go through this.
+    r = m.run("no-such-command-xyz")
+    c("a missing command is a failed run, not an exception",
+      r.returncode != 0 and "FileNotFoundError" in r.stderr)
+
+    # The install's process names, read from the script that owns them. Loading
+    # this file as a module is what broke when importlib.machinery was
+    # referenced without being imported.
+    c("the session names come from the owning script",
+      isinstance(m.session_names(), frozenset) and m.session_names())
+
+    # A record that will not decode is a failed reading, not an absence.
+    c("an undecodable record is unreadable, never dead",
+      "unreadable" in (m.liveness_of({"unreadable": "UnicodeDecodeError"}) or ""))
 
     # The wire into the release gate. Replacing it with the constant "dead"
     # left the whole suite green and made a live claim deletable.

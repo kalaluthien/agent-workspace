@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""Prove the hooks install-hooks writes actually refuse.
+
+Every other suite here tests a script in isolation. Nothing tested the thing a
+person meets: a repository with the hooks installed, and a commit that ought to
+be stopped. So the pre-commit body was covered by inert fixture strings, and
+deleting its whole guard loop left all five suites green while a violation
+landed clean.
+
+These cases build a throwaway repository, run the shipped installer, and commit.
+The remote is a local bare repo; nothing here reaches the network.
+
+Usage: scripts/install-hooks-test
+"""
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+SCRIPTS = Path(__file__).resolve().parent
+NEEDED = ["install-hooks", "check-rule-readers", "check-tree-shape",
+          "push-campaign-branch"]
+IGNORE = "/*\n!/.gitignore\n!/scripts/\n!/spec/\n!/docs/\n"
+
+
+def git(root, *args, **kw):
+    return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                           *args], cwd=root, capture_output=True, text=True, **kw)
+
+
+class Repo:
+    def __init__(self, d):
+        self.root = Path(d) / "w"
+        self.remote = Path(d) / "r.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(self.remote)], check=True)
+        subprocess.run(["git", "clone", "-q", str(self.remote), str(self.root)],
+                       capture_output=True, check=True)
+        (self.root / "scripts").mkdir()
+        for n in NEEDED:
+            shutil.copy(SCRIPTS / n, self.root / "scripts" / n)
+        (self.root / ".gitignore").write_text(IGNORE)
+        git(self.root, "add", "-Af")
+        git(self.root, "commit", "-qm", "init", "--no-verify")
+        git(self.root, "switch", "-qc", "topic")
+
+    def hook(self, name):
+        return self.root / ".git" / "hooks" / name
+
+    def violate(self, name="spec/bad.md"):
+        p = self.root / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("misfiled\n")
+        git(self.root, "add", str(name))
+
+    def commit(self, msg="c", env=None):
+        e = dict(os.environ, **(env or {}))
+        return git(self.root, "commit", "-qm", msg, env=e)
+
+    def commit_amend_push(self):
+        """Run the push hook by hand after an amend: the post-commit hook has
+        already fired, and what is under test is the rejection path."""
+        r = subprocess.run([str(self.root / "scripts" / "push-campaign-branch")],
+                           cwd=self.root, capture_output=True, text=True)
+        return r.stdout + r.stderr
+
+    def head(self):
+        return git(self.root, "log", "--oneline", "-1").stdout.strip()
+
+
+def installer(root):
+    return subprocess.run([str(root / "scripts" / "install-hooks")], cwd=root,
+                          capture_output=True, text=True)
+
+
+def main():
+    ran, fails = [], []
+
+    def check(name, cond, detail=""):
+        ran.append(name)
+        if not cond:
+            fails.append(f"{name}\n      {detail}")
+
+    # 1. The whole point: an installed hook stops a real violation.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        installer(r.root)
+        before = r.head()
+        r.violate()
+        c = r.commit()
+        check("an installed pre-commit refuses a real violation",
+              c.returncode != 0 and r.head() == before,
+              f"exit {c.returncode}; {(c.stdout + c.stderr).strip()[:160]}")
+        check("...and names the rule it refused on",
+              "R1" in c.stdout + c.stderr, (c.stdout + c.stderr)[:160])
+
+    # 2. A clean commit still goes through.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        installer(r.root)
+        (r.root / "docs").mkdir()
+        (r.root / "docs" / "x.html").write_text("<p>ok</p>\n")
+        git(r.root, "add", "docs/x.html")
+        c = r.commit()
+        check("a clean commit is not blocked", c.returncode == 0,
+              (c.stdout + c.stderr)[:160])
+
+    # 3. The declaration is what drives the loop, so removing it must stop the
+    # commit rather than silently run nothing. This is the case that was
+    # missing: the fixtures were strings, and the real hook ran zero guards.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        installer(r.root)
+        h = r.hook("pre-commit")
+        h.write_text("\n".join(l for l in h.read_text().splitlines()
+                               if not l.startswith("# runs: ")) + "\n")
+        before = r.head()
+        r.violate()
+        c = r.commit()
+        check("a hook with no `# runs:` line refuses instead of running nothing",
+              c.returncode != 0 and r.head() == before,
+              f"exit {c.returncode}; {(c.stdout + c.stderr).strip()[:200]}")
+
+    # 4. A guard that cannot run refuses, and the escape hatch is the only way past.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        installer(r.root)
+        (r.root / "scripts" / "check-tree-shape").chmod(0o644)
+        before = r.head()
+        r.violate()
+        c = r.commit()
+        check("a guard without its execute bit refuses",
+              c.returncode != 0 and r.head() == before,
+              f"exit {c.returncode}")
+        c = r.commit(env={"SKIP_REPO_GUARDS": "1"})
+        check("SKIP_REPO_GUARDS=1 is the only way past, and it announces itself",
+              c.returncode == 0 and "SKIP_REPO_GUARDS=1" in c.stdout + c.stderr,
+              (c.stdout + c.stderr)[:160])
+
+    # 5. The installer refuses where git would not look.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        git(r.root, "config", "core.hooksPath", str(r.root / "elsewhere"))
+        out = installer(r.root)
+        check("the installer refuses when core.hooksPath sends git elsewhere",
+              out.returncode != 0 and "hooksPath" in out.stderr,
+              (out.stdout + out.stderr)[:160])
+
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        r.hook("pre-commit").write_text("#!/bin/sh\n# somebody else's\n")
+        out = installer(r.root)
+        check("the installer refuses a hook it did not write",
+              out.returncode != 0 and "refusing" in out.stderr,
+              (out.stdout + out.stderr)[:160])
+
+    # 6. post-commit, on the real thing.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        installer(r.root)
+        (r.root / "docs").mkdir()
+        (r.root / "docs" / "a.html").write_text("<p>a</p>\n")
+        git(r.root, "add", "docs/a.html")
+        c = r.commit()
+        check("an ordinary branch is not pushed", "push-campaign-branch" not in
+              c.stdout + c.stderr, (c.stdout + c.stderr)[:160])
+        git(r.root, "switch", "-qc", "campaign-9/1-x")
+        (r.root / "docs" / "b.html").write_text("<p>b</p>\n")
+        git(r.root, "add", "docs/b.html")
+        c = r.commit()
+        check("a campaign branch is pushed by the hook",
+              "pushed campaign-9/1-x" in c.stdout + c.stderr,
+              (c.stdout + c.stderr)[:200])
+        ls = subprocess.run(["git", "ls-remote", "--heads", str(r.remote)],
+                            capture_output=True, text=True)
+        check("...and the remote really has it", "campaign-9/1-x" in ls.stdout,
+              ls.stdout[:160])
+        # A rejected push. The commit is durable nowhere, and silence here is
+        # exactly the loss push-early exists to prevent.
+        git(r.root, "commit", "-q", "--amend", "-m", "amended", "--no-verify")
+        c = r.commit_amend_push()
+        check("a rejected push is reported, and nothing is forced",
+              "could NOT push" in c and "non-fast-forward" in c, c[:200])
+        ls = subprocess.run(["git", "ls-remote", "--heads", str(r.remote)],
+                            capture_output=True, text=True)
+        check("...and the remote still holds the commit that was there",
+              "campaign-9/1-x" in ls.stdout, ls.stdout[:120])
+
+        (r.root / "scripts" / "push-campaign-branch").chmod(0o644)
+        (r.root / "docs" / "c.html").write_text("<p>c</p>\n")
+        git(r.root, "add", "docs/c.html")
+        c = r.commit()
+        check("a missing push script says the commit was not pushed",
+              "NOT pushed" in c.stdout + c.stderr, (c.stdout + c.stderr)[:200])
+
+    for f in fails:
+        print(f"FAIL  {f}")
+    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

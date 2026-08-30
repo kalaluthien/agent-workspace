@@ -154,6 +154,15 @@ CASES = [
     ("...and the rules that already ran still print what they found",
      {"spec/x.md": "hi\n", ".gitignore": None}, "R1"),
 
+    # An extensionless script -- the "" entry in the prose table, which the
+    # suffix cases never reach.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 an extensionless script's docstring is prose",
+     {"scripts/x": "#!/usr/bin/env python3\n" + chr(39) * 3
+      + "about runtime/holder" + chr(39) * 3 + "\nx = 1\n"}, None),
+    ("R3 ...and its code is still code",
+     {"scripts/x": "#!/usr/bin/env python3\nopen('runtime/holder')\n"}, "R3"),
+
     # R4
     ("R4 a member repository's file", {"repos/web/a.py": "x = 1\n"}, "R4"),
 ]

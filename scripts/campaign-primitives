@@ -59,11 +59,16 @@ def summary(path):
 def hooks_dir():
     """Where git actually looks for hooks in this checkout. Returns
     (path, why_unreadable)."""
+    # --git-path hooks, not --git-common-dir + "/hooks": the former is what git
+    # itself resolves, so it honours core.hooksPath. The latter names a
+    # directory git may not be looking at -- set core.hooksPath after installing
+    # and the inventory went on reporting two installed hooks while git ran
+    # none, which is the announcement lying in the direction that matters.
     r = subprocess.run(["git", "rev-parse", "--path-format=absolute",
-                        "--git-common-dir"], capture_output=True, text=True)
+                        "--git-path", "hooks"], capture_output=True, text=True)
     if r.returncode != 0:
         return None, f"git rev-parse failed: {r.stderr.strip()[:100]}"
-    return Path(r.stdout.strip()) / "hooks", None
+    return Path(r.stdout.strip()), None
 
 
 def installed_hooks(hdir):

@@ -117,6 +117,8 @@ def liveness_of(rec):
     deletable."""
     if not rec:
         return None
+    if "unreadable" in rec:
+        return f"unreadable ({rec['unreadable']}: the record itself would not read)"
     pid = rec.get("pid", "")
     if not pid or pid == "unknown":
         return "unreadable (no pid)"
@@ -124,10 +126,17 @@ def liveness_of(rec):
 
 
 def read_record(path):
+    """The record's fields, or None when there is none. A file that will not
+    decode is a reading that failed -- reported by the caller through the
+    `unreadable` field -- never a traceback."""
     if not path.exists():
         return None
+    try:
+        text = path.read_text()
+    except (OSError, UnicodeDecodeError) as e:
+        return {"unreadable": f"{e.__class__.__name__}"}
     fields = {}
-    for line in path.read_text().splitlines():
+    for line in text.splitlines():
         if " " in line:
             k, v = line.split(" ", 1)
             fields[k] = v.strip()
@@ -205,6 +214,10 @@ def cmd_status(args):
     if rec is None:
         print("verdict none -- no record was ever written here")
         return 0
+    if "unreadable" in rec:
+        print(f"verdict unreadable -- the file is there but will not decode "
+              f"({rec['unreadable']}). This is not an absence.")
+        return 0
     for k in ("session", "name", "pid", "branch"):
         print(f"  {k} {rec.get(k, '<absent>')}")
     pid = rec.get("pid", "")
@@ -244,8 +257,7 @@ def cmd_list(args):
               "missing directory.)")
     for p in files:
         rec = read_record(p) or {}
-        pid = rec.get("pid", "")
-        v = alive(pid) if pid and pid != "unknown" else "unreadable (no pid)"
+        v = liveness_of(rec) or "unreadable (empty record)"
         print(f"  {p.name:8} {v:12} {rec.get('branch', '<no branch>'):40} "
               f"{rec.get('name', '<no name>')}")
     return 0
