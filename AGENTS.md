@@ -226,6 +226,12 @@ is invariant across *how* a process was started. `ucomm` is the exec'd file's
 basename rather than an identity, so the names it matches are a fact about this
 install — which is why an unrecognised one is `other` and not `dead`.
 
+**The name is a role that no longer decides anything, and #93 owns that.** What
+this file records is whether a live session on this machine owns this tree,
+which survives the merge rule's move off the holder role unchanged; the path is
+left standing here because it is a live file with references across every skill
+and asset, and moving it inside a sweep is how a migration loses a record.
+
 This lock rots one way, and a restart is the way: staleness is a local process
 fact rather than a guess about a machine you cannot see — which is what pinning
 the campaign to one machine was bought for — but a pid stops naming its session
