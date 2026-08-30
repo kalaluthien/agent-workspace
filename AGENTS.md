@@ -800,8 +800,44 @@ cannot resolve.
   pool inside a git-ignored campaign directory dies with the directory.
 - **Deliver the opening prompt with `herdr agent prompt <pane> "<text>"`.** A
   prompt put on the launch line is word-split: a launch ending with a whole
-  sentence delivered its first word alone, and the delegate reported it had been
-  given no brief while the launch looked successful.
+  sentence delivered its first word alone, and the delegate reported it had
+  been given no brief while the launch looked successful.
+
+  **This form submits and returns; it does not wait.** Every waiting behaviour
+  below belongs to `--wait`, which this form does not pass — checked against
+  0.8.2's help, where `--until` is defined as "after `--wait`" and the
+  indefinite wait is the *settled-state* wait that only `--wait` starts. Two
+  runs of this exact form in one session returned immediately.
+
+  **If you add `--wait`, add a `--timeout` with it**, because without one the
+  settled-state wait is indefinite and a driver that waits forever looks
+  exactly like an agent thinking.
+
+  Three outcomes, and they are not the same news. Only the first can reach a
+  caller who did not pass `--wait`:
+
+  | outcome | what it means |
+  | --- | --- |
+  | `agent_blocked` | the agent was already at an approval or question dialog. **No input was sent** — the prompt is still yours to deliver once the dialog clears, and clearing it is the person's call. This is a refusal to submit, so it does not need `--wait`. |
+  | `agent_prompt_stalled` | an accepted submission that started from a non-working state saw nothing move within 5000 ms. The agent has it; something is holding the turn. Go and look. |
+  | `timeout` | your `--timeout` elapsed. The agent may be working normally — a long turn reads exactly like this — so read the pane before concluding anything. |
+
+  `agent_blocked` is the one that is safe to act on immediately, because it is
+  the only one that tells you the input never landed.
+
+  **The last two overlap, and which one you get is your own choice of
+  `--timeout`.** The 5000 ms is the stall threshold, so a `--timeout` shorter
+  than it fires first and the same silence comes back as `timeout` instead of
+  `agent_prompt_stalled` — the more informative name lost to the smaller
+  number. Set it above 5000 ms to keep the two distinguishable. The help
+  states no default for `--timeout`, and this file does not invent one — herdr
+  does state one where it has one, so the absence is a fact rather than an
+  omission.
+
+  **`--wait` does not track turns.** If the agent is already working when the
+  prompt lands, that turn's completion may satisfy the wait — so a launch driver
+  can read a previous turn's settling as its own prompt finishing, and get a
+  success that means nothing.
 
 # What silently stops a delegate before it starts
 
@@ -818,6 +854,38 @@ The launch line has three ways to eat a prompt, all quiet: the 1024-byte
 terminal ceiling, a variadic flag such as `--add-dir` swallowing a trailing
 prompt, and the word-splitting above. Put the prompt before any variadic flag,
 keep it short, and send the brief as a file path.
+
+**0.8.2 narrows this, and by less than it first appears.** `agent prompt`
+refuses an agent that is *already* at an approval or question dialog, returning
+`agent_blocked` before sending any input. That catches a delegate you come back
+to and find parked — not the row above it, because the first shell-permission
+prompt appears *after* the opening prompt is accepted, mid-turn, when there was
+nothing to refuse. What would surface that one is `--wait` settling on
+`blocked`, which the documented form does not ask for. Whether herdr classifies
+the external-import dialog as blocked at all is unmeasured, and this file
+records its sibling as unrecognised.
+
+`agent start` narrows a different thing, and not the one previously claimed
+here: it does **not** wait for a new pane shell — it requires "an existing pane
+at an interactive shell prompt" and creates no layout — and no herdr surface
+mentions a first-run prompt. What it does is return only once herdr has detected
+the expected agent and judged it ready for input, with a startup timeout that
+**defaults to 30000 ms** (`agent start --timeout`, max 300000). An agent blocked
+during startup comes back as **`agent_not_ready`**, a fourth status name, and
+the name stays usable for `agent read` and `send-keys` (bundled skill at 0.8.2).
+That the default is stated here, where `agent prompt --timeout` states none, is
+itself the evidence that the absence over there is real.
+
+What none of it retires is the folder-trust row. That dialog was seen once not
+to appear on a scratch delegate, and one sighting is not a rule — least of all
+for the dialog § Talking to a repository agent already records as the one herdr
+misreports, which is where the reading rule for it lives and stays.
+
+That rule now stands **measured rather than provisional**. It was written
+against a gap a better mechanism would close, and the mechanism arrived and does
+not close it: herdr's own Claude integration hook reports session identity, not
+state — `pane.report_agent_session` is its only call, and it carries no status
+method. Nothing infers `working` from anything but the screen.
 
 # Completion and liveness are different questions
 
