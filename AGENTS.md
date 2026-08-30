@@ -102,8 +102,15 @@ echo "$V"
 `CONTAINER` is resolved the one way § Three planes gives, which is also where
 both skills resolve it before calling this.
 
-**Only `none` and `dead` let you take over**, and they are the two confirmed
-absences: no holder was ever recorded, and the recorded pid is held by nobody.
+**Only `none` and `dead` let you take over**, and they are the two absences this
+reader can confirm: no holder was ever recorded, and the recorded pid is held by
+nobody. **`dead` is an absence of the process, not of the session.** A harness
+restart hands a surviving session a new pid, so any record written before one
+reads `dead` while the session that wrote it is still working — measured
+2026-08-30, when `runtime/executors/62` named pid 24840, that pid read `dead`,
+and the session that wrote it was alive at another pid in the same minute. When
+the record predates a restart, `dead` is stale rather than absent, and only
+asking the session settles it.
 `alive` is the holder still working. `other` is a pid held by something whose
 name this install does not know — a recycled pid *or* a differently-named
 claude, and nothing here can tell those apart. `unreadable` is the reading
@@ -127,9 +134,12 @@ is invariant across *how* a process was started. `ucomm` is the exec'd file's
 basename rather than an identity, so the names it matches are a fact about this
 install — which is why an unrecognised one is `other` and not `dead`.
 
-This is the one lock here that cannot rot, because staleness is a local process
+This lock rots one way, and a restart is the way: staleness is a local process
 fact rather than a guess about a machine you cannot see — which is what pinning
-the campaign to one machine was bought for. It errs towards refusing to take
+the campaign to one machine was bought for — but a pid stops naming its session
+the moment the harness restarts, and nothing in the record distinguishes that
+from an exit. The session id is the field that survives, and only
+`runtime/holder` carries one. It errs towards refusing to take
 over, and does so two ways now: a pid recycled onto a different `claude` reads
 `alive`, and a pid recycled onto anything else reads `other`. The second is
 wider than the residue `spec/alloy/session.als` records under R3g, which names

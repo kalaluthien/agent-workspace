@@ -28,7 +28,10 @@ included, as a refusal.
 
 Why `kill -0` decides existence. It is a syscall against the caller's own
 process table: it cannot fail transiently the way running `ps` can, and it
-answers the only question whose "no" is safe to act on.
+answers the only question whose "no" is safe to act on. Safe about the
+*process*, though, and not about the session: a harness restart leaves a
+surviving session holding a new pid, so a record written before one reads
+`dead`. AGENTS.md carries that caveat for the callers who act on it.
 
 Why the name is read from `ucomm` and not `comm`. `ps -o comm=` reports how a
 process was invoked, so one build answers `claude` through a wrapper and its full
