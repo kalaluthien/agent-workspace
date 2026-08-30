@@ -57,12 +57,16 @@ error (all probed; the evidence is in
   scoped to the paths the branch itself touched, because a branch cut before
   the base moved on differs on files it never edited.
 
-  A place that could not be read denies `clear`. A REPORT line saying a
-  checkout must be read by hand is a check that never ran, and an absence of
-  findings from a check that never ran is not an absence of findings -- while
-  those lines only informed, a run that skipped every member checkout still
-  summarised `clear`, which is what licenses the delete. Such a run now says
-  NOT clear and counts the unread places separately from the found ones.
+  A place that could not be read denies `clear`. Two REPORT lines say a check
+  never ran -- a directory under repos/ that is not a checkout, and a repository
+  whose default branch will not resolve, so no branch of it could be judged
+  merged or landed. An absence of findings from a check that never ran is not an
+  absence of findings: while those lines only informed, a run that skipped every
+  member checkout still summarised `clear`, which is what licenses the delete.
+  Such a run now says NOT clear and counts the unread places separately from the
+  found ones. The other REPORT lines -- the container's own working tree, the
+  handover briefs -- are findings the script chose not to count, not places it
+  failed to look, and they still do not block.
 
 Exit status is about the reading, never the verdict: 0 means the reading
 completed and the last line says clear or NOT clear; 1 means the reading itself
@@ -158,7 +162,10 @@ def default_branch(repo, name, rep):
         ref = [l for l in head.splitlines() if l.startswith("ref:")]
         base = "origin/" + ref[0].split()[1].removeprefix("refs/heads/") if ref else ""
     if not base:
-        rep.report(f"REPORT: {name}: cannot resolve the default branch, so no "
+        # unread, not report: its own message says no branch could be judged,
+        # which is a check that did not run. The sibling case one function down
+        # already denies `clear` for that reason and this one is the same kind.
+        rep.unread(f"REPORT: {name}: cannot resolve the default branch, so no "
                    "branch could be judged merged or landed -- read it by hand")
     return base
 
