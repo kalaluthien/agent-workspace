@@ -122,6 +122,23 @@ def main():
               c.returncode != 0 and r.head() == before,
               f"exit {c.returncode}; {(c.stdout + c.stderr).strip()[:200]}")
 
+    # 3b. A declaration that is present but names nothing. `[ -z "$guards" ]`
+    # is false for a line of whitespace, so the loop ran zero times and a
+    # violation committed with no output at all -- the same silent skip, one
+    # character from the form that was fixed.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        installer(r.root)
+        h = r.hook("pre-commit")
+        h.write_text(h.read_text().replace(
+            "# runs: check-rule-readers check-tree-shape", "# runs:   "))
+        before = r.head()
+        r.violate()
+        c = r.commit()
+        check("a declaration naming nothing refuses too",
+              c.returncode != 0 and r.head() == before,
+              f"exit {c.returncode}; {(c.stdout + c.stderr).strip()[:200]}")
+
     # 4. A guard that cannot run refuses, and the escape hatch is the only way past.
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
@@ -176,16 +193,39 @@ def main():
                             capture_output=True, text=True)
         check("...and the remote really has it", "campaign-9/1-x" in ls.stdout,
               ls.stdout[:160])
+        remote_sha = subprocess.run(["git", "ls-remote", "--heads",
+                                     str(r.remote), "campaign-9/1-x"],
+                                    capture_output=True, text=True).stdout.split()[0]
         # A rejected push. The commit is durable nowhere, and silence here is
         # exactly the loss push-early exists to prevent.
         git(r.root, "commit", "-q", "--amend", "-m", "amended", "--no-verify")
         c = r.commit_amend_push()
         check("a rejected push is reported, and nothing is forced",
               "could NOT push" in c and "non-fast-forward" in c, c[:200])
-        ls = subprocess.run(["git", "ls-remote", "--heads", str(r.remote)],
-                            capture_output=True, text=True)
-        check("...and the remote still holds the commit that was there",
-              "campaign-9/1-x" in ls.stdout, ls.stdout[:120])
+        # The sha, not the ref name: the name survives a force-push, so
+        # asserting on it passed with the remote rewritten and the case pinned
+        # nothing it was named for.
+        after = subprocess.run(["git", "ls-remote", "--heads", str(r.remote),
+                                "campaign-9/1-x"], capture_output=True,
+                               text=True).stdout.split()[0]
+        check("...and the remote still holds the exact commit it had",
+              after == remote_sha, f"{remote_sha} -> {after}")
+
+        # mktemp failing. Round 3 added the handler and pinned it with
+        # nothing, because mktemp succeeds -- and it succeeds even with TMPDIR
+        # pointed at nothing, which was the first attempt at this case. A
+        # failing mktemp ahead of it on PATH is what actually reaches the
+        # branch, and it tests the script's handling rather than mktemp.
+        shim = Path(d) / "shim"
+        shim.mkdir()
+        (shim / "mktemp").write_text("#!/bin/sh\nexit 1\n")
+        (shim / "mktemp").chmod(0o755)
+        p = subprocess.run([str(r.root / "scripts" / "push-campaign-branch")],
+                           cwd=r.root, capture_output=True, text=True,
+                           env=dict(os.environ,
+                                    PATH=f"{shim}:{os.environ['PATH']}"))
+        check("mktemp failing says the commit was not pushed",
+              "mktemp failed" in p.stdout + p.stderr, (p.stdout + p.stderr)[:160])
 
         (r.root / "scripts" / "push-campaign-branch").chmod(0o644)
         (r.root / "docs" / "c.html").write_text("<p>c</p>\n")

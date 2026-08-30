@@ -92,19 +92,25 @@ def herdr_sessions():
 
 
 def claim_records(claims):
-    """Returns (records, unreadable). A non-file entry is named rather than
-    dropped, exactly as parse_agents counts a row it cannot identify: the
-    number a close gate reads must not shrink because something was skipped."""
+    """Returns (records, unread). A claim this cannot read is named rather than
+    dropped, exactly as parse_agents counts a row it cannot identify: the number
+    a close gate reads must not shrink because something was skipped.
+
+    `unread` is a check that did not happen, so it denies the clean verdict the
+    way a failed herdr read does. The first draft filed it beside a cosmetic
+    note and still printed "both readings were made", which is this script's
+    whole contract inverted."""
     recs, odd = {}, []
     for p in sorted(claims.iterdir()):
         if not p.is_file():
-            odd.append(p.name)
+            odd.append(f"{p.name} is not a file, so it holds no claim")
             continue
         fields = {}
         try:
             text = p.read_text()
         except (OSError, UnicodeDecodeError) as e:
-            odd.append(f"{p.name} ({e.__class__.__name__}: will not decode)")
+            odd.append(f"{p.name} will not decode ({e.__class__.__name__}), "
+                       f"so what it claims is unknown")
             continue
         for line in text.splitlines():
             if " " in line:
@@ -166,10 +172,10 @@ def main():
     print(f"reading 1  herdr agent list -- "
           f"{'FAILED: ' + why if why else str(len(sessions)) + ' session(s) on this machine'}")
     recs, odd = claim_records(claims)
-    print(f"reading 2  {claims} -- {len(recs)} claim(s)")
-    for name in odd:
-        print(f"           !! {name} is not a file; it holds no claim this can "
-              f"read")
+    print(f"reading 2  {claims} -- {len(recs)} claim(s) read, "
+          f"{len(odd)} unread")
+    for note in odd:
+        print(f"           !! {note}")
     # Before the herdr gate: a record naming another campaign's branch is a
     # defect in this directory, and surfacing it must not depend on the other
     # reading having worked.
@@ -183,9 +189,14 @@ def main():
               "or a branch was\n  named wrongly. Neither is this script's to "
               "fix.")
 
-    if why:
-        print("\nOne of the two readings did not happen, so no count below is "
-              "safe to act on.", file=sys.stderr)
+    if why or odd:
+        if odd and not why:
+            print(f"\n{len(odd)} claim(s) could not be read, so the counts "
+                  f"below are of what was\nreadable and not of what is here.",
+                  file=sys.stderr)
+        else:
+            print("\nOne of the two readings did not happen, so no count below "
+                  "is safe to act on.", file=sys.stderr)
         return 1
 
     answered, orphan, idle = classify(recs, sessions)

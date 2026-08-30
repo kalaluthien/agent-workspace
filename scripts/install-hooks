@@ -116,7 +116,11 @@ fi
 # times, and a violation committed with no output at all. A hook that cannot
 # tell what it is meant to run is a hook that has to stop.
 guards=\$(sed -n 's/^# runs: //p' "\$0")
-if [ -z "\$guards" ]; then
+# Word list, not string: `# runs:` followed by a space leaves \$guards
+# non-empty and the loop running zero times, which is the silent skip this
+# refusal exists to stop -- one character from the form that was reported.
+set -- \$guards
+if [ \$# -eq 0 ]; then
 	echo "pre-commit: REFUSING -- this hook carries no '# runs:' line, so it" >&2
 	echo "  cannot tell which guards it is meant to run. Re-run" >&2
 	echo "  scripts/install-hooks. To commit anyway: SKIP_REPO_GUARDS=1" >&2

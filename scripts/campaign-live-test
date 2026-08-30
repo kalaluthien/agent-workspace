@@ -141,6 +141,24 @@ def main():
     check("...even when the herdr reading could not be made",
           "did not happen" in out and r.returncode == 1)
 
+    # A record that will not decode. It is a check that did not happen, so it
+    # must deny the clean verdict the way a failed herdr read does -- the first
+    # fix for this filed it as a cosmetic note and still printed "both readings
+    # were made", which is this script's contract inverted.
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        (claims / "7").write_text("session S1\nbranch campaign-1/7-x\n")
+        (claims / "9").write_bytes(b"\xff\xfe not text\n")
+        r = subprocess.run([sys.executable, str(LIVE), "1", "--dir", d],
+                           capture_output=True, text=True)
+        out = r.stdout + r.stderr
+    check("an unreadable record denies the clean verdict", r.returncode == 1)
+    check("...and is named as unread rather than as a stray file",
+          "will not decode" in out and "1 unread" in out)
+    check("...and the run does not claim both readings were made",
+          "both readings were made" not in out)
+
     # A non-file entry under claims/ is counted, not silently dropped.
     with tempfile.TemporaryDirectory() as d:
         claims = Path(d) / "runtime" / "claims"
@@ -149,7 +167,7 @@ def main():
         (claims / "9").mkdir()
         recs, odd = m.claim_records(claims)
         check("a directory under claims/ is named, not dropped",
-              len(recs) == 1 and odd == ["9"])
+              len(recs) == 1 and len(odd) == 1 and odd[0].startswith("9 "))
 
     if not ran:
         print("FAIL  the suite ran no case at all")
