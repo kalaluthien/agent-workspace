@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 # Install this repository's pre-commit guards. Idempotent; run it after a clone.
 #
+# Two guards today, split by question: check-rule-readers asks whether a rule a
+# script owns got a second reader written by hand, check-tree-shape asks whether
+# the tree still has the shape AGENTS.md describes.
+#
 # The machine-wide guard at ~/.claude/git-hooks/no-main-commits occupies the
 # pre-commit slot by default, and says in its own header that a repository whose
 # hook already occupies that slot should call it first. So the installed hook
@@ -29,7 +33,7 @@ set -e
 common=$(git rev-parse --path-format=absolute --git-common-dir)
 root=$(cd "$(dirname "$common")" && pwd -P)
 hook=$common/hooks/pre-commit
-ours="$root/scripts/check-rule-readers"
+ours="$root/scripts/check-rule-readers and $root/scripts/check-tree-shape"
 marker='# Installed by scripts/install-hooks.'
 
 # The exit status, not the value: `core.hooksPath=""` is a *set* key that git
@@ -76,10 +80,15 @@ fi
 # --show-toplevel: the guard that judges a commit is the one in the checkout
 # making it. Resolving to the shared checkout runs whatever another worktree
 # happens to hold, committed or not, against an index it never wrote.
-guard=\$(git rev-parse --show-toplevel)/scripts/check-rule-readers
-if [ -x "\$guard" ]; then
-	exec "\$guard" --staged
-fi
+# Every guard here judges the same index, so they run one after another and
+# each says what it refused. No \`exec\` on the last: a guard added below it
+# would never run, and nothing would say so.
+for guard in check-rule-readers check-tree-shape; do
+	g=\$(git rev-parse --show-toplevel)/scripts/\$guard
+	if [ -x "\$g" ]; then
+		"\$g" --staged || exit 1
+	fi
+done
 HOOK
 
 chmod +x "$hook"

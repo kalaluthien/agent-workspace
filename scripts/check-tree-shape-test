@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Prove check-tree-shape fires where it must and stays quiet where it must not.
+
+The guard reads a git tree, so every case builds a throwaway repository and runs
+the shipped script over it. Its measure is not how many cases pass but how many
+ways of breaking the guard at least one case notices -- so each row that expects
+a hit is aimed at one branch, and each row that expects quiet names a boundary
+somebody would otherwise widen the guard straight past.
+
+Usage: scripts/check-tree-shape-test
+"""
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+GUARD = Path(__file__).resolve().parent / "check-tree-shape"
+
+IGNORE = "/*\n!/.gitignore\n!/spec/\n!/docs/\n!/scripts/\n!/AGENTS.md\n"
+
+# (name, {path: contents}, expected_rule or None, expect_crash)
+CASES = [
+    # R1 -- misfiled markdown, and the two shapes that are not it.
+    ("R1 markdown under spec/", {"spec/x.md": "hi\n"}, "R1", False),
+    ("R1 markdown under docs/", {"docs/x.md": "hi\n"}, "R1", False),
+    ("R1 markdown at the root is where it belongs", {"AGENTS.md": "hi\n"}, None, False),
+    ("R1 html under docs/ is the point of docs/", {"docs/x.html": "<p>hi</p>\n"}, None, False),
+
+    # R2 -- the allowlist. The trailing slash is the shape every entry in the
+    # real .gitignore has, so a guard that does not strip it passes nothing.
+    ("R2 a tracked top-level name with no allowlist line",
+     {"scratch/x.txt": "hi\n"}, "R2", False),
+    ("R2 an entry written with its trailing slash still matches",
+     {"docs/x.html": "<p>hi</p>\n"}, None, False),
+
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    # R3 markdown -- the split check-rule-readers already makes.
+    ("R3 md: a retired path in a fence",
+     {"AGENTS.md": "t\n\n```sh\ncat runtime/holder\n```\n"}, "R3", False),
+    ("R3 md: the same path named in prose is a mention",
+     {"AGENTS.md": "t\n\n`runtime/holder` is retired with the role.\n"}, None, False),
+    ("R3 md: an indented block is code too",
+     {"AGENTS.md": "t\n\n    cat runtime/holder\n"}, "R3", False),
+    ("R3 md: an exempted block is spent on the next block",
+     {"AGENTS.md": "t\n\n<!-- unguarded: history -- the retired form, quoted -->\n```sh\ncat runtime/holder\n```\n"},
+     None, False),
+
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    # R3 Alloy -- where the prose lives inside the comment, which is the case
+    # that broke the first draft: every line of a .als read as code.
+    ("R3 als: a retired name in a signature",
+     {"spec/a.als": "sig S { holder: runtime/holder }\n"}, "R3", False),
+    ("R3 als: the same name inside a block comment",
+     {"spec/a.als": "/*\n * `runtime/holder` is retired with the role.\n */\nsig S {}\n"}, None, False),
+    ("R3 als: after a // line comment",
+     {"spec/a.als": "sig S {}  // runtime/holder went with #100\n"}, None, False),
+    ("R3 als: after a -- line comment",
+     {"spec/a.als": "sig S {}  -- runtime/holder went with #100\n"}, None, False),
+    ("R3 als: the earliest line-comment marker wins, not the first in the table",
+     {"spec/a.als": "sig S {} -- runtime/holder // x\n"}, None, False),
+    ("R3 als: a one-line block comment does not swallow the rest of the file",
+     {"spec/a.als": "/* a note */\nsig S { h: runtime/holder }\n"}, "R3", False),
+
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    # R3 scripts -- docstring and hash prose.
+    ("R3 py: a retired path in code",
+     {"scripts/x.py": 'open("runtime/holder")\n'}, "R3", False),
+    ("R3 py: the same path in the docstring",
+     {"scripts/x.py": '"""Why runtime/holder went away."""\nx = 1\n'}, None, False),
+    ("R3 py: after a hash",
+     {"scripts/x.py": "x = 1  # runtime/holder is retired\n"}, None, False),
+    ("R3 py: code before a trailing hash still counts",
+     {"scripts/x.py": 'open("runtime/holder")  # a note\n'}, "R3", False),
+
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    # The exemption itself, which is a branch and needs pinning both ways.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 py: a marker exempts the run of code below it",
+     {"scripts/x.py": '# unguarded: t -- fixture\nopen("runtime/holder")\n'}, None, False),
+    ("R3 py: the exemption is spent at the next blank line",
+     {"scripts/x.py": '# unguarded: t -- fixture\nx = 1\n\nopen("runtime/holder")\n'}, "R3", False),
+    ("R3 als: the marker is read on a block comment's opening line",
+     {"spec/a.als": "/* unguarded: t -- fixture */\nsig S { h: runtime/holder }\n"}, None, False),
+    # A block comment runs many lines and the marker is usually not on the
+    # first: that is a separate branch, and the one-line fixture above pins
+    # nothing about it.
+    ("R3 als: the marker is read on a block comment's continuation line",
+     {"spec/a.als": "/*\n * why this is here\n * unguarded: t -- fixture\n */\nsig S { h: runtime/holder }\n"}, None, False),
+
+    # R3 html -- the language a path grep in one syntax cannot see.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 html: a retired path in markup",
+     {"docs/x.html": "<code>runtime/holder</code>\n"}, "R3", False),
+    ("R3 html: the same path in an html comment",
+     {"docs/x.html": "<!-- runtime/holder is retired -->\n<p>hi</p>\n"}, None, False),
+
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    # The reading-versus-verdict rule: an unknown language is a file the sweep
+    # cannot read, and an unread file must not come back as a clean tree.
+    ("R0 an unknown suffix is reported, not skipped",
+     {"scripts/x.rb": 'puts "runtime/holder"\n'}, "R0", False),
+    # The rule that broke the first draft: R0 used to raise, so a tree with
+    # both an unread file and a real finding reported only the crash.
+    ("R0 an unread file does not hide what the other rules found",
+     {"scratch/x.txt": "hi\n"}, "R2", False),
+
+    # R4
+    ("R4 a member repository's file", {"repos/web/a.py": "x = 1\n"}, "R4", False),
+]
+
+
+def run_case(files):
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".gitignore").write_text(IGNORE)
+        for rel, body in files.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(body)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-Af"], cwd=root, check=True)
+        return subprocess.run([sys.executable, str(GUARD)], cwd=root,
+                              capture_output=True, text=True)
+
+
+def main():
+    failed = 0
+    for name, files, rule, crash in CASES:
+        r = run_case(files)
+        out = r.stdout + r.stderr
+        if crash:
+            ok = r.returncode != 0 and "no prose rule" in out
+            want = "a crash naming the unread file"
+        elif rule:
+            ok = r.returncode == 1 and f"{rule}\t" in out
+            want = f"a {rule} finding"
+        else:
+            ok = r.returncode == 0 and not out.strip()
+            want = "silence"
+        if not ok:
+            failed += 1
+            print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}:\n"
+                  f"      {out.strip()[:200] or '(nothing)'}")
+    print(f"{len(CASES) - failed}/{len(CASES)} cases pass")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""Refuse a commit whose tree holds a shape this repository's design forbids.
+
+Sibling of check-rule-readers, and split from it by question rather than by
+rule: that guard asks whether a rule got a second reader, this one asks whether
+the tree still has the shape AGENTS.md describes. Four rules share that failure
+mode -- each is a sentence of prose today, each is decidable from the file list
+alone, and each has already been broken once or is one careless commit from it.
+
+WHAT IT CHECKS
+
+  R1  spec/ and docs/ hold no markdown.
+      spec/ is Alloy whose comments are the spec; docs/ is HTML drawn for a
+      reader. A markdown file under either is misfiled, and "temporary" is what
+      it is always called.
+
+  R2  every tracked top-level entry is named in .gitignore's allowlist.
+      The root is `/*` plus `!` lines. A directory that gets tracked without
+      one is tracked by accident, and the accident is invisible: git says
+      nothing, and the next `git add` in it silently commits scratch.
+
+  R3  a retired name does not come back as code.
+      Same split check-rule-readers makes, for the same reason: prose must go
+      on being able to say `runtime/holder` is retired, while a path or an
+      identifier spelling it is a reintroduction. Retirement notes exist to
+      stop reintroduction; with a machine behind the ban they can be deleted.
+
+  R4  no member-repository file is committed here.
+      Three planes, and the container is one of them. R2 catches the ordinary
+      route in (repos/ has no allowlist line); this catches the deliberate one.
+
+WHAT IT DOES NOT CATCH
+
+R3 is a name check, not a concept check: reintroducing the holder role under a
+different word passes. R1 does not read a file's contents, so HTML named .md is
+caught and markdown named .html is not. Both are floors -- they stop the commit
+somebody makes without noticing, which is how every one of these got broken.
+
+READING VERSUS VERDICT
+
+A file it cannot read is reported as R0 and refuses the commit. It is never
+skipped: a guard that skips what it cannot read reports nothing and reads
+exactly like a pass, which is the failure mode this whole family of checks
+exists to refuse. R0 is counted apart from R1-R4 because "I looked and found
+nothing" and "I could not look" want different repairs. `--explain` prints what was read
+and which branch each rule took, for a reader who wants to know the guard is
+doing anything at all.
+
+EXIT
+
+0 silent when clean. 1 with one line per finding: the rule, the path, and what
+was found. The status is about the verdict; an unreadable tree crashes.
+
+Usage: scripts/check-tree-shape [--staged] [--explain]
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# A retired name and the issue that retired it, so a finding says why.
+# Prose may name any of these; code may not.
+RETIRED = [
+    (re.compile(r"\bruntime/holder\b"), "#100 -- the holding session is retired"),
+    (re.compile(r"\bruntime/executors\b"), "#59 -- renamed to runtime/claims/"),
+    (re.compile(r"^\s*CLAIMED\b|['\"]CLAIMED['\"]"), "#59 -- the claim is a record, not an announcement"),
+]
+
+FENCE = re.compile(r"^\s*(```|~~~)")
+EXEMPT = re.compile(r"<!--\s*unguarded:")
+EXEMPT_ANY = re.compile(r"\bunguarded:")
+
+# Where the prose lives differs by language, and a sweep that knows only one of
+# them is the sweep that comes up a copy short. ~/.claude/CLAUDE.md states the
+# rule; this table is what makes a machine able to run it. Each entry says how
+# a file's *prose* is delimited, and every line that is not prose is code.
+#
+#   block  -- (open, close) pairs; the delimiters' own lines are prose too
+#   line   -- a marker that makes the rest of the line prose
+#
+# A name in prose is a mention this repository must go on being able to make.
+# A name in code is a reintroduction.
+PROSE = {
+    ".als":  {"block": [("/*", "*/")], "line": ["//", "--"]},
+    ".yml":  {"block": [], "line": ["#"]},
+    ".yaml": {"block": [], "line": ["#"]},
+    ".py":   {"block": [('"""', '"""')], "line": ["#"]},
+    ".html": {"block": [("<!--", "-->")], "line": []},
+    "":      {"block": [('"""', '"""')], "line": ["#"]},   # scripts/, shebanged
+}
+
+
+def code_lines_by_comment(text, spec):
+    """Lines that are not inside a comment. A block delimiter's own line counts
+    as prose, so a docstring naming a retired term does not fire on its first
+    line either.
+
+    The same per-block exemption markdown gets, spelled in whichever comment the
+    language has: `unguarded:` in a comment exempts the run of code beneath it,
+    up to the next blank line. One syntax across both guards and every language,
+    and it names its owner so a reader can check the claim. Its first user is
+    this guard's own test, whose fixtures have to spell the names it bans."""
+    out, closing, exempt = [], None, False
+    for n, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped:
+            exempt = False
+            continue
+        if closing:
+            if EXEMPT_ANY.search(line):
+                exempt = True
+            if closing in line:
+                closing = None
+            continue
+        opened = False
+        for o, c in spec["block"]:
+            if o in line:
+                # A one-line block opens and closes on the same line.
+                rest = line.split(o, 1)[1]
+                if c not in rest:
+                    closing = c
+                opened = True
+                break
+        if opened:
+            if EXEMPT_ANY.search(line):
+                exempt = True
+            continue
+        # A line comment makes the rest of the line prose, so the earliest
+        # marker wins -- taking the first marker in table order instead lets a
+        # name sitting between two markers read as code. A whole-line comment
+        # needs no case of its own: it is this cut at column zero.
+        cut = min((line.index(m) for m in spec["line"] if m in line), default=None)
+        if cut is not None:
+            if EXEMPT_ANY.search(line[cut:]):
+                exempt = True
+            line = line[:cut]
+        if line.strip() and not exempt:
+            out.append((n, line))
+    return out
+
+
+def git(*args):
+    return subprocess.run(["git", *args], capture_output=True, text=True,
+                          check=True).stdout
+
+
+def tracked(staged):
+    src = ["diff", "--cached", "--name-only", "--diff-filter=ACMR"] if staged \
+        else ["ls-files"]
+    return [p for p in git(*src).splitlines() if p]
+
+
+def read(path, staged):
+    """Contents as they will be committed. A path that cannot be read is a
+    crash: see READING VERSUS VERDICT."""
+    if staged:
+        return git("show", f":{path}")
+    return Path(path).read_text()
+
+
+def code_lines(text):
+    """Line numbers whose text renders as code -- fenced or indented -- with
+    check-rule-readers' per-block exemption honoured. The exemption sits on the
+    line *above* the block, so the fence that opens the block must carry it in
+    rather than clear it."""
+    out, fenced, exempt_block, exempt_next = [], False, False, False
+    for n, line in enumerate(text.splitlines(), 1):
+        if FENCE.match(line):
+            fenced, exempt_block = (not fenced), (exempt_next if not fenced else False)
+            exempt_next = False
+            continue
+        if fenced:
+            if not exempt_block:
+                out.append((n, line))
+            continue
+        if EXEMPT.search(line):
+            exempt_next = True
+            continue
+        if line.startswith(("    ", "\t")) and line.strip():
+            if not exempt_next:
+                out.append((n, line))
+            continue
+        if line.strip():
+            exempt_next = False
+    return out
+
+
+def main():
+    staged = "--staged" in sys.argv
+    explain = "--explain" in sys.argv
+    paths = tracked(staged)
+    findings = []
+
+    def note(rule, path, what):
+        findings.append(f"{rule}\t{path}\t{what}")
+
+    # R1
+    misfiled = [p for p in paths
+                if p.endswith(".md") and p.split("/")[0] in ("spec", "docs")]
+    for p in misfiled:
+        note("R1", p, "markdown under spec/ or docs/ -- spec/ is Alloy, docs/ is HTML")
+    if explain:
+        print(f"R1 read {len(paths)} paths; {len(misfiled)} misfiled markdown")
+
+    # R2
+    ignore = Path(".gitignore")
+    if not ignore.exists():
+        raise SystemExit("check-tree-shape: no .gitignore to read; cannot judge R2")
+    allowed = {l[2:].rstrip("/") for l in ignore.read_text().splitlines()
+               if l.startswith("!/")}
+    tops = sorted({p.split("/")[0] for p in paths})
+    for t in tops:
+        if t not in allowed:
+            note("R2", t, "tracked but not in .gitignore's allowlist")
+    if explain:
+        print(f"R2 read {len(allowed)} allowlist entries against {len(tops)} tracked top-level names")
+
+    # R3
+    scanned = 0
+    for p in paths:
+        text = read(p, staged)
+        scanned += 1
+        if p.endswith(".md"):
+            lines = code_lines(text)
+        else:
+            spec = PROSE.get(Path(p).suffix)
+            if spec is None:
+                # A file this sweep cannot read. Counted apart from what it
+                # found, because "I looked and found nothing" and "I could not
+                # look" are the two outcomes a guard must never merge -- and
+                # reported rather than raised, so the rules that already ran
+                # still get to print what they saw.
+                note("R0", p, "no prose rule for this suffix; the sweep could "
+                              "not read it. Add the suffix to PROSE.")
+                continue
+            lines = code_lines_by_comment(text, spec)
+        for n, line in lines:
+            for pat, why in RETIRED:
+                if pat.search(line):
+                    note("R3", f"{p}:{n}", f"retired name as code ({why}): {line.strip()[:60]}")
+    if explain:
+        print(f"R3 read {scanned} files for {len(RETIRED)} retired names")
+
+    # R4
+    for p in paths:
+        if p == "repos" or p.startswith("repos/") or "/repos/" in p:
+            note("R4", p, "a member repository's file in the container plane")
+    if explain:
+        print("R4 read the same path list for repos/ entries")
+
+    if findings:
+        print("check-tree-shape: refusing", file=sys.stderr)
+        for f in findings:
+            print("  " + f, file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
