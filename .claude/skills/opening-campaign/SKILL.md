@@ -174,8 +174,8 @@ Read it back the way step 1 does: if the latest is not yours, the campaign was
 migrated in the seconds since, so stop and say so.
 
 **Write the body by filling the anchor template**, `assets/README.md` in this
-skill — its sections, each placeholder replaced, and no others. Write Scope to be
-matched against a request by the gate. The body is a charter and carries no
+skill — its sections, each placeholder replaced, and no others. Write Scope to
+be matched against a request by the gate. The body is a charter and carries no
 decomposition (§ Running a campaign); step 6 files the first subtasks instead,
 and the sub-issue index is the decomposition from there on.
 
