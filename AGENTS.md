@@ -768,9 +768,9 @@ Never answer one with the other.
   The claim record, `<campaign>/runtime/executors/<issue>`, supplies the
   attribution and not the liveness: the `pid` it names reads `dead` after a
   harness restart its session survived, so it locates a session rather than
-  proving one. Read a delegate's
-  own progress from the session transcript, never from `agent_status` alone,
-  which reports the screen and calls a mid-turn pause `idle`.
+  proving one. Read a delegate's own progress from the session transcript,
+  never from `agent_status` alone, which reports the screen and calls a mid-turn
+  pause `idle`.
   **Both readings, every time**: the no-live-agent gate in `closing-campaign` and
   the retirement sweep below each run both.
 
