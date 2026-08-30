@@ -116,15 +116,15 @@ launches a delegate instead, the claim is the delegate's and the delegate writes
 the record; § Talking to a repository agent is the one statement of which is
 which. From the claim it is in the protocol below: it answers `STATUS`, sends `REPORT` and `BLOCKED`, stops on `STAND DOWN`,
 and never surveys, never syncs, and never closes. It **may** land its own work,
-on the two conditions § Talking to a repository agent states — a review read at
-the merged sha, written by an agent that did not write the commits — which is
-what replaced "an executor never merges its own pull request". It works the subtask
+on the three conditions § Talking to a repository agent states — a review read
+at the merged sha, written by an agent that did not write the commits, and a
+branch containing the current `main` — which is what replaced "an executor never
+merges its own pull request". It works the subtask
 whichever way § Running a campaign allows, subject to the mode rule there; what
 changes is only who it reports to.
 
-The holding session is the peer the person named. When nobody named one, the
-announcement goes to every peer session, and a peer that holds no campaign
-covering it ignores it.
+The holding session is the peer the person named. When nobody named one, ask
+every peer session, and a peer that holds no campaign covering it says so.
 
 **`BOUND <machine>` is a comment on the anchor, and the latest one is
 authoritative.** Comments append, so writing one races nothing; that is why the
@@ -689,10 +689,10 @@ be spelled out in the brief rather than named.
 
 So a **campaign session working with its own hands** can take only a container
 subtask or campaign-directory work. For a member-repository subtask it becomes
-the launcher of a delegate, and the claim is then the delegate's: it is
-`--name`d its branch and `herdr agent list` carries it, so no claim record is
-written for it by anybody. § Talking to a repository agent says who writes one
-and who never does.
+the launcher of a delegate, and the claim is then the delegate's: the delegate
+writes its own record, exactly as a session working with its own hands does, and
+the launcher writes none because it holds no claim. § Talking to a repository
+agent says who writes one and who never does.
 
 Then, within what the repository allows, choose by cost:
 
@@ -1221,8 +1221,14 @@ itself, not an announcement somebody must receive.
 
   **Two of the three are GitHub facts; the second is not, and that is the
   standing weakness of this rule.** Condition 1 is readable — the sha a review
-  comment names against the sha the merge lands. Condition 3 is readable — the
-  branch's behind-count against `main`. **Condition 2 has no automatic reader
+  comment names against the sha the merge lands. Condition 3 is *readable* — the branch's
+  behind-count against `main` — but **it is enforced by nothing here**: `main`
+  carries no branch protection (probed 2026-08-30, `protected: false`), so
+  GitHub refuses no merge on containment, and check-then-merge is not atomic.
+  It is a discipline with a cheap check, which is a better place to be than
+  condition 2 and is not the same as being enforced. **One repository setting
+  would make GitHub the atomic reader** — require-branches-up-to-date protection
+  on `main` — and that is the owner's call, not a session's. **Condition 2 has no automatic reader
   on this machine**: one `gh` account signs every session's merges and comments,
   so GitHub cannot tell an author's review from a reviewer's, and
   `spec/alloy/agent.als` axiomatizes the separateness in `review`'s comment with
@@ -1340,20 +1346,33 @@ The anchor has one structural writer, the campaign directory has one holding
 session, and no lock ever has to be judged stale across a network. What stays
 concurrent is concurrent *within* the bound machine — the holding session, its
 executor sessions, its subagents and its delegates — and two things serialize
-them: the branch claim, per subtask, and merge condition 3, per landing. Survey before editing, scope edits so they do not collide
+them, and only the first of them atomically: the branch claim, per subtask,
+which create-ref refuses server-side, and merge condition 3, per landing, which
+is a discipline nothing currently refuses. Survey before editing, scope edits so they do not collide
 with other worktrees, and rebase onto what landed rather than force-pushing over
 it.
 
 **Two open pull requests over the same normative files are normal, and the
-second to land reconciles.** Nobody has to notice that it is second: merge
-condition 3 (§ Talking to a repository agent) refuses a branch that does not
-contain the current `main`, so once the first lands, the second must merge
-`main` in and resolve there — and that merge is a push, which retires its
+second to land reconciles.** Merge condition 3 (§ Talking to a repository agent)
+is what tells the second lander it is second: it may not merge a branch that
+does not contain the current `main`, so once the first lands, the second merges
+`main` in and resolves there. **Unprotected, that is a discipline and not a
+refusal** — nothing on GitHub stops a merge that skips it, so the second lander
+has to run the check — and that merge is a push, which retires its
 review, so its next merge needs a review read at the *combined* sha. The
 reconciliation is forced by the conditions rather than assigned to anyone.
 
-That matters because the clashes that matter are semantic: four surfaced only
-in the combination of #46 and #47, and no hunk-level merge sees them. So the
+**Containment buys attention from nobody, and this is the sharp edge of
+condition 3.** A clean auto-merge of `main` produces a commit whose diff against
+the branch *is the other branch's work* — structurally present in the reviewed
+sha, and exactly the thing this branch's reviewer has no reason to read and
+every reason to skim as "just the merge". So condition 3 guarantees the review
+sits at the combined state; it does not guarantee anyone read the combination.
+
+**The review after a reconciliation reads the combination, not the branch**,
+and its brief says so. That is the half a condition cannot carry. The clashes
+that matter are semantic — four surfaced only in the combination of #46 and #47
+— and no hunk-level merge sees them. So the
 second pull request's final verification reads the combined state, and whoever
 holds the first claim publishes the overlap — which hunks of which files both
 touch — beside the first review verdict, as a courtesy that saves the second

@@ -1274,8 +1274,14 @@ fun executorsOf[i: Issue]: set Agent { task.i }
    state read by nobody" -- the trace that condition exists to forbid -- cannot
    be built. Extending the model to see it means giving `main` a state and
    branches a base, which is a layer's worth of work and its own subtask (#95).
-   Until then the condition is enforced by GitHub's behind-count and by nothing
-   here, and A16/A16b measure only the sha half. */
+   Until then the condition is enforced by NOTHING, which is worth stating
+   plainly because the first draft of this comment claimed GitHub's behind-count
+   enforced it. It does not: `main` on this repository carries no branch
+   protection (probed 2026-08-30, `protected: false`), so GitHub refuses no
+   merge on containment, and check-then-merge is not atomic in any case. The
+   behind-count is a cheap READING, not an enforcer. Require-branches-up-to-date
+   protection on `main` would make GitHub the atomic reader, and that is the
+   owner's setting to grant. A16/A16b measure only the sha half. */
 pred mergedOnCurrentReview {
   always (Now.ev = MergePR implies
             (Now.issue.pr in Reviewed

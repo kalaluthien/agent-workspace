@@ -118,9 +118,9 @@ and the one residue it leaves, is `references/rationale.md`.
 **Then the agents, both records, split by question rather than by kind** —
 `herdr agent list` gives liveness for every executor, delegate or not, because
 it lists every session on this machine (measured 2026-08-30: three rows, none of
-them a delegate). What it does not give is attribution: a row says which subtask
-it holds only where its name is the branch, which is a delegate's name and not a
-session's own. `runtime/claims/` supplies exactly that missing attribution. One
+them a delegate). What it does not give is attribution at all: under § Naming a session
+no name carries a subtask, so no row says which claim it holds. `runtime/claims/`
+is the only answer, and every claimant writes one — a delegate included. One
 alone is no reading at all (§ Completion and liveness). Presence is the signal,
 not `agent_status`; compare whole path segments, and never test a name against
 the branch.
