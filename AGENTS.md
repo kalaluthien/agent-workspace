@@ -1041,13 +1041,51 @@ condition (§ Talking to a repository agent, merge condition 2) is on who
 landing, and the model pins it: `A16` is SAT, and the old guard forbidding a
 review commissioned by the author is gone precisely because it made the legal
 case inexpressible (`P2`). `/code-review <PR#>` is the whole opening prompt
-either way, because it is model-invocable. The default is an **in-process subagent**: a review only reads,
-so it needs none of what a process boundary is paid for — no handover file, no
-canary, no pane, no sweep. A **herdr session** is for a review that will take
-many turns, or an `ultra` review, which is person-triggered only and never the
-default. Feedback then goes to a *fresh* executor, briefed from the pull request
-and the review, because a pane held open across a multi-day review is the
-expensive thing.
+either way, because it is model-invocable.
+
+**Every review runs as an in-process subagent, on Opus, at medium effort. There
+is no other way to run one.** Not a default, not a preference, not the cheapest
+of several options — the one mode. A review only reads, so it needs none of what
+a process boundary is paid for: no handover file, no canary, no pane, no
+liveness read, no retirement sweep. Anything that pays those costs is paying
+them for nothing.
+
+```
+Agent(subagent_type: "general-purpose", model: "opus", prompt: "/code-review <PR#> …")
+```
+
+Opus because a review is carrying out an approach already clear, and medium
+because a review of one pull request is narrow work against a known standard.
+A reviewer that needs more than that is a brief that was written too wide;
+split the brief, do not raise the model.
+
+**Four ways to get this wrong, all of them forbidden, and each one has actually
+been done here:**
+
+- **Handing the review to a peer session.** A peer is not a reviewer. It costs
+  a full re-explanation of context the launching session already holds, it
+  evicts whatever that session was doing, and its findings arrive as a relay
+  rather than on the pull request. Whoever wants the merge launches the
+  subagent itself.
+- **Reading the diff yourself and calling it reviewed.** The author's own read
+  is not a review at any length or care, because merge condition 2 is about
+  who wrote the commits. A session that cannot launch a subagent cannot merge;
+  it says so and stops.
+- **A herdr session.** The process boundary buys nothing a review uses and
+  costs everything a launch costs.
+- **Fanning out into parallel reviewers.** See the paragraph below: eight
+  angles per pull request died twice on the session limit and found nothing a
+  single consolidated pass missed.
+
+The **one** exception is an `ultra` review, which a person triggers and no
+session may launch. If a session cannot start a subagent — a harness that
+withholds the tool, a permission refused — that is a **blocker**, reported to
+the person as one. It is never a licence to review some other way, and the
+pull request waits.
+
+Feedback then goes to a *fresh* executor, briefed from the pull request and the
+review, because a pane held open across a multi-day review is the expensive
+thing.
 
 **The review's default shape: one reviewer per pull request, one verifier per
 fix round.** Every angle the review should take is a section of the one
