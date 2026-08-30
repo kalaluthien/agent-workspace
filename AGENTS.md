@@ -1264,8 +1264,9 @@ itself, not an announcement somebody must receive.
   carrying the workflow itself, which fits "the head decides" and "the merge
   decides" equally well. It took a base that had the workflow to separate them.
 
-  **Two cases still produce no check, and both are about a head that has not
-  moved.** `pull_request` fires on the head moving — `opened`, `synchronize`,
+  **Three cases still produce no check, and a required check makes each of them
+  unmergeable with no override.** The first two are a head that has not moved:
+  `pull_request` fires on the head moving — `opened`, `synchronize`,
   `reopened` — so a base advance dispatches nothing.
 
   The first is a pull request already open when the base gained the workflow.
@@ -1281,8 +1282,17 @@ itself, not an announcement somebody must receive.
   direct pushes to a protected branch too, and a topic tip that has never been
   in a pull request has no check run to satisfy it — so the fast-forward of
   `main` that § Git prescribes after resolving in the topic branch is refused,
-  with `enforce_admins: true` leaving no override. Land through the pull
-  request instead; its head sha is what carries the check.
+  with `enforce_admins: true` leaving no override — measured 2026-08-30 on a
+  throwaway protected branch, where a commit created straight on it returned
+  `HTTP 409: Could not create file: Required status check "check" is expected.`
+  Land through the pull request instead; its head sha is what carries the check.
+
+  The third is the one whose head *has* moved: a pull request that breaks or
+  deletes the workflow. Its merge commit then has no usable workflow, so it
+  produces no check and strands itself, and recovery is an admin emptying
+  `contexts`, landing the fix, and restoring it. That constraint is written in
+  `.github/workflows/check.yml` beside the trigger it guards, because a
+  constraint kept only here is one refactor away from being lost.
 
   `main` also refuses force-pushes and deletion. **Condition 2 has no automatic reader
   on this machine**: one `gh` account signs every session's merges and comments,
