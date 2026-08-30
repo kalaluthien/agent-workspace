@@ -20,12 +20,9 @@
 #      pull request that means to remove the check needs an admin to empty
 #      `required_status_checks.contexts` on `main`, land it, and restore them.
 #   3. Every `uses:` names a 40-character commit sha, never a tag, with the
-#      release in a trailing comment -- a sha alone says nothing to a reader.
-#      A tag is mutable, so an unpinned `uses:` lets its owner change what
-#      every merge into `main` runs. `actions/permissions`
-#      `sha_pinning_required` is set to `true` and is meant to be this
-#      constraint's second reader, but whether it refuses an unpinned `uses:`,
-#      and how, is unmeasured -- #108. Do not rely on it; pin the sha.
+#      release in a trailing comment. A tag is mutable, so an unpinned `uses:`
+#      lets its owner change what every merge into `main` runs.
+#      `sha_pinning_required` is set but unverified (#108), so pin the sha.
 #
 # It is also what makes branch protection bite. `strict` ("require branches to
 # be up to date") is a modifier on required status checks, so with no checks it
