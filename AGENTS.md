@@ -1252,6 +1252,20 @@ itself, not an announcement somebody must receive.
   nothing on GitHub records which session was the holder either — the role form
   had **zero** readable conditions where this has two.
 
+  **The push that retires a review does not start the next one, and whoever
+  pushed it asks.** This is the half the role form carried without stating: an
+  author who could not merge was visibly waiting on somebody, so a stalled
+  landing was someone's turn. Under conditions nobody is named, and **a silent
+  wait is indistinguishable from work** — witnessed on this file's own branch,
+  where a fix round was posted, no review was requested, and two subtasks sat
+  blocked behind it while the wait read as progress. So the `REPORT` names the
+  new sha *and* asks for the review, in the pull request where a later reader
+  meets it. **And the wait is bounded**: a session that has asked and received
+  nothing says so and stops, rather than waiting in a shape that reads as
+  working. #92 owns the same terminal-branch argument for a GitHub dependency;
+  this sentence is here because this is where the retirement happens and where a
+  reader is standing when they need it.
+
   What survives unchanged is the sha half: **a push after a review retires that
   review**, because a review is of a pull request at a revision. So an executor
   that pushes a fix round does not inherit its own earlier clearance — the
@@ -1365,9 +1379,10 @@ it.
 second to land reconciles.** Merge condition 3 (§ Talking to a repository agent)
 is what tells the second lander it is second: it may not merge a branch that
 does not contain the current `main`, so once the first lands, the second merges
-`main` in and resolves there. **Unprotected, that is a discipline and not a
-refusal** — nothing on GitHub stops a merge that skips it, so the second lander
-has to run the check — and that merge is a push, which retires its
+`main` in and resolves there. **Today that is a discipline and not a refusal** —
+`main` is protected, but its up-to-date requirement enforces nothing while no
+status check is required, so GitHub stops no merge that skips condition 3 and
+the second lander has to run the check itself — and that merge is a push, which retires its
 review, so its next merge needs a review read at the *combined* sha. The
 reconciliation is forced by the conditions rather than assigned to anyone.
 
