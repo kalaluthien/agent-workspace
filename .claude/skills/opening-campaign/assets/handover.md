@@ -1,8 +1,8 @@
 # Brief: subtask #<issue> — <title>
 
 You are an executor of campaign #<N> (kalaluthien/agent-workspace#<N>), working
-subtask #<issue> in the checkout you were started in. The holding session is
-`<ListAgents name>`; reach it with SendMessage. If that name stops resolving,
+subtask #<issue> in the checkout you were started in. The session that
+launched you is `<ListAgents name>`; reach it with SendMessage. If that name stops resolving,
 re-read `ListAgents` and use the name that is there now — a session's name
 changes across a restart, and this campaign lost a REPORT to a name that had
 moved. You may land your own work when three conditions hold — a review read at
