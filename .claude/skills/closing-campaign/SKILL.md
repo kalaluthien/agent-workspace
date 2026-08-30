@@ -179,9 +179,15 @@ verdict and the rows above it are the report.
   row, or say to discard it, then re-run.*
 - A `~` row is named and not counted — pushed, landed over a squash merge, or a
   clean worktree, which is the one the closer is usually standing in.
-- A `-- REPORT:` line is for the person to read and blocks nothing: an
-  unattributed edit in the container's one working tree, a handover brief
-  nobody has accounted for, a repository whose default branch would not resolve.
+- **A `-- REPORT:` line is one of two things, and the verdict says which.** A
+  place the script *could not read* — a directory under `repos/` that is not a
+  checkout, a repository whose default branch will not resolve — is a check that
+  did not run, so it is counted apart and refuses the close on its own: the
+  summary reads `… and <n> place(s) went unread; NOT clear`. Read each such
+  place by hand, then re-run. Everything else a `REPORT:` line carries is for
+  the person and blocks nothing — an unattributed edit in the container's one
+  working tree, a handover brief nobody has accounted for.
+- So **zero counted rows is not by itself a pass**. Read the last word.
 - `0 item(s) … clear` is the pass.
 
 Each row carries its `<kind>`, the `found by` checks that overlap on it and what
@@ -190,7 +196,11 @@ the shape being retyped here.
 
 Holds when: `campaign-local-work` exited 0 over this campaign and this directory,
 and its last line read clear — either on the first run, or on a re-run after
-every counted row was pushed, merged, or discarded on the person's word.
+every counted row was pushed, merged, or discarded on the person's word, and
+every unread place was read by hand and either emptied or reported to the
+person. A run that still says `NOT clear` with no counted row left is naming
+places it could not reach, and the way out is to reach them, never to read past
+the verdict.
 
 ### 3. Settle or dispose of every open subtask
 
