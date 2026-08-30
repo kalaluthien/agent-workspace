@@ -1239,25 +1239,32 @@ itself, not an announcement somebody must receive.
   lander is forced to know it is second, and the mechanism is the rule this
   file already had.
 
-  **Two of the three are GitHub facts; the second is not, and that is the
-  standing weakness of this rule.** Condition 1 is readable — the sha a review
-  comment names against the sha the merge lands. Condition 3 is *readable* — the branch's
-  behind-count against `main` — but **it is enforced by nothing here**, and the
-  way that survives a setting being switched on is worth the four lines.
+  **Condition 3 is enforced by GitHub as of 2026-08-30; condition 1 is readable
+  and read by nothing.** Condition 1 is the sha a review comment names against
+  the sha the merge lands. Condition 3 is `main`'s branch protection:
+  `required_status_checks` with `strict: true` and `contexts: ["check"]`, plus
+  `enforce_admins: true`, so a branch that does not contain the current `main`
+  is refused and no admin can override the refusal.
 
-  `main` is protected as of 2026-08-30 and the up-to-date requirement is set:
-  `protected: true`, `required_status_checks.strict: true`. **It enforces
-  nothing.** "Require branches to be up to date" is a *modifier on required
-  status checks*, and `contexts` is empty, so there is nothing for it to modify.
-  Measured the same day on a throwaway branch cut one commit behind: `behind=1`,
-  `mergeStateStatus: CLEAN`, mergeable. The setting stores, reads back `true`,
-  and refuses no merge.
+  **`strict` is a modifier on required status checks, so it enforces nothing
+  until `contexts` names one.** That was this repository's state for most of
+  the day the setting was applied: it stored, read back `true`, and refused no
+  merge — measured on a throwaway branch cut one commit behind, which read
+  `behind=1`, `mergeStateStatus: CLEAN`, mergeable. Emptying `contexts` restores
+  exactly that silence, and the settings page reads the same either way, so a
+  reader who wants to know whether condition 3 still bites reads `contexts`.
 
-  What protection did buy is real and unrelated: `main` now refuses force-pushes
-  and deletion. Making it enforce condition 3 needs at least one required status
-  check, which means CI on this repository — a larger change and the owner's to
-  decide. Until then condition 3 is a discipline with a cheap check, which is a
-  better place to be than condition 2 and is not the same as being enforced. **Condition 2 has no automatic reader
+  **The check comes from the workflow on the head branch, never the base.**
+  Measured 2026-08-30 across four pull requests sharing base `main`: only the
+  one whose own branch carried `.github/workflows/check.yml` produced a check
+  run at all. So a branch cut before that workflow can never produce `check` —
+  `BLOCKED`, combined status `pending` with zero statuses, and `HTTP 405:
+  Required status check "check" is expected` to an admin merge, watched on a
+  throwaway protected branch before the setting was switched on for `main`.
+  Merging `main` in is what clears it, which is what condition 3 demanded
+  anyway, so the trap is the one the rule already sends you out of.
+
+  `main` also refuses force-pushes and deletion. **Condition 2 has no automatic reader
   on this machine**: one `gh` account signs every session's merges and comments,
   so GitHub cannot tell an author's review from a reviewer's, and
   `spec/alloy/agent.als` axiomatizes the separateness in `review`'s comment with
@@ -1391,7 +1398,7 @@ concurrent is concurrent *within* the bound machine — the holding session, its
 executor sessions, its subagents and its delegates — and two things serialize
 them, and only the first of them atomically: the branch claim, per subtask,
 which create-ref refuses server-side, and merge condition 3, per landing, which
-is a discipline nothing currently refuses. Survey before editing, scope edits so they do not collide
+branch protection refuses server-side. Survey before editing, scope edits so they do not collide
 with other worktrees, and rebase onto what landed rather than force-pushing over
 it.
 
@@ -1399,10 +1406,10 @@ it.
 second to land reconciles.** Merge condition 3 (§ Talking to a repository agent)
 is what tells the second lander it is second: it may not merge a branch that
 does not contain the current `main`, so once the first lands, the second merges
-`main` in and resolves there. **Today that is a discipline and not a refusal** —
-`main` is protected, but its up-to-date requirement enforces nothing while no
-status check is required, so GitHub stops no merge that skips condition 3 and
-the second lander has to run the check itself — and that merge is a push, which retires its
+`main` in and resolves there. **That is a refusal, not a discipline** — `main`
+requires the status check `check`, so GitHub itself stops a merge that skips
+condition 3, admins included, and the second lander is told it is second rather
+than having to check — and that merge is a push, which retires its
 review, so its next merge needs a review read at the *combined* sha. The
 reconciliation is forced by the conditions rather than assigned to anyone.
 
