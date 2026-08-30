@@ -86,21 +86,65 @@ printf 'session %s\npid %s\n' "$CLAUDE_CODE_SESSION_ID" "$CLAUDE_PID" \
 ```
 
 `CLAUDE_PID` is the `claude` process; `$$` is the shell one tool call runs in
-and is dead before the next one starts. Liveness is `kill -0` plus the process
-still being `claude` — both commands, and all three of their outcomes, probed
-2026-08-28:
+and is dead before the next one starts. Liveness has one reader,
+`scripts/campaign-session-alive`, and a caller turns its outcomes into one of
+five words:
 
 ```sh
-PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
-kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
+if [ ! -s "$CAMPAIGN/runtime/holder" ]; then V=none
+else
+  PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
+  V=$("$CONTAINER/scripts/campaign-session-alive" "$PID" 2>&1) || V="unreadable ($V)"
+fi
+echo "$V"
 ```
 
-Alive means you are an executor session; dead means you take over by rewriting
-the file. This is the one lock here that cannot rot, because staleness is a
-local process fact rather than a guess about a machine you cannot see — which is
-what pinning the campaign to one machine was bought for. Its failure mode is a
-recycled PID belonging to a *different* `claude`, and that reads as live, so the
-check errs towards refusing to take over: ask rather than overwrite. `runtime/`
+`CONTAINER` is resolved the one way § Three planes gives, which is also where
+both skills resolve it before calling this.
+
+**Only `none` and `dead` let you take over**, and they are the two absences this
+reader can confirm: no holder was ever recorded, and the recorded pid is held by
+nobody. **`dead` is an absence of the process, not of the session.** A harness
+restart hands a surviving session a new pid, so any record written before one
+reads `dead` while the session that wrote it is still working — measured
+2026-08-30, when `runtime/executors/62` named pid 24840, that pid read `dead`,
+and the session that wrote it was alive at another pid in the same minute. When
+the record predates a restart, `dead` is stale rather than absent, and only
+asking the session settles it.
+`alive` is the holder still working. `other` is a pid held by something whose
+name this install does not know — a recycled pid *or* a differently-named
+claude, and nothing here can tell those apart. `unreadable` is the reading
+itself failing, and it carries its reason. The last three mean leave it alone,
+because the act on the other side destroys a tree or overwrites a live holder,
+and only a confirmed absence is safe to act on. **Read the word, never the exit
+status** — the status is about the reading, as it is for `campaign-local-work`.
+Testing the file before the pid is what keeps a *missing* holder from arriving
+as `unreadable`, which would be an absence wearing the word for "I could not
+look".
+
+**Never hand-roll the comparison.** It was four prose copies of `[ "$(ps -o
+comm= -p "$PID")" = claude ]`, and that test reads a live session as **dead**:
+`ps -o comm=` reports how a process was invoked, so the same build answers
+`claude` through a wrapper and its full path when exec'd by path. Measured
+2026-08-29 on three live sessions of one campaign, two through a wrapper and one
+by path, while both readers below were about to run over them. The script keeps
+`kill -0` for existence, because a syscall against your own process table cannot
+fail the transient way running `ps` can, and reads the name from `ucomm`, which
+is invariant across *how* a process was started. `ucomm` is the exec'd file's
+basename rather than an identity, so the names it matches are a fact about this
+install — which is why an unrecognised one is `other` and not `dead`.
+
+This lock rots one way, and a restart is the way: staleness is a local process
+fact rather than a guess about a machine you cannot see — which is what pinning
+the campaign to one machine was bought for — but a pid stops naming its session
+the moment the harness restarts, and nothing in the record distinguishes that
+from an exit. The session id is the field that survives, and only
+`runtime/holder` carries one. It errs towards refusing to take
+over, and does so two ways now: a pid recycled onto a different `claude` reads
+`alive`, and a pid recycled onto anything else reads `other`. The second is
+wider than the residue `spec/alloy/session.als` records under R3g, which names
+only the first — a claim phase 2 of #59 has to widen when it rewrites that
+model. Ask rather than overwrite. `runtime/`
 dies with the directory, which is the right lifetime — nothing off this machine
 reads the holder.
 
