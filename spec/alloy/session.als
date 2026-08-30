@@ -1,5 +1,5 @@
 /*
- * A campaign session -- which one holds the campaign, and what the others are.
+ * A campaign session -- what makes a session one, and what it may do.
  *
  * ledger.als is spec/'s entry point and carries the orientation to all four
  * layers and the composition idiom.
@@ -7,15 +7,15 @@
  *
  * THIS LAYER
  *
- * Any session opened in the container root is a candidate, and which of three
- * roles it takes is READ rather than assumed, from two facts: `bound`, the
- * anchor's latest `BOUND <machine>` comment, and `holder`, the campaign
- * directory's `runtime/holder`. One campaign runs on one machine, and on that
- * machine one session holds it; a session that arrives to a live holder is an
- * EXECUTOR SESSION on one subtask, and a session on another machine is not in
- * the campaign at all. `Session` is a first-class sig and every event a session
- * performs carries the session that did it, so the actor is observable in every
- * trace.
+ * Any session opened in the container root is a candidate, and whether it is in
+ * a campaign is READ rather than assumed, from one fact: `bound`, the anchor's
+ * latest `BOUND <machine>` comment. ONE ROLE (#59): a session is a campaign
+ * session exactly when the campaign is bound to its machine, and is not in the
+ * campaign otherwise. Nothing assigns roles beyond that -- no holder, no
+ * executor session; a session claims subtasks and works them, and the claim it
+ * takes it records itself, `runtime/claims/<issue>` (agent.als's `Addressed`).
+ * `Session` is a first-class sig and every event a session performs carries the
+ * session that did it, so the actor is observable in every trace.
  *
  * This layer implements the two skills:
  *
@@ -23,13 +23,13 @@
  *   Survey                    AGENTS.md's routing gate: list the open anchors,
  *                             `gh issue list --label campaign --state open`
  *   FileAnchor (actor)        opening-campaign step 3, which also posts BOUND
- *   Adopt                     opening-campaign step 4 on a campaign that exists,
- *                             which also takes `runtime/holder`
+ *   Adopt                     opening-campaign step 4 on a campaign that exists:
+ *                             a session starts working a campaign bound here
  *   ReadBody                  `gh issue view <N> --json body`
  *   EditReadme                a repository joins: the session's own README
  *   WriteBody as Sync         closing-campaign step 4: overwrite the anchor body
- *   MergePR (actor)           `gh pr merge` -- the holding session's act, never
- *                             the executor's; agent.als's `mergedByHolder`
+ *   MergePR (actor)           `gh pr merge` -- somebody's act, held to a current
+ *                             review by agent.als's `mergedOnCurrentReview`
  *   CreateDir / DeleteDir     the scaffold and the delete, with the actor
  *   Acquire / Claim / Release the campaign session running the tools
  *   Launch (actor)            the session that starts an executor
@@ -62,57 +62,46 @@
  * moment of filing (R2b, UNSAT) are the two, and each has a control showing the
  * green is not the scenario being forbidden (R1d, R2c, both SAT).
  *
- * `holderOnly` -- one campaign, one machine, one holder -- is the second,
- * stronger repair for R1 (R1f, UNSAT; control R1g SAT), and it is stronger
- * because it gives the body one structural writer rather than making two writers
- * safe. Compare-then-write is kept beside it for the residue R1h names.
+ * Compare-then-write is THE everyday guard on the body since #59, and R1p is
+ * the measurement its promotion rests on: `boundOnly` -- one campaign, one
+ * machine, the whole membership rule now that the holder is retired -- admits
+ * two member sessions on the one bound machine, so it never serialized the body
+ * by itself and the loss returns under it (R1p, SAT). The holder discipline
+ * that did serialize it, `holderOnly`, is retired with its record; its final
+ * measurements are under WHAT #59 RETIRED below.
  *
- * Nothing repaired R3 inside the model when it was first written, and
- * `holderOnly` does not repair it either: R3d is SAT, and the trace it finds is
- * the reason #37 exists. See THE FINDING below.
- *
- *
- * THE FINDING #37 PRODUCED: R3 SURVIVES ONE CAMPAIGN, ONE MACHINE
- *
- * `holderOnly` was expected to close R3 and does not. What it removes is R3's
- * original shape -- two peer sessions on the same slug, neither able to tell
- * whose tree it is -- because only one session can be the holder and only the
- * holder deletes. What it leaves is narrower and worse-named: the session
- * working the tree is an EXECUTOR session, which holds the same campaign, works
- * the same directory, and is by definition not the holder. The holder deletes
- * the tree under it having broken no rule (R3d, SAT).
- *
- * The missing half is not a file this layer can add: being the holder is
- * recorded in `runtime/holder`, and whether another session is working the tree
- * is a fact about a peer that nothing on disk carries. agent.als's `Addressed`
- * is what makes it readable, and checkable there rather than assumed here --
+ * Nothing in this layer repairs R3, and no discipline here claims to any more:
+ * whether another session is working the tree is a fact about a peer, and the
+ * file that carries it is `runtime/claims/`, each claim written by its own
+ * claiming session. That record is about an executor, so it is agent.als's
+ * `Addressed`, and the repair is checkable there rather than assumed here --
  * A11 is UNSAT with the record read at the delete, A12 is its control, and A1
- * measures the same gap from the close gate's side.
+ * measures the record's completeness from the close gate's side.
  *
  *
  * WHY CONCURRENCY IS CHEAP RATHER THAN CORRECT
  *
  * This layer was first written to the intent that several sessions may hold one
  * campaign at once, on one machine or several. That intent was retired: the
- * campaign is pinned to one machine by a comment on its anchor, and to one
- * session there by a file, so the anchor has a single structural writer and no
- * lock is ever judged stale across a network. What stays concurrent is
- * concurrent within the bound machine, and the branch claim serializes it.
+ * campaign is pinned to one machine by a comment on its anchor, so no lock is
+ * ever judged stale across a network. What stays concurrent is concurrent
+ * within the bound machine -- including the anchor body, now that no single
+ * session owns it -- and two things serialize it: the branch claim for
+ * subtasks, and compare-then-write for the body.
  *
- * Three findings are narrowed rather than closed, and AGENTS.md says so rather
- * than implying otherwise. Filing is still not atomic, so two sessions can still
- * produce two anchors for one scope -- the one window a binding cannot narrow,
- * because a campaign that does not exist yet is bound to nobody. A machine
- * working against its BOUND still overwrites the body (R1h, SAT). And
- * `runtime/holder` records a PID: a recycled one reads live, so the record can
- * name a session that is not working the campaign at all, and the rule errs
- * towards refusing to take over (R3g, SAT).
+ * Two findings are narrowed rather than closed, and AGENTS.md says so rather
+ * than implying otherwise. Filing is still not atomic, so two sessions can
+ * still produce two anchors for one scope -- the one window a binding cannot
+ * narrow, because a campaign that does not exist yet is bound to nobody. And a
+ * machine working against its BOUND still overwrites the body (R1h, SAT);
+ * compare-then-write is the guard that does not care which machine it is
+ * obeyed on, which is the other half of why it is the everyday guard.
  *
- * A lock would need a place to live, and every candidate is either a second copy
- * of a GitHub fact or a file the campaign directory takes with it when it goes.
- * The binding is the first of those on purpose -- it IS a GitHub fact, appended
- * as a comment so writing one races nothing -- and the holder is the second on
- * purpose, because its lifetime is exactly the directory's.
+ * A lock would need a place to live, and every candidate is either a second
+ * copy of a GitHub fact or a file the campaign directory takes with it when it
+ * goes. The binding is the first of those on purpose -- it IS a GitHub fact,
+ * appended as a comment so writing one races nothing -- and the claim records
+ * are the second on purpose, because their lifetime is exactly the directory's.
  *
  *
  * NOT EXPRESSED
@@ -125,78 +114,121 @@
  *
  * VERDICTS
  *
- * Measured 2026-08-28 against this file.
+ * Measured 2026-08-30 against this file.
  *
  *   R1_LostBodyUpdate                SAT   the loss
  *   R1b_IndexOutlivesRepoList        SAT   and it is worse than it looks
- *   R1c_CASBlocksLoss                UNSAT compare-then-write works
+ *   R1c_CASBlocksLoss                UNSAT compare-then-write works: THE guard
  *   R1d_CASAdmitsBothSyncs           SAT   control: it is not vacuous
  *   R1e_CloseOnlyStillLoses          SAT   the candidate it beats
- *   R1f_HolderOnlyBlocksLoss         UNSAT one holder works, and works better
- *   R1g_HolderOnlyAdmitsSync         SAT   control
- *   R1h_UnboundMachineStillLoses     SAT   the residue: BOUND is a rule, not a lock
- *   R1m_NoDirectoryCannotLose        UNSAT no directory, no holder, no write:
- *                                          the optional-directory branch is gone
- *   R1n_NoDirectoryTakesThenCloses   SAT   control: a campaign with no directory
- *                                          here is taken -- scaffolded -- and closed
+ *   R1h_UnboundMachineStillLoses     SAT   residue 1: BOUND is a rule, not a lock
+ *   R1p_BoundAloneStillLoses         SAT   residue 2: the membership rule never
+ *                                          serialized the body; #59's promotion
  *   R1j_TwoMomentStillLoses          SAT   two moments is a WHEN rule, not a HOW
  *   R1k_TwoMomentAdmitsScopeSync     SAT   control, and the close-only difference
  *   R2_DuplicateCampaign             SAT   two anchors, one scope
  *   R2b_SurveyAtFileBlocks           UNSAT the same shape repairs it
  *   R2c_SurveyAtFileAdmitsOne        SAT   control
- *   R3_DeleteUnderWorkingSession     SAT   a live session is invisible to the gate
- *   R3d_HolderOnlyStillDeletesUnderExecutor
- *                                    SAT   THE FINDING: one holder does not close it,
+ *   R3_DeleteUnderWorkingSession     SAT   a live session is invisible to the gate,
  *                                          and the repair is agent.als's A10-A12
- *   R3g_RecycledHolderBlocksTakeover SAT   a third residue: a PID is not identity
  *   R4_RepolessCampaign              SAT   `- none` opens, claims and closes
  *   Cov_*                            SAT   every own event and every refinement
  *                                          this layer adds fires in some trace
  *
  * Every UNSAT is proved a finding rather than an artefact by its own control:
- * R1d for R1c, R1g for R1f, R2c for R2b. The one UNSAT #37 added here was proved
- * able to fail by a named mutation, run 2026-08-29 against this model and undone
- * afterwards:
+ * R1d for R1c, R2c for R2b. R1c, promoted to the everyday guard by #59, was
+ * additionally proved able to fail by a named mutation, run 2026-08-29 against
+ * this model on a copy and undone with it:
  *
- *   R1f   narrowing `isHolder` to its BOUND half alone, dropping the
- *         `runtime/holder` conjunct: both sessions read as "the holder" of the
- *         machine and the loss returns (SAT). Dropping the no-live-holder guard
- *         from `holderOnly`'s Adopt clause instead does NOT redden it, which
- *         locates the load-bearing half precisely -- it is the holder reading on
- *         the write, not the guard on the arrival.
- *   R1m   restoring the retired fallback -- `isHolder`'s record conjunct made
- *         conditional on `hasDirHere` -- brings the loss back (SAT, run
- *         2026-08-29). Dropping the record-implies-directory conjunct from
- *         `BindingWellFormed` instead changes no verdict in this file: that
- *         conjunct is well-formedness, keeping `init` from seating a record on a
- *         machine with no directory, and R1m turns on the guard, not on it.
+ *   R1c   emptying `syncCAS` -- the discipline present but comparing nothing --
+ *         brings the loss back (SAT), so the green is the comparison itself and
+ *         not the shape of the scenario.
+ *
+ *
+ * WHAT #59 RETIRED, AND ITS FINAL MEASUREMENTS
+ *
+ * One campaign, one machine, ONE HOLDER was the stronger repair for R1, and it
+ * is retired with `runtime/holder`: the holder role cost more than it bought
+ * (issue #59 carries the evidence from campaign #1). Kept here is what it
+ * measured, all verified on the pre-#59 model, 2026-08-28/29:
+ *
+ *   R1f_HolderOnlyBlocksLoss    UNSAT  one holder also blocked the loss, and
+ *                                      independently of compare-then-write --
+ *                                      R1c and R1f each contained only its own
+ *                                      discipline and each was UNSAT alone,
+ *                                      which is what made the holder removable:
+ *                                      the property survives on R1c.
+ *                                      Its mutation: narrowing `isHolder` to
+ *                                      its BOUND half brought the loss back.
+ *   R1g_HolderOnlyAdmitsSync    SAT    its control.
+ *   R1m_NoDirectoryCannotLose   UNSAT  the optional-directory branch, measured
+ *                                      retired: a session with no directory had
+ *                                      no `runtime/holder` and could not write.
+ *                                      Nothing re-derives it -- no record gates
+ *                                      the body write now, and R1c is
+ *                                      directory-independent, so the branch has
+ *                                      nothing left to cost.
+ *   R1n_NoDirectoryTakesThenCloses SAT its control: a directory-less campaign
+ *                                      closed by being taken -- scaffolded --
+ *                                      first. Dissolved: there is no take. A
+ *                                      session still scaffolds before claiming,
+ *                                      because the directory is the claim
+ *                                      records' home, but nothing in this layer
+ *                                      gates the close on it; the close gates
+ *                                      that do read the directory are
+ *                                      agent.als's.
+ *   R3d_HolderOnlyStillDeletesUnderExecutor
+ *                               SAT    THE FINDING #37 PRODUCED: the holder
+ *                                      discipline never closed R3 -- the holder
+ *                                      deleted the tree under its own executor
+ *                                      with every rule obeyed. Dissolved into
+ *                                      R3 itself: no discipline here claims to
+ *                                      close R3, and the repair -- the record
+ *                                      the deleting session can read -- was
+ *                                      always agent.als's A10-A12, which
+ *                                      survive keyed on `runtime/claims/`.
+ *   R3g_RecycledHolderBlocksTakeover
+ *                               SAT    a recycled PID read live, so a dead
+ *                                      holder's record could strand the whole
+ *                                      campaign: the rule erred towards never
+ *                                      taking over. With no holder there is no
+ *                                      takeover to refuse. The recycled-PID
+ *                                      residue survives, narrowed to the claim
+ *                                      records: a stale `runtime/claims/<issue>`
+ *                                      reads live and keeps that ONE claim
+ *                                      standing -- release refused, close gate
+ *                                      refusing -- instead of the campaign held
+ *                                      by nobody. It is not constructible here
+ *                                      for the reason R3g was init-only: no
+ *                                      event writes a stale record, and
+ *                                      agent.als's `init` starts with none.
  *
  * WHAT THE FIRST DRAFT OF THIS FILE GOT WRONG
  *
  * Three things, all found by review and all kept visible here because each is a
  * standing hazard rather than a typo.
  *
- *   `isHolder` was the guard everywhere, and it needs `runtime/holder`, which an
- *   OPTIONAL DIRECTORY never has -- so the model forbade closing a campaign that
- *   `closing-campaign` step 0 documented closing, campaign #1 among them. The
- *   second draft added `mayWrite`, a reading that fell back to the binding alone
- *   where there was no directory, and named its price as R1m. The third draft,
- *   #52, retired that branch: the price was larger than R1m measured, because
- *   the executor record of agent.als has the same home as the holder record,
- *   and on the branch neither existed -- campaign #1's first CLAIMED arrived
- *   with nowhere to be written, and A1's gap was open again on exactly the path
- *   #46 had made first-class. So HOLDING SCAFFOLDS: a session that takes a
- *   campaign on a machine with no directory creates one, `isHolder` is the guard
- *   everywhere again, and a directory-less close is a take followed by a close
- *   (R1n). The directory stays optional off the holding machine.
+ *   `isHolder` was the guard everywhere, and it needed `runtime/holder`, which
+ *   an OPTIONAL DIRECTORY never has -- so the model forbade closing a campaign
+ *   that `closing-campaign` step 0 documented closing, campaign #1 among them.
+ *   The second draft added `mayWrite`, a reading that fell back to the binding
+ *   alone where there was no directory, and named its price as R1m. The third
+ *   draft, #52, retired that branch: the price was larger than R1m measured,
+ *   because the executor record of agent.als had the same home as the holder
+ *   record, and on the branch neither existed -- campaign #1's first CLAIMED
+ *   arrived with nowhere to be written, and A1's gap was open again on exactly
+ *   the path #46 had made first-class. The scaffold rule survived the holder's
+ *   retirement (#59) with a shorter reason: the directory is the claim records'
+ *   home, so a session scaffolds before it claims, and the directory stays
+ *   optional on a machine the campaign is not bound to.
  *
  *   `Cov_Bound` was `eventually some Binding.bound`, satisfiable at step 0 by
  *   `init` alone: it certified nothing about the event that writes the binding.
- *   It pins `FileAnchor` now, the way `Cov_Holder` pins `CreateDir`.
+ *   It pins `FileAnchor` now.
  *
  *   `noDeleteUnderWorkingPeer` was stated here and keyed on a working PEER --
  *   a fact nothing on the machine records, which is why it belonged one layer
- *   up. See R3d.
+ *   up. See R3.
  */
 module session
 
@@ -223,8 +255,10 @@ sig Session {
 }
 var sig Surveyed in Session {}
 
-/* ONE CAMPAIGN, ONE MACHINE, ONE HOLDER -- the two readings the roles are read
-   from, as two relations.
+/* ONE CAMPAIGN, ONE MACHINE -- the one reading membership is read from, as one
+   relation. #59 retired the second: `runtime/holder` is gone, and with it the
+   holder role. A session is in a campaign exactly when the campaign is BOUND to
+   its machine, and every session there is the same kind of session.
 
    `bound` is the anchor's latest `BOUND <machine>` comment. It is a GitHub fact,
    and the layering rule -- the lower layer owns the fact -- would put it in
@@ -238,58 +272,19 @@ var sig Surveyed in Session {}
    why: the placement is a consequence of `Machine` and `Session` being declared
    above the fact's home, not a claim that the binding is local.
 
-   `holder` is `<campaign>/runtime/holder`, and it is a directory fact: it is
-   written when a session takes the directory, it is read only on its own
-   machine, and it dies with the directory. Keyed by campaign AND machine because
-   the directory is, and because after a migration the machine the campaign left
-   may still hold a file naming a session there.
+   It hangs off a `one sig` for the reason `Req` does: Campaign is ledger's
+   signature and a layer above it may not add a field to it.
 
-   NO COMMAND BELOW DEREFERENCES `holder` OFF THE READER'S OWN MACHINE, and that
-   is the point rather than an omission: every read is `Binding.holder[c]
-   [s.smach]` for the session doing the reading. The Machine column is kept
-   because the file really is per machine and a migration really does leave one
-   behind on the machine the campaign left -- dropping the arity would say a
-   holder record is global, which is the mistake `BOUND` exists to prevent.
-
-   Both hang off a `one sig` for the reason `Req` does: Campaign is ledger's
-   signature and a layer above it may not add a field to it. */
+   The per-claim record that replaced the holder, `runtime/claims/<issue>`, is
+   not a relation here: its subject is an executor of one subtask, so it is
+   agent.als's `Addressed`, written by the claiming session at the claim and
+   dying with the directory there exactly as the holder record used to die. */
 one sig Binding {
-  var bound:  Campaign -> Machine,
-  var holder: Campaign -> Machine -> Session
+  var bound: Campaign -> Machine
 }
 
 fact BindingWellFormed {
   always all c: Campaign | lone Binding.bound[c]
-  always all c: Campaign, m: Machine | lone Binding.holder[c][m]
-  /* The record is a file in the directory, so it exists only where the
-     directory does. This is well-formedness, not the discipline: it stops
-     `init` seating a holder on a machine with no tree, and measured, removing
-     it changes no verdict in this file or in agent.als. What carries "holding
-     scaffolds" is `isHolder` needing the record and `adopt` writing one only
-     where a tree is present; R1m is that measured. */
-  always all c: Campaign, m: Machine |
-    some Binding.holder[c][m] implies some treeAt[c, m] & Present
-}
-
-/* The role table in AGENTS.md § Who is a campaign session, as two predicates.
-
-   `isHolder` is the full reading: the campaign is BOUND to this session's
-   machine and that machine's `runtime/holder` names it. A session that holds a
-   campaign and is not this is an executor session -- #37's subject -- and it may
-   claim, launch and work, but never write the anchor.
-
-   It is the guard everywhere, and it needs `runtime/holder`, which needs a
-   directory. That is deliberate since #52: holding scaffolds. A session that
-   takes a campaign on a machine with no directory creates one first
-   (opening-campaign step 4, with nothing to acquire), so the record has a home
-   at the moment anything could be recorded in it -- the holder itself, and
-   every executor's CLAIMED after it. The reading that fell back to the binding
-   alone where there was no directory (`mayWrite`, the second draft) is retired;
-   what it cost is in the header. */
-pred hasDirHere[s: Session, c: Campaign] { some treeAt[c, s.smach] & Present }
-pred isHolder[s: Session, c: Campaign] {
-  Binding.bound[c] = s.smach
-  Binding.holder[c][s.smach] = s
 }
 
 /* This layer's observer: who did it. */
@@ -311,8 +306,8 @@ fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme }
 
    `MergePR` is here rather than in `unattended`, and that is #37 item 8's whole
    structural change: landing a subtask's pull request is somebody's act, and
-   naming whose is what lets `mergedByHolder` in agent.als say it is never the
-   executor's own. */
+   naming whose is what lets `mergedOnCurrentReview` in agent.als hold the
+   merger to a current review of the work. */
 fun sessionActed: set Event {
   sessionOwn + FileAnchor + AddMember + CloseIssue + WriteBody + MergePR
   + CreateDir + DeleteDir + Acquire + Claim + Release + Launch
@@ -326,7 +321,7 @@ fun unattended: set Event {
 pred sessionFrame {
   holds' = holds and saw' = saw and readme' = readme and seen' = seen
   and claims' = claims and Surveyed' = Surveyed
-  and bound' = bound and holder' = holder
+  and bound' = bound
 }
 
 /* AGENTS.md's routing gate: list the open campaign anchors and read their Scope.
@@ -336,18 +331,18 @@ pred survey[s: Session] {
     saw' = saw - s->Campaign + s->X
   Surveyed' = Surveyed + s
   holds' = holds and readme' = readme and seen' = seen and claims' = claims
-  bound' = bound and holder' = holder
+  bound' = bound
   Now.ev = Survey and no Now.issue and By.actor = s
 }
 
-/* A second session arrives on a campaign that already exists and derives its
-   README from the anchor body (opening-campaign step 4, run for an existing
-   campaign). This is the read the later overwrite is derived from.
+/* A session arrives on a campaign that already exists and derives its README
+   from the anchor body (opening-campaign step 4, run for an existing campaign).
+   This is the read the later overwrite is derived from.
 
-   Taking the campaign writes `runtime/holder`, because only the claim path knows
-   what holding means for the work about to start. Unguarded here: `holderOnly`
-   below is the guard, applied per command, so the unrepaired scenarios stay
-   measurable against the same trace space. */
+   Nothing is taken: under one role there is no holder record to write and no
+   live holder to defer to, so arriving is just starting to work. Unguarded
+   here: `boundOnly` below is the membership rule, applied per command, so the
+   unrepaired scenarios stay measurable against the same trace space. */
 pred adopt[s: Session, c: Campaign] {
   c in Filed and c.anchor in Open
   no s.holds
@@ -355,12 +350,6 @@ pred adopt[s: Session, c: Campaign] {
   readme' = readme - s->Repo + s->(c.body)
   seen'   = seen   - s->Repo + s->(c.body)
   saw' = saw and Surveyed' = Surveyed and claims' = claims
-  /* The record is written where there is a directory to hold it; with none,
-     the session holds the campaign in memory only until it scaffolds one
-     (`sCreateDir` writes the record), and until then it is not the holder. */
-  hasDirHere[s, c]
-    implies holder' = holder - Binding->c->s.smach->Session + Binding->c->s.smach->s
-    else    holder' = holder
   bound' = bound
   Now.ev = Adopt and no Now.issue and By.actor = s
 }
@@ -371,7 +360,7 @@ pred readBody[s: Session] {
   readme' = readme - s->Repo + s->(s.holds.body)
   seen'   = seen   - s->Repo + s->(s.holds.body)
   holds' = holds and saw' = saw and Surveyed' = Surveyed and claims' = claims
-  bound' = bound and holder' = holder
+  bound' = bound
   Now.ev = ReadBody and no Now.issue and By.actor = s
 }
 
@@ -381,7 +370,7 @@ pred editReadme[s: Session, r: Repo] {
   r not in s.readme
   readme' = readme + s->r
   holds' = holds and saw' = saw and seen' = seen and Surveyed' = Surveyed and claims' = claims
-  bound' = bound and holder' = holder
+  bound' = bound
   Now.ev = EditReadme and no Now.issue and By.actor = s
 }
 
@@ -401,7 +390,6 @@ pred sFileAnchor[s: Session] {
   holds' = holds - s->Campaign + s->anchorOf[Now.issue]
   bound' = bound - Binding->anchorOf[Now.issue]->Machine
            + Binding->anchorOf[Now.issue]->s.smach
-  holder' = holder
   saw' = saw and readme' = readme and seen' = seen
   and Surveyed' = Surveyed and claims' = claims
   By.actor = s
@@ -436,7 +424,7 @@ pred sync[s: Session] {
   seen' = seen - s->Repo + s->(s.readme)
   holds' = holds and saw' = saw and readme' = readme
   and Surveyed' = Surveyed and claims' = claims
-  bound' = bound and holder' = holder
+  bound' = bound
   By.actor = s
 }
 
@@ -447,10 +435,9 @@ pred sCreateDir[s: Session] {
   some s.holds
   Site.mach = s.smach
   some treeAt[s.holds, s.smach] and treeAt[s.holds, s.smach] in Present'
-  /* opening-campaign step 4 scaffolds the directory and writes `runtime/holder`
-     in the one step, so this event does too. */
-  holder' = holder - Binding->s.holds->s.smach->Session
-            + Binding->s.holds->s.smach->s
+  /* The directory is the claim records' home -- `runtime/claims/<issue>` has
+     nowhere else to live -- which is what the scaffold is for now that no
+     holder record rides along. */
   bound' = bound
   holds' = holds and saw' = saw and readme' = readme and seen' = seen
   and claims' = claims and Surveyed' = Surveyed
@@ -462,9 +449,8 @@ pred sDeleteDir[s: Session] {
   some s.holds
   Site.mach = s.smach
   some treeAt[s.holds, s.smach] and treeAt[s.holds, s.smach] not in Present'
-  /* `runtime/holder` goes with the directory (closing-campaign step 5), which
-     `BindingWellFormed` now requires rather than merely records. */
-  holder' = holder - Binding->s.holds->s.smach->Session
+  /* `runtime/` goes with the directory, claim records included; agent.als's
+     `aDeleteDir` is that lifetime on the record's own bit. */
   bound' = bound
   holds' = holds and saw' = saw and readme' = readme and seen' = seen
   and claims' = claims and Surveyed' = Surveyed
@@ -491,7 +477,7 @@ pred sClaim[s: Session] {
   claims' = claims + s->Now.issue
   holds' = holds and saw' = saw and readme' = readme
   and seen' = seen and Surveyed' = Surveyed
-  bound' = bound and holder' = holder
+  bound' = bound
   By.actor = s
 }
 
@@ -502,15 +488,15 @@ pred sRelease[s: Session] {
   claims' = claims - Session->Now.issue
   holds' = holds and saw' = saw and readme' = readme
   and seen' = seen and Surveyed' = Surveyed
-  bound' = bound and holder' = holder
+  bound' = bound
   By.actor = s
 }
 
 /* MERGE -- landing a subtask's pull request, with the actor named.
 
    Loose here on purpose: this layer says only that a session did it, and
-   agent.als's `mergedByHolder` says which session may. The split is the same one
-   `sync` and `syncCAS` make, and it is what lets the executor-merges-its-own
+   agent.als's `mergedOnCurrentReview` says on what terms. The split is the same
+   one `sync` and `syncCAS` make, and it is what lets the unreviewed-merge
    collision stay reachable as a control. */
 pred sMergePR[s: Session] {
   Now.ev = MergePR
@@ -534,13 +520,9 @@ pred sLaunch[s: Session] {
    leaves it in -- ledger.als's `init` admits a campaign already in flight for
    the same reason, and the scenarios that are ABOUT arriving (R1, R2) require
    the arrival events explicitly, so nothing they measure is skipped. */
-/* `bound` and `holder` are deliberately unconstrained at time zero, and the
-   freedom is what two of the scenarios below rest on. A campaign already in
+/* `bound` is deliberately unconstrained at time zero: a campaign already in
    flight was bound by a session this trace never contains, and may have been
-   migrated by a person, which no event here models. `runtime/holder` is a file
-   on a disk: it may name a session that is not working this campaign at all --
-   the recycled-PID case AGENTS.md refuses to take over -- and nothing in the
-   design writes that state, so `init` is the only place it can enter. */
+   migrated by a person, which no event here models. */
 pred sessionInit {
   no Surveyed
   all s: Session {
@@ -605,34 +587,30 @@ pred syncAtTwoMoments {
              or (all i: By.actor.holds.members | settled[i]))) -- or the close
 }
 
-/* ONE CAMPAIGN, ONE MACHINE, ONE HOLDER as a discipline: the AGENTS.md role
-   table turned into a guard on the four acts that are the holding session's.
-
-   Arriving and scaffolding are guarded by the absence of a live holder, which is
-   what makes an arriving session an executor instead of a second peer. Writing
-   the body, closing the anchor and deleting the directory are guarded by BEING
-   the holder, which is both readings at once. */
-pred holderOnly {
-  always (Now.ev = Adopt implies
-            (let c = By.actor.holds' |
-               Binding.bound[c] = By.actor.smach
-               and no Binding.holder[c][By.actor.smach] - By.actor))
-  always (Now.ev = CreateDir implies
-            no Binding.holder[By.actor.holds][By.actor.smach] - By.actor)
-  always (Now.ev in WriteBody + DeleteDir implies isHolder[By.actor, By.actor.holds])
+/* ONE CAMPAIGN, ONE MACHINE as a discipline: the one-role membership rule of
+   AGENTS.md § Who is a campaign session turned into a guard. A session acts on
+   a campaign only when the campaign is BOUND to its machine -- arriving,
+   scaffolding, writing the body, deleting the directory, closing the anchor.
+   No act is any one session's: what serializes the body is compare-then-write
+   (`syncCAS`), and what serializes subtasks is the branch claim. R1p below is
+   why the membership rule alone is not enough. */
+pred boundOnly {
+  always (Now.ev = Adopt implies Binding.bound[By.actor.holds'] = By.actor.smach)
+  always (Now.ev in WriteBody + CreateDir + DeleteDir implies
+            Binding.bound[By.actor.holds] = By.actor.smach)
   always ((Now.ev = CloseIssue and Now.issue in Campaign.anchor) implies
-            isHolder[By.actor, anchorOf[Now.issue]])
+            Binding.bound[anchorOf[Now.issue]] = By.actor.smach)
 }
 
-/* THE HALF THIS LAYER CANNOT SUPPLY. Being the holder says nothing about who
-   else is working the tree, and R3d below is that gap measured. A first draft
-   stated the missing half here, as "refuse the delete while another session on
-   this machine is working the campaign" -- and it was the wrong home for it
-   twice over: the key was a working PEER, which is a fact nothing on the machine
-   records, and an executor session could satisfy the key only by accident of
-   `init`. The record that does carry it is `<campaign>/runtime/executors/`, and
-   `Agent` is agent.als's, so the repair is `noDeleteUnderReadableExecutor`
-   there. R3d states the gap; A10-A12 close it. */
+/* THE HALF THIS LAYER CANNOT SUPPLY. Being in the campaign says nothing about
+   who else is working the tree, and R3 below is that gap measured. A first
+   draft stated the missing half here, as "refuse the delete while another
+   session on this machine is working the campaign" -- and it was the wrong home
+   for it: the key was a working PEER, which is a fact nothing on the machine
+   records. The record that does carry it is `<campaign>/runtime/claims/`,
+   written by each claiming session for its own claim, and `Agent` is
+   agent.als's, so the repair is `noDeleteUnderReadableExecutor` there. R3
+   states the gap; A10-A12 close it. */
 
 /* Re-run the new-versus-follow-up survey at the moment of filing.
 
@@ -739,46 +717,17 @@ pred R1e_CloseOnlyStillLoses {
   }
 }
 
-/* R1f. ONE CAMPAIGN, ONE MACHINE, ONE HOLDER against the same loss. The body has
-   one structural writer, so the two syncs R1 needs cannot both happen: the
-   holder relation is `lone` per campaign per machine, and under `holderOnly` a
-   session cannot take a campaign another live session already holds. UNSAT.
-
-   This is a stronger repair than compare-then-write, and it does not replace it.
-   R1h below is the residue it leaves, and AGENTS.md keeps compare-then-write for
-   exactly that residue plus a person editing the charter on GitHub. */
-pred R1f_HolderOnlyBlocksLoss {
-  holderOnly
-  -- both writes happen on a machine that HAS the campaign directory, which is
-  -- where `runtime/holder` exists to be read. R1m is the other branch.
-  always (Now.ev = WriteBody implies hasDirHere[By.actor, By.actor.holds])
-  R1_LostBodyUpdate
-}
-
-/* R1g. Control for R1f: the discipline is not vacuous. The holding session still
-   files, scaffolds and syncs twice, and both repositories reach the body. An
-   UNSAT here would mean R1f went green by forbidding syncing altogether. */
-pred R1g_HolderOnlyAdmitsSync {
-  holderOnly
-  some c: Campaign, s: Session, disj r1, r2: Repo {
-    eventually (Now.ev = FileAnchor and By.actor = s and Now.issue = c.anchor)
-    eventually (Now.ev = CreateDir and By.actor = s)
-    eventually (Now.ev = WriteBody and By.actor = s and r1 in c.body')
-    eventually (Now.ev = WriteBody and By.actor = s and r1 + r2 in c.body')
-    noCloseNoDelete
-  }
-}
-
 /* R1h. THE RESIDUE, and AGENTS.md names it rather than implying it is gone: one
    campaign, one machine is a rule sessions follow, not a lock GitHub enforces. A
    session on a machine the campaign is not BOUND to can still overwrite the body
    -- `gh issue edit` refuses nothing -- and the loss returns exactly as R1 had
    it, while the bound machine's session obeyed the rule throughout. SAT is the
-   point, and it is why compare-then-write is kept beside the binding. */
+   point, and it is one of the two reasons compare-then-write is the everyday
+   guard. */
 pred R1h_UnboundMachineStillLoses {
   some c: Campaign, disj s1, s2: Session, r: Repo {
     s1.smach != s2.smach
-    always isHolder[s1, c]                -- s1 is the bound machine's holder, throughout
+    always Binding.bound[c] = s1.smach    -- the campaign is bound to s1's machine
     always Binding.bound[c] != s2.smach   -- s2's machine is not the bound one
     eventually (Now.ev = WriteBody and By.actor = s1)
     eventually (Now.ev = WriteBody and By.actor = s2)
@@ -787,33 +736,15 @@ pred R1h_UnboundMachineStillLoses {
   }
 }
 
-/* R1m. WHAT THE OPTIONAL DIRECTORY USED TO COST, now UNSAT. Under the second
-   draft this read SAT: with no directory on the bound machine there was no
-   `runtime/holder` to read, `mayWrite` fell back to the binding alone, and two
-   sessions on that machine were unserialized again. Since #52 a session with no
-   directory is not the holder and cannot write at all -- `isHolder` needs the
-   record and the record needs the tree -- so the loss is unreachable on this
-   branch. R1n is what the branch became. Compare-then-write (R1c) still stays
-   in AGENTS.md beside the binding, for R1h and for a person editing on GitHub. */
-pred R1m_NoDirectoryCannotLose {
-  holderOnly
-  always no Present                    -- this machine never scaffolds the campaign
-  R1_LostBodyUpdate
-}
-
-/* R1n. Control, and the case the retired branch was added for: a campaign with
-   no directory here still closes -- by being taken first. The session arrives to
-   no tree, scaffolds one (which writes the record and makes it the holder), and
-   closes the anchor from there. SAT. */
-pred R1n_NoDirectoryTakesThenCloses {
-  holderOnly
-  no Present
-  some c: Campaign, s: Session {
-    always Binding.bound[c] = s.smach
-    eventually (Now.ev = CreateDir and By.actor = s and s.holds = c)
-    eventually (Now.ev = CloseIssue and Now.issue = c.anchor and By.actor = s)
-  }
-}
+/* R1p. THE OTHER REASON, and the measurement #59's promotion of
+   compare-then-write rests on. With the holder retired, the binding is the
+   whole membership rule -- and two sessions on the one bound machine are both
+   members, so `boundOnly` alone leaves R1's two syncs legal and the loss
+   returns. SAT: one campaign, one machine never serialized the body by itself;
+   the holder did, and with the holder gone, compare-then-write (R1c, UNSAT at
+   these bounds) is what carries the property. The retired discipline's own
+   final measurements are in the header. */
+pred R1p_BoundAloneStillLoses { boundOnly and R1_LostBodyUpdate }
 
 /* R1j. The two-moment rule measured against the loss it is not for: SAT. Writing
    the body at a scope change and at the close says nothing about comparing
@@ -886,47 +817,12 @@ pred R3_DeleteUnderWorkingSession {
   }
 }
 
-/* R3d. WHAT `holderOnly` DOES AND DOES NOT DO TO R3, and the answer is a
-   finding rather than the UNSAT that was expected. SAT.
-
-   The discipline removes R3's original shape -- two peer sessions, the same slug
-   on the same day, neither able to tell whose tree it is -- because only one
-   session can be the holder and only the holder deletes. What it leaves standing
-   is narrower and is #37's own subject: the session working the tree is an
-   EXECUTOR session, which holds the same campaign, works the same directory, and
-   is by definition not the holder. So the holder deletes the tree under it while
-   being the only session entitled to delete, and every rule is obeyed.
-
-   Being the holder is a fact about a file; whether another session is working
-   the tree is a fact about a peer, and no file carried it. Making one carry it
-   is what `<campaign>/runtime/executors/` is for, and since that record is about
-   an executor it is agent.als's: `noDeleteUnderReadableExecutor` and A10-A12
-   there are this finding closed, one layer up. */
-pred R3d_HolderOnlyStillDeletesUnderExecutor {
-  holderOnly and R3_DeleteUnderWorkingSession
-}
-
-/* R3g. THE SECOND RESIDUE AGENTS.md names, and the model can only admit it
-   rather than construct it: `runtime/holder` records a PID, and a recycled PID
-   belonging to a different `claude` reads live. The record then names a session
-   that is not working this campaign at all, and the rule errs towards refusing
-   -- so a session that IS in the tree can never take the campaign over, and the
-   directory is held by nobody. SAT.
-
-   Reachable only from `init`, and that is the honest statement of the gap: no
-   event in the design writes this state, exactly as no command writes a stale
-   PID file. The last conjunct is implied by `holderOnly` rather than assumed by
-   it, and is spelled out so the trace reads as the refusal it is. */
-pred R3g_RecycledHolderBlocksTakeover {
-  holderOnly
-  some c: Campaign, disj s1, s2: Session {
-    s1.smach = s2.smach and Binding.bound[c] = s2.smach
-    always Binding.holder[c][s1.smach] = s1
-    always no s1.holds                              -- the record names a non-worker
-    eventually (Now.ev = ReadBody and By.actor = s2 and s2.holds = c)
-    always (Now.ev = Adopt implies By.actor != s2)  -- and s2 never takes it
-  }
-}
+/* R3d and R3g stood here and are retired with the holder; their final
+   measurements are in the header. What R3d measured -- the holder discipline
+   does not close R3 -- has nothing left to measure: no discipline in this layer
+   claims to close R3 now, and the repair was always one layer up, in the record
+   the deleting session can read. That repair survives the rename: A10-A12 in
+   agent.als, keyed on `runtime/claims/` instead of `runtime/executors/`. */
 
 /* =================== 4. a campaign with no member repository =================== */
 
@@ -1001,7 +897,6 @@ pred Cov_ReleaseBySession  { eventually (Now.ev = Release and some By.actor) }
 pred Cov_LaunchBySession   { eventually (Now.ev = Launch and some By.actor) }
 pred Cov_MergeBySession    { eventually (Now.ev = MergePR and some By.actor) }
 pred Cov_Bound             { eventually (Now.ev = FileAnchor and some Binding.bound') }
-pred Cov_Holder            { eventually (Now.ev = CreateDir and some Binding.holder') }
 
 /* ---------------- commands ---------------- */
 
@@ -1010,11 +905,8 @@ run R1b_IndexOutlivesRepoList    for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Mac
 run R1c_CASBlocksLoss            for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
 run R1d_CASAdmitsBothSyncs       for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 14 steps
 run R1e_CloseOnlyStillLoses      for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
-run R1f_HolderOnlyBlocksLoss     for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
-run R1m_NoDirectoryCannotLose    for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
-run R1n_NoDirectoryTakesThenCloses for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run R1g_HolderOnlyAdmitsSync     for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 14 steps
 run R1h_UnboundMachineStillLoses for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
+run R1p_BoundAloneStillLoses     for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
 run R1j_TwoMomentStillLoses      for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
 run R1k_TwoMomentAdmitsScopeSync for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
 
@@ -1023,8 +915,6 @@ run R2b_SurveyAtFileBlocks       for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Mac
 run R2c_SurveyAtFileAdmitsOne    for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
 
 run R3_DeleteUnderWorkingSession for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
-run R3d_HolderOnlyStillDeletesUnderExecutor for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
-run R3g_RecycledHolderBlocksTakeover        for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
 
 run R4_RepolessCampaign          for 2 Issue, 1 PR, 1 Campaign, 1 Session, 1 Machine, 1 Repo, 1 Topic, 1 Tree, 12 steps
 
@@ -1044,4 +934,3 @@ run Cov_ReleaseBySession  for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3
 run Cov_LaunchBySession   for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps
 run Cov_MergeBySession    for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps
 run Cov_Bound             for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps
-run Cov_Holder            for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps
