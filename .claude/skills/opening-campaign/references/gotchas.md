@@ -31,9 +31,11 @@ surveys a second time.
 
 ## You may not be this campaign's session
 
-The two reads in step 1 — the binding, then the holder — decide it, in that
-order, because a campaign bound elsewhere is not yours to read a holder file
-for. Everything durable is written
+The binding read in step 1 decides it, before anything else, because a campaign
+bound elsewhere is not yours to scaffold, sync or launch into. Nothing after it
+asks whose directory this is: every session of a bound campaign shares the one
+tree, and the only files in it that belong to a single session are its claim
+records. Everything durable is written
 as read-then-write against GitHub rather than as "mine because I made it": the
 anchor body is compared before it is overwritten, the directory may already
 exist, and the shared checkout is left on its default branch so a re-run cannot

@@ -1,6 +1,6 @@
 ---
 name: closing-campaign
-description: Closes a campaign — binds the campaign directory, refuses when the anchor is BOUND to another machine or another live session holds it, refuses while an agent is live or while work exists only on this machine, refuses while any open subtask lacks a disposition, syncs the README into the anchor issue, then closes the issue and deletes the directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory. Not for closing a single subtask issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
+description: Closes a campaign — binds the campaign directory, refuses when the anchor is BOUND to another machine, refuses while an agent is live or while work exists only on this machine, refuses while any open subtask lacks a disposition, syncs the README into the anchor issue, then closes the issue and deletes the directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory. Not for closing a single subtask issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
 ---
 
 # Closing a campaign
@@ -17,9 +17,10 @@ Those lines are the rest of the predicate, one per step and in order, and
 procedure rather than kept beside it, so a step that changes cannot leave a
 predicate behind saying what it used to do.
 
-A campaign bound here with no directory is taken first — `opening-campaign`
-steps 2 and 4, nothing to acquire — because the holder and claim records have
-no other home (§ Who is a campaign session, "Holding scaffolds"). One path, then.
+A campaign bound here with no directory is scaffolded first — `opening-campaign`
+steps 2 and 4, nothing to acquire — because the claim records have no other home
+(§ Who is a campaign session, "The claim records need a directory"). One path,
+then.
 
 ## Procedure
 
@@ -56,9 +57,9 @@ or close it from the machine that has been working it.
 this machine (§ Who is a campaign session, Directory). Take it first, through
 `opening-campaign`'s "No directory at all" arrival: **steps 2 and 4**, because
 step 4 needs a slug and a kind and step 2 is where they are chosen — neither is
-recoverable from GitHub. That scaffolds the tree from the anchor body and writes
-`runtime/holder`. The gates below read records that live only there, and step 1
-says what they can and cannot see on this path.
+recoverable from GitHub. That scaffolds the tree from the anchor body. The gates
+below read records that live only there, and step 1 says what they can and
+cannot see on this path.
 
 Bind `$CAMPAIGN_DIR` here, absolute, and never rebuild it later — steps 1 and 5
 both fail silently on a relative value. If you created it in this step, set
@@ -87,25 +88,12 @@ Holds when: the anchor's latest `BOUND` comment names this machine, and
 `$CAMPAIGN_DIR` is absolute, a direct child of the container, and named
 `<slug>-<YYMMDD>`.
 
-### 1. Refuse while another session holds it, or an agent is live under the tree
+### 1. Refuse while an agent is live under the tree
 
-**The holder first**, because only the holding session closes a campaign; an
-executor session came to work one subtask and this skill is not its to run.
-
-```sh
-if [ ! -s "$CAMPAIGN_DIR/runtime/holder" ]; then V=none
-else
-  PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN_DIR/runtime/holder")
-  V=$("$CONTAINER/scripts/campaign-session-alive" "$PID" 2>&1) || V="unreadable ($V)"
-fi
-echo "$V"
-```
-
-`alive`, `other` or `unreadable`, and not this session — print the reading and
-stop; only `none` and `dead` are confirmed absences, and a close is the most
-destructive act here. `none` or `dead` — you are
-the holding session, so say so, take the directory as `opening-campaign` step 4
-does, and carry on.
+**No session holds a campaign, so there is no holder to ask** — the holding
+session is retired (`AGENTS.md` § Who is a campaign session), and what gates
+this close is the work under the tree rather than who owns it. Whoever the
+person asked runs this skill, on the gates in steps 0 to 4.
 
 **If `TOOK_IT_HERE` is set, this step and step 2 are not applicable, and that
 is what to report.** Step 0 created the tree seconds ago, so no herdr `cwd` can
@@ -115,7 +103,7 @@ has not passed. Run them anyway — they cost two commands — and report "not
 applicable: this session created the directory in step 0". Why that is sound,
 and the one residue it leaves, is `references/rationale.md`.
 
-**Then the agents, both records, split by question rather than by kind** —
+**The agents, both records, split by question rather than by kind** —
 `herdr agent list` gives liveness for every executor, delegate or not, because
 it lists every session on this machine (measured 2026-08-30: three rows, none of
 them a delegate). What it does not give is attribution at all: under § Naming a session
@@ -155,10 +143,9 @@ it; this skill never kills an agent. No rows still leaves two cases for step 2 �
 claim record whose `pid` reads `dead` because a harness restart changed it while
 the session lives on (#76) — both leaving work in a checkout.
 
-Holds when: `runtime/claims/` existed, every record in it read `dead`, no
-`runtime/holder` named a live session other than this one, and no herdr agent's
-`cwd` was under `$CAMPAIGN_DIR` — or `TOOK_IT_HERE` is set and this step reported
-all three as not applicable rather than as passed.
+Holds when: `runtime/claims/` existed, every record in it read `dead`, and no
+herdr agent's `cwd` was under `$CAMPAIGN_DIR` — or `TOOK_IT_HERE` is set and this
+step reported both as not applicable rather than as passed.
 
 ### 2. Refuse while work exists only on this machine
 
@@ -346,6 +333,23 @@ Nothing was written. Fold those changes into <CAMPAIGN_DIR>/README.md, refresh
 runtime/anchor-body-derived.md from /tmp/body-now, then re-run.
 ```
 
+**Name the cause in the same breath, because the repairs differ and the diff
+alone does not say which happened** (`AGENTS.md` § Running a campaign has the
+three-cause table). Step 0 has already read the binding, so the case where *you*
+are out of position is settled: `elsewhere` never reaches this step. What is
+left is one question and one residue.
+
+Ask the peers — `ListAgents`, then `SendMessage` to each — whether one of them
+wrote it. A peer that did is the everyday cause, and it is legitimate: moving a
+subtask between campaigns writes two anchors, and one of them is never the
+writer's own campaign. Ask what it meant, then fold.
+
+No peer claims the write, and the cause is a person editing the charter on
+GitHub or a session on a machine the anchor is not `BOUND` to — **and this
+machine cannot tell those two apart**, because one `gh` account signs both. Say
+so, and ask the person. The fold is the same either way; only what you say
+afterwards differs.
+
 Refuse the same way when the derived copy is missing, because without it "has the
 body moved?" has no answer. Say so, read the body and the README side by side
 yourself, then write `/tmp/body-now` to the derived path and re-run.
@@ -472,8 +476,8 @@ ls -A "$CAMPAIGN_DIR"
 rm -rf -- "$CAMPAIGN_DIR"
 ```
 
-`runtime/` goes with it — `holder`, every `claims/<issue>` record, every
-handover brief — by design, since nothing off this machine reads them. Say so.
+`runtime/` goes with it — every `claims/<issue>` record, every handover brief —
+by design, since nothing off this machine reads them. Say so.
 
 Holds when: the closing comment carries the listing taken immediately before the
 delete — every entry under the directory outside `runtime/` and `repos/`, files
@@ -500,8 +504,9 @@ The probes and the failures behind these: `references/gotchas.md`.
   split with `${spec%%:*}` and `${spec##*:}` instead.
 - `diff` is shadowed in a Claude Code shell on this machine, and a gate that
   errors out is a gate that tested nothing. Write `command diff`.
-- Two sessions given the same slug on the same day build the same path, so this
-  delete may hit another session's live workspace. `runtime/holder` catches that
-  in step 1; the herdr gate cannot, because it matches an agent's `cwd`. A
-  machine the campaign left at a migration may still hold a stale directory of
-  its own — `references/rationale.md`, step 5.
+- Every session of a campaign shares its one directory, so this delete may hit a
+  peer's live workspace. `runtime/claims/` catches that in step 1 and
+  `campaign-local-work` in step 2; the herdr `cwd` gate alone cannot, because a
+  session working the tree from the container root has the container as its
+  `cwd`. A machine the campaign left at a migration may still hold a stale
+  directory of its own — `references/rationale.md`, step 5.

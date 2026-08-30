@@ -74,7 +74,7 @@ complete, is none of that and needs none of it.
 
 | what the two readings say | what this is |
 | --- | --- |
-| An open campaign's Scope covers it | **A subtask of that campaign.** Read the binding first (§ Who is a campaign session): filing a sub-issue writes the anchor's index, and that is a write. Then § Running a campaign, "Subtasks", files it. Load `opening-campaign` only to *join* — this machine is not holding the campaign, or has no directory for it. |
+| An open campaign's Scope covers it | **A subtask of that campaign.** Read the binding first (§ Who is a campaign session): filing a sub-issue writes the anchor's index, and that is a write. Then § Running a campaign, "Subtasks", files it. Load `opening-campaign` only to *join* — this machine has no directory for the campaign yet. |
 | Two or more could cover it, or the fit is arguable | **A question for the person.** Name the candidates; do not guess. |
 | Nothing covers it, and it ends with this session | **Not campaign work.** Answer it, or make the change and land it. No anchor, no subtask, no directory, no skill. |
 | Nothing covers it, and it will outlive this session | **A new campaign.** Load `opening-campaign`. |
@@ -94,37 +94,44 @@ subtask.
 
 # Who is a campaign session
 
-**A campaign runs on one machine at a time, and on that machine one session
-holds it.** Any session opened in the container root is a candidate. Which of
-three roles it takes is read rather than assumed, from two facts that cost one
-call each: the anchor's latest `BOUND` comment says which machine the campaign
-is on, and the campaign directory's `runtime/holder` says which session on that
-machine holds it.
+**A campaign runs on one machine at a time, and every session on that machine is
+an equal session of it.** No session holds the campaign. The role that used to —
+the holding session — is retired, and the three campaign-wide writes it owned
+rest on their own guards instead (§ Running a campaign, "What carries the three
+campaign-wide writes"). One reading decides whether a session is in the campaign
+at all, and it costs one call: the anchor's latest `BOUND` comment says which
+machine the campaign is on.
 
-| what the two readings say | this session is |
+| what the reading says | this session is |
 | --- | --- |
 | `BOUND` names another machine | **not in this campaign.** Stop before any write and before any launch, and name the machine that holds it. |
-| `BOUND` names this machine, and there is no directory or its holder is dead | **the holding session.** Take it: scaffold the directory if there is none (`opening-campaign` steps 2 and 4 — step 4 needs the slug and kind step 2 picks), write `runtime/holder`, and carry on. |
-| `BOUND` names this machine, and `runtime/holder` names a live session | **an executor session** on one subtask; see below. |
+| `BOUND` names this machine | **a session of this campaign.** Work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4 — step 4 needs the slug and kind step 2 picks), and take a subtask. |
 | there is no `BOUND` comment | **not bound yet.** Only a person's word binds an existing campaign; see below. |
 
-**An executor session is an agent, not a second campaign session.** It files the
-subtask it was given or takes the one it was handed and claims the branch — and
-it writes `runtime/claims/<issue>` for itself when the claim is its own to hold,
-which is the case where it works the subtask with its own hands. When it
-launches a delegate instead, the claim is the delegate's and the delegate writes
-the record; § Talking to a repository agent is the one statement of which is
-which. From the claim it is in the protocol below: it answers `STATUS`, sends `REPORT` and `BLOCKED`, stops on `STAND DOWN`,
-and never surveys, never syncs, and never closes. It **may** land its own work,
-on the three conditions § Talking to a repository agent states — a review read
-at the merged sha, written by an agent that did not write the commits, and a
-branch containing the current `main` — which is what replaced "an executor never
-merges its own pull request". It works the subtask
-whichever way § Running a campaign allows, subject to the mode rule there; what
-changes is only who it reports to.
+**Every session of a campaign is an executor**, whatever else it does in the same
+sitting. It files the subtask it was given or takes the one it was handed and
+claims the branch — and it writes `runtime/claims/<issue>` for itself when the
+claim is its own to hold, which is the case where it works the subtask with its
+own hands. When it launches a delegate instead, the claim is the delegate's and
+the delegate writes the record; § Talking to a repository agent is the one
+statement of which is which. From the claim it is in the protocol below: it
+answers `STATUS`, sends `REPORT` and `BLOCKED`, and stops on `STAND DOWN`. It
+**may** land its own work, on the three conditions § Talking to a repository
+agent states — a review read at the merged sha, written by an agent that did not
+write the commits, and a branch containing the current `main` — which is what
+replaced "an executor never merges its own pull request". It works the subtask
+whichever way § Running a campaign allows, subject to the mode rule there.
 
-The holding session is the peer the person named. When nobody named one, ask
-every peer session, and a peer that holds no campaign covering it says so.
+**And it may do the three campaign-wide writes** — scaffold the directory, sync
+the anchor body, run the close — each on the guard § Running a campaign gives
+it, and on nothing else. No role licenses any of them, and neither does asking:
+a session that cannot satisfy a write's guard does not make the write, however
+long it has been in the campaign. That is the shape the merge rule already has,
+applied to the last three writes that named a session instead of a condition.
+
+When a person names a peer to ask, that name is an address and nothing more.
+When nobody named one, ask every peer session, and a peer that is in no campaign
+covering the request says so.
 
 **`BOUND <machine>` is a comment on the anchor, and the latest one is
 authoritative.** Comments append, so writing one races nothing; that is why the
@@ -166,27 +173,19 @@ the person's call because its premise is that the other machine has released the
 campaign or is dead, and nothing here can observe either. Post it, then read it
 back: a later `BOUND` naming somebody else means the campaign was migrated out
 from under you, and the latest one still wins. A campaign with no `BOUND`
-comment predates this rule; holding its directory is not the fact that binds it,
-the person's word is.
+comment predates this rule; having its directory here is not the fact that binds
+it, the person's word is.
 
-**`runtime/holder` is the campaign directory's record of the holding session**,
-written when a session takes the campaign and read by every session arriving
-after it:
-
-```sh
-printf 'session %s\npid %s\n' "$CLAUDE_CODE_SESSION_ID" "$CLAUDE_PID" \
-  >| "$CAMPAIGN/runtime/holder"
-```
-
-`CLAUDE_PID` is the `claude` process; `$$` is the shell one tool call runs in
-and is dead before the next one starts. Liveness has one reader,
-`scripts/campaign-session-alive`, and a caller turns its outcomes into one of
-five words:
+**Liveness has one reader, `scripts/campaign-session-alive`**, and what it reads
+is a pid out of a claim record, `runtime/claims/<issue>` (§ Talking to a
+repository agent gives that record's four fields and what each one survives). A
+caller turns the reader's outcomes into one of five words:
 
 ```sh
-if [ ! -s "$CAMPAIGN/runtime/holder" ]; then V=none
+REC="$CAMPAIGN/runtime/claims/<issue>"
+if [ ! -s "$REC" ]; then V=none
 else
-  PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
+  PID=$(awk '$1 == "pid" { print $2 }' "$REC")
   V=$("$CONTAINER/scripts/campaign-session-alive" "$PID" 2>&1) || V="unreadable ($V)"
 fi
 echo "$V"
@@ -195,26 +194,26 @@ echo "$V"
 `CONTAINER` is resolved the one way § Three planes gives, which is also where
 both skills resolve it before calling this.
 
-**Only `none` and `dead` let you take over**, and they are the two absences this
-reader can confirm: no holder was ever recorded, and the recorded pid is held by
-nobody. **`dead` is an absence of the process, not of the session.** A harness
-restart hands a surviving session a new pid, so any record written before one
-reads `dead` while the session that wrote it is still working — measured
-2026-08-30, when the claim record for #62 — then at `runtime/executors/62`,
-before #59 renamed the directory — named pid 24840, that pid read `dead`,
-and the session that wrote it was alive at another pid in the same minute. When
-the record predates a restart, `dead` is stale rather than absent, and only
-asking the session settles it.
-`alive` is the holder still working. `other` is a pid held by something whose
+**Only `none` and `dead` are absences this reader can confirm**: no record was
+ever written, and the recorded pid is held by nobody. **`dead` is an absence of
+the process, not of the session.** A harness restart hands a surviving session a
+new pid, so any record written before one reads `dead` while the session that
+wrote it is still working — measured 2026-08-30, when the claim record for #62 —
+then at `runtime/executors/62`, before #59 renamed the directory — named pid
+24840, that pid read `dead`, and the session that wrote it was alive at another
+pid in the same minute. When the record predates a restart, `dead` is stale
+rather than absent, and only asking the session settles it.
+
+`alive` is the claimant still working. `other` is a pid held by something whose
 name this install does not know — a recycled pid *or* a differently-named
 claude, and nothing here can tell those apart. `unreadable` is the reading
-itself failing, and it carries its reason. The last three mean leave it alone,
-because the act on the other side destroys a tree or overwrites a live holder,
-and only a confirmed absence is safe to act on. **Read the word, never the exit
-status** — the status is about the reading, as it is for `campaign-local-work`.
-Testing the file before the pid is what keeps a *missing* holder from arriving
-as `unreadable`, which would be an absence wearing the word for "I could not
-look".
+itself failing, and it carries its reason. The last three mean leave the claim
+standing, because the act on the other side takes a subtask somebody may be
+working, and only a confirmed absence is safe to act on. **Read the word, never
+the exit status** — the status is about the reading, as it is for
+`campaign-local-work`. Testing the file before the pid is what keeps a *missing*
+record from arriving as `unreadable`, which would be an absence wearing the word
+for "I could not look".
 
 **Never hand-roll the comparison.** It was four prose copies of `[ "$(ps -o
 comm= -p "$PID")" = claude ]`, and that test reads a live session as **dead**:
@@ -228,52 +227,46 @@ is invariant across *how* a process was started. `ucomm` is the exec'd file's
 basename rather than an identity, so the names it matches are a fact about this
 install — which is why an unrecognised one is `other` and not `dead`.
 
-**The name is narrower than the job, and #93 owns that.** The holder role is
-not retired — it still decides the scaffold, the anchor body and the close,
-which are the campaign-wide writes that genuinely need one writer. What left the
-role is **merge authority**, which is now three conditions on the work. So what
-this file records is whether a live session on this machine owns this tree, and
-that job never depended on the merge rule at all. The path is left standing
-because it is a live file with references across every skill and asset, and
-moving it inside a sweep is how a migration loses a record.
+**`runtime/holder` is retired with the role, and it has no reader left.** The
+file recorded which session owned the tree, and every gate that read it is
+re-based on the work instead: the scaffold on the binding and on `mkdir`
+refusing a directory that exists, the anchor body on compare-then-write, the
+close on the claim records, `herdr agent list`, `campaign-local-work` and the
+settlement (§ Running a campaign). A record with no reader is not a record, and
+keeping one costs the thing it cost here — `spec/alloy/session.als` measured a
+recycled pid reading `alive` under R3g, which could strand a whole campaign
+because the rule erred towards never taking over. The claim records inherit that
+residue narrowed to one subtask: a stale `runtime/claims/<issue>` holds one claim
+standing, not the campaign. A campaign directory scaffolded before this may
+still hold the file; it is a stray to delete, not a record to migrate, which is
+what #93 has left.
 
-This lock rots one way, and a restart is the way: staleness is a local process
-fact rather than a guess about a machine you cannot see — which is what pinning
-the campaign to one machine was bought for — but a pid stops naming its session
-the moment the harness restarts, and nothing in the record distinguishes that
-from an exit. The session id is the field that survives, and only
-`runtime/holder` carries one. It errs towards refusing to take
-over, and does so two ways: a pid recycled onto a different `claude` reads
-`alive`, and a pid recycled onto anything else reads `other`. Both refuse, and
-`spec/alloy/session.als` states them together under R3g — the one place that
-residue is written, because a model is a reader that can be measured wrong and
-prose is a reader that cannot. Ask rather than overwrite. `runtime/`
-dies with the directory, which is the right lifetime — nothing off this machine
-reads the holder.
+What the retirement does not buy is a guess about a machine you cannot see.
+Staleness stays a local process fact, which is what pinning the campaign to one
+machine was bought for, and `runtime/` still dies with the directory — the right
+lifetime, because nothing off this machine reads a claim record.
 
-**Holding scaffolds.** `runtime/holder` and `runtime/claims/` have no home
-but the campaign directory, so a session that takes a campaign on a machine
-with no directory creates one first — `opening-campaign` steps 2 and 4, with
-nothing to acquire; step 4 builds `<slug>-<YYMMDD>/` and copies the kind's
-principles, so step 2, where both are chosen, cannot be skipped — and a held
-campaign has a directory from that moment. Campaign #1
-ran without one, and its first claim had nowhere to be recorded
-(#52): the record half of the protocol did not exist on exactly the path #46
-had made first-class. The fix is the scaffold rather than a second home for the
-record, because a record that outlives the tree it describes is what
-`runtime/`'s lifetime exists to forbid; `spec/alloy/session.als` R1m and R1n
-are the retired branch measured.
+**The claim records need a directory.** `runtime/claims/` has no home but the
+campaign directory, so a session working a campaign on a machine with no
+directory scaffolds one first — `opening-campaign` steps 2 and 4, with nothing to
+acquire; step 4 builds `<slug>-<YYMMDD>/` and copies the kind's principles, so
+step 2, where both are chosen, cannot be skipped. Campaign #1 ran without one,
+and its first claim had nowhere to be recorded (#52): the record half of the
+protocol did not exist on exactly the path #46 had made first-class. The fix is
+the scaffold rather than a second home for the record, because a record that
+outlives the tree it describes is what `runtime/`'s lifetime exists to forbid;
+`spec/alloy/session.als` R1m and R1n are the retired branch measured.
 
-Those two readings replace the rule that stood here, *several sessions may hold
-one campaign, on one machine or on several*, and they change what the four rules
-below are for. Each was written from a witnessed breakage; under the principle
-two survive unchanged, one holds by construction, and one inverts.
+One binding replaces the rule that stood here, *several sessions may hold one
+campaign, on one machine or on several*, and it changes what the four rules below
+are for. Each was written from a witnessed breakage; under the binding two
+survive unchanged, one holds by construction, and one inverts.
 
 - **Survey again at the moment you file.** Two sessions that each checked the
   open anchors before either filed will both file, and one scope gets two
   campaigns. Re-reading immediately before `gh issue create` narrows that
   window; it does not close it, because read and create are not atomic. The
-  principle buys nothing here: a campaign that does not exist yet is bound to
+  binding buys nothing here: a campaign that does not exist yet is bound to
   nobody, so this is the one window `BOUND` cannot narrow.
 - **Claim the branch before you launch onto it**: `campaign-<N>/<issue>-<topic>`,
   created on the remote by create-ref, which refuses an existing ref. The
@@ -281,17 +274,20 @@ two survive unchanged, one holds by construction, and one inverts.
   subtasks apart, but two sessions delegating the *same* subtask still landed
   on one branch — until the branch became the claim. A refusal means the
   subtask is taken; read who by, do not push past it. This is what serializes
-  executors *within* the bound machine, and the principle leaves it untouched.
-- **Retire only an agent on your own machine.** Under the principle every agent
-  of a campaign is on the machine it is bound to, so this now holds by
-  construction. It is kept for the one window where it does not: just after a
-  migration, when an agent may still be running on the machine the campaign
-  left. Ask the session that launched it, or leave it.
-- **Holding the directory with a live holder *is* owning the campaign.** This
-  rule read the other way round, because two sessions given the same slug on the
-  same day build the same path and neither could tell whose tree it was.
-  `runtime/holder` answers exactly that, so a session arriving to a live holder
-  is an executor rather than a peer. What survives of the old blind spot is
+  the campaign's sessions *within* the bound machine, and the binding leaves it
+  untouched.
+- **Retire only an agent on your own machine.** Every agent of a campaign is on
+  the machine it is bound to, so this now holds by construction. It is kept for
+  the one window where it does not: just after a migration, when an agent may
+  still be running on the machine the campaign left. Ask the session that
+  launched it, or leave it.
+- **The tree is shared, and the only files in it that are anybody's are the
+  claim records.** This rule read the other way round — *holding the directory
+  with a live holder is owning the campaign* — because two sessions given the
+  same slug on the same day build the same path and neither could tell whose
+  tree it was. With the role gone there is nothing to tell: every session of the
+  campaign works the one directory, and each claim record is written by its own
+  claimant and edited by nobody else. What survives of the old blind spot is
   narrow: the local no-live-agent gate still cannot see a machine working this
   campaign against its `BOUND`. So `closing-campaign` still says in the anchor
   issue that it is closing — as the guard for a broken principle, not as the
@@ -303,11 +299,11 @@ two survive unchanged, one holds by construction, and one inverts.
   in nobody's listing and the next session opens a second campaign over the same
   scope.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, and
-  **optional off the holding machine**. A campaign is its anchor issue; the
-  directory is one machine's cache of it, and the machine that holds the
-  campaign always has one, because the holder and claim records live there
-  and nowhere else. A campaign legitimately has none here when this machine
-  does not hold it — not taken here yet, or bound elsewhere.
+  **optional off the bound machine**. A campaign is its anchor issue; the
+  directory is one machine's cache of it, and the bound machine has one from the
+  moment anybody works the campaign there, because the claim records live there
+  and nowhere else. A campaign legitimately has none here when nobody has worked
+  it here yet, or when it is bound elsewhere.
 
   So closing a campaign and deleting a directory are different acts that
   `closing-campaign` happens to perform in one step. Closing is the anchor issue
@@ -552,7 +548,7 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0
 **Open** — a person arrives in the container root with a sentence, an issue
 number, or a screenshot. § Not every request is a campaign says what it is, and
 most of what arrives loads no skill at all. Load `opening-campaign` when the
-request opens a campaign, or joins one this machine is not yet holding.
+request opens a campaign, or joins one this machine has no directory for.
 
 **Subtasks** — one subtask is one GitHub issue, filed on the repository whose
 code changes, and created **as a sub-issue of the anchor**:
@@ -696,9 +692,9 @@ runs one of these ways, and the mode is chosen before the work starts.
 **The mode is decided first by the repository, and only then by cost.** An
 executor that *changes* a repository runs in a process started in that
 repository's checkout: a herdr delegate in `<campaign>/repos/<repo>/` for a
-member repository, and the campaign session, an in-process subagent on a
-worktree, or an executor session for the container itself, which already has the
-container's skills. Reading any repository, and writing under `<campaign>/`
+member repository, and a session of the campaign itself, or an in-process
+subagent on a worktree, for the container, which already has the container's
+skills. Reading any repository, and writing under `<campaign>/`
 — scripts, notes, fixtures — may run in any mode.
 
 The harness fact it rests on: an in-process subagent and an interactive session
@@ -707,8 +703,8 @@ of another repository however it is checked out; and a skill marked
 `disable-model-invocation: true` is unusable by any agent in any mode, so it must
 be spelled out in the brief rather than named.
 
-So a **campaign session working with its own hands** can take only a container
-subtask or campaign-directory work. For a member-repository subtask it becomes
+So a **session working with its own hands** can take only a container subtask
+or campaign-directory work. For a member-repository subtask it becomes
 the launcher of a delegate, and the claim is then the delegate's: the delegate
 writes its own record, exactly as a session working with its own hands does, and
 the launcher writes none because it holds no claim. § Talking to a repository
@@ -727,7 +723,7 @@ Then, within what the repository allows, choose by cost:
   take many turns, or when two repositories must move at once.
 
 **Weigh the setup against the work.** The delegate mode is the most specified
-and the least used: through campaign #1 every subtask ran by the holder's own
+and the least used: through campaign #1 every subtask ran by a session's own
 hands or a worktree subagent, and the clone-plus-herdr path first ran on #52.
 Its price is fixed and paid per launch — a clone kept fresh at launch, a
 handover file, a canary round-trip, a pane read, a sweep at the end — and once
@@ -739,9 +735,9 @@ checkout it was started in at none of that cost. For a member repository it is
 the only mode that changes the code, and its price is the reason to give one
 delegate a subtask worth many turns rather than many delegates small ones.
 
-An executor session is a fourth executor and not a fourth mode, because nobody
-chooses it: a session that arrives in the container root to a live holder simply
-is one. What it then chooses is which of the modes above carries its subtask.
+A session that arrives in the container root and takes a subtask is a fourth
+executor and not a fourth mode, because nobody chooses it: it simply is one.
+What it then chooses is which of the modes above carries its subtask.
 
 All of them carry the same mechanics. The branch is
 `campaign-<N>/<issue>-<topic>`, claimed on the remote by create-ref after the
@@ -799,8 +795,8 @@ lost-update window per write.
 Two moments is not *write only at open and at close*, which `spec/alloy/`
 weighs as `syncAtCloseOnly` and rejects.
 Adding a repository **is** a scope change, so it syncs when it happens; held
-back until the close it is invisible to every other session holding the
-campaign, and the loss it was meant to prevent happens at the close anyway.
+back until the close it is invisible to every other session of the campaign,
+and the loss it was meant to prevent happens at the close anyway.
 
 The campaign's `README.md` and the anchor issue body carry **the same sections
 in the same shapes**, and the anchor template
@@ -811,17 +807,60 @@ dropped.
 
 **Compare then write the anchor issue body.** Re-read it immediately before
 `gh issue edit`, and refuse if it has moved since your `README.md` was derived
-from it. One campaign, one machine gives the body a single structural writer, so
-this ceremony is no longer the everyday guard it was written as — it is demoted
-to catching the two things the principle does not cover, and from here they look
-identical: a person editing the charter straight on GitHub, which is theirs to
-do, and a session writing from a machine the anchor is not `BOUND` to, which is
-the principle broken. Without it one of those silently discards the other —
-modelled and witnessed, and the loss is worse than it looks because a body write
-cannot touch a sub-issue link, so the index goes on naming work in a repository
-the `## Repos` list has dropped, and the close then deletes that list's last
-copy. Step 4 already reads the body back after writing, so the extra read costs
-nothing. Neither a delegate nor an executor session writes the body at all.
+from it. **This is the everyday guard, and a measurement is why.** One campaign,
+one machine never serialized the body by itself: two sessions on the one bound
+machine are both sessions of the campaign, and the loss comes straight back
+(`spec/alloy/session.als`, R1p SAT), while the comparison alone blocks it (R1c
+UNSAT, with R1d as its control). The demotion that stood here rested on a single
+structural writer that does not exist — the writer is single per *campaign*,
+never per machine, and one machine holds several campaigns at once. Without the
+comparison one write silently discards another, and the loss is worse than it
+looks: a body write cannot touch a sub-issue link, so the index goes on naming
+work in a repository the `## Repos` list has dropped, and the close then deletes
+that list's last copy. Step 4 already reads the body back after writing, so the
+extra read costs nothing.
+
+**Read the binding first, then name the cause.** `scripts/campaign-bound <N>`
+saying anything but `here` means *you* are the one out of position, and the
+write stops there whatever the diff says. With the campaign bound here, a moved
+body has three causes, the repairs differ, and at the point of refusal all three
+look identical — a diff and nothing else:
+
+| cause | how to tell | what it wants |
+| --- | --- | --- |
+| a session on this machine wrote it | ask the peers: `ListAgents`, then `SendMessage` to each | ask what it meant, then fold. Moving a subtask between campaigns writes *two* anchors, and one of them is never the writer's own campaign |
+| a person edited the charter on GitHub | no peer claims the write | their words win: fold them into the `README.md`, refresh the derived copy, re-run |
+| a session on a machine the anchor is not `BOUND` to wrote it | nothing on this machine can see it — one `gh` account signs a person's edit and a session's alike | ask the person. The fold is the same; what differs is that the binding was broken and the other machine has to be told |
+
+**The last two are not separable from here, and the refusal says so** rather
+than picking one. That is the honest reading, and it is still worth naming all
+three: a session meeting the refusal knows to ask its peers before it starts
+reconstructing anybody's intent from a diff, which is the diagnosis that used to
+be silent.
+
+Who writes the body is not a role and never was the useful question. It is
+written at the two moments above, by whoever is doing that act, through this
+comparison. A session working a subtask meets neither moment, so it does not
+touch the body — because it has no occasion to, not because of what it is.
+
+**What carries the three campaign-wide writes.** The holding session is retired
+(§ Who is a campaign session), and each write it used to own names its own guard
+instead. None of them is a role, and every one is readable by any session of the
+campaign.
+
+| write | its guard | what that rests on |
+| --- | --- | --- |
+| scaffold `<slug>-<YYMMDD>/` | the binding says `here`, and the create is the claim: the arrival survey looks for a directory whose `README.md` is this campaign's body, and `mkdir` without `-p` refuses a name that already exists | two sessions arriving together do not race for a role — one `mkdir` wins, the other reads what it made and works in it, which is what every session does with that tree anyway |
+| write the anchor body | the two-moment rule for *when*, compare-then-write for *how*, both above | R1c UNSAT (re-run 2026-08-30, every verdict matching) is the comparison carrying the property; R1f UNSAT was the holder carrying it *independently* on the pre-#59 model, and two independent carriers is what let one of them go with nothing lost |
+| run the close | a person's word; the binding; every open subtask dispositioned; nothing live under the tree (`runtime/claims/` and `herdr agent list`, both); nothing that exists only here (`campaign-local-work`); and the close said on the anchor before it happens | the role never carried this one, and R3d was the measurement — SAT on the pre-#59 model, kept in `spec/alloy/session.als`'s header: the holder deleted the tree under its own executor with every rule obeyed, and the repair was always the claim records (`spec/alloy/agent.als`, A10–A12) |
+
+**Every one of those gates asks about work rather than about who owns the tree**,
+which is why nothing had to replace `runtime/holder` when it went. One window is
+left uncovered and is named rather than papered over: a session that has just
+scaffolded a directory and is still cloning into it holds no claim and has
+nothing uncommitted, so the close's gates cannot see it. What it stands to lose
+is template copies and fresh clones, each re-made in one command, and the close
+asks a person and says so on the anchor before it deletes anything.
 
 # Delegating to a repository agent
 
@@ -1051,8 +1090,9 @@ Never answer one with the other.
   reader written out anywhere else drifts the way the settlement rule would.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
-updating a pull request, then goes idle; it is retired once its work has
-landed.
+updating a pull request, then goes idle; the session that launched it retires
+it once its work is durable — landed, or the subtask closed without it, which
+a subtask dropped as *not planned* is.
 
 **Who reviews, and in which mode.** The reviewer is launched by the session that
 wants the merge, **and the author may be that session** — the non-author
@@ -1491,14 +1531,18 @@ underneath it costs uncommitted work and nothing more.
 
 # Concurrency and what it costs
 
-One campaign, one machine (§ Who is a campaign session) settles the hard half.
-The anchor has one structural writer, the campaign directory has one holding
-session, and no lock ever has to be judged stale across a network. What stays
-concurrent is concurrent *within* the bound machine — the holding session, its
-executor sessions, its subagents and its delegates — and two things serialize
-them, and only the first of them atomically: the branch claim, per subtask,
-which create-ref refuses server-side, and merge condition 3, per landing, which
-branch protection refuses server-side. Survey before editing, scope edits so they do not collide
+One campaign, one machine (§ Who is a campaign session) settles the hard half:
+no lock ever has to be judged stale across a network, because every session of
+the campaign is on the machine the anchor names. What it does not settle is the
+campaign's own writes — the binding never serialized the anchor body by itself
+(`spec/alloy/session.als`, R1p SAT), and it does not serialize the directory,
+which every session of the campaign shares. So everything stays concurrent
+*within* the bound machine — the campaign's sessions, their subagents and their
+delegates — and three things serialize it, two of them server-side: the branch
+claim, per subtask, which create-ref refuses; merge condition 3, per landing,
+which branch protection refuses; and compare-then-write, per body write, which
+is a discipline nothing refuses and the only one of the three a session can
+skip by forgetting. Survey before editing, scope edits so they do not collide
 with other worktrees, and rebase onto what landed rather than force-pushing over
 it.
 

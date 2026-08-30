@@ -1,6 +1,6 @@
 ---
 name: opening-campaign
-description: Opens a campaign in the agent-workspace container, or joins one that already exists — files the anchor issue and binds it to this machine, scaffolds its directory and takes it as the holding session, and acquires the member repositories. Use once AGENTS.md § Not every request is a campaign has decided the request opens a campaign, or joins one this machine is not yet holding. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for the second and later subtasks of a campaign already scaffolded in this directory.
+description: Opens a campaign in the agent-workspace container, or joins one that already exists — files the anchor issue and binds it to this machine, scaffolds its directory, and acquires the member repositories. Use once AGENTS.md § Not every request is a campaign has decided the request opens a campaign, or joins one this machine has no directory for. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for the second and later subtasks of a campaign already scaffolded in this directory.
 ---
 
 # Opening a campaign
@@ -18,8 +18,7 @@ Finished when all of these hold:
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
   `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/claims/`,
-  `runtime/holder`, `runtime/repos`, and `scripts/`, with `runtime/holder`
-  naming this session and a live PID.
+  `runtime/repos`, and `scripts/`.
 - The campaign's `README.md` is the anchor issue body, and
   `runtime/anchor-body-derived.md` holds that body byte for byte.
 - Every line `scripts/campaign-repos` prints resolves to a checkout at
@@ -36,13 +35,14 @@ The steps are ordered. The anchor issue number is the campaign ID, so nothing
 that needs the ID can run before step 3. Why each guard is shaped the way it is:
 `references/rationale.md`.
 
-### 1. Read the binding, then the holder
+### 1. Read the binding, then find the directory
 
 You arrive having already been told what the request is, by `AGENTS.md` § Not
 every request is a campaign: either no open campaign covers it and you are
-opening one — go straight to step 2 — or one does, and this machine is not yet
-holding it. **That survey lives there and only there.** Two prose copies of it
-would drift, and the copy this skill kept was the one a session reached last.
+opening one — go straight to step 2 — or one does, and this machine has no
+directory for it yet. **That survey lives there and only there.** Two prose
+copies of it would drift, and the copy this skill kept was the one a session
+reached last.
 
 **Read the binding before anything else about this campaign**, because joining
 one bound elsewhere is the mistake this read exists to stop (§ Who is a campaign
@@ -56,10 +56,16 @@ session in the container's `AGENTS.md`).
 
 Another machine — stop: file nothing, scaffold nothing, launch nothing, and say
 which machine holds it and that only the person can move it. No output — the
-campaign is unbound, so ask before binding it here; holding its directory is not
-what binds it.
+campaign is unbound, so ask before binding it here; having its directory here is
+not what binds it.
 
-Then check whether this machine holds the campaign at all. "Already scaffolded"
+**That one read is the whole membership question.** There is no second read
+asking whose campaign this is. The holding session is retired, so `here` makes
+you a session of this campaign exactly like every other session of it on this
+machine, and what you may do is decided per write by the guards in `AGENTS.md`
+§ Running a campaign — never by which session arrived first.
+
+Then find out whether this machine has a directory for it. "Already scaffolded"
 is a fact about a directory, not about the campaign:
 
 ```sh
@@ -67,48 +73,37 @@ CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-d
 ls -d "$CONTAINER"/*-[0-9][0-9][0-9][0-9][0-9][0-9]/ 2>/dev/null
 ```
 
-A directory whose `README.md` names this campaign — bind `CAMPAIGN` to it, and
-read its `runtime/holder` before working in it:
+**A directory whose `README.md` names this campaign** — bind `CAMPAIGN` to it and
+work in it. Peers may be working in it too; that is the normal state and there is
+nothing to resolve.
 
 ```sh
 CAMPAIGN=$(cd "$CONTAINER/<the directory that matched>" && pwd -P)
-if [ ! -s "$CAMPAIGN/runtime/holder" ]; then V=none
-else
-  PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
-  V=$("$CONTAINER/scripts/campaign-session-alive" "$PID" 2>&1) || V="unreadable ($V)"
-fi
-echo "$V"
+mkdir -p "$CAMPAIGN/runtime/claims"
 ```
 
-**`alive`, `other` or `unreadable`, and the holder is not this session — you are
-an executor session** on one subtask. Only `none` and `dead` are confirmed
-absences; the other three say the holder may be there and the reading cannot see
-it, and overwriting `runtime/holder` on a guess gives one campaign two holders.
-`unreadable` carries its reason — read it before deciding anything.
-File it or take the one you were given, then decide the mode **before you claim
-anything**, because the mode names the branch and the process holding it: a
-container or campaign-directory subtask is yours to work, so you write your own
-claim record to `$CAMPAIGN/runtime/claims/<issue>` at the claim (§ Talking to a
-repository agent has its four fields and the `printf`); a member-repository
-subtask makes you the *launcher* of a delegate, which writes its own record
-exactly as you would write yours, and makes step 5 yours (§ Delegating to a
-repository agent). You write none: you hold no claim. Either way stop there — you do not scaffold, sync, or close.
+`mkdir -p` because a campaign scaffolded before that directory existed has none,
+and every session that claims a subtask here writes its own record into it — a
+missing directory makes the close gate unable to enumerate at all. You write your
+own record and nobody else's; you read theirs.
 
-**`none`, `dead`, or your own — you are the holding session**; rewrite the file as
-step 4 does and carry on. Then `mkdir -p "$CAMPAIGN/runtime/claims"` if this
-campaign was scaffolded before that directory existed, because every session
-that claims a subtask here writes its own record into it and a missing directory
-makes the close gate unable to enumerate at all. You do not write another
-session's record; you read them.
+Then file the subtask or take the one you were handed, and decide the mode
+**before you claim anything**, because the mode names the branch and the process
+holding it: a container or campaign-directory subtask is yours to work, so you
+write your own claim record to `$CAMPAIGN/runtime/claims/<issue>` at the claim
+(§ Talking to a repository agent has its four fields and the `printf`); a
+member-repository subtask makes you the *launcher* of a delegate, which writes
+its own record exactly as you would write yours, and makes step 5 yours
+(§ Delegating to a repository agent). A launcher writes no record, because it
+holds no claim.
 
 **No directory at all** — the campaign is on GitHub but not here, so run steps 2,
 4 and 5 with its ID and body from the anchor issue, and skip step 3, which exists
 only to mint an ID it already has. Do this before launching or receiving
-anything: the directory is the only home `runtime/holder` and
-`runtime/claims/` have, so until it exists you are not the holder and a claim
-record has nowhere to be written (§ Who is a campaign session, "Holding
-scaffolds"). Step 2 still runs because neither the slug nor the kind is
-recoverable from GitHub; say which kind you picked.
+anything: the directory is the only home `runtime/claims/` has, so until it
+exists a claim record has nowhere to be written (§ Who is a campaign session,
+"The claim records need a directory"). Step 2 still runs because neither the slug
+nor the kind is recoverable from GitHub; say which kind you picked.
 
 ### 2. Name it and pick its kind
 
@@ -201,15 +196,24 @@ Then build the directory:
 
 ```sh
 CAMPAIGN="$CONTAINER/<slug>-$(date +%y%m%d)"
-[ -e "$CAMPAIGN" ] && echo "exists, stop" || cp -R <skill>/assets "$CAMPAIGN"
+if mkdir "$CAMPAIGN" 2>/dev/null; then
+  cp -R <skill>/assets/. "$CAMPAIGN"/
+else
+  echo "exists: read $CAMPAIGN/README.md before writing anything in it"
+fi
 ```
 
-`cp -R` over a live campaign exits 0 and replaces a filled-in `README.md` with
-placeholders, so the existence test is a gate, not a formality. Read
-`$CAMPAIGN/README.md` to decide: the same campaign — another session got here
-first with the same slug on the same day — leave it alone, read `runtime/holder`
-as step 1 does, and skip to step 5, which is safe to re-run; a different
-campaign, or unreadable — stop and ask.
+**The `mkdir` is the gate, and it is the only atomic one available here.**
+Without `-p` it refuses a name that already exists, so two sessions arriving
+with the same slug on the same day cannot both create the tree — one wins and
+the other is told. A plain `[ -e ]` test before the copy is not the same thing:
+it is a read and a write with a gap in between, and `cp -R` over a live campaign
+exits 0 while replacing a filled-in `README.md` with placeholders.
+
+Being told is not an error. Read `$CAMPAIGN/README.md` to decide: the same
+campaign — another session got here first — work in that directory and skip to
+step 5, which is safe to re-run; a different campaign, or unreadable — stop and
+ask.
 
 Then finish it:
 
@@ -250,22 +254,13 @@ Then finish it:
   refuses; its one line on stderr says which, so stop and fix the body. Keep the
   `.tmp`-then-`mv`, and keep step 5 reading that file rather than a pipe: both
   exist so a failed read cannot look like a deliberate `- none`. `>|`, not `>`.
-- **Take the campaign, in `runtime/holder`**, when you claim the directory rather
-  than when you leave it, since only the claim knows what holding means for the
-  work about to start:
-
-  ```sh
-  printf 'session %s\npid %s\n' "$CLAUDE_CODE_SESSION_ID" "$CLAUDE_PID" \
-    >| "$CAMPAIGN/runtime/holder"
-  ```
-
-  Overwrite a holder whose PID is dead; a live one means step 1 already sent you
-  down the executor path.
 - **Keep `runtime/anchor-body-derived.md`** — the only thing that can later
   answer "has the body moved?", and `closing-campaign` step 4 refuses without it.
   Refresh it whenever you re-derive the README, and after every successful sync.
-- The `README.md` is the holding session's working copy, and neither a delegate
-  nor an executor session touches either copy.
+- The `README.md` and `runtime/anchor-body-derived.md` are this machine's
+  working copies of the anchor body. A session syncs them only at one of the two
+  moments the body is written at (`AGENTS.md` § Running a campaign); a session
+  working a subtask meets neither, so it touches neither copy.
 - The directory is git-ignored. Nothing durable may live only there.
 
 ### 5. Acquire the member repositories
@@ -399,7 +394,6 @@ auth-refactor-260828/
   README.md      issue #7's body, section for section
   runtime/handover/ runtime/claims/ scripts/
   runtime/anchor-body-derived.md  issue #7's body as the README was derived from
-  runtime/holder                  the session holding #7 on this machine
   repos/api/     on the default branch; #31 is worked on campaign-7/31-token-refresh
   repos/web/     on the default branch; #12 is worked on campaign-7/12-token-refresh
 ```
@@ -410,9 +404,9 @@ The probes and the failures behind these: `references/gotchas.md`.
 
 - A request that sounds new is usually a follow-up, and skipping the gate's
   survey produces two anchor issues that both look right with nothing erroring.
-- **You may not be this campaign's session**, and the two reads in step 1 decide
-  it — in that order, because a campaign bound elsewhere is not yours to read a
-  holder file for.
+- **You may not be this campaign's session**, and the binding read in step 1
+  decides it — before anything else, because a campaign bound elsewhere is not
+  yours to scaffold, sync or launch into.
 - Filing the anchor issue after scaffolding gives the directory a slug with no ID
   behind it and branches named for a number you have not got yet.
 - A delegate does not pick up the campaign `AGENTS.md` from its parent
