@@ -99,6 +99,11 @@ def name_of(pid: int) -> str:
     if out.returncode != 0:
         refuse(f"ps -o ucomm= -p {pid} exited {out.returncode}: "
              f"{out.stderr.strip() or 'no message'}")
+    # `.strip()` is load-bearing, not tidying. `ps -o ucomm=` pads to a fixed
+    # width -- `claude.exe` comes back as 16 characters -- and command
+    # substitution strips trailing newlines but not spaces. Comparing the padded
+    # form against a literal reads a live session as dead, which is this
+    # script's own bug one field over. Do not remove it as noise.
     name = out.stdout.strip()
     if not name:
         # The process existed a moment ago and does not now. Do not call that
