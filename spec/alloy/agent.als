@@ -323,6 +323,26 @@
  *                                          and cannot say whose claim it is:
  *                                          attribution, not liveness, is the
  *                                          split's subject
+ *   A18_AgentLessLandingIsAdmitted   SAT   THE AGENT-LESS LANDING, run at
+ *                                          `0 Agent`: hands-on work reviewed
+ *                                          and merged by one session, which is
+ *                                          how campaign #1's own subtasks are
+ *                                          represented here. #73's review
+ *                                          probed both directions by hand and
+ *                                          left no command; this is that probe
+ *                                          pinned.
+ *   A18b_AgentLessUnreviewedMergeIsBlocked
+ *                                    UNSAT and unreviewed it does not land.
+ *                                          The pair matters because
+ *                                          `mergedOnCurrentReview`'s confirm
+ *                                          conjunct ranges over
+ *                                          `executorsOf[Now.issue]`, empty at
+ *                                          `0 Agent`, so it is VACUOUSLY true
+ *                                          and the review half is holding the
+ *                                          rule up alone. Dropping
+ *                                          `mergedOnCurrentReview` from A18b
+ *                                          turns it SAT, so the UNSAT is the
+ *                                          rule and not the bounds.
  *   Cov_*                            SAT   every own event fires in some trace
  *
  * Every green was proved able to fail, re-run 2026-08-28 against the pre-#59
@@ -1235,7 +1255,38 @@ fun executorsOf[i: Issue]: set Agent { task.i }
    `isHolder` conjunct went with the role, and its membership scoping went with
    it -- `Reviewed` and `Confirmed` are keyed to the issue and its executors,
    which no reparent can move, so the silent-reparent hole the old rule had to
-   argue itself out of does not arise. */
+   argue itself out of does not arise.
+
+   TWO OF AGENTS.md's THREE MERGE CONDITIONS ARE UNMODELLED HERE, and both are
+   named rather than left to be discovered.
+
+   The NON-AUTHOR condition -- the review is written by an agent that did not
+   write the commits -- is axiomatized by `review`'s shape and by P2 in the
+   header, and there is no conjunct enforcing it. `Reviewed` is a bit on a pull
+   request; nothing in this model records WHO set it, so the condition cannot be
+   stated at all without a reviewer identity this layer does not carry. It is
+   therefore a discipline with no reader here and none on GitHub either, where
+   one account signs every session's comments. AGENTS.md says so at the rule.
+
+   The CONTAINS-CURRENT-MAIN condition is not expressible for a different
+   reason: this model has one pull request per issue and no notion of a shared
+   branch moving under another, so "two reviewed branches, both merged, combined
+   state read by nobody" -- the trace that condition exists to forbid -- cannot
+   be built. Extending the model to see it means giving `main` a state and
+   branches a base, which is a layer's worth of work and its own subtask (#95).
+   Until then the condition is enforced by NOTHING, and that survived the
+   setting being switched on, which is why it is stated at this length.
+
+   The first draft of this comment claimed GitHub's behind-count enforced it.
+   `main` was then unprotected. It is protected as of 2026-08-30 WITH the
+   up-to-date requirement set -- `protected: true`,
+   `required_status_checks.strict: true` -- and it STILL enforces nothing:
+   "require branches to be up to date" modifies required status checks, and
+   `contexts` is empty, so it modifies nothing. Measured on a throwaway branch
+   one commit behind: `behind=1`, `mergeStateStatus: CLEAN`, mergeable. The
+   setting stores, reads back true, and refuses no merge. Making it bite needs
+   at least one required check, which means CI, which is the owner's call.
+   A16/A16b measure only the sha half. */
 pred mergedOnCurrentReview {
   always (Now.ev = MergePR implies
             (Now.issue.pr in Reviewed
@@ -1930,6 +1981,40 @@ pred A16b_AuthorCannotMergeOnStaleReview {
   }
 }
 
+/* A18. THE AGENT-LESS LANDING, which nothing pinned. #73's review probed it by
+   hand -- `0 Agent` behaves correctly in both directions -- and left no command
+   behind, so a later edit could lose it in silence. This is the representation
+   of hands-on work this file has used since P1 in the header: a session working
+   its own subtask launches no Agent at all, which is how every container
+   subtask of campaign #1 was actually done.
+
+   It matters because `mergedOnCurrentReview`'s confirm conjunct is universally
+   quantified over `executorsOf[Now.issue]`, and with no Agent that set is
+   empty, so the conjunct is VACUOUSLY true. Everything holding the rule up in
+   this case is the review half alone. A16 cannot see that: it has an Agent, so
+   its confirm conjunct has something to range over. SAT. */
+pred A18_AgentLessLandingIsAdmitted {
+  mergedOnCurrentReview
+  no Agent
+  some s: Session, i: Issue {
+    eventually (Now.ev = Review  and By.actor = s and Now.issue = i)
+    eventually (Now.ev = MergePR and By.actor = s and Now.issue = i)
+  }
+}
+
+/* A18b. AND THE OTHER DIRECTION, which is the half a vacuous conjunct could
+   have swallowed: no Agent, no Review anywhere in the trace, and a merge. If
+   the review half were ever weakened the way the confirm half is vacated here,
+   this would go SAT and hands-on work would land unreviewed with every rule
+   obeyed -- the 2026-08-28 collision, reachable again through the one shape the
+   model represents campaign #1's own subtasks with. UNSAT. */
+pred A18b_AgentLessUnreviewedMergeIsBlocked {
+  mergedOnCurrentReview
+  no Agent
+  always Now.ev != Review
+  some i: Issue | eventually (Now.ev = MergePR and Now.issue = i)
+}
+
 /* A17. SEEN LIVE, NO LONGER ATTRIBUTABLE -- the residual gap between the two
    liveness readings, measured where `liveAndReadable`'s comment locates it. A
    session's own executor is live and in the pane listing (`liveUnderLocally`),
@@ -2014,6 +2099,8 @@ run A15_UnaddressedExecutorPRLands           for 3 Issue, 1 PR, 1 Campaign, 2 Se
 run A16_AuthorLandsOwnReviewedWork           for 3 Issue, 1 PR, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
 run A16b_AuthorCannotMergeOnStaleReview      for 3 Issue, 1 PR, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
 run A17_PaneSeesWhatTheRecordLost            for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
+run A18_AgentLessLandingIsAdmitted           for 3 Issue, 1 PR, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
+run A18b_AgentLessUnreviewedMergeIsBlocked   for 3 Issue, 1 PR, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
 
 run Cov_LaunchAgent      for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
 run Cov_Work             for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps

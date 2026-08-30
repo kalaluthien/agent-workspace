@@ -17,7 +17,7 @@ Finished when all of these hold:
   bare `grep '<'` over the whole file, which reports hits on a clean README.
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
-  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/executors/`,
+  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/claims/`,
   `runtime/holder`, `runtime/repos`, and `scripts/`, with `runtime/holder`
   naming this session and a live PID.
 - The campaign's `README.md` is the anchor issue body, and
@@ -49,11 +49,10 @@ one bound elsewhere is the mistake this read exists to stop (§ Who is a campaig
 session in the container's `AGENTS.md`).
 
 ```sh
-gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body
-        | split("\n")[0] | rtrimstr("\r")' | tail -1
-hostname -s
+"$CONTAINER"/scripts/campaign-bound <N>      # here | elsewhere <machine> | unbound
 ```
+
+`here` — carry on. Anything else, including a failed read, stops you.
 
 Another machine — stop: file nothing, scaffold nothing, launch nothing, and say
 which machine holds it and that only the person can move it. No output — the
@@ -88,26 +87,26 @@ it, and overwriting `runtime/holder` on a guess gives one campaign two holders.
 `unreadable` carries its reason — read it before deciding anything.
 File it or take the one you were given, then decide the mode **before you claim
 anything**, because the mode names the branch and the process holding it: a
-container or campaign-directory subtask is yours to work and you announce
-`CLAIMED` (§ Talking to a repository agent); a member-repository subtask makes
-you the *launcher* of a delegate, which announces nothing and makes step 5 yours
-(§ Delegating to a repository agent). Either way stop there — you do not
-scaffold, sync, or close.
+container or campaign-directory subtask is yours to work, so you write your own
+claim record to `$CAMPAIGN/runtime/claims/<issue>` at the claim (§ Talking to a
+repository agent has its four fields and the `printf`); a member-repository
+subtask makes you the *launcher* of a delegate, which writes its own record
+exactly as you would write yours, and makes step 5 yours (§ Delegating to a
+repository agent). You write none: you hold no claim. Either way stop there — you do not scaffold, sync, or close.
 
 **`none`, `dead`, or your own — you are the holding session**; rewrite the file as
-step 4 does and carry on. Record a `CLAIMED` that reaches you before anything
-else, because a message dies with the session that received it: the fields and
-the `printf` are § Talking to a repository agent, written to
-`$CAMPAIGN/runtime/executors/<issue>` — after
-`mkdir -p "$CAMPAIGN/runtime/executors"` if this campaign was scaffolded before
-that directory existed.
+step 4 does and carry on. Then `mkdir -p "$CAMPAIGN/runtime/claims"` if this
+campaign was scaffolded before that directory existed, because every session
+that claims a subtask here writes its own record into it and a missing directory
+makes the close gate unable to enumerate at all. You do not write another
+session's record; you read them.
 
 **No directory at all** — the campaign is on GitHub but not here, so run steps 2,
 4 and 5 with its ID and body from the anchor issue, and skip step 3, which exists
 only to mint an ID it already has. Do this before launching or receiving
 anything: the directory is the only home `runtime/holder` and
-`runtime/executors/` have, so until it exists you are not the holder and a
-`CLAIMED` has nowhere to be recorded (§ Who is a campaign session, "Holding
+`runtime/claims/` have, so until it exists you are not the holder and a claim
+record has nowhere to be written (§ Who is a campaign session, "Holding
 scaffolds"). Step 2 still runs because neither the slug nor the kind is
 recoverable from GitHub; say which kind you picked.
 
@@ -230,7 +229,7 @@ Then finish it:
   before deciding whether a templated copy is filled or deleted.
 - Everything else the copy brought stays, and that is all of it: `CLAUDE.md`,
   one line of `@AGENTS.md`; `README.md`, overwritten below; `runtime/handover/`
-  and `runtime/executors/`, a `.gitkeep` each — confirm `runtime/executors/`
+  and `runtime/claims/`, a `.gitkeep` each — confirm `runtime/claims/`
   arrived, because `closing-campaign` refuses a close when it is missing; and
   `scripts/`, which arrives holding a `.gitkeep` and nothing else.
 - Overwrite `README.md` with the anchor issue body, which replaces every
@@ -398,7 +397,7 @@ auth-refactor-260828/
   AGENTS.md      copied from assets/agents/migration.md
   CLAUDE.md      @AGENTS.md
   README.md      issue #7's body, section for section
-  runtime/handover/ runtime/executors/ scripts/
+  runtime/handover/ runtime/claims/ scripts/
   runtime/anchor-body-derived.md  issue #7's body as the README was derived from
   runtime/holder                  the session holding #7 on this machine
   repos/api/     on the default branch; #31 is worked on campaign-7/31-token-refresh
