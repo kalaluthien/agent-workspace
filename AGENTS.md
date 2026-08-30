@@ -1267,12 +1267,12 @@ itself, not an announcement somebody must receive.
   **Three cases leave no run named `check` on the sha being merged, and a
   required check makes each of them unmergeable with no override.** They
   partition by *why* the run is absent, which is what makes the list closed
-  rather than a tally: the sha was never a pull request head; it was one, but
-  no `pull_request` event has fired since the workflow became reachable; or an
-  event fired and the merge commit yielded no run under that name. The first
-  two are a head that has not moved, since `pull_request` fires on the head
-  moving — `opened`, `synchronize`, `reopened` — so a base advance dispatches
-  nothing.
+  rather than a tally: the sha is a pull request head, but no `pull_request`
+  event has fired since the workflow became reachable; it was never a pull
+  request head at all; or an event fired and the merge commit yielded no run
+  under that name. The first two are a head that has not moved, since
+  `pull_request` fires on the head moving — `opened`, `synchronize`,
+  `reopened` — so a base advance dispatches nothing.
 
   The first is a pull request already open when the base gained the workflow.
   It keeps zero check runs until its next push, so turning a required check on
