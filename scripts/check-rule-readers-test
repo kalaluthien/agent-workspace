@@ -74,8 +74,11 @@ FORM_CASES = [
 # How far the pinning goes, stated because a reader would otherwise infer more:
 # every *form* is pinned by at least one case, and within `campaign-session-alive`
 # every alternation is pinned individually. Alternations of the other four forms
-# are not -- several can be deleted with the suite green, listed in the
-# deferred-scope comment on PR #91. That is scope, not an oversight.
+# are not: an exhaustive per-alternation sweep found roughly fourteen deletable
+# with the suite green, including `mergedAt` -- the first spelling
+# campaign-settlement's own claim names -- and the `## Repos` half of
+# campaign-repos'. That is scope, and it is larger than the deferred-scope
+# comment on PR #91 first said, so do not read that comment as the list.
 
 # The parser decides what counts as code. Each of these was an unsafe silence:
 # the guard exited 0 on a violation that renders as code.
@@ -132,6 +135,14 @@ EXEMPTION_CASES = [
     ("an exemption spent on an indented block does not reach the next one",
      "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n    ps -o comm= -p 1\n\n"
      "Then:\n\n    ps -o comm= -p 1\n", 1),
+    ("an exemption inside an indented block exempts nothing",
+     "# t\n\n    <!-- unguarded: campaign-session-alive -- x -->\n    ps -o comm= -p 1\n", 1),
+    # No prose between the fence and the indent: a prose line resets the
+    # exemption too, which masked the fence-close reset and let its case pass
+    # with that reset deleted -- while still carrying the name of the leak.
+    ("an exemption does not survive a closed fence into an indented block",
+     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n```sh\nps -o comm= -p 1\n```\n\n"
+     "    ps -o comm= -p 1\n", 1),
     ("an exemption inside an open fence exempts nothing",
      "# t\n\n```sh\n<!-- unguarded: campaign-session-alive -- x -->\nps -o comm= -p 1\n```\n", 1),
 ]

@@ -32,12 +32,19 @@ hook=$common/hooks/pre-commit
 ours="$root/scripts/check-rule-readers"
 marker='# Installed by scripts/install-hooks.'
 
-hooks_path=$(git config --get core.hooksPath || true)
-if [ -n "$hooks_path" ]; then
-	echo "refusing: core.hooksPath is set to $hooks_path." >&2
-	echo "git runs hooks from there, so writing $hook would install nothing." >&2
-	echo "Chain $ours from $hooks_path/pre-commit by hand, or unset the config" >&2
-	echo "for this repository and re-run." >&2
+# The exit status, not the value: `core.hooksPath=""` is a *set* key that git
+# honours -- it runs no hook at all -- and a `-n` test walks straight past it.
+if hooks_path=$(git config --get core.hooksPath); then
+	if [ -z "$hooks_path" ]; then
+		echo "refusing: core.hooksPath is set and empty, which disables" >&2
+		echo "every hook. Writing $hook would install nothing." >&2
+		echo "Unset it (git config --unset core.hooksPath) and re-run." >&2
+	else
+		echo "refusing: core.hooksPath is set to '$hooks_path'." >&2
+		echo "git runs hooks from there, so writing $hook installs nothing." >&2
+		echo "Chain $ours from $hooks_path/pre-commit by hand, or unset the" >&2
+		echo "config for this repository and re-run." >&2
+	fi
 	exit 1
 fi
 

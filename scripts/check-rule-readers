@@ -204,6 +204,18 @@ def findings(text):
         elif fence:
             inside, exempted, pending = fence.group("run"), pending, None
             continue
+        elif INDENTED.match(line):
+            # An indented line is code, so it is scanned and never read as an
+            # exemption: CommonMark makes it literal content, and reading a
+            # marker there let a block exempt itself from the inside -- the
+            # mirror of `an exemption inside an open fence exempts nothing`.
+            if pending is not None:
+                # An exemption is spent on the next code block of either shape.
+                # Reaching only fences left an author who needs the form under
+                # an indent with no move the guard accepts, while the refusal
+                # advised the exemption they had already written.
+                exempted, pending = pending, None
+            code = True
         else:
             marker = EXEMPT.search(line)
             loose = EXEMPT_LOOSE.search(line)
@@ -221,14 +233,8 @@ def findings(text):
                 # belonging to more than one script.
                 pending = (pending or frozenset()) | {marker.group("owner")}
                 continue
-            code = bool(INDENTED.match(line))
-            if code and pending is not None:
-                # An exemption is spent on the next code block of either shape.
-                # Reaching only fences left an author who needs the form under
-                # an indent with no move the guard accepts, while the refusal
-                # advised the exemption they had already written.
-                exempted, pending = pending, None
-            if line.strip() and not code:
+            code = False
+            if line.strip():
                 # An exemption marks the next code block, not prose -- and the
                 # same line ends an indented run, so the exemption it carried
                 # dies with it rather than leaking into the next block.
