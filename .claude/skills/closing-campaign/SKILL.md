@@ -307,7 +307,7 @@ leaves what a legitimate `- none` leaves.
 This step also runs mid-campaign, whenever a repository is added to the
 `## Repos` list — `opening-campaign`'s "Filing a subtask issue" sends you here.
 Those are the only two moments the body is written at (§ Running a campaign), so
-nothing in step 3 edits the body and `## Plan` is left as it was at opening.
+nothing in step 3 edits the body.
 
 **Then compare before you write.** `runtime/anchor-body-derived.md` is the body
 as it read when this README was derived from it, kept by `opening-campaign` step

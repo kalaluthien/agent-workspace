@@ -25,7 +25,10 @@ Finished when all of these hold:
 - Every line `scripts/campaign-repos` prints resolves to a checkout at
   `<campaign>/repos/<name>/` — vacuous under `- none`, where it prints nothing,
   step 5 does nothing, and `repos/` is never created.
-- The reply names the campaign ID, the directory, and the anchor issue URL.
+- At least one subtask is filed as a sub-issue of the anchor. That index is the
+  campaign's decomposition, and the body carries none.
+- The reply names the campaign ID, the directory, the anchor issue URL, and the
+  subtasks filed.
 
 ## Procedure
 
@@ -171,10 +174,10 @@ Read it back the way step 1 does: if the latest is not yours, the campaign was
 migrated in the seconds since, so stop and say so.
 
 **Write the body by filling the anchor template**, `assets/README.md` in this
-skill — its sections, each placeholder replaced, and no others; issue #1 is the
-worked example. Write Scope to be matched against a request by the gate, and
-leave `## Plan` unrevised afterwards, the body being a charter (§ Running a
-campaign).
+skill — its sections, each placeholder replaced, and no others. Write Scope to
+be matched against a request by the gate. The body is a charter and carries no
+decomposition (§ Running a campaign); step 6 files the first subtasks instead,
+and the sub-issue index is the decomposition from there on.
 
 ### 4. Scaffold the directory
 
@@ -276,10 +279,15 @@ by hand, and do not read the script — its interface is the contract.
 because a re-run without it is a fetch that touches no branch where a re-run with
 one would switch a shared checkout under a delegate already working in it.
 
-### 6. Report
+### 6. File the first subtasks, then report
 
-The campaign ID, the directory path, and the anchor issue URL. Then the first
-subtask, and whether you are doing it here or handing it to a repository agent.
+The decomposition lives in the sub-issue index and nowhere else, so file the
+subtasks the opening already implies before reporting — "Filing a subtask issue"
+below is the shape, and a campaign whose scope is one subtask files one.
+
+Report the campaign ID, the directory path, the anchor issue URL, and the
+subtasks filed, saying of the first whether you are doing it here or handing it
+to a repository agent.
 
 ### Filing a subtask issue
 
