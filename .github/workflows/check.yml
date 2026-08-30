@@ -22,7 +22,6 @@
 #   3. Every `uses:` names a 40-character commit sha, never a tag, with the
 #      release in a trailing comment. A tag is mutable, so an unpinned `uses:`
 #      lets its owner change what every merge into `main` runs.
-#      `sha_pinning_required` is set but unverified (#108), so pin the sha.
 #
 # It is also what makes branch protection bite. `strict` ("require branches to
 # be up to date") is a modifier on required status checks, so with no checks it
