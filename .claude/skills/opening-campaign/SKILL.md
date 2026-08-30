@@ -1,6 +1,6 @@
 ---
 name: opening-campaign
-description: Opens a campaign in the agent-workspace container, or joins one that already exists — files the anchor issue and binds it to this machine, scaffolds its directory, and acquires the member repositories. Use once AGENTS.md § Not every request is a campaign has decided the request opens a campaign, or joins one this machine is not yet holding. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for the second and later subtasks of a campaign already scaffolded in this directory.
+description: Opens a campaign in the agent-workspace container, or joins one that already exists — files the anchor issue and binds it to this machine, scaffolds its directory, and acquires the member repositories. Use once AGENTS.md § Not every request is a campaign has decided the request opens a campaign, or joins one this machine has no directory for. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for the second and later subtasks of a campaign already scaffolded in this directory.
 ---
 
 # Opening a campaign

@@ -74,7 +74,7 @@ complete, is none of that and needs none of it.
 
 | what the two readings say | what this is |
 | --- | --- |
-| An open campaign's Scope covers it | **A subtask of that campaign.** Read the binding first (§ Who is a campaign session): filing a sub-issue writes the anchor's index, and that is a write. Then § Running a campaign, "Subtasks", files it. Load `opening-campaign` only to *join* — this machine is not holding the campaign, or has no directory for it. |
+| An open campaign's Scope covers it | **A subtask of that campaign.** Read the binding first (§ Who is a campaign session): filing a sub-issue writes the anchor's index, and that is a write. Then § Running a campaign, "Subtasks", files it. Load `opening-campaign` only to *join* — this machine has no directory for the campaign yet. |
 | Two or more could cover it, or the fit is arguable | **A question for the person.** Name the candidates; do not guess. |
 | Nothing covers it, and it ends with this session | **Not campaign work.** Answer it, or make the change and land it. No anchor, no subtask, no directory, no skill. |
 | Nothing covers it, and it will outlive this session | **A new campaign.** Load `opening-campaign`. |
@@ -227,8 +227,8 @@ is invariant across *how* a process was started. `ucomm` is the exec'd file's
 basename rather than an identity, so the names it matches are a fact about this
 install — which is why an unrecognised one is `other` and not `dead`.
 
-**`runtime/holder` is retired with the role, and #93 carries the delete.** The
-file recorded which session owned the tree, and every gate that read it has been
+**`runtime/holder` is retired with the role, and it has no reader left.** The
+file recorded which session owned the tree, and every gate that read it is
 re-based on the work instead: the scaffold on the binding and on `mkdir`
 refusing a directory that exists, the anchor body on compare-then-write, the
 close on the claim records, `herdr agent list`, `campaign-local-work` and the
@@ -237,7 +237,9 @@ keeping one costs the thing it cost here — `spec/alloy/session.als` measured a
 recycled pid reading `alive` under R3g, which could strand a whole campaign
 because the rule erred towards never taking over. The claim records inherit that
 residue narrowed to one subtask: a stale `runtime/claims/<issue>` holds one claim
-standing, not the campaign.
+standing, not the campaign. A campaign directory scaffolded before this may
+still hold the file; it is a stray to delete, not a record to migrate, which is
+what #93 has left.
 
 What the retirement does not buy is a guess about a machine you cannot see.
 Staleness stays a local process fact, which is what pinning the campaign to one
@@ -546,7 +548,7 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0
 **Open** — a person arrives in the container root with a sentence, an issue
 number, or a screenshot. § Not every request is a campaign says what it is, and
 most of what arrives loads no skill at all. Load `opening-campaign` when the
-request opens a campaign, or joins one this machine is not yet holding.
+request opens a campaign, or joins one this machine has no directory for.
 
 **Subtasks** — one subtask is one GitHub issue, filed on the repository whose
 code changes, and created **as a sub-issue of the anchor**:
