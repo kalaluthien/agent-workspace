@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Print what this repository can decide by machine, so a session knows it exists.
+
+#105 moves rules out of AGENTS.md and into hooks and scripts. That trade only
+works if a session can still find them: a rule deleted from the prose and buried
+in a script nobody knows about is not mechanised, it is lost. This is the
+announcement, and a SessionStart hook runs it.
+
+It is derived, never a hand-kept list -- a second copy of the inventory would
+drift exactly the way the prose copies this campaign is deleting drifted. Two
+facts already in the tree carry it: every script states its purpose on the line
+under its shebang, and install-hooks names which of them git runs on its own. So
+adding a script changes this output with no second edit anywhere.
+
+A script it cannot read, or one whose kind it cannot tell, is printed as such.
+An inventory that silently omits a primitive is worse than none: it reads as a
+complete list, and the reader concludes the thing is not there.
+
+Usage: scripts/campaign-primitives [--brief]
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+
+def summary(path):
+    """The line under the shebang, however the language spells a comment. None
+    when there is nothing to read -- reported, never skipped."""
+    try:
+        lines = path.read_text().splitlines()
+    except (OSError, UnicodeDecodeError) as e:
+        return f"<unreadable: {e.__class__.__name__}>"
+    for line in lines[1:8]:
+        text = re.sub(r'^\s*(#|"""|\'\'\'|//|--)\s*', "", line).strip().strip('"')
+        if text and not text.startswith(("!", "set -", "import", "from")):
+            return text
+    return None
+
+
+def hook_run():
+    """Which scripts git runs by itself, read out of install-hooks rather than
+    listed again here."""
+    src = (HERE / "install-hooks").read_text()
+    names = set()
+    for m in re.finditer(r"^\s*for\s+\w+\s+in\s+([^;]+?);\s*do", src, re.M):
+        names.update(m.group(1).split())
+    return names
+
+
+def main():
+    brief = "--brief" in sys.argv
+    runs = hook_run()
+    guards, readers, unknown = [], [], []
+    for p in sorted(HERE.iterdir()):
+        if p.is_dir() or p.name.endswith("-test") or not p.stat().st_mode & 0o111:
+            continue
+        s = summary(p)
+        if s is None or s.startswith("<unreadable"):
+            unknown.append((p.name, s or "<no summary line under the shebang>"))
+        elif p.name in runs:
+            guards.append((p.name, s))
+        else:
+            readers.append((p.name, s))
+
+    if not runs:
+        print("!! could not read which scripts git runs from install-hooks;")
+        print("   every one below is listed as a reader, which may be wrong.")
+
+    print("Machine-decided here. Ask these before writing a check by hand.")
+    print(f"\n  git runs these on its own ({len(guards)}):")
+    for n, s in guards:
+        print(f"    {n:24} {s}")
+    print(f"\n  a flow calls these ({len(readers)}):")
+    if brief:
+        # Every session start pays for this, so the brief form spends its lines
+        # on the guards -- which act unasked -- and names the rest, since a
+        # name is enough to go and read one.
+        line, out = "   ", []
+        for n, _ in readers:
+            if len(line) + len(n) > 76:
+                out.append(line)
+                line = "   "
+            line += " " + n
+        out.append(line)
+        print("\n".join(out))
+        print("\n  scripts/campaign-primitives says what each one answers.")
+    else:
+        for n, s in readers:
+            print(f"    {n:24} {s}")
+    if unknown:
+        print(f"\n  !! {len(unknown)} could not be classified:")
+        for n, why in unknown:
+            print(f"    {n:24} {why}")
+    return 1 if unknown else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

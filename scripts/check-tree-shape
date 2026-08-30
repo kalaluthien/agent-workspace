@@ -86,6 +86,7 @@ PROSE = {
     ".yaml": {"block": [], "line": ["#"]},
     ".py":   {"block": [('"""', '"""')], "line": ["#"]},
     ".html": {"block": [("<!--", "-->")], "line": []},
+    ".json": {"block": [], "line": []},        # no comment syntax; all code
     "":      {"block": [('"""', '"""')], "line": ["#"]},   # scripts/, shebanged
 }
 

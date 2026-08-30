@@ -104,6 +104,12 @@ CASES = [
     ("R0 an unread file does not hide what the other rules found",
      {"scratch/x.txt": "hi\n"}, "R2", False),
 
+    # A language with no comment syntax at all: every line is code, and the
+    # empty marker lists must not make the whole file read as prose.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 json: a language with no comments is all code",
+     {"scripts/x.json": '{"path": "runtime/holder"}\n'}, "R3", False),
+
     # R4
     ("R4 a member repository's file", {"repos/web/a.py": "x = 1\n"}, "R4", False),
 ]

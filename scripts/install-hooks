@@ -1,9 +1,17 @@
 #!/usr/bin/env sh
-# Install this repository's pre-commit guards. Idempotent; run it after a clone.
+# Install this repository's git hooks. Idempotent; run it after a clone.
 #
-# Two guards today, split by question: check-rule-readers asks whether a rule a
-# script owns got a second reader written by hand, check-tree-shape asks whether
-# the tree still has the shape AGENTS.md describes.
+# pre-commit runs two guards, split by question: check-rule-readers asks whether
+# a rule a script owns got a second reader written by hand, check-tree-shape
+# asks whether the tree still has the shape AGENTS.md describes.
+#
+# post-commit pushes a campaign branch as soon as it has the commit. AGENTS.md
+# asks for that in prose twice, and once it is a habit rather than a mechanism
+# an executor sits on a finished commit -- which is what push-early exists to
+# forbid, and what the session limit turns into lost work. It pushes only a
+# campaign-*/ branch: an ordinary topic branch is somebody's to publish when
+# they choose, and a hook that decided that for them would be the surprise this
+# repository has no reason to spring.
 #
 # The machine-wide guard at ~/.claude/git-hooks/no-main-commits occupies the
 # pre-commit slot by default, and says in its own header that a repository whose
@@ -32,8 +40,8 @@ set -e
 # would land where git never looks. AGENTS.md states this form.
 common=$(git rev-parse --path-format=absolute --git-common-dir)
 root=$(cd "$(dirname "$common")" && pwd -P)
-hook=$common/hooks/pre-commit
-ours="$root/scripts/check-rule-readers and $root/scripts/check-tree-shape"
+hookdir=$common/hooks
+ours="$root/scripts/"
 marker='# Installed by scripts/install-hooks.'
 
 # The exit status, not the value: `core.hooksPath=""` is a *set* key that git
@@ -52,19 +60,29 @@ if hooks_path=$(git config --get core.hooksPath); then
 	exit 1
 fi
 
-if [ -L "$hook" ]; then
-	echo "refusing: $hook is a symlink to $(readlink "$hook")." >&2
-	echo "Writing through it would edit a file outside this repository." >&2
-	echo "Move it aside and re-run, or chain $ours from its target by hand." >&2
-	exit 1
-fi
+# Each hook gets the same two refusals, so a second hook cannot arrive with
+# weaker checks than the first. Both are about writing over somebody's decision
+# this script cannot read.
+check_slot() {
+	slot=$1
+	if [ -L "$slot" ]; then
+		echo "refusing: $slot is a symlink to $(readlink "$slot")." >&2
+		echo "Writing through it would edit a file outside this repository." >&2
+		echo "Move it aside and re-run, or chain $ours from its target by hand." >&2
+		exit 1
+	fi
+	if [ -e "$slot" ] && ! grep -qF "$marker" "$slot"; then
+		echo "refusing: $slot exists and was not written by this script." >&2
+		echo "Read it, then chain from it or move it aside:" >&2
+		echo "  mv '$slot' '$slot.bak' && scripts/install-hooks" >&2
+		exit 1
+	fi
+}
 
-if [ -e "$hook" ] && ! grep -qF "$marker" "$hook"; then
-	echo "refusing: $hook exists and was not written by this script." >&2
-	echo "Read it, then chain $ours from it or move it aside:" >&2
-	echo "  mv '$hook' '$hook.bak' && scripts/install-hooks" >&2
-	exit 1
-fi
+check_slot "$hookdir/pre-commit"
+check_slot "$hookdir/post-commit"
+
+hook=$hookdir/pre-commit
 
 cat >"$hook" <<HOOK
 #!/usr/bin/env sh
@@ -89,6 +107,37 @@ for guard in check-rule-readers check-tree-shape; do
 		"\$g" --staged || exit 1
 	fi
 done
+HOOK
+
+chmod +x "$hook"
+echo "installed: $hook"
+
+hook=$hookdir/post-commit
+cat >"$hook" <<'HOOK'
+#!/usr/bin/env sh
+# Installed by scripts/install-hooks. Re-run it after changing this file.
+#
+# Push a campaign branch the moment it has a commit, and say what happened
+# either way. A hook that pushes in silence is one a reader stops believing in;
+# a hook that fails in silence is worse, because the commit it was meant to make
+# durable is sitting on one disk and nothing said so.
+branch=$(git symbolic-ref --quiet --short HEAD) || exit 0
+case "$branch" in
+	campaign-*/*) ;;
+	*) exit 0 ;;
+esac
+# --no-verify is not passed and no force flag is: a rejected push is news, not
+# something to overrule. An amend or a rebase lands here too, and the right
+# answer for those is to be told, not to have the remote rewritten.
+if git push --quiet origin "$branch" 2>/tmp/push-$$; then
+	echo "post-commit: pushed $branch"
+else
+	echo "post-commit: could NOT push $branch -- the commit is local only." >&2
+	sed 's/^/  /' /tmp/push-$$ >&2
+	echo "  Push it yourself before anything reads this branch as landed." >&2
+fi
+rm -f /tmp/push-$$
+exit 0
 HOOK
 
 chmod +x "$hook"
