@@ -27,8 +27,8 @@
  *   Decide            the campaign session answers a BLOCKED
  *   Confirm           the session reads the executor's working tree ITSELF
  *   ConfirmElsewhere  the same check run from the wrong machine -- the defect
- *   Review            `/code-review <PR#>`, a reviewer a campaign session
- *                     launches -- any session, the author's included
+ *   Review            `/code-review <PR#>`, a reviewer the session that wants
+ *                     the merge launches -- the author's own included
  *   MergePR (guard)   on what terms it lands: this layer's half of session.als's
  *                     event
  *   StandDown         STAND DOWN, campaign -> executor
@@ -119,10 +119,11 @@
  *
  * An executor does not close itself. It finishes by pushing its branch and
  * opening or updating a pull request, then goes quiet. The campaign session
- * retires it once the work is durable -- the branch pushed, the pull request
- * open. It deliberately does not wait for the merge: review can take days, and
- * a pane held open across them is the expensive thing. Review feedback gets a
- * fresh session, briefed from the pull request.
+ * retires it once its work has landed. What retirement does not wait for is the
+ * campaign's CLOSE, not the merge: a claim-holding executor is the session that
+ * merges, so retiring it at pull-request open would remove the one thing that
+ * can. A long fix round may go to a fresh session instead, briefed from the
+ * pull request and the review.
  *
  * In a long-lived campaign subtasks finish continuously while the campaign
  * stays open, so retirement cannot wait for the close. The procedure is five
@@ -136,9 +137,10 @@
  *   3. Review the pull request, and land it or send it back. NOTHING LANDS
  *      WITHOUT A CURRENT REVIEW -- not a delegate's work, not a session's own.
  *      The executor pushes, REPORTs the URL and its sha once per round, and
- *      waits. A campaign session launches a reviewer on the pull request -- an
- *      in-process subagent by default, a herdr session only for a many-turn or
- *      `ultra` review -- reads the findings, and then either merges -- and
+ *      waits. The session that wants the merge launches a reviewer on the pull
+ *      request -- an in-process subagent, always, the only mode; a person may
+ *      trigger an `ultra` review and no session may -- reads the findings,
+ *      and then either merges -- and
  *      tells the executor the work is durable, which is what lets the executor
  *      drop its worktree -- or briefs a fresh executor from the pull request
  *      and the review and runs the loop again. The author may be the merger,
@@ -148,10 +150,9 @@
  *   4. STAND DOWN the confirmed ones. Leave the rest, and say why.
  *   5. Retire the workspace once the executor has acknowledged.
  *
- * Step 3 does not make retirement wait for the merge. A pull request that goes
- * to a review it cannot finish in one sitting is still retired at pull-request
- * open, and the feedback gets a fresh session; what the step fixes is WHO acts,
- * not how long the pane stays up.
+ * Step 3 does not make retirement wait for the campaign's close. What the step
+ * fixes is WHO acts. A review that will not finish in one sitting is handed on
+ * as a fix round to a fresh session rather than held open.
  *
  * Self-termination is refused for one reason: the only thing that can verify an
  * executor's work is something other than that executor. Self-merging and
@@ -940,13 +941,14 @@ pred confirmElsewhere[a: Agent] {
 /* REVIEW -- `/code-review <PR#>` run against a subtask's pull request.
 
    The owner's rule: a pull request is reviewed before it is merged, and the
-   review is A REVIEWER A CAMPAIGN SESSION LAUNCHES. Two modes, and the default
-   is the cheaper one: an IN-PROCESS SUBAGENT running `/code-review <PR#>`,
-   because a review only reads and so needs none of what a process boundary is
-   paid for -- no handover file, no canary, no pane, no sweep. A HERDR SESSION
-   is for a review that will take many turns, or an `ultra` review, which is
-   person-triggered only and is never the default. `/code-review` is
-   model-invocable, so that command is the whole opening prompt either way.
+   review is A REVIEWER THE SESSION THAT WANTS THE MERGE LAUNCHES. ONE MODE,
+   NOT A DEFAULT: an IN-PROCESS SUBAGENT running `/code-review <PR#>`, because a
+   review changes no repository working tree and so needs none of what a process
+   boundary is paid for -- no handover file, no canary, no pane, no sweep. A
+   HERDR SESSION IS NOT A MODE. The one exception is an `ultra` review, which a
+   person triggers and no session may. Which model and level that subagent runs
+   at is an instruction to an operator rather than a property of this relation,
+   so it lives in AGENTS.md and not here.
 
    KEYED ON THE ISSUE, NOT ON AN AGENT (#59), because the review is of the pull
    request: `/code-review <PR#>` reads GitHub, and neither the executor's
@@ -1274,18 +1276,19 @@ fun executorsOf[i: Issue]: set Agent { task.i }
    state read by nobody" -- the trace that condition exists to forbid -- cannot
    be built. Extending the model to see it means giving `main` a state and
    branches a base, which is a layer's worth of work and its own subtask (#95).
-   Until then the condition is enforced by NOTHING, and that survived the
-   setting being switched on, which is why it is stated at this length.
+   The condition is unmodelled here, but it is no longer unenforced: #97 landed
+   a required status check on 2026-08-30, which is what `strict` had nothing to
+   modify before. Measured the same day -- a branch with a green check and
+   `behind=1` reads `BEHIND` and an admin merge is refused `HTTP 405`; with the
+   base merged in it reads CLEAN and merges. So what is missing here is the
+   model's ability to express the trace, not a refuser in the world.
 
-   The first draft of this comment claimed GitHub's behind-count enforced it.
-   `main` was then unprotected. It is protected as of 2026-08-30 WITH the
-   up-to-date requirement set -- `protected: true`,
-   `required_status_checks.strict: true` -- and it STILL enforces nothing:
-   "require branches to be up to date" modifies required status checks, and
-   `contexts` is empty, so it modifies nothing. Measured on a throwaway branch
-   one commit behind: `behind=1`, `mergeStateStatus: CLEAN`, mergeable. The
-   setting stores, reads back true, and refuses no merge. Making it bite needs
-   at least one required check, which means CI, which is the owner's call.
+   Two earlier drafts of this comment were wrong in opposite directions, which
+   is why the history is kept: the first claimed GitHub's behind-count enforced
+   it while `main` was unprotected; the second claimed protection alone did,
+   with `strict: true` and `contexts` empty -- measured then at `behind=1`,
+   `mergeStateStatus: CLEAN`, mergeable, because "require branches to be up to
+   date" modifies required status checks and there were none to modify.
    A16/A16b measure only the sha half. */
 pred mergedOnCurrentReview {
   always (Now.ev = MergePR implies
