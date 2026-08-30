@@ -5,6 +5,18 @@
 # to, which makes the person the reader -- and a person who forgets leaves no
 # trace. This runs them on every pull request instead.
 #
+# Two constraints on this file, because breaking either is quiet:
+#
+#   1. Never add `paths`, `paths-ignore`, or a `branches` filter to the
+#      `pull_request` trigger. A required check that a pull request does not
+#      produce is never "skipped" -- it stays pending forever, and with
+#      `enforce_admins` there is no override. A docs-only branch must still
+#      produce this check.
+#   2. A pull request that breaks or deletes this file strands itself, for the
+#      same reason and with no override. Recovery is an admin emptying
+#      `required_status_checks.contexts` on `main`, landing the fix, and
+#      putting it back.
+#
 # It is also what makes branch protection bite. `strict` ("require branches to
 # be up to date") is a modifier on required status checks, so with no checks it
 # enforces nothing: measured 2026-08-30 on a branch one commit behind `main`,
@@ -39,8 +51,11 @@ jobs:
           java-version: '21'
 
       # Pinned to the release asset, not to a package manager: this is the same
-      # build the machine runs (byte-identical size, 21062377), so a green run
-      # here means what a green run there means.
+      # build the machine runs, which is what makes a green run here mean what a
+      # green run there means. Identity is the sha256 below, verified on every
+      # run. A size match is not identity, and the cache is not trustworthy on
+      # its own -- any branch can seed this key, so a restored jar is checked
+      # exactly like a downloaded one.
       - name: Cache the Alloy jar
         id: alloy-cache
         uses: actions/cache@v4
@@ -54,6 +69,12 @@ jobs:
           mkdir -p ~/.local/share/alloy
           curl -fsSL -o ~/.local/share/alloy/alloy-6.2.0.jar \
             https://github.com/AlloyTools/org.alloytools.alloy/releases/download/v6.2.0/org.alloytools.alloy.dist.jar
+
+      # Runs on both paths, cache hit and fresh download alike.
+      - name: The jar is the build this repository checks against
+        run: |
+          echo "6b8c1cb5bc93bedfc7c61435c4e1ab6e688a242dc702a394628d9a9801edb78d  $HOME/.local/share/alloy/alloy-6.2.0.jar" \
+            | sha256sum -c -
 
       # The same wrapper this machine has on PATH, so alloy-check is invoked
       # exactly as a person invokes it rather than through a CI-only spelling.

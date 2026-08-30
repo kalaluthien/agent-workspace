@@ -1254,15 +1254,22 @@ itself, not an announcement somebody must receive.
   exactly that silence, and the settings page reads the same either way, so a
   reader who wants to know whether condition 3 still bites reads `contexts`.
 
-  **The check comes from the workflow on the head branch, never the base.**
-  Measured 2026-08-30 across four pull requests sharing base `main`: only the
-  one whose own branch carried `.github/workflows/check.yml` produced a check
-  run at all. So a branch cut before that workflow can never produce `check` —
-  `BLOCKED`, combined status `pending` with zero statuses, and `HTTP 405:
-  Required status check "check" is expected` to an admin merge, watched on a
-  throwaway protected branch before the setting was switched on for `main`.
-  Merging `main` in is what clears it, which is what condition 3 demanded
-  anyway, so the trap is the one the rule already sends you out of.
+  **A `pull_request` check is resolved from the merge commit, not from either
+  branch alone**, so a branch that predates the workflow still produces one.
+  Measured 2026-08-30 on a throwaway pull request whose base carried
+  `.github/workflows/check.yml` and whose head did not: `check` ran and
+  concluded `SUCCESS`. Read that before concluding a branch is stranded. The
+  reading that says otherwise is confounded, and it is the easy one to make —
+  four pull requests into a workflow-less `main` had check runs only on the one
+  carrying the workflow itself, which fits "the head decides" and "the merge
+  decides" equally well. It took a base that had the workflow to separate them.
+
+  **What that costs is only the branch with no pull request.** A required check
+  gates direct pushes to a protected branch too, and a topic tip that has never
+  been in a pull request has no check run to satisfy it — so the fast-forward
+  of `main` that § Git prescribes after resolving in the topic branch is
+  refused, with `enforce_admins: true` leaving no override. Land through the
+  pull request instead; its head sha is what carries the check.
 
   `main` also refuses force-pushes and deletion. **Condition 2 has no automatic reader
   on this machine**: one `gh` account signs every session's merges and comments,
