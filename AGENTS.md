@@ -359,7 +359,8 @@ two survive unchanged, one holds by construction, and one inverts.
 whatever it is doing.
 
 - `<anchor>` — the campaign's anchor issue number.
-- `<role>` — `executor` or `reviewer`.
+- `<role>` — `executor`. It is the only role; a review is a subagent of the
+  session that wants the merge, and has no session of its own to name.
 - `<n>` — a number distinguishing sessions that share the first two, assigned in
   the order they appear.
 
@@ -367,7 +368,6 @@ whatever it is doing.
 campaign-1-executor-1        an executor on campaign #1
 campaign-1-executor-2        another one
 campaign-61-executor-1       an executor on campaign #61
-campaign-1-reviewer-1        a reviewer on campaign #1
 ```
 
 **The subtask is deliberately not in the name.** A session works several
@@ -1040,55 +1040,49 @@ condition (§ Talking to a repository agent, merge condition 2) is on who
 *writes* the review, never on who commissions it. That is the one-session
 landing, and the model pins it: `A16` is SAT, and the old guard forbidding a
 review commissioned by the author is gone precisely because it made the legal
-case inexpressible (`P2`). `/code-review <PR#>` is the whole opening prompt
-either way, because it is model-invocable.
+case inexpressible (`P2`).
 
-**Every review runs as an in-process subagent, on Opus, at medium effort. There
-is no other way to run one.** Not a default, not a preference, not the cheapest
-of several options — the one mode. A review only reads, so it needs none of what
-a process boundary is paid for: no handover file, no canary, no pane, no
-liveness read, no retirement sweep. Anything that pays those costs is paying
-them for nothing.
+**Every review runs as an in-process subagent, on Opus, at the `medium` review
+level. There is no other way to run one.** Not a default and not the cheapest of
+several options — the one mode. A review changes no repository working tree, so
+it needs nothing a process boundary is paid for: no handover file, no canary, no
+pane, no liveness read, no retirement sweep. (It is not read-only — it posts its
+findings on the pull request, and that is the point of it.)
+
+The launch, and every field of it is load-bearing:
 
 ```
-Agent(subagent_type: "general-purpose", model: "opus", prompt: "/code-review <PR#> …")
+Agent(subagent_type: "general-purpose", model: "opus",
+      description: "Review PR <N>",
+      prompt: "/code-review <PR#> … state the review level in the brief …")
 ```
 
-Opus because a review is carrying out an approach already clear, and medium
-because a review of one pull request is narrow work against a known standard.
-A reviewer that needs more than that is a brief that was written too wide;
-split the brief, do not raise the model.
+`general-purpose` because `fork` inherits the author's context and would review
+the author's own reasoning; `opus` because a review carries out an approach
+already clear; `description` because the tool requires it. **The harness has no
+effort parameter**, and this repository defines no agent of its own, so the
+level is carried in the brief and nowhere else — a launch that omits it inherits
+whatever level was last used, which in a fresh subagent is undefined. `isolation`
+is left unset: a worktree or a remote environment buys a review nothing.
 
-**Four ways to get this wrong, all of them forbidden, and each one has actually
-been done here:**
-
-- **Handing the review to a peer session.** A peer is not a reviewer. It costs
-  a full re-explanation of context the launching session already holds, it
-  evicts whatever that session was doing, and its findings arrive as a relay
-  rather than on the pull request. Whoever wants the merge launches the
-  subagent itself.
-- **Reading the diff yourself and calling it reviewed.** The author's own read
-  is not a review at any length or care, because merge condition 2 is about
-  who wrote the commits. A session that cannot launch a subagent cannot merge;
-  it says so and stops.
-- **A herdr session.** The process boundary buys nothing a review uses and
-  costs everything a launch costs.
-- **Fanning out into parallel reviewers.** See the paragraph below: eight
-  angles per pull request died twice on the session limit and found nothing a
-  single consolidated pass missed.
+**Three ways to get this wrong.** Handing the review to a peer session — it is
+not a reviewer, it costs a re-explanation of context the launching session
+already holds, and its findings arrive as a relay instead of on the pull
+request. Reading the diff yourself and calling it reviewed — merge condition 2
+is about who wrote the commits, so the author's own read is not a review at any
+length or care. And a herdr session — the process boundary buys nothing a review
+uses.
 
 The **one** exception is an `ultra` review, which a person triggers and no
-session may launch. If a session cannot start a subagent — a harness that
-withholds the tool, a permission refused — that is a **blocker**, reported to
-the person as one. It is never a licence to review some other way, and the
-pull request waits.
+session may launch. A session that cannot start a subagent is **blocked**: it
+says so to the person and the pull request waits. That is never a licence to
+review some other way.
 
 Feedback then goes to a *fresh* executor, briefed from the pull request and the
 review, because a pane held open across a multi-day review is the expensive
 thing.
 
-**The review's default shape: one reviewer per pull request, one verifier per
-fix round.** Every angle the review should take is a section of the one
+**The shape: one reviewer per pull request, one verifier per fix round.** Every angle the review should take is a section of the one
 reviewer's brief, and the verifier reads the fix commit against the round's
 disposition table. Fan out into parallel reviewers only when the angles are
 genuinely independent *and* the budget is known to carry them: eight parallel
@@ -1225,8 +1219,7 @@ itself, not an announcement somebody must receive.
 
   1. a review has been read **at the sha being merged**;
   2. that review was written by **an agent that did not write the commits** —
-     a separate reviewer process or subagent, which the author may launch
-     itself; and
+     a subagent the author may launch itself; and
   3. the branch **contains the current `main`** at the moment it merges.
 
   Whoever can satisfy all three may merge, the author included; a session that

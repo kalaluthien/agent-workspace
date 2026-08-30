@@ -37,7 +37,9 @@ import sys
 # the work in hand would go false at every handover -- witnessed the day this
 # was written, on the session that wrote it. <n> distinguishes sessions sharing
 # a campaign and a role.
-NAME = re.compile(r"^campaign-[0-9]+-(?:executor|reviewer)-[0-9]+$")
+# `executor` is the only role: a review runs as a subagent of the session that
+# wants the merge, so it has no session to name. AGENTS.md, "Naming a session".
+NAME = re.compile(r"^campaign-[0-9]+-executor-[0-9]+$")
 
 
 def refuse(why):

@@ -136,9 +136,10 @@
  *   3. Review the pull request, and land it or send it back. NOTHING LANDS
  *      WITHOUT A CURRENT REVIEW -- not a delegate's work, not a session's own.
  *      The executor pushes, REPORTs the URL and its sha once per round, and
- *      waits. A campaign session launches a reviewer on the pull request -- an
- *      in-process subagent by default, a herdr session only for a many-turn or
- *      `ultra` review -- reads the findings, and then either merges -- and
+ *      waits. The session that wants the merge launches a reviewer on the pull
+ *      request -- an in-process subagent, always, the only mode; a person may
+ *      trigger an `ultra` review and no session may -- reads the findings,
+ *      and then either merges -- and
  *      tells the executor the work is durable, which is what lets the executor
  *      drop its worktree -- or briefs a fresh executor from the pull request
  *      and the review and runs the loop again. The author may be the merger,
