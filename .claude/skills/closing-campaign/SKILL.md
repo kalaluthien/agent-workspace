@@ -35,7 +35,7 @@ body so nothing in the directory carries it. Take it from the person, or match i
 among the open anchors and say which.
 
 ```sh
-gh issue list -R kalaluthien/agent-workspace --label campaign --state open
+gh issue list -R kalaluthien/agent-workspace --label campaign --state open --limit 200
 ```
 
 **Then the binding, before any other gate**, because closing is the most
@@ -44,7 +44,8 @@ campaign session in the container's `AGENTS.md`).
 
 ```sh
 gh api --paginate repos/kalaluthien/agent-workspace/issues/"$N"/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body' | tail -1
+  --jq '.[] | select(.body | startswith("BOUND ")) | .body
+        | split("\n")[0] | rtrimstr("\r")' | tail -1
 hostname -s
 ```
 

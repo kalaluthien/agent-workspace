@@ -1,6 +1,6 @@
 ---
 name: opening-campaign
-description: Opens a campaign in the agent-workspace container, or joins one that already exists — decides new versus follow-up, files the anchor issue and binds it to this machine, scaffolds its directory and takes it as the holding session, and acquires the member repositories. Use when a person arrives in the container root with an unstructured request, such as a sentence, an issue number, or a screenshot, and cross-repository work has to start. Not for closing a campaign, and not for the second and later subtasks of a campaign already scaffolded in this directory.
+description: Opens a campaign in the agent-workspace container, or joins one that already exists — files the anchor issue and binds it to this machine, scaffolds its directory and takes it as the holding session, and acquires the member repositories. Use once AGENTS.md § Not every request is a campaign has decided the request opens a campaign, or joins one this machine is not yet holding. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for the second and later subtasks of a campaign already scaffolded in this directory.
 ---
 
 # Opening a campaign
@@ -33,49 +33,22 @@ The steps are ordered. The anchor issue number is the campaign ID, so nothing
 that needs the ID can run before step 3. Why each guard is shaped the way it is:
 `references/rationale.md`.
 
-### 1. Decide new or follow-up
+### 1. Read the binding, then the holder
 
-```sh
-gh issue list -R kalaluthien/agent-workspace --label campaign --state open
-```
+You arrive having already been told what the request is, by `AGENTS.md` § Not
+every request is a campaign: either no open campaign covers it and you are
+opening one — go straight to step 2 — or one does, and this machine is not yet
+holding it. **That survey lives there and only there.** Two prose copies of it
+would drift, and the copy this skill kept was the one a session reached last.
 
-Read the body of each one that could plausibly cover the request
-(`gh issue view <N> -R kalaluthien/agent-workspace`); the title alone does not
-carry the scope.
-
-**That tracker holds subtasks and unrelated issues too**, so cross-check the
-hand-applied label against the one property a subtask cannot have — no parent.
-The three kinds are § When the container is a member of its own campaign.
-
-```sh
-gh issue list -R kalaluthien/agent-workspace --state open \
-  --json number,title,parent \
-  --jq '.[] | select(.parent == null) | "#\(.number)\t\(.title)"'
-```
-
-An issue in that output but not in the labelled listing may be an anchor whose
-label was forgotten, so read its body before deciding no campaign covers the
-request. A labelled issue *missing* from it is a subtask wearing the label; say
-so rather than joining it.
-
-| what you find | what to do |
-| --- | --- |
-| No open campaign's Scope covers the request | Open a new campaign: continue to step 2. |
-| One open campaign's Scope covers it | Read the binding below, then the holder. **In that order** — they decide whether you may touch this campaign at all, and as what. |
-| Two or more could cover it, or the fit is arguable | Ask the person which, naming the candidates. Do not guess. |
-
-Match on Scope, never on `## Repos`, and treat testing or fixing a campaign's own
-deliverable as a follow-up on it, because Scope is written in artifacts and
-cannot separate "build X" from "validate X". File one as "Filing a subtask
-issue" below says.
-
-**Then read the binding, before anything else about this campaign**, because
-joining one bound elsewhere is the mistake this read exists to stop (§ Who is a
-campaign session in the container's `AGENTS.md`).
+**Read the binding before anything else about this campaign**, because joining
+one bound elsewhere is the mistake this read exists to stop (§ Who is a campaign
+session in the container's `AGENTS.md`).
 
 ```sh
 gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body' | tail -1
+  --jq '.[] | select(.body | startswith("BOUND ")) | .body
+        | split("\n")[0] | rtrimstr("\r")' | tail -1
 hostname -s
 ```
 
@@ -161,18 +134,19 @@ a wrong set of principles for every delegate if it goes by unseen.
 
 Before scaffolding anything, because its number is the campaign ID.
 
-**Survey again, in the same breath as the create**, because step 1's survey is
+**Survey again, in the same breath as the create**, because the gate's survey is
 minutes old and two sessions that each checked before either filed both file.
 
 ```sh
-gh issue list -R kalaluthien/agent-workspace --label campaign --state open
+gh issue list -R kalaluthien/agent-workspace --label campaign --state open --limit 200
 gh issue create -R kalaluthien/agent-workspace \
   --label campaign --title "<title>" --body-file <path>
 ```
 
 Read the listing before the create; anything new that could cover the request
-sends you back to step 1's table. This narrows the window and does not close it:
-if two anchors appear anyway, close one as `not planned` and say which survived.
+sends you back to the gate's table. This narrows the window and does not close
+it: if two anchors appear anyway, close one as `not planned` and say which
+survived.
 
 **Read the label back before scaffolding anything**, because an anchor filed
 without it is invisible to every later survey and the next session opens a second
@@ -198,8 +172,9 @@ migrated in the seconds since, so stop and say so.
 
 **Write the body by filling the anchor template**, `assets/README.md` in this
 skill — its sections, each placeholder replaced, and no others; issue #1 is the
-worked example. Write Scope to be matched against a request in step 1, and leave
-`## Plan` unrevised afterwards, the body being a charter (§ Running a campaign).
+worked example. Write Scope to be matched against a request by the gate, and
+leave `## Plan` unrevised afterwards, the body being a charter (§ Running a
+campaign).
 
 ### 4. Scaffold the directory
 
@@ -308,8 +283,8 @@ subtask, and whether you are doing it here or handing it to a repository agent.
 
 ### Filing a subtask issue
 
-Both the follow-up path in step 1 and every subtask after step 6 file the same
-shape. `--parent` is what puts the issue in the campaign, so an issue filed
+A follow-up the gate sent here to join, and every subtask after step 6, file the
+same shape. `--parent` is what puts the issue in the campaign, so an issue filed
 without it belongs to no campaign and appears in no listing:
 
 ```sh
@@ -412,8 +387,8 @@ auth-refactor-260828/
 
 The probes and the failures behind these: `references/gotchas.md`.
 
-- A request that sounds new is usually a follow-up, and skipping step 1 produces
-  two anchor issues that both look right with nothing erroring.
+- A request that sounds new is usually a follow-up, and skipping the gate's
+  survey produces two anchor issues that both look right with nothing erroring.
 - **You may not be this campaign's session**, and the two reads in step 1 decide
   it — in that order, because a campaign bound elsewhere is not yours to read a
   holder file for.
