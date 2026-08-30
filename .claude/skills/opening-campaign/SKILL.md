@@ -88,26 +88,26 @@ it, and overwriting `runtime/holder` on a guess gives one campaign two holders.
 `unreadable` carries its reason — read it before deciding anything.
 File it or take the one you were given, then decide the mode **before you claim
 anything**, because the mode names the branch and the process holding it: a
-container or campaign-directory subtask is yours to work and you announce
-`CLAIMED` (§ Talking to a repository agent); a member-repository subtask makes
-you the *launcher* of a delegate, which announces nothing and makes step 5 yours
-(§ Delegating to a repository agent). Either way stop there — you do not
-scaffold, sync, or close.
+container or campaign-directory subtask is yours to work, so you write your own
+claim record to `$CAMPAIGN/runtime/claims/<issue>` at the claim (§ Talking to a
+repository agent has its four fields and the `printf`); a member-repository
+subtask makes you the *launcher* of a delegate, which needs no record — its
+`--name` is its branch — and makes step 5 yours (§ Delegating to a repository
+agent). Either way stop there — you do not scaffold, sync, or close.
 
 **`none`, `dead`, or your own — you are the holding session**; rewrite the file as
-step 4 does and carry on. Record a `CLAIMED` that reaches you before anything
-else, because a message dies with the session that received it: the fields and
-the `printf` are § Talking to a repository agent, written to
-`$CAMPAIGN/runtime/claims/<issue>` — after
-`mkdir -p "$CAMPAIGN/runtime/claims"` if this campaign was scaffolded before
-that directory existed.
+step 4 does and carry on. Then `mkdir -p "$CAMPAIGN/runtime/claims"` if this
+campaign was scaffolded before that directory existed, because every session
+that claims a subtask here writes its own record into it and a missing directory
+makes the close gate unable to enumerate at all. You do not write another
+session's record; you read them.
 
 **No directory at all** — the campaign is on GitHub but not here, so run steps 2,
 4 and 5 with its ID and body from the anchor issue, and skip step 3, which exists
 only to mint an ID it already has. Do this before launching or receiving
 anything: the directory is the only home `runtime/holder` and
-`runtime/claims/` have, so until it exists you are not the holder and a
-`CLAIMED` has nowhere to be recorded (§ Who is a campaign session, "Holding
+`runtime/claims/` have, so until it exists you are not the holder and a claim
+record has nowhere to be written (§ Who is a campaign session, "Holding
 scaffolds"). Step 2 still runs because neither the slug nor the kind is
 recoverable from GitHub; say which kind you picked.
 

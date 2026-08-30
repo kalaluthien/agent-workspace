@@ -939,9 +939,10 @@ An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the campaign session retires it once
 that work is durable.
 
-**Who reviews, and in which mode.** The reviewer is one the holder launches, and
-`/code-review <PR#>` is the whole opening prompt either way, because it is
-model-invocable. The default is an **in-process subagent**: a review only reads,
+**Who reviews, and in which mode.** The reviewer is launched by the session that
+wants the merge — never by the session that wrote the commits, which is the
+whole of the non-author condition above — and `/code-review <PR#>` is the whole
+opening prompt either way, because it is model-invocable. The default is an **in-process subagent**: a review only reads,
 so it needs none of what a process boundary is paid for — no handover file, no
 canary, no pane, no sweep. A **herdr session** is for a review that will take
 many turns, or an `ultra` review, which is person-triggered only and never the
@@ -958,9 +959,9 @@ angles per pull request died twice on the session limit, and one consolidated
 pass found findings of the same quality at a fraction of the spend (#52).
 
 **The pull request is the review's working memory.** A finding that exists only
-inside a running session is not yet found. The holder posts findings as a
-comment on the pull request the moment they consolidate, before launching
-anything else, and a reviewer that runs long writes findings out as it goes
+inside a running session is not yet found. Findings are posted as a comment on
+the pull request the moment they consolidate, before anything else is launched,
+by whoever consolidated them, and a reviewer that runs long writes findings out as it goes
 rather than only in its final report. Findings held in a session's context died
 with the session limit twice; findings on the pull request survived everything
 and let a fix start while the rest of the review was still running (#52).
@@ -1064,22 +1065,45 @@ itself, not an announcement somebody must receive.
   cannot be enumerated at all, and that is a refusal rather than a pass** — an
   empty directory says no claim was taken, a missing one says nothing.
 
-- **An executor never merges its own pull request, and never reviews it.** It
-  pushes, `REPORT`s the URL once, and waits. The holding session verifies in
-  GitHub, launches a reviewer, reads the findings, and then either merges —
-  telling the executor the work is durable, which is what lets it drop its
-  worktree — or briefs a fresh executor from the pull request and the review,
-  until the review is clean. **The holder never merges unreviewed**, and a push
-  after a review retires that review: a review is of a pull request at a
-  revision. Witnessed 2026-08-28, which is why the rule is written: an executor
-  session squash-merged its own pull request in the same minute the holding
-  session sent a hold, and nothing on disk said who merges (modelled: `A4` the
-  collision, `A5`/`A7` the rule, `A8` the control, `A13` the re-push).
+- **Two conditions gate a merge, and neither of them names a role.** A pull
+  request is merged only when a review has been read *at the sha being merged*,
+  and only when that review was not written by the session that wrote the
+  commits. Whoever can satisfy both may merge, the author included; a session
+  that cannot satisfy either may not, however senior its role.
+
+  **This replaces "an executor never merges its own pull request".** The rule
+  was written from a witnessed collision on 2026-08-28 — a session squash-merged
+  its own pull request in the same minute a hold was sent — but the defect that
+  collision exposed was unreviewed work landing under a racing instruction, not
+  the identity of the merger. Binding the merge to a role fixed it by making one
+  session the gate for every landing, which is a bottleneck the campaign pays on
+  every subtask and which the role's own retirement removes anyway.
+
+  The property is also the only form a second reader can enforce. Both
+  conditions are GitHub facts — the sha a review comment names, the sha the
+  merge lands, the author of each — so a checker can read them; nothing on
+  GitHub records which session was the holder, so the role form was a contract
+  with the consumer as its only reader. That is the shape this file elsewhere
+  calls a hardcoded copy wearing a contract's clothes.
+
+  What survives unchanged is the sha half: **a push after a review retires that
+  review**, because a review is of a pull request at a revision. So an executor
+  that pushes a fix round does not inherit its own earlier clearance — the
+  round ends in a `REPORT` naming the new sha, and the next merge needs a
+  review read there (modelled: `A4` the collision, `A5`/`A7` the rule, `A8` the
+  control, `A13` the re-push).
+
+  **The reviewer is launched by whoever wants the merge**, which is usually the
+  session holding the claim. It still pushes, `REPORT`s the URL and its sha
+  once, and waits — for the review, not for a role's permission. When the review
+  is clean at that sha it merges and drops its worktree; when it is not, the
+  findings go on the pull request and the fix round is its own or a fresh
+  executor's.
 
 - **A claim in a message is never evidence.** It says where to look; then look,
   in GitHub, yourself. It stays cheap to look only while the claim carries its
   evidence: a `REPORT` names the sha it sits at and, for a fix round, the URL of
-  the comment holding its disposition table, so the holder's check is one fetch
+  the comment holding its disposition table, so the reader's check is one fetch
   and one compare. **A verdict, a fix report, or a `REPORT` that does not pin
   its sha is unactionable.** Verdicts and pushes race — a review verdict
   crossed a reconciliation push twice — and the crossing was harmless only
