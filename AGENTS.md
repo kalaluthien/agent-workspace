@@ -1222,13 +1222,22 @@ itself, not an announcement somebody must receive.
   **Two of the three are GitHub facts; the second is not, and that is the
   standing weakness of this rule.** Condition 1 is readable — the sha a review
   comment names against the sha the merge lands. Condition 3 is *readable* — the branch's
-  behind-count against `main` — but **it is enforced by nothing here**: `main`
-  carries no branch protection (probed 2026-08-30, `protected: false`), so
-  GitHub refuses no merge on containment, and check-then-merge is not atomic.
-  It is a discipline with a cheap check, which is a better place to be than
-  condition 2 and is not the same as being enforced. **One repository setting
-  would make GitHub the atomic reader** — require-branches-up-to-date protection
-  on `main` — and that is the owner's call, not a session's. **Condition 2 has no automatic reader
+  behind-count against `main` — but **it is enforced by nothing here**, and the
+  way that survives a setting being switched on is worth the four lines.
+
+  `main` is protected as of 2026-08-30 and the up-to-date requirement is set:
+  `protected: true`, `required_status_checks.strict: true`. **It enforces
+  nothing.** "Require branches to be up to date" is a *modifier on required
+  status checks*, and `contexts` is empty, so there is nothing for it to modify.
+  Measured the same day on a throwaway branch cut one commit behind: `behind=1`,
+  `mergeStateStatus: CLEAN`, mergeable. The setting stores, reads back `true`,
+  and refuses no merge.
+
+  What protection did buy is real and unrelated: `main` now refuses force-pushes
+  and deletion. Making it enforce condition 3 needs at least one required status
+  check, which means CI on this repository — a larger change and the owner's to
+  decide. Until then condition 3 is a discipline with a cheap check, which is a
+  better place to be than condition 2 and is not the same as being enforced. **Condition 2 has no automatic reader
   on this machine**: one `gh` account signs every session's merges and comments,
   so GitHub cannot tell an author's review from a reviewer's, and
   `spec/alloy/agent.als` axiomatizes the separateness in `review`'s comment with

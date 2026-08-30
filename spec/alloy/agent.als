@@ -1274,14 +1274,19 @@ fun executorsOf[i: Issue]: set Agent { task.i }
    state read by nobody" -- the trace that condition exists to forbid -- cannot
    be built. Extending the model to see it means giving `main` a state and
    branches a base, which is a layer's worth of work and its own subtask (#95).
-   Until then the condition is enforced by NOTHING, which is worth stating
-   plainly because the first draft of this comment claimed GitHub's behind-count
-   enforced it. It does not: `main` on this repository carries no branch
-   protection (probed 2026-08-30, `protected: false`), so GitHub refuses no
-   merge on containment, and check-then-merge is not atomic in any case. The
-   behind-count is a cheap READING, not an enforcer. Require-branches-up-to-date
-   protection on `main` would make GitHub the atomic reader, and that is the
-   owner's setting to grant. A16/A16b measure only the sha half. */
+   Until then the condition is enforced by NOTHING, and that survived the
+   setting being switched on, which is why it is stated at this length.
+
+   The first draft of this comment claimed GitHub's behind-count enforced it.
+   `main` was then unprotected. It is protected as of 2026-08-30 WITH the
+   up-to-date requirement set -- `protected: true`,
+   `required_status_checks.strict: true` -- and it STILL enforces nothing:
+   "require branches to be up to date" modifies required status checks, and
+   `contexts` is empty, so it modifies nothing. Measured on a throwaway branch
+   one commit behind: `behind=1`, `mergeStateStatus: CLEAN`, mergeable. The
+   setting stores, reads back true, and refuses no merge. Making it bite needs
+   at least one required check, which means CI, which is the owner's call.
+   A16/A16b measure only the sha half. */
 pred mergedOnCurrentReview {
   always (Now.ev = MergePR implies
             (Now.issue.pr in Reviewed
