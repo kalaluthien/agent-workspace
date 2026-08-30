@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Prove campaign-claim reads a record honestly and refuses to conclude from a
+dead pid.
+
+Only the readings are covered: `take` and the ref delete in `release` reach
+GitHub, and a fixture that mocked them would be testing the mock. What is here
+is the half that decides whether a claim gets deleted, which is the half whose
+failure destroys somebody's work.
+
+No case may reach the network. The first draft had one that did, and it created
+a branch on the real remote every time the suite ran -- a test that writes to
+production, hidden inside a green line of output.
+
+Usage: scripts/campaign-claim-test
+"""
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+CLAIM = Path(__file__).resolve().parent / "campaign-claim"
+DEAD = "78513"      # long gone; any absent pid does
+DEAD_REC = f"session s1\nname n1\npid {DEAD}\nbranch campaign-1/7-x\n"
+
+
+def run(args, files=None, mtime=None, env=None):
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        for name, body in (files or {}).items():
+            (claims / name).write_text(body)
+            if mtime is not None:
+                os.utime(claims / name, (mtime, mtime))
+        e = dict(os.environ, **(env or {}))
+        return subprocess.run([sys.executable, str(CLAIM), *args, "--dir", d],
+                              capture_output=True, text=True, env=e)
+
+
+OLD = 1767225600.0     # 2026-01-01, before any session on this machine
+CASES = []
+
+
+def case(name, args, files=None, mtime=None, env=None, want=None, code=None):
+    CASES.append((name, args, files, mtime, env, want, code))
+
+
+# The reading that says nothing is here, which must not read like a refusal.
+case("an empty claims directory is a reading, not an absence",
+     ["list"], want="0 claim(s)", code=0)
+case("no record for this subtask says so and names the path it read",
+     ["status", "7"], want="verdict none", code=0)
+
+# The verdict that costs work if it is wrong.
+case("a dead pid on an old record is stale?, never dead",
+     ["status", "7"], {"7": DEAD_REC}, OLD, want="verdict stale?", code=0)
+case("...and it says why, so the reader knows to ask",
+     ["status", "7"], {"7": DEAD_REC}, OLD, want="do not read this as free", code=0)
+case("a dead pid on a record written since the last restart is plain dead",
+     ["status", "7"], {"7": DEAD_REC}, None, want="verdict dead", code=0)
+
+# A record that cannot answer must say so rather than answer wrongly.
+case("a record with no pid is unreadable, not dead",
+     ["status", "7"], {"7": "session s1\nname n1\nbranch b\n"},
+     want="verdict unreadable", code=0)
+
+# The release gate.
+case("release refuses a dead pid with no confirmation",
+     ["release", "7"], {"7": DEAD_REC}, OLD, want="not proof the session is gone", code=1)
+case("release names the restart evidence when it refuses",
+     ["release", "7"], {"7": DEAD_REC}, OLD, want="a restart is likely", code=1)
+
+# A missing directory is not an empty one.
+case("a missing claims directory refuses rather than reading empty",
+     ["list"], want=None, code=None)
+
+# `take` is covered only up to the point where it would reach GitHub. The first
+# draft of this case ran the whole command and created campaign-1/7-x on the
+# real remote, which is the shape of test that quietly does damage: a suite is
+# run over and over, and every run of that one was a live write.
+case("take refuses a subtask this machine already has a record for",
+     ["take", "1", "7", "x"], {"7": DEAD_REC},
+     want="already exists", code=1)
+
+
+def main():
+    failed = 0
+    for name, args, files, mtime, env, want, code in CASES:
+        if name.startswith("a missing claims directory"):
+            with tempfile.TemporaryDirectory() as d:
+                r = subprocess.run([sys.executable, str(CLAIM), "list", "--dir", d],
+                                   capture_output=True, text=True)
+            ok = r.returncode != 0 and "does not exist" in r.stdout + r.stderr
+            if not ok:
+                failed += 1
+                print(f"FAIL  {name}\n      got exit {r.returncode}: "
+                      f"{(r.stdout + r.stderr).strip()[:160]}")
+            continue
+        r = run(args, files, mtime, env)
+        out = r.stdout + r.stderr
+        ok = (want is None or want in out) and (code is None or r.returncode == code)
+        if not ok:
+            failed += 1
+            print(f"FAIL  {name}\n      wanted {want!r} and exit {code}, got "
+                  f"exit {r.returncode}:\n      {out.strip()[:200]}")
+    print(f"{len(CASES) - failed}/{len(CASES)} cases pass")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

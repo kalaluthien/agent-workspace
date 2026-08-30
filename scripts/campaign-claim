@@ -1,0 +1,366 @@
+#!/usr/bin/env python3
+"""Take, read, and release a subtask's claim -- the one place its shape lives.
+
+A claim is two things that must agree: a branch on the remote, which is what
+actually stops two executors working one subtask, and a record on this machine
+saying which session holds it. AGENTS.md writes both as copy-pasteable blocks
+and says the record's shape is written in exactly one place. It was written in
+three, and no delegate-side file carried it at all, so a launched delegate was
+told to write a record whose shape it could not read (#100's review).
+
+One script owns both halves, so there is nothing to copy. A delegate runs
+`take`; a close or a sweep runs `list` and `status`.
+
+    campaign-claim take <N> <issue> <topic> [--repo owner/repo] [--name NAME]
+    campaign-claim status <issue>
+    campaign-claim list
+    campaign-claim release <issue>
+
+The campaign directory comes from --dir or $CAMPAIGN. There is no default and no
+search: guessing which directory is this campaign's is how a record lands in
+another campaign's tree, and the caller always knows.
+
+WHAT IT REFUSES TO GUESS
+
+`name` is the harness name, which only the calling session can read (ListAgents'
+first line). Left out, the record says so rather than carrying an invented name:
+a wrong address sends a later reader to the wrong session, which is worse than
+no address, because they will believe it.
+
+`dead` is not proof of an absence. A harness restart gives a live session a new
+pid, so its record reads dead while the session works on. `status` says so
+whenever it can see the evidence -- a claude process that started after the
+record was written -- and downgrades its verdict to `stale?`. A caller that
+treats `dead` as "free to take" without reading that line takes a live claim.
+
+EXIT
+
+0 for a completed action or a clean read; 1 for a refusal; 3 for `take` when the
+subtask is already claimed, which is news rather than an error. The status is
+about the action; every verdict is on stdout, and the reading that produced it
+is printed beside it.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+DEFAULT_REPO = "kalaluthien/agent-workspace"
+SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def run(*args, **kw):
+    return subprocess.run(args, capture_output=True, text=True, **kw)
+
+
+def campaign_dir(arg):
+    d = arg or os.environ.get("CAMPAIGN")
+    if not d:
+        sys.exit("campaign-claim: no campaign directory. Pass --dir or set "
+                 "$CAMPAIGN. This script does not search for one.")
+    p = Path(d).expanduser().resolve()
+    claims = p / "runtime" / "claims"
+    if not claims.is_dir():
+        sys.exit(f"campaign-claim: {claims} does not exist.\n"
+                 f"  A claim record has no home but the campaign directory, so "
+                 f"scaffold it first\n"
+                 f"  (opening-campaign steps 2 and 4). A missing directory is "
+                 f"not an empty one:\n"
+                 f"  an empty directory says no claim was taken, a missing one "
+                 f"says nothing.")
+    return p, claims
+
+
+def record_path(claims, issue):
+    return claims / str(issue)
+
+
+def write_record(path, name, branch):
+    session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    pid = os.environ.get("CLAUDE_PID", "")
+    missing = [k for k, v in (("CLAUDE_CODE_SESSION_ID", session),
+                              ("CLAUDE_PID", pid)) if not v]
+    if missing:
+        print(f"!! {' and '.join(missing)} not set; the record will carry "
+              f"'unknown' there.\n"
+              f"   session identifies this session across a restart and a "
+              f"rename; pid is what\n"
+              f"   makes liveness a local check. Without them a later reader "
+              f"can neither reach\n"
+              f"   nor test this claim.", file=sys.stderr)
+    body = (f"session {session or 'unknown'}\n"
+            f"name {name or 'unknown'}\n"
+            f"pid {pid or 'unknown'}\n"
+            f"branch {branch}\n")
+    path.write_text(body)
+    return body
+
+
+def read_record(path):
+    if not path.exists():
+        return None
+    fields = {}
+    for line in path.read_text().splitlines():
+        if " " in line:
+            k, v = line.split(" ", 1)
+            fields[k] = v.strip()
+    return fields
+
+
+def alive(pid):
+    """One reader for liveness, and it is the script that owns it."""
+    r = run(str(HERE / "campaign-session-alive"), str(pid))
+    return (r.stdout or r.stderr).strip() or "unreadable (no output)"
+
+
+def session_names():
+    """What a claude session's exec'd file is called on this install -- read out
+    of campaign-session-alive, which owns that fact and says in its own header
+    that it is a fact about the install rather than about claude.
+
+    Written out again here it was wrong immediately: this install answers
+    `claude.exe`, a hardcoded `claude` matched nothing, and the restart check
+    returned "no restart" instead of "I could not look". That is the exact
+    failure this repository has a guard against, committed by the script meant
+    to prevent it."""
+    import importlib.util
+    spec = importlib.util.spec_from_loader(
+        "session_alive",
+        importlib.machinery.SourceFileLoader(
+            "session_alive", str(HERE / "campaign-session-alive")))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.NAMES
+
+
+def restarted_since(mtime):
+    """Evidence that a `dead` pid may name a session that is still working: a
+    claude session that started after this record was written.
+
+    Returns (count, why_unreadable). A `why` is not zero: it says the check did
+    not run, and the caller must not print it as "no restart"."""
+    try:
+        names = session_names()
+    except Exception as e:
+        return None, (f"could not read the session names from "
+                      f"campaign-session-alive ({e.__class__.__name__})")
+    r = run("ps", "-axo", "lstart=,ucomm=")
+    if r.returncode != 0:
+        return None, "could not read the process table"
+    newer = 0
+    for line in r.stdout.splitlines():
+        stamp, _, comm = line.strip().rpartition(" ")
+        if comm not in names:
+            continue
+        try:
+            started = time.mktime(time.strptime(stamp.strip()))
+        except ValueError:
+            return None, f"could not parse a process start time ({stamp!r})"
+        if started > mtime:
+            newer += 1
+    return newer, None
+
+
+def cmd_status(args):
+    _, claims = campaign_dir(args.dir)
+    path = record_path(claims, args.issue)
+    print(f"read {path}")
+    rec = read_record(path)
+    if rec is None:
+        print("verdict none -- no record was ever written here")
+        return 0
+    for k in ("session", "name", "pid", "branch"):
+        print(f"  {k} {rec.get(k, '<absent>')}")
+    pid = rec.get("pid", "")
+    if not pid or pid == "unknown":
+        print("verdict unreadable -- the record carries no pid to test")
+        return 0
+    v = alive(pid)
+    if v == "dead":
+        newer, why = restarted_since(path.stat().st_mtime)
+        if why:
+            print(f"verdict dead -- but {why}, so a restart cannot be ruled out")
+        elif newer:
+            print(f"verdict stale? -- pid {pid} is held by nobody, and {newer} "
+                  f"claude process(es) started after this record was written.")
+            print("  A harness restart gives a live session a new pid. Ask the "
+                  "session named above\n  before taking this claim; do not read "
+                  "this as free.")
+        else:
+            print(f"verdict dead -- pid {pid} is held by nobody, and no claude "
+                  f"process started after this record was written")
+    else:
+        print(f"verdict {v}")
+    return 0
+
+
+def cmd_list(args):
+    _, claims = campaign_dir(args.dir)
+    files = sorted(p for p in claims.iterdir() if p.is_file())
+    print(f"read {claims} -- {len(files)} claim(s)")
+    if not files:
+        print("  (empty: no claim was taken here. This is a reading, not a "
+              "missing directory.)")
+    for p in files:
+        rec = read_record(p) or {}
+        pid = rec.get("pid", "")
+        v = alive(pid) if pid and pid != "unknown" else "unreadable (no pid)"
+        print(f"  {p.name:8} {v:12} {rec.get('branch', '<no branch>'):40} "
+              f"{rec.get('name', '<no name>')}")
+    return 0
+
+
+def cmd_take(args):
+    _, claims = campaign_dir(args.dir)
+    branch = f"campaign-{args.anchor}/{args.issue}-{args.topic}"
+    path = record_path(claims, args.issue)
+    if path.exists():
+        print(f"!! {path} already exists; run `status {args.issue}` before "
+              f"taking it.", file=sys.stderr)
+        return 1
+
+    # Resolved and checked before the create, never written inline: a read that
+    # fails and still prints goes up as the sha and comes back as the 422 that
+    # means "already claimed", so the subtask reads as taken and is abandoned.
+    r = run("gh", "api", f"repos/{args.repo}/commits/main", "--jq", ".sha")
+    sha = r.stdout.strip()
+    if r.returncode != 0 or not SHA.match(sha):
+        print(f"refusing: could not resolve {args.repo}'s main sha.\n"
+              f"  got {sha!r}; {r.stderr.strip()}", file=sys.stderr)
+        return 1
+    print(f"cut from {args.repo}@main {sha}")
+
+    r = run("gh", "api", f"repos/{args.repo}/git/refs",
+            "-f", f"ref=refs/heads/{branch}", "-f", f"sha={sha}")
+    if r.returncode != 0:
+        if "already exists" in r.stderr.lower():
+            print(f"already claimed: {branch} exists on {args.repo}.")
+            print("  create-ref refuses an existing ref server-side, so this is "
+                  "the claim working.")
+            print("  Read who holds it before doing anything else:")
+            print(f"    {sys.argv[0]} list --dir <campaign>")
+            return 3
+        print(f"refusing: create-ref failed.\n  {r.stderr.strip()}",
+              file=sys.stderr)
+        return 1
+    print(f"claimed {branch}")
+    body = write_record(path, args.name, branch)
+    print(f"wrote {path}")
+    print("".join(f"  {l}\n" for l in body.splitlines()))
+    return 0
+
+
+def cmd_release(args):
+    _, claims = campaign_dir(args.dir)
+    path = record_path(claims, args.issue)
+    rec = read_record(path)
+    if rec:
+        pid = rec.get("pid", "")
+        v = alive(pid) if pid and pid != "unknown" else "unreadable (no pid)"
+        if v != "dead":
+            print(f"refusing: {path} reads {v}.\n"
+                  f"  Only a confirmed absence is safe to act on, and deleting "
+                  f"a claim costs the\n  one thing keeping two executors off "
+                  f"the subtask. Run `status {args.issue}` and ask.",
+                  file=sys.stderr)
+            return 1
+        # `dead` is never enough on its own. A harness restart makes a live
+        # session read dead, and nothing on this machine can tell that from an
+        # exit -- so the release needs a person who asked, not a heuristic that
+        # guessed. The restart evidence is printed to say how likely it is.
+        newer, why = restarted_since(path.stat().st_mtime)
+        if why:
+            note = f"note: the restart check did not run ({why})."
+        elif newer:
+            note = (f"note: {newer} claude session(s) started after this record "
+                    f"was written, so a restart is likely.")
+        else:
+            note = ("note: no claude session started after this record was "
+                    "written.")
+        print(note, file=sys.stderr)
+        if not args.confirmed_absent:
+            print(f"refusing: pid {pid} is held by nobody, which is not proof "
+                  f"the session is gone.\n"
+                  f"  Ask the session named above, then re-run with "
+                  f"--confirmed-absent '<who said so>'.\n"
+                  f"  Deleting a claim costs the one thing keeping two "
+                  f"executors off the subtask.", file=sys.stderr)
+            return 1
+        print(f"absence confirmed by: {args.confirmed_absent}")
+        branch = rec.get("branch", "")
+    else:
+        print(f"no record at {path}; nothing on this machine attributes a "
+              f"claim to a session.")
+        branch = args.branch
+        if not branch:
+            print("refusing: pass --branch to say which ref to release.",
+                  file=sys.stderr)
+            return 1
+
+    r = run("git", "rev-list", "--count", f"origin/main..origin/{branch}")
+    if r.returncode != 0:
+        print(f"refusing: could not read {branch} against origin/main.\n"
+              f"  {r.stderr.strip()}", file=sys.stderr)
+        return 1
+    if r.stdout.strip() != "0":
+        print(f"refusing: {branch} holds {r.stdout.strip()} commit(s) beyond "
+              f"origin/main.\n  A ref holding commits is reported, never "
+              f"deleted.", file=sys.stderr)
+        return 1
+    print(f"{branch} holds nothing beyond origin/main")
+    r = run("gh", "api", "-X", "DELETE",
+            f"repos/{args.repo}/git/refs/heads/{branch}")
+    if r.returncode != 0:
+        print(f"refusing: could not delete the ref.\n  {r.stderr.strip()}",
+              file=sys.stderr)
+        return 1
+    print(f"deleted {branch}")
+    if rec:
+        path.unlink()
+        print(f"deleted {path}")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True, description=__doc__.splitlines()[0])
+    # On every subcommand rather than only before it: `list --dir X` is what a
+    # person types, and argparse would otherwise reject it with a usage line
+    # that does not say why.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--dir", help="the campaign directory (or set $CAMPAIGN)")
+    common.add_argument("--repo", default=DEFAULT_REPO)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    t = sub.add_parser("take", parents=[common])
+    t.add_argument("anchor")
+    t.add_argument("issue")
+    t.add_argument("topic")
+    t.add_argument("--name", help="this session's ListAgents name")
+    t.set_defaults(fn=cmd_take)
+
+    s = sub.add_parser("status", parents=[common])
+    s.add_argument("issue")
+    s.set_defaults(fn=cmd_status)
+
+    l = sub.add_parser("list", parents=[common])
+    l.set_defaults(fn=cmd_list)
+
+    r = sub.add_parser("release", parents=[common])
+    r.add_argument("issue")
+    r.add_argument("--branch")
+    r.add_argument("--confirmed-absent", metavar="WHO",
+                   help="who established the session is gone. `dead` alone "
+                        "never releases a claim.")
+    r.set_defaults(fn=cmd_release)
+
+    args = ap.parse_args()
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
