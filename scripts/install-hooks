@@ -13,6 +13,13 @@
 # script cannot read; a symlinked one is worse, because writing through the link
 # edits a file outside this repository -- a machine wiring the shared guard by
 # symlink would lose it for every repository at once.
+#
+# And it refuses a repository with core.hooksPath set, because that setting is
+# where git looks. Writing .git/hooks/pre-commit there installs a guard that
+# never runs and prints "installed:" while doing it, which is worse than not
+# installing one: the next commit that should have been refused lands clean and
+# nothing says the guard was absent. Wiring hooks globally is exactly how the
+# machine-wide guard gets deployed, so this is not a hypothetical setting.
 
 set -e
 
@@ -24,6 +31,15 @@ root=$(cd "$(dirname "$common")" && pwd -P)
 hook=$common/hooks/pre-commit
 ours="$root/scripts/check-rule-readers"
 marker='# Installed by scripts/install-hooks.'
+
+hooks_path=$(git config --get core.hooksPath || true)
+if [ -n "$hooks_path" ]; then
+	echo "refusing: core.hooksPath is set to $hooks_path." >&2
+	echo "git runs hooks from there, so writing $hook would install nothing." >&2
+	echo "Chain $ours from $hooks_path/pre-commit by hand, or unset the config" >&2
+	echo "for this repository and re-run." >&2
+	exit 1
+fi
 
 if [ -L "$hook" ]; then
 	echo "refusing: $hook is a symlink to $(readlink "$hook")." >&2

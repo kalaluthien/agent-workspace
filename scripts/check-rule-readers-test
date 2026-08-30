@@ -32,7 +32,16 @@ FORM_CASES = [
     # every part of it could be reverted and all 35 cases passed. One case per
     # alternation, so a revert fails here instead of shipping quietly.
     ("session-alive: the selector combined with other flags", fence("ps -axo ucomm="), 1),
-    ("session-alive: a quoted selector", fence('ps -o "ucomm=" -p "$PID"'), 1),
+    ("session-alive: a quoted selector", fence('ps -o "ucomm" -p 1'), 1),
+    # Synthetic, and deliberately so: `\B` is what stops `-o` matching when a
+    # word character precedes the dash, and no realistic line exercises it. A
+    # narrowing nothing pins is a claim nothing holds, which is what this guard
+    # exists to refuse -- so the boundary gets a fixture even where the shape
+    # does not occur. Drop `\B` and this fires. It must hold no `|`, `;` or `&`:
+    # the form cannot cross one, so a piped fixture is quiet either way and
+    # would pin nothing -- which is how the first draft of this row passed.
+    ("session-alive: a dash inside a word is not the selector flag",
+     fence("ps -p 1 --color-o ucomm="), 0),
     # Each of the next two is matched by exactly one alternation: the list-pair
     # spelling carries no `=`, so only the list form sees it, and the bare
     # selector names no `ps`, so only the quoted-constant form does. The
@@ -61,6 +70,12 @@ FORM_CASES = [
     ("name-session: the herdr pane call", fence("herdr agent rename p1 campaign-1-executor-1"), 1),
     ("name-session: the harness call", fence('herdr agent prompt p1 "/rename campaign-1-executor-1"'), 1),
 ]
+
+# How far the pinning goes, stated because a reader would otherwise infer more:
+# every *form* is pinned by at least one case, and within `campaign-session-alive`
+# every alternation is pinned individually. Alternations of the other four forms
+# are not -- several can be deleted with the suite green, listed in the
+# deferred-scope comment on PR #91. That is scope, not an oversight.
 
 # The parser decides what counts as code. Each of these was an unsafe silence:
 # the guard exited 0 on a violation that renders as code.
@@ -112,6 +127,11 @@ EXEMPTION_CASES = [
     ("an exemption naming a misspelled script is reported",
      "# t\n\n<!-- unguarded: campaign-typo-session -- x -->\n\n```sh\nps -o comm= -p 1\n```\n", 1,
      "an exemption naming no script"),
+    ("an exemption reaches a following indented block",
+     "# t\n\n<!-- unguarded: campaign-session-alive -- on purpose -->\n\n    ps -o comm= -p 1\n", 0),
+    ("an exemption spent on an indented block does not reach the next one",
+     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n    ps -o comm= -p 1\n\n"
+     "Then:\n\n    ps -o comm= -p 1\n", 1),
     ("an exemption inside an open fence exempts nothing",
      "# t\n\n```sh\n<!-- unguarded: campaign-session-alive -- x -->\nps -o comm= -p 1\n```\n", 1),
 ]
