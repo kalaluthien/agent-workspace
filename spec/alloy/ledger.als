@@ -19,7 +19,7 @@
  *   session.als   a campaign session: one role, bound to one machine       30
  *   agent.als     the executor: launch, the four messages, retirement       62
  *
- * (the trailing number is that file's command count; 149 in all)
+ * (the trailing number is that file's command count; 144 in all)
  *
  *   agent -> session -> repos -> ledger
  *
