@@ -320,17 +320,76 @@ two survive unchanged, one holds by construction, and one inverts.
   holds nothing beyond `origin/main` may be released — deleted — only when no
   agent on *your* machine works it; a live agent elsewhere that has not pushed
   loses its claim to that rule, which is one more reason it pushes early.
-  A *delegate's* every other name is this string projected: it is `--name`d the
-  branch with its slash flattened to a dash
-  (`campaign-1-31-executor-identity`), so the name an address resolves and the
-  branch a reader meets are one string. An executor session is the case that
-  rule cannot reach — its harness named it before this campaign existed and only
-  a person can rename it — so it announces the name it has, and
-  `<campaign>/runtime/executors/<issue>` records that name durably. Two naming
-  rules, then, and one thing follows for every reader: **never test a name
-  against the branch.** A `campaign-<N>-` prefix test finds the delegates and
-  misses exactly what the record exists to catch. § Talking to a repository
-  agent carries the announcement.
+  The branch is not a name. **Every session on this machine is named
+  `campaign-<anchor>-<role>-<n>`** — see § Naming a session — so a name says what a
+  session is doing, and a reader who wants the branch reads the claim record or
+  GitHub. **Never test a name against a branch**: they are two strings on
+  purpose, and a test that treats them as one finds whatever happens to match
+  and misses the rest.
+
+# Naming a session
+
+**`campaign-<anchor>-<role>-<n>`.** One rule for every session on this machine,
+whatever it is doing.
+
+- `<anchor>` — the campaign's anchor issue number.
+- `<role>` — `executor` or `reviewer`.
+- `<n>` — a number distinguishing sessions that share the first two, assigned in
+  the order they appear.
+
+```
+campaign-1-executor-1        an executor on campaign #1
+campaign-1-executor-2        another one
+campaign-61-executor-1       an executor on campaign #61
+campaign-1-reviewer-1        a reviewer on campaign #1
+```
+
+**The subtask is deliberately not in the name.** A session works several
+subtasks — in parallel or one after another — and renaming it at each handover
+would make the name track the work in hand rather than the session. Witnessed
+the day this rule was written: a session named for subtask #80 picked up #88 an
+hour later, and its name was false from that moment. **A name identifies the
+session for as long as it runs; the claim record says which subtask it holds.**
+
+**A delegate is an executor** and gets no role word of its own. Where it runs — a
+clone under `<campaign>/repos/`, rather than this checkout — changes how it is
+launched and how its liveness is read, not what it is doing.
+
+**A session has two names and neither propagates to the other** (measured
+2026-08-30), so `scripts/campaign-name-session` sets both from one call and is
+this rule's one consumer — it refuses a name the rule does not admit rather than
+applying half of it:
+
+```sh
+scripts/campaign-name-session <pane> <name> [<pane> <name> ...]
+```
+
+Underneath it is the two herdr calls, which is what to run by hand if the script
+is not to hand:
+
+```sh
+herdr agent rename <pane> campaign-<anchor>-<role>-<n>
+herdr agent prompt <pane> "/rename campaign-<anchor>-<role>-<n>"
+```
+
+The second is the harness name — what `ListAgents` resolves, what a peer
+addresses, and what the claim record's `name` field holds. The first is what
+`herdr agent list` shows. A session renamed on one path only answers to two
+different names depending on who is asking.
+
+**A rename that does not take is a permission question, not a tool guard.**
+`herdr agent prompt` drives any pane, the caller's own included; whether a given
+call is *allowed* is a permission decision, and it is not stable. Measured
+2026-08-30 on one machine: refused on one session, then accepted on that same
+session; accepted on a peer, then refused on that same peer minutes later. So
+build on no outcome at all. Run the script, read what it reports applied and not
+applied, and confirm with `ListAgents`.
+
+**This retires the rule that made a delegate's name its branch with the slash
+flattened.** One rule replaces two, so nothing has to remember which kind of
+session it is looking at, and **never test a name against a branch** survives as
+a consequence rather than as a workaround: they are two strings on purpose, and
+under this rule the name does not carry the subtask at all.
 
 # Three planes
 
@@ -790,9 +849,9 @@ cannot resolve.
   launch line into the pane, and a terminal silently drops a line past 1024
   bytes — nothing runs and the launch looks like a slow agent.
 - Choose the session UUID in advance (`claude --session-id`) so the transcript
-  path is known before the agent starts, and `--name` it its branch with the
-  slash flattened (`campaign-<N>-<issue>-<topic>`) so the name an address
-  resolves and the branch a reader meets are one string, not two rules.
+  path is known before the agent starts, and `--name` it `campaign-<anchor>-executor-<n>`,
+  the one naming rule (§ Naming a session). `--name` sets the harness name only;
+  give it the same herdr pane name too, because the two do not propagate.
 - Put the prompt **before** any variadic flag on the `claude` command line.
   `--add-dir` and `--allowedTools` swallow a trailing prompt as one of their own
   values, and the run dies on "Input must be provided".
@@ -1039,8 +1098,8 @@ stale.
   **That directory is the only thing that can say which subtask an executor
   session holds.** The close gate and the retirement sweep enumerate it and
   read each `pid` the way `runtime/holder` is read; nothing matches names by
-  prefix, because an executor session keeps whatever name its harness gave it
-  and cannot rename itself. **A campaign whose directory has no
+  prefix, because a name is not a branch (§ Naming a session) and can be changed
+  while the claim it belongs to cannot. **A campaign whose directory has no
   `runtime/executors/` cannot be enumerated at all, and that is a refusal rather
   than a pass** — an empty directory says no
   executor announced, a missing one says nothing. An executor that skips
