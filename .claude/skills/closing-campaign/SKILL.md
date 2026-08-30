@@ -18,7 +18,7 @@ procedure rather than kept beside it, so a step that changes cannot leave a
 predicate behind saying what it used to do.
 
 A campaign bound here with no directory is taken first — `opening-campaign`
-steps 2 and 4, nothing to acquire — because the holder and executor records have
+steps 2 and 4, nothing to acquire — because the holder and claim records have
 no other home (§ Who is a campaign session, "Holding scaffolds"). One path, then.
 
 ## Procedure
@@ -472,7 +472,7 @@ ls -A "$CAMPAIGN_DIR"
 rm -rf -- "$CAMPAIGN_DIR"
 ```
 
-`runtime/` goes with it — `holder`, every `executors/<issue>` record, every
+`runtime/` goes with it — `holder`, every `claims/<issue>` record, every
 handover brief — by design, since nothing off this machine reads them. Say so.
 
 Holds when: the closing comment carries the listing taken immediately before the

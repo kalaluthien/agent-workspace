@@ -294,7 +294,7 @@ two survive unchanged, one holds by construction, and one inverts.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, and
   **optional off the holding machine**. A campaign is its anchor issue; the
   directory is one machine's cache of it, and the machine that holds the
-  campaign always has one, because the holder and executor records live there
+  campaign always has one, because the holder and claim records live there
   and nowhere else. A campaign legitimately has none here when this machine
   does not hold it — not taken here yet, or bound elsewhere.
 
