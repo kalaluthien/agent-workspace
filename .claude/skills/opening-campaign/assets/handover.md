@@ -8,7 +8,10 @@ changes across a restart, and this campaign lost a REPORT to a name that had
 moved. You never write the anchor issue's body. You may merge your own pull
 request, on the three conditions in AGENTS.md, merge condition 1-3: a review
 read at the sha being merged, written by an agent that did not write the
-commits, and a branch containing the current `main`.
+commits, and a branch containing the current `main`. You commission that review
+yourself: an in-process subagent, always, with the model named for the depth of
+the change and the review level named in the prompt. AGENTS.md, "Who reviews,
+and in which mode", is the one statement of both.
 
 ## The task
 

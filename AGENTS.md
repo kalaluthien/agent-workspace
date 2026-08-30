@@ -1070,36 +1070,39 @@ retirement sweep. (It is not read-only — it posts its findings on the pull
 request, and that is the point of it.)
 
 ```
-Agent(subagent_type: "general-purpose", model: <see below>,
+Agent(subagent_type: "general-purpose", model: "<named below>",
       description: "Review PR <N>",
-      prompt: "/code-review <PR#>\n\nRun this at the <level> review level. …")
+      prompt: "/code-review <PR#>\n\nRun this at the <low|medium|high|xhigh|max>\n"
+              "review level. …")
 ```
 
 `general-purpose` because `fork` inherits the author's context and would review
 the author's own reasoning; `description` because the tool requires it;
 `isolation` unset, because a worktree or a remote environment buys a review
-nothing.
+nothing. **Name the model, always** — leaving `model` out inherits a default
+rather than expressing a choice, and there is no value meaning "whatever the
+launcher is". `ultra` is not a level; it is a person-only review mode, and
+putting it in that slot is the one way to write this block illegally.
 
-**Pick the model by the reading, not by a constant.** A review whose difficulty
-is in the *logic* — a state machine, a concurrency argument, a change whose
-correctness is not local — runs on the same model as the session launching it,
-because a weaker reader silently returns "looks fine" on exactly the reasoning
-that needed a reader. A review whose difficulty is in the *volume* — many files,
-a mechanical sweep, a claim checked against many call sites — runs on a lighter
-model, because the work is coverage rather than depth and the budget is better
-spent on more of it. The two are the general model-selection rule applied to a
-review, where the depth being judged is the depth of the *change*, not of the
-reading. So the launcher's own model is a **floor** on the logic case rather
-than a match: a session that is itself running light does not get to hand its
-reviewer a lighter reader still.
+**Two knobs, and they answer different questions.** The **model** answers how
+hard the change is to reason about; the **level** answers how much reading the
+review has to do. Both are named on every launch.
 
-**Name the review level in the prompt, every time.** It is a separate knob from
-the model and it survived the constant that used to pin it: `/code-review` takes
-a level, and given none it reuses whatever was typed last, which in a fresh
-subagent is nothing. The two knobs move in opposite directions on the volume
-case — coverage is what the *level* buys, so a volume review is a lighter model
-at a **higher** level, and a logic review is the heavier model at whatever level
-the reading needs.
+- **Model, by the depth of the change** — the general model-selection rule, on
+  the change rather than on the review. A change whose correctness is not local
+  (a state machine, a concurrency argument, an invariant spread across callers)
+  takes the heavier model, because a weaker reader returns "looks fine" on
+  exactly the reasoning that needed a reader. A change that is broad and shallow
+  takes a lighter one. Judge the change; the launcher's own model is not the
+  input, and a session running light does not get to license a lighter reviewer.
+- **Level, by how much there is to read** — many files, many call sites, a claim
+  to check everywhere it is stated. `medium` is the working baseline; a sweep
+  goes above it. Given no level, `/code-review` reuses the last one typed, which
+  in a fresh subagent is none at all.
+
+So a broad mechanical sweep is a lighter model at a higher level, and a subtle
+local change is a heavier model at a lower one. The knobs are independent, and a
+review needing both at their limit is a brief covering two reviews.
 
 **A reviewer that needs more than the brief allows is a brief written too wide.
 Split the brief.**
@@ -1117,10 +1120,11 @@ session may launch. A session that cannot start a subagent is **blocked**: it
 says so to the person and the pull request waits. That is never a licence to
 review some other way.
 
-Findings go to a *fresh* executor, briefed from the pull request and the review.
-The executor that wrote the code does not sit waiting through the review; what
-it holds — a worktree, a claim, a session — costs something for as long as it
-holds it, and a review can take days.
+The claim-holding executor waits for the verdict, because it is the one that
+merges. What it does not do is carry a *long* fix round: findings can go to a
+fresh executor briefed from the pull request and the review, and that is the
+call to make when the round is large or the wait has been days, since a
+worktree, a claim and a session all cost something for as long as they are held.
 
 **The shape: one reviewer per pull request, one verifier per fix round.** Every angle the review should take is a section of the one
 reviewer's brief, and the verifier reads the fix commit against the round's
