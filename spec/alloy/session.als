@@ -21,7 +21,9 @@
  *
  *   event                     performed by
  *   Survey                    AGENTS.md's routing gate: list the open anchors,
- *                             `gh issue list --label campaign --state open`
+ *                             `gh issue list --label campaign --state open
+ *                             --limit 200` -- the default is thirty and newest
+ *                             first, and anchors are the oldest issues here
  *   FileAnchor (actor)        opening-campaign step 3, which also posts BOUND
  *   Adopt                     opening-campaign step 4 on a campaign that exists:
  *                             a session starts working a campaign bound here
