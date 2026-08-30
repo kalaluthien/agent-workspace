@@ -214,11 +214,25 @@ campaign, or unreadable — stop and ask.
 
 Then finish it:
 
-- Confirm `runtime/executors/` came with the copy — it holds a `.gitkeep` and
-  nothing else; `closing-campaign` refuses a close when it is missing.
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
-- Delete `subtask.md`: a subtask is filed from the skill's own copy, and a second
-  copy in a git-ignored directory can be filled long after it has gone stale.
+- Delete `subtask.md` and `handover.md`. Both are filled from the skill's own
+  copy — `AGENTS.md` names `assets/subtask.md` for a subtask and
+  `assets/handover.md` for a brief, and a brief is written to
+  `runtime/handover/<issue>.md`, never to `handover.md` — so neither top-level
+  copy has a reader, and a copy in a git-ignored directory can be filled long
+  after it has gone stale.
+
+  What separates these two from `README.md`, which is filled rather than
+  deleted: a campaign has one `README.md` and something reads it, so the copy
+  is the artifact. A subtask template and a brief template are instantiated
+  once *per subtask*, so a single copy at the campaign root is not an unfilled
+  artifact — there is nothing it could be filled with. Count the instances
+  before deciding whether a templated copy is filled or deleted.
+- Everything else the copy brought stays, and that is all of it: `CLAUDE.md`,
+  one line of `@AGENTS.md`; `README.md`, overwritten below; `runtime/handover/`
+  and `runtime/executors/`, a `.gitkeep` each — confirm `runtime/executors/`
+  arrived, because `closing-campaign` refuses a close when it is missing; and
+  `scripts/`, which arrives holding a `.gitkeep` and nothing else.
 - Overwrite `README.md` with the anchor issue body, which replaces every
   placeholder at once — the close-time sync run backwards:
 
