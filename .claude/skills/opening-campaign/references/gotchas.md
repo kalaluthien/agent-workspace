@@ -23,15 +23,17 @@ same reason it was added — the sha is read before it is used, never inline.
 
 ## A request that sounds new is usually a follow-up
 
-Step 1 is the step this procedure exists for; skipping it produces a second
-campaign over the same scope, and nothing errors — you get two anchor issues that
-both look right. Two sessions each running step 1 honestly produce the same pair,
-which is why step 3 surveys a second time.
+The gate's survey (`AGENTS.md` § Not every request is a campaign) is what this
+procedure rests on; skipping it produces a second campaign over the same scope,
+and nothing errors — you get two anchor issues that both look right. Two sessions
+each running that survey honestly produce the same pair, which is why step 3
+surveys a second time.
 
 ## You may not be this campaign's session
 
-The two reads in step 1 decide it, in that order, because a campaign bound
-elsewhere is not yours to read a holder file for. Everything durable is written
+The two reads in step 1 — the binding, then the holder — decide it, in that
+order, because a campaign bound elsewhere is not yours to read a holder file
+for. Everything durable is written
 as read-then-write against GitHub rather than as "mine because I made it": the
 anchor body is compared before it is overwritten, the directory may already
 exist, and the shared checkout is left on its default branch so a re-run cannot

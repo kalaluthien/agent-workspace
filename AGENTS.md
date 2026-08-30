@@ -1,23 +1,96 @@
 # agent-workspace
 
-A container for running **campaigns** — cross-repository units of work — on
-repositories that live elsewhere. `README.md` says what the container is; this
-file is how to work inside it. `spec/alloy/ledger.als` says why these rules are
-what they are, in its comments, and points at the three layers stacked above
-it.
+A container for running **campaigns** — units of work across the repositories
+they need — on repositories that live elsewhere. `README.md` says what the
+container is; this file is how to work inside it. `spec/alloy/ledger.als` says
+why these rules are what they are, in its comments, and points at the three
+layers stacked above it.
 
 This project is early. Where a rule is missing, decide, do the work, and write
 the decision back here.
 
 # What a campaign is
 
-One assignment a person is responsible for, worked across several repositories
-at once. Bigger than a ticket, no size ceiling — a week of migration or the
-whole life of a product. It splits into subtasks, and follow-up subtasks keep
-arriving until someone decides it is over.
+One assignment a person is responsible for, worked across the repositories it
+needs, which may be none. Bigger than a ticket, no size ceiling — a week of
+migration or the whole life of a product. It splits into subtasks, and
+follow-up subtasks keep arriving until someone decides it is over.
 
-A campaign is not a repository and not a ticket. It is the place where several
-repositories are worked on together.
+A campaign is not a repository and not a ticket. It is what collects the
+subtasks of one assignment, and the repositories — none, one, or several — that
+assignment needs.
+
+# Not every request is a campaign
+
+Settle this before anything else. Only a campaign that has to be opened, joined
+or closed loads a skill; most of what arrives here loads none.
+
+**A person saying a campaign is over is routed before anything is read.** Load
+`closing-campaign` and stop here. Only a person decides a close, and the two
+readings below would take a close request for a subtask of the campaign it
+closes.
+
+Otherwise, two readings decide it, in this order.
+
+**One: does any open campaign's Scope cover the request?**
+
+```sh
+gh issue list -R kalaluthien/agent-workspace --label campaign \
+  --state open --limit 200
+```
+
+Read the body of each one that could plausibly cover it (`gh issue view <N> -R
+kalaluthien/agent-workspace`); the title alone does not carry the Scope. Match
+on Scope, never on `## Repos`, and treat testing or fixing a campaign's own
+deliverable as covered by it, because Scope is written in artifacts and cannot
+separate "build X" from "validate X".
+
+**That tracker holds subtasks and unrelated issues too**, so cross-check the
+hand-applied label against the one property a subtask cannot have — no parent.
+The three kinds are § When the container is a member of its own campaign.
+
+```sh
+gh issue list -R kalaluthien/agent-workspace --state open --limit 200 \
+  --json number,title,parent \
+  --jq '.[] | select(.parent == null) | "#\(.number)\t\(.title)"'
+```
+
+**`--limit` on both, because the default is thirty and newest first, and anchors
+are the oldest issues on this tracker.** The second listing fetches every open
+issue to filter it, so it truncates hardest exactly where it is most needed: a
+tracker whose thirty newest are all subtasks returns no anchor and looks clean.
+
+An issue in that output but not in the labelled listing may be an anchor whose
+label was forgotten. § When the container is a member of its own campaign
+says how to read its body, and that reading decides, not this listing. A
+labelled issue *missing* from it is a subtask wearing the label; say so rather
+than joining it.
+
+**Two, only if nothing covers it: is the request finished when this session
+ends?** A campaign is work that outlives the sitting — it splits into
+subtasks, is handed to agents, and keeps producing follow-ups until a person
+calls it over. A question answered, a file corrected, one change that lands
+complete, is none of that and needs none of it.
+
+| what the two readings say | what this is |
+| --- | --- |
+| An open campaign's Scope covers it | **A subtask of that campaign.** Read the binding first (§ Who is a campaign session): filing a sub-issue writes the anchor's index, and that is a write. Then § Running a campaign, "Subtasks", files it. Load `opening-campaign` only to *join* — this machine is not holding the campaign, or has no directory for it. |
+| Two or more could cover it, or the fit is arguable | **A question for the person.** Name the candidates; do not guess. |
+| Nothing covers it, and it ends with this session | **Not campaign work.** Answer it, or make the change and land it. No anchor, no subtask, no directory, no skill. |
+| Nothing covers it, and it will outlive this session | **A new campaign.** Load `opening-campaign`. |
+
+Size is not one of the readings, and asking it first is the mistake this
+ordering prevents. A one-line edit inside a campaign's Scope is that campaign's
+subtask, because the sub-issue index is the only place its close can look and
+work done beside it is invisible there. The converse holds as plainly: a large
+change that no campaign's Scope covers and that finishes here is still not a
+campaign.
+
+**Not campaign work is not unmanaged work.** The container's own git rules hold
+whatever the work is — its own branch, a pull request, and the `pre-commit`
+guard that refuses a direct commit to `main`. Those are this repository's rules
+rather than a campaign's, so a change lands here without being anybody's
+subtask.
 
 # Who is a campaign session
 
@@ -59,13 +132,17 @@ person — a migration says there why.
 
 ```sh
 gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body' | tail -1
+  --jq '.[] | select(.body | startswith("BOUND ")) | .body
+        | split("\n")[0] | rtrimstr("\r")' | tail -1
 ```
 
-REST returns comments oldest first, so `tail -1` is the current binding and no
-output means the campaign is not bound (probed 2026-08-28). Read it before every
-write to the anchor — body, comment, or sub-issue link — and before launching
-any executor onto one of its subtasks.
+REST returns comments oldest first, so the last matching comment is the current
+binding, and taking each one's first line is what makes `tail -1` find it: over
+whole bodies `tail -1` takes the last *line*, which on an annotated binding is
+the prose (both probed 2026-08-29). `rtrimstr` guards a body stored with `\r\n`;
+the bindings probed here hold `\n`. No output means the campaign is not bound.
+Read it before every write to the anchor — body, comment, or sub-issue link —
+and before launching any executor onto one of its subtasks.
 
 **A session posts `BOUND` in exactly two cases**: for a campaign it has just
 filed itself, and when a person tells it to. The second is migration, and it is
@@ -86,21 +163,65 @@ printf 'session %s\npid %s\n' "$CLAUDE_CODE_SESSION_ID" "$CLAUDE_PID" \
 ```
 
 `CLAUDE_PID` is the `claude` process; `$$` is the shell one tool call runs in
-and is dead before the next one starts. Liveness is `kill -0` plus the process
-still being `claude` — both commands, and all three of their outcomes, probed
-2026-08-28:
+and is dead before the next one starts. Liveness has one reader,
+`scripts/campaign-session-alive`, and a caller turns its outcomes into one of
+five words:
 
 ```sh
-PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
-kill -0 "$PID" 2>/dev/null && [ "$(ps -o comm= -p "$PID")" = claude ]
+if [ ! -s "$CAMPAIGN/runtime/holder" ]; then V=none
+else
+  PID=$(awk '$1 == "pid" { print $2 }' "$CAMPAIGN/runtime/holder")
+  V=$("$CONTAINER/scripts/campaign-session-alive" "$PID" 2>&1) || V="unreadable ($V)"
+fi
+echo "$V"
 ```
 
-Alive means you are an executor session; dead means you take over by rewriting
-the file. This is the one lock here that cannot rot, because staleness is a
-local process fact rather than a guess about a machine you cannot see — which is
-what pinning the campaign to one machine was bought for. Its failure mode is a
-recycled PID belonging to a *different* `claude`, and that reads as live, so the
-check errs towards refusing to take over: ask rather than overwrite. `runtime/`
+`CONTAINER` is resolved the one way § Three planes gives, which is also where
+both skills resolve it before calling this.
+
+**Only `none` and `dead` let you take over**, and they are the two absences this
+reader can confirm: no holder was ever recorded, and the recorded pid is held by
+nobody. **`dead` is an absence of the process, not of the session.** A harness
+restart hands a surviving session a new pid, so any record written before one
+reads `dead` while the session that wrote it is still working — measured
+2026-08-30, when `runtime/executors/62` named pid 24840, that pid read `dead`,
+and the session that wrote it was alive at another pid in the same minute. When
+the record predates a restart, `dead` is stale rather than absent, and only
+asking the session settles it.
+`alive` is the holder still working. `other` is a pid held by something whose
+name this install does not know — a recycled pid *or* a differently-named
+claude, and nothing here can tell those apart. `unreadable` is the reading
+itself failing, and it carries its reason. The last three mean leave it alone,
+because the act on the other side destroys a tree or overwrites a live holder,
+and only a confirmed absence is safe to act on. **Read the word, never the exit
+status** — the status is about the reading, as it is for `campaign-local-work`.
+Testing the file before the pid is what keeps a *missing* holder from arriving
+as `unreadable`, which would be an absence wearing the word for "I could not
+look".
+
+**Never hand-roll the comparison.** It was four prose copies of `[ "$(ps -o
+comm= -p "$PID")" = claude ]`, and that test reads a live session as **dead**:
+`ps -o comm=` reports how a process was invoked, so the same build answers
+`claude` through a wrapper and its full path when exec'd by path. Measured
+2026-08-29 on three live sessions of one campaign, two through a wrapper and one
+by path, while both readers below were about to run over them. The script keeps
+`kill -0` for existence, because a syscall against your own process table cannot
+fail the transient way running `ps` can, and reads the name from `ucomm`, which
+is invariant across *how* a process was started. `ucomm` is the exec'd file's
+basename rather than an identity, so the names it matches are a fact about this
+install — which is why an unrecognised one is `other` and not `dead`.
+
+This lock rots one way, and a restart is the way: staleness is a local process
+fact rather than a guess about a machine you cannot see — which is what pinning
+the campaign to one machine was bought for — but a pid stops naming its session
+the moment the harness restarts, and nothing in the record distinguishes that
+from an exit. The session id is the field that survives, and only
+`runtime/holder` carries one. It errs towards refusing to take
+over, and does so two ways now: a pid recycled onto a different `claude` reads
+`alive`, and a pid recycled onto anything else reads `other`. The second is
+wider than the residue `spec/alloy/session.als` records under R3g, which names
+only the first — a claim phase 2 of #59 has to widen when it rewrites that
+model. Ask rather than overwrite. `runtime/`
 dies with the directory, which is the right lifetime — nothing off this machine
 reads the holder.
 
@@ -317,7 +438,7 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0
   cheap:
 
   ```sh
-  gh issue list -R kalaluthien/agent-workspace --state open \
+  gh issue list -R kalaluthien/agent-workspace --state open --limit 200 \
     --json number,title,parent --jq '.[] | select(.parent == null) | .number'
   ```
 
@@ -343,10 +464,9 @@ git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0
 # Running a campaign
 
 **Open** — a person arrives in the container root with a sentence, an issue
-number, or a screenshot. Check the open anchor issues first: this is a *new*
-campaign only when no open campaign's scope covers it. Otherwise the request is
-a follow-up subtask on the campaign that already exists. Load the
-`opening-campaign` skill.
+number, or a screenshot. § Not every request is a campaign says what it is, and
+most of what arrives loads no skill at all. Load `opening-campaign` when the
+request opens a campaign, or joins one this machine is not yet holding.
 
 **Subtasks** — one subtask is one GitHub issue, filed on the repository whose
 code changes, and created **as a sub-issue of the anchor**:
