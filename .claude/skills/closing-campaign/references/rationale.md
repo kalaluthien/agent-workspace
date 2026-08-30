@@ -79,8 +79,9 @@ survived" over a body nobody managed to read. Absent files make `cmp -s` exit 2,
 and the pre-emptive `rm -f` stops a leftover from an earlier run standing in for
 either of them.
 
-**Why the compare survives one campaign, one machine** — the two silent writers
-it is demoted to catching, and why the loss is worse than it looks — is
+**Why the compare is the everyday guard under one campaign, one machine** — the
+three causes of a silent overwrite it catches, and why the loss is worse than
+it looks — is
 `AGENTS.md` § Compare then write the anchor issue body, which states it in full
 and is the copy to correct.
 

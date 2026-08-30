@@ -795,8 +795,8 @@ lost-update window per write.
 Two moments is not *write only at open and at close*, which `spec/alloy/`
 weighs as `syncAtCloseOnly` and rejects.
 Adding a repository **is** a scope change, so it syncs when it happens; held
-back until the close it is invisible to every other session holding the
-campaign, and the loss it was meant to prevent happens at the close anyway.
+back until the close it is invisible to every other session of the campaign,
+and the loss it was meant to prevent happens at the close anyway.
 
 The campaign's `README.md` and the anchor issue body carry **the same sections
 in the same shapes**, and the anchor template
@@ -1091,7 +1091,8 @@ Never answer one with the other.
 
 An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the session that launched it retires
-it once its work has landed.
+it once its work is durable — landed, or the subtask closed without it, which
+a subtask dropped as *not planned* is.
 
 **Who reviews, and in which mode.** The reviewer is launched by the session that
 wants the merge, **and the author may be that session** — the non-author
