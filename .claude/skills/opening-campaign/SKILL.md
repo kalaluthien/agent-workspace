@@ -17,7 +17,7 @@ Finished when all of these hold:
   bare `grep '<'` over the whole file, which reports hits on a clean README.
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
-  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/executors/`,
+  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/claims/`,
   `runtime/holder`, `runtime/repos`, and `scripts/`, with `runtime/holder`
   naming this session and a live PID.
 - The campaign's `README.md` is the anchor issue body, and
@@ -98,15 +98,15 @@ scaffold, sync, or close.
 step 4 does and carry on. Record a `CLAIMED` that reaches you before anything
 else, because a message dies with the session that received it: the fields and
 the `printf` are § Talking to a repository agent, written to
-`$CAMPAIGN/runtime/executors/<issue>` — after
-`mkdir -p "$CAMPAIGN/runtime/executors"` if this campaign was scaffolded before
+`$CAMPAIGN/runtime/claims/<issue>` — after
+`mkdir -p "$CAMPAIGN/runtime/claims"` if this campaign was scaffolded before
 that directory existed.
 
 **No directory at all** — the campaign is on GitHub but not here, so run steps 2,
 4 and 5 with its ID and body from the anchor issue, and skip step 3, which exists
 only to mint an ID it already has. Do this before launching or receiving
 anything: the directory is the only home `runtime/holder` and
-`runtime/executors/` have, so until it exists you are not the holder and a
+`runtime/claims/` have, so until it exists you are not the holder and a
 `CLAIMED` has nowhere to be recorded (§ Who is a campaign session, "Holding
 scaffolds"). Step 2 still runs because neither the slug nor the kind is
 recoverable from GitHub; say which kind you picked.
@@ -230,7 +230,7 @@ Then finish it:
   before deciding whether a templated copy is filled or deleted.
 - Everything else the copy brought stays, and that is all of it: `CLAUDE.md`,
   one line of `@AGENTS.md`; `README.md`, overwritten below; `runtime/handover/`
-  and `runtime/executors/`, a `.gitkeep` each — confirm `runtime/executors/`
+  and `runtime/claims/`, a `.gitkeep` each — confirm `runtime/claims/`
   arrived, because `closing-campaign` refuses a close when it is missing; and
   `scripts/`, which arrives holding a `.gitkeep` and nothing else.
 - Overwrite `README.md` with the anchor issue body, which replaces every
@@ -398,7 +398,7 @@ auth-refactor-260828/
   AGENTS.md      copied from assets/agents/migration.md
   CLAUDE.md      @AGENTS.md
   README.md      issue #7's body, section for section
-  runtime/handover/ runtime/executors/ scripts/
+  runtime/handover/ runtime/claims/ scripts/
   runtime/anchor-body-derived.md  issue #7's body as the README was derived from
   runtime/holder                  the session holding #7 on this machine
   repos/api/     on the default branch; #31 is worked on campaign-7/31-token-refresh

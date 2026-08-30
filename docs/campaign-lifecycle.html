@@ -332,7 +332,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   </svg>
   <figcaption>메시지는 다섯이고 더 없다. <span class="chip">CLAIMED</span> 는 청구할 때 한 번, <span class="chip">BLOCKED</span> 는 언제든 올 수 있고 오지 않을 수도 있다.</figcaption>
   <ol class="keys">
-    <li><span class="k">1</span><p><strong>CLAIMED</strong> — 실행자가 캠페인에게. 청구할 때 한 번 보내고, <code>&lt;브랜치&gt; &lt;ListAgents 이름&gt; &lt;pid&gt;</code> 만 나른다. 브랜치와 이슈는 이미 GitHub 사실이고, 이름과 pid는 실행자만 아는 둘이다. 이름은 <code>ListAgents</code> 첫 줄이 부르는 자기 이름이고, pid는 <code>$CLAUDE_PID</code> 다. 보내는 것은 청구를 자기가 쥔 프로세스뿐이다. 띄워진 위임자는 이 메시지가 필요 없다. <code>--name</code> 이 곧 그 브랜치이고, 그 이름은 프로세스가 생기기 전에 띄운 쪽이 정했기 때문이다. 위임자를 띄운 실행자 세션도 보내지 않는다. 한 프로세스에 주소가 둘이 되고 종료 게이트가 같은 실행자를 두 번 세게 된다. 실행자 세션은 홀더가 정한 이름이 없으므로 스스로 알린다. 받은 쪽은 그 자리에서 <code>&lt;campaign&gt;/runtime/executors/&lt;issue&gt;</code> 에 적는다. 나중에 그것을 다시 읽어야 하는 쪽이 홀더이고, 메시지는 받은 세션과 함께 사라지기 때문이다. 그래서 이 기록은 <code>runtime/holder</code> 와 근거도 수명도 같다. 묶인 기계에 있고, 디렉터리와 함께 죽고, 기계 밖에서는 아무도 읽지 않으며, 어느 세션에도 매이지 않아서 뒤를 이은 홀더가 그대로 물려받는다. 이걸 건너뛴 실행자 세션은 조용한 게 아니라 보이지 않는다. 홀더는 <code>ListAgents</code> 에서 이름만 보고 어느 하위 과제인지 알 수 없어서, 종료 게이트가 그대로 지나친다.</p></li>
+    <li><span class="k">1</span><p><strong>CLAIMED</strong> — 실행자가 캠페인에게. 청구할 때 한 번 보내고, <code>&lt;브랜치&gt; &lt;ListAgents 이름&gt; &lt;pid&gt;</code> 만 나른다. 브랜치와 이슈는 이미 GitHub 사실이고, 이름과 pid는 실행자만 아는 둘이다. 이름은 <code>ListAgents</code> 첫 줄이 부르는 자기 이름이고, pid는 <code>$CLAUDE_PID</code> 다. 보내는 것은 청구를 자기가 쥔 프로세스뿐이다. 띄워진 위임자는 이 메시지가 필요 없다. <code>--name</code> 이 곧 그 브랜치이고, 그 이름은 프로세스가 생기기 전에 띄운 쪽이 정했기 때문이다. 위임자를 띄운 실행자 세션도 보내지 않는다. 한 프로세스에 주소가 둘이 되고 종료 게이트가 같은 실행자를 두 번 세게 된다. 실행자 세션은 홀더가 정한 이름이 없으므로 스스로 알린다. 받은 쪽은 그 자리에서 <code>&lt;campaign&gt;/runtime/claims/&lt;issue&gt;</code> 에 적는다. 나중에 그것을 다시 읽어야 하는 쪽이 홀더이고, 메시지는 받은 세션과 함께 사라지기 때문이다. 그래서 이 기록은 <code>runtime/holder</code> 와 근거도 수명도 같다. 묶인 기계에 있고, 디렉터리와 함께 죽고, 기계 밖에서는 아무도 읽지 않으며, 어느 세션에도 매이지 않아서 뒤를 이은 홀더가 그대로 물려받는다. 이걸 건너뛴 실행자 세션은 조용한 게 아니라 보이지 않는다. 홀더는 <code>ListAgents</code> 에서 이름만 보고 어느 하위 과제인지 알 수 없어서, 종료 게이트가 그대로 지나친다.</p></li>
     <li><span class="k">2</span><p><strong>BLOCKED</strong> — 에이전트가 캠페인에게. 자기 것이 아닌 결정을 만났을 때 보낸다. 결정과 선택지를 적고 멈춘다. 침묵은 이 메시지가 아니다. 이것 없이 멈춘 에이전트는 생각하는 에이전트와 똑같이 보인다.</p></li>
     <li><span class="k">3</span><p><strong>REPORT</strong> — 에이전트가 캠페인에게. 브랜치를 밀고 풀 리퀘스트를 연 뒤 한 번 보낸다. 풀 리퀘스트 URL을 적고 멈춘다. 그다음은 기다린다. 병합은 실행자의 일이 아니다.</p></li>
     <li><span class="k">4</span><p><strong>STATUS</strong> — 캠페인이 에이전트에게. 네 가지를 묻고, 에이전트는 답이 "없음"이어도 넷 다 순서대로 답한다. 세 번째 질문이 이 프로토콜이 존재하는 이유다. 어떤 작업이 이 기계에만 있는가, 커밋되지 않았거나, 밀리지 않았거나, 어느 원격도 모르는 브랜치에 있는가. <code>STATUS</code> 는 현재 턴 뒤에 줄을 선다. 긴 턴에서는 늦은 답이 정상이다.</p></li>
@@ -343,7 +343,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
 
 <p>세 시스템이 각각 다른 질문에 답한다. 일이 끝났는가는 GitHub이 답하고, 프로세스가 살아 있는가는 herdr이 답한다. 무엇을 하고 있으며 무엇을 기다리는가는 에이전트 자신만 안다. 이 프로토콜은 세 번째만 나른다. GitHub 사실이나 herdr 사실을 되풀이하는 메시지는 두 번째 사본을 만들고, 낡는 쪽은 언제나 사본이다. <span class="src">spec/alloy/agent.als @ d6cefab</span></p>
 
-<p>완료와 생존을 서로의 답으로 쓰지 않는다. 밀어 놓고 죽은 위임자는 성공한 것이다. 살아서 말이 많은 위임자는 아무것도 하지 않았을 수 있다. 생존은 <span class="ct">2&times; 기록</span> 에서 읽는다. 위임자는 <code>herdr agent list</code> 의 존재 여부와 세션 기록에서, 실행자 세션은 창이 아예 없으므로 <code>runtime/executors/</code> 의 <code>pid</code> 에서. 한쪽만 읽는 게이트는 다른 쪽 실행자를 통째로 지나치고 아무것도 보고하지 않는다. <code>ListAgents</code> 이름을 브랜치와 맞춰 보는 것으로는 안 된다. 실행자 세션은 하네스가 준 이름을 그대로 쓰고 스스로 이름을 바꿀 수 없으므로, 접두사로 거르면 위임자만 걸리고 이 기록이 잡으려던 실행자만 빠진다. <span class="chip">agent_status</span> 하나로는 읽지 않는다. 그 값은 화면을 보고하며 턴 중간의 멈춤을 <span class="chip">idle</span> 이라고 부른다. 대신 <span class="chip">blocked</span> 는 즉시 움직일 값이다. 다만 사용량 한도 메뉴도 창을 똑같이 막으면서 <span class="chip">idle</span> 로 보고하므로, 조용한 시간을 재는 타이머를 함께 둔다.</p>
+<p>완료와 생존을 서로의 답으로 쓰지 않는다. 밀어 놓고 죽은 위임자는 성공한 것이다. 살아서 말이 많은 위임자는 아무것도 하지 않았을 수 있다. 생존은 <span class="ct">2&times; 기록</span> 에서 읽는다. 위임자는 <code>herdr agent list</code> 의 존재 여부와 세션 기록에서, 실행자 세션은 창이 아예 없으므로 <code>runtime/claims/</code> 의 <code>pid</code> 에서. 한쪽만 읽는 게이트는 다른 쪽 실행자를 통째로 지나치고 아무것도 보고하지 않는다. <code>ListAgents</code> 이름을 브랜치와 맞춰 보는 것으로는 안 된다. 실행자 세션은 하네스가 준 이름을 그대로 쓰고 스스로 이름을 바꿀 수 없으므로, 접두사로 거르면 위임자만 걸리고 이 기록이 잡으려던 실행자만 빠진다. <span class="chip">agent_status</span> 하나로는 읽지 않는다. 그 값은 화면을 보고하며 턴 중간의 멈춤을 <span class="chip">idle</span> 이라고 부른다. 대신 <span class="chip">blocked</span> 는 즉시 움직일 값이다. 다만 사용량 한도 메뉴도 창을 똑같이 막으면서 <span class="chip">idle</span> 로 보고하므로, 조용한 시간을 재는 타이머를 함께 둔다.</p>
 
 <h2>캠페인 종료 조건</h2>
 
@@ -416,7 +416,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
 <ul>
   <li>티켓 시스템이 없다. 캠페인은 사람이 시작하고, 하위 과제는 GitHub 이슈가 나른다.</li>
   <li>캠페인 차원의 git이 없다. 캠페인 디렉터리는 커밋되지 않는다.</li>
-  <li>묶인 기계의 <code>runtime/</code> 밖에는 상태가 없다. GitHub 사실의 두 번째 사본을 만들지 않고, 자기가 설명하는 캐시보다 오래 살지도 않는다. <code>runtime/holder</code> 와 <code>runtime/executors/</code> 가 그 안에 있고, 디렉터리와 함께 죽는다.</li>
+  <li>묶인 기계의 <code>runtime/</code> 밖에는 상태가 없다. GitHub 사실의 두 번째 사본을 만들지 않고, 자기가 설명하는 캐시보다 오래 살지도 않는다. <code>runtime/holder</code> 와 <code>runtime/claims/</code> 가 그 안에 있고, 디렉터리와 함께 죽는다.</li>
   <li>하트비트가 없다. 생존은 이미 herdr 사실이고, 하트비트는 에이전트가 바쁘기만 해도 멈춘다.</li>
   <li>과제 배정 메시지가 없다. 브리프는 파일이다.</li>
   <li>자기 종료가 없다. 위임자의 작업을 검증할 수 있는 것은 그 위임자가 아닌 무언가뿐이다.</li>

@@ -110,11 +110,11 @@ machine holds it.
 
 **An executor session is an agent, not a second campaign session.** It files the
 subtask it was given or takes the one it was handed and claims the branch — and
-it announces itself with `CLAIMED` when the claim is its own to hold, which is
-the case where it works the subtask with its own hands. When it launches a
-delegate instead, the claim is the delegate's and its `--name` already says so,
-so nothing is announced; § Talking to a repository agent is the one statement of
-which is which. From the claim it is in the protocol below: it answers `STATUS`, sends `REPORT` and `BLOCKED`, stops on `STAND DOWN`,
+it writes `runtime/claims/<issue>` for itself when the claim is its own to hold,
+which is the case where it works the subtask with its own hands. When it
+launches a delegate instead, the claim is the delegate's and its `--name`
+already says so, so no record is written; § Talking to a repository agent is the
+one statement of which is which. From the claim it is in the protocol below: it answers `STATUS`, sends `REPORT` and `BLOCKED`, stops on `STAND DOWN`,
 and never surveys, never syncs, never closes, and never lands its own work —
 § Talking to a repository agent has that last one in full. It works the subtask
 whichever way § Running a campaign allows, subject to the mode rule there; what
@@ -184,7 +184,8 @@ reader can confirm: no holder was ever recorded, and the recorded pid is held by
 nobody. **`dead` is an absence of the process, not of the session.** A harness
 restart hands a surviving session a new pid, so any record written before one
 reads `dead` while the session that wrote it is still working — measured
-2026-08-30, when `runtime/executors/62` named pid 24840, that pid read `dead`,
+2026-08-30, when the claim record for #62 — then at `runtime/executors/62`,
+before #59 renamed the directory — named pid 24840, that pid read `dead`,
 and the session that wrote it was alive at another pid in the same minute. When
 the record predates a restart, `dead` is stale rather than absent, and only
 asking the session settles it.
@@ -225,13 +226,13 @@ model. Ask rather than overwrite. `runtime/`
 dies with the directory, which is the right lifetime — nothing off this machine
 reads the holder.
 
-**Holding scaffolds.** `runtime/holder` and `runtime/executors/` have no home
+**Holding scaffolds.** `runtime/holder` and `runtime/claims/` have no home
 but the campaign directory, so a session that takes a campaign on a machine
 with no directory creates one first — `opening-campaign` steps 2 and 4, with
 nothing to acquire; step 4 builds `<slug>-<YYMMDD>/` and copies the kind's
 principles, so step 2, where both are chosen, cannot be skipped — and a held
 campaign has a directory from that moment. Campaign #1
-ran without one, and its first `CLAIMED` arrived with nowhere to be recorded
+ran without one, and its first claim had nowhere to be recorded
 (#52): the record half of the protocol did not exist on exactly the path #46
 had made first-class. The fix is the scaffold rather than a second home for the
 record, because a record that outlives the tree it describes is what
@@ -323,14 +324,14 @@ two survive unchanged, one holds by construction, and one inverts.
   A *delegate's* every other name is this string projected: it is `--name`d the
   branch with its slash flattened to a dash
   (`campaign-1-31-executor-identity`), so the name an address resolves and the
-  branch a reader meets are one string. An executor session is the case that
-  rule cannot reach — its harness named it before this campaign existed and only
-  a person can rename it — so it announces the name it has, and
-  `<campaign>/runtime/executors/<issue>` records that name durably. Two naming
-  rules, then, and one thing follows for every reader: **never test a name
-  against the branch.** A `campaign-<N>-` prefix test finds the delegates and
-  misses exactly what the record exists to catch. § Talking to a repository
-  agent carries the announcement.
+  branch a reader meets are one string. A session working its own claim is the
+  case that rule cannot reach — its harness named it before this campaign
+  existed — so it writes the name it has into
+  `<campaign>/runtime/claims/<issue>`, beside the session id that outlives that
+  name. Two naming rules, then, and one thing follows for every reader: **never
+  test a name against the branch.** A `campaign-<N>-` prefix test finds the
+  delegates and misses exactly what the record exists to catch. § Talking to a
+  repository agent carries the record's shape.
 
 # Three planes
 
@@ -561,10 +562,10 @@ whose session does have a row in `herdr agent list`, which carries every session
 on this machine, and whose row does not say which subtask it holds. So that
 listing can neither confirm nor deny abandonment: its silence is not evidence
 that such a claim is free, and a row in it is not evidence that one is held.
-`<campaign>/runtime/executors/` is the reading that answers it — an executor
-session's `CLAIMED` names the branch it holds and the pid to test it by, which
-is what that record exists for — and only a claim named by no record and
-answered by no peer (`STATUS`) may be deleted.
+`<campaign>/runtime/claims/` is the reading that answers it — the record a
+claiming session wrote for itself names the branch it holds and the pid to test
+it by, which is what that record exists for — and only a claim named by no
+record and answered by no peer (`STATUS`) may be deleted.
 Leave it standing if nobody answers: deleting it costs the one thing keeping two
 executors off the subtask.
 
@@ -572,7 +573,7 @@ executors off the subtask.
 `campaign-<N>/` ref on the container that still sits at `origin/main`, and it is
 allowed to because by then step 0 has established the campaign is bound here and
 step 1 that nothing is live under its tree — by both records, `herdr agent list`
-and `runtime/executors/`, which is what makes the sweep sighted for a repo-less
+and `runtime/claims/`, which is what makes the sweep sighted for a repo-less
 campaign, whose executors the listing shows without saying which subtask they
 hold. A ref holding commits is printed there, never deleted. Refs
 in member repositories are not swept: a merged pull request releases those.
@@ -601,11 +602,12 @@ of another repository however it is checked out; and a skill marked
 `disable-model-invocation: true` is unusable by any agent in any mode, so it must
 be spelled out in the brief rather than named.
 
-So an **executor session** can take only a container subtask or
-campaign-directory work. For a member-repository subtask it becomes the launcher
-of a delegate, and the claim is then the delegate's: it is `--name`d its branch
-and `herdr agent list` carries it, so no `CLAIMED` is sent for it by anybody. §
-Talking to a repository agent says who sends that message and who never does.
+So a **campaign session working with its own hands** can take only a container
+subtask or campaign-directory work. For a member-repository subtask it becomes
+the launcher of a delegate, and the claim is then the delegate's: it is
+`--name`d its branch and `herdr agent list` carries it, so no claim record is
+written for it by anybody. § Talking to a repository agent says who writes one
+and who never does.
 
 Then, within what the repository allows, choose by cost:
 
@@ -841,11 +843,12 @@ Never answer one with the other.
   `herdr agent list` is the liveness: it lists every session on this machine,
   delegate or not — measured 2026-08-30 on herdr 0.8.2, three container
   sessions, none of them a delegate. It gives attribution only where a row's
-  name is the branch, which is a delegate's name and not an executor session's.
-  The claim record, `<campaign>/runtime/executors/<issue>`, supplies the
+  name is the branch, which is a delegate's name and not a session's own.
+  The claim record, `<campaign>/runtime/claims/<issue>`, supplies the
   attribution and not the liveness: the `pid` it names reads `dead` after a
   harness restart its session survived, so it locates a session rather than
-  proving one. Read a delegate's own progress from the session transcript,
+  proving one — and its `session` field is what still identifies that session
+  once the `pid` and the `name` have both gone stale. Read a delegate's own progress from the session transcript,
   never from `agent_status` alone, which reports the screen and calls a mid-turn
   pause `idle`.
   **Both readings, every time**: the no-live-agent gate in `closing-campaign` and
@@ -903,82 +906,101 @@ and let a fix start while the rest of the review was still running (#52).
 # Talking to a repository agent
 
 `spec/alloy/agent.als` is the contract; this is the short form. `ListAgents`
-resolves the address; herdr's pane label is not one. Where the address comes from
-is the difference between the two kinds of executor — a delegate's was chosen at
-launch, an executor session's was announced — and § Who is a campaign session
-says which is which.
+resolves the address; herdr's pane label is not one. Where the address comes
+from is the difference between the two kinds of executor — a delegate's was
+chosen at launch, and a session working its own claim wrote its own into
+`runtime/claims/<issue>` — and § Who is a campaign session says which is which.
 
-Five messages, carrying **only what the agent alone knows**. Anything a message
+Four messages, carrying **only what the agent alone knows**. Anything a message
 says about finished work duplicates a GitHub fact, and the copy is what goes
-stale.
+stale. **The claim is not among them**: it is a record the claimant writes for
+itself, not an announcement somebody must receive.
 
 | message | direction | carries |
 | --- | --- | --- |
-| `CLAIMED` | executor → campaign | `<branch> <ListAgents name> <pid>`, once, at the claim |
 | `STATUS` | campaign → agent | doing what, blocked on what, what exists only on this machine, safe to stop |
 | `REPORT` | agent → campaign | a pull request URL and the sha it sits at, once per round, unsolicited |
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
 
-- **`CLAIMED` is sent by the process that holds the claim, and only where nobody
-  chose its name.** That is exactly one case: an executor session working a
+- **The claim record is written by the session that holds the claim, for
+  itself, at the claim.** That is exactly one case: a campaign session working a
   container subtask or campaign-directory work with its own hands. A launched
-  delegate sends none — its `--name` *is* its branch, chosen before the process
-  existed, and `herdr agent list` carries its liveness — and neither does the
-  executor session that launched one, because announcing a claim it does not hold
-  would give one process two addresses and the close gate would count it twice.
+  delegate needs none — its `--name` *is* its branch, chosen before the process
+  existed, and `herdr agent list` carries it — and neither does the session that
+  launched one, because a second address for one claim would make the close gate
+  count it twice.
+
   So the two readings split by question rather than by kind: `herdr agent list`
   gives liveness for both kinds of executor and attribution only where a row's
-  name is the branch, which is a delegate's name and not an executor session's,
-  and `runtime/executors/` supplies that missing attribution for the executor
-  sessions holding their own claim. Neither is a substitute for the other. A
-  launcher needs no record of its own, and that is the intended reading rather
-  than a hole — it holds no claim and no working tree, so what the gate must
-  see is its delegate, which the listing carries under the branch name for as
-  long as it runs. A running session can be renamed, but only by a person typing
-  `/rename` into its pane (probed 2026-08-28), so renaming to the flattened
-  branch is an optional courtesy and `CLAIMED` is the mechanism.
+  name is the branch, which is a delegate's name and not a session's, and
+  `runtime/claims/` supplies that missing attribution for a session working its
+  own claim. Neither is a substitute for the other. A launcher needs no record,
+  and that is the intended reading rather than a hole — it holds no claim and no
+  working tree, so what the gate must see is its delegate, which the listing
+  carries under the branch name for as long as it runs.
 
-- **The message is `CLAIMED <branch> <ListAgents name> <pid>`**, and this is the
-  one place that format is written. The branch and the subtask are already GitHub
-  facts anyone with the anchor can read; the name is how to reach the session,
-  and the pid is what makes its liveness a local `kill -0` rather than a guess —
-  the same argument `runtime/holder` makes for carrying one. **The executor reads
-  its own pid from `$CLAUDE_PID`**, which is the `claude` process; `$$` is the
-  shell one tool call runs in and is dead before the next one starts. **It reads
-  its own name from `ListAgents`, whose first line names the calling session**
-  before it lists the peers (probed 2026-08-29: `This session is <name> [ref]`).
-  The harness named the session, so a name it guessed instead would address
-  nobody.
+  **The claimant writes it rather than announcing it**, and that is the change
+  #59 made. An announcement can fail to be sent, and its absence was invisible:
+  an executor that never announced looked like no executor at all, and the close
+  gate read straight past it. A record the claimant writes for itself cannot go
+  missing without the claim going missing too (modelled: `spec/alloy/agent.als`,
+  `A1`, the same scenario re-measured and now UNSAT; the delete under it, `A10`).
 
-- **The holder writes it down.** This is the record's one definition, and every
-  other site points here:
+- **The record, and this is the one place its shape is written:**
 
   ```sh
-  printf 'session %s\npid %s\nbranch %s\n' "<name>" "<pid>" "<branch>" \
-    >| "$CAMPAIGN/runtime/executors/<issue>"
+  printf 'session %s\nname %s\npid %s\nbranch %s\n' \
+    "$CLAUDE_CODE_SESSION_ID" "<ListAgents name>" "$CLAUDE_PID" "<branch>" \
+    >| "$CAMPAIGN/runtime/claims/<issue>"
   ```
 
-  One file per announced subtask, the three fields straight out of the message.
-  The holder writes it because the holder is what must read it back — at a close,
-  at a sweep, possibly from a later session, since a message received is gone the
-  moment the session that received it is. That gives the record `runtime/holder`'s
-  argument exactly, and `runtime/holder`'s lifetime: it is on the bound machine,
-  it dies with the directory, and nothing off the machine reads it. It is keyed
-  to no session, so a successor that takes a dead holder's directory inherits
-  every address in it.
+  One file per claimed subtask. **The four fields are not equally durable, and
+  a reader has to know which is which:**
 
-  **That directory is the only thing that can say which subtask an executor
-  session holds.** The close gate and the retirement sweep enumerate it and
-  read each `pid` the way `runtime/holder` is read; nothing matches names by
-  prefix, because an executor session keeps whatever name its harness gave it
-  and cannot rename itself. **A campaign whose directory has no
-  `runtime/executors/` cannot be enumerated at all, and that is a refusal rather
-  than a pass** — an empty directory says no
-  executor announced, a missing one says nothing. An executor that skips
-  `CLAIMED` is invisible rather than merely quiet: the holder sees a peer in
-  `ListAgents` and cannot tell which subtask it works, so the gate reads straight
-  past it (modelled: `spec/alloy/agent.als`, `A1`; the delete under it, `A10`).
+  | field | from | survives a harness restart | survives a rename |
+  | --- | --- | --- | --- |
+  | `session` | `$CLAUDE_CODE_SESSION_ID` | **yes** | yes |
+  | `name` | `ListAgents`' first line | no | no |
+  | `pid` | `$CLAUDE_PID` | no | yes |
+  | `branch` | the claim | yes — it is on the remote | yes |
+
+  `name` is how to reach the session now and `pid` is what makes liveness a
+  local `kill -0` rather than a guess, but **`session` is the only field that
+  identifies the session across everything that happens to it**, which is why it
+  is written first and why the record carries it at all. Measured 2026-08-30: a
+  harness restart returned every session with its id intact and a new pid, and
+  changed the harness names as well — one peer answered to three names in one
+  hour. A record holding only a name and a pid can go stale in both fields while
+  the session it names is alive and working, and `kill -0` cannot tell that from
+  an exit. #76 owns the general problem; this field is what makes the record
+  repairable when it bites.
+
+  **Read the fields for what each can answer.** Liveness is `pid` through
+  `scripts/campaign-session-alive`. Addressing is `name`, and a name that no
+  longer resolves is a stale record rather than a dead session — re-derive it by
+  asking peers which one holds `session`, never by elimination over live
+  processes, which cannot see a session id at all. Attribution is `branch`.
+
+  **The claimant writes it because a message received is gone the moment the
+  session that received it is**, and whoever runs a close or a sweep later may be
+  a session that did not exist at the claim. The record has `runtime/`'s
+  lifetime: it is on the bound machine, it dies with the directory, and nothing
+  off the machine reads it. It is keyed to no session, so a session that takes
+  over a campaign directory inherits every address in it.
+
+  **`$CLAUDE_PID` is the `claude` process**; `$$` is the shell one tool call
+  runs in and is dead before the next one starts. **`ListAgents`' first line
+  names the calling session** before it lists the peers (probed 2026-08-29:
+  `This session is <name> [ref]`). The harness named the session, so a name it
+  guessed instead would address nobody.
+
+  **That directory is the only thing that can say which subtask a session
+  holds.** The close gate and the retirement sweep enumerate it and read each
+  `pid`; nothing matches names by prefix, because a session keeps whatever name
+  its harness gave it. **A campaign whose directory has no `runtime/claims/`
+  cannot be enumerated at all, and that is a refusal rather than a pass** — an
+  empty directory says no claim was taken, a missing one says nothing.
 
 - **An executor never merges its own pull request, and never reviews it.** It
   pushes, `REPORT`s the URL once, and waits. The holding session verifies in

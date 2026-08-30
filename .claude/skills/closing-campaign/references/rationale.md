@@ -13,7 +13,7 @@ relative value matches nothing and the refusal passes having found nothing; step
 It is always bound to a real directory. A campaign bound here with no directory
 is taken first — `opening-campaign` steps 2 and 4, step 2 being where the slug
 and kind step 4 needs are chosen — because `runtime/holder` and
-`runtime/executors/` have no other home (#52, "Holding scaffolds"). The
+`runtime/claims/` have no other home (#52, "Holding scaffolds"). The
 empty-string path that once stood here, with steps 1, 2 and 4 skipped, is
 retired: it skipped exactly the gates that protect the delete. Unset or empty now
 means step 0 never ran, which is the wrong-cwd hazard the guard in step 5 exists
@@ -21,12 +21,12 @@ for.
 
 **What the gates are worth on that path, which is not what "restored" would
 claim.** When step 0 creates the tree, step 1 and step 2 then read a directory
-seconds old: no herdr `cwd` can be under it, `runtime/executors/` is empty
+seconds old: no herdr `cwd` can be under it, `runtime/claims/` is empty
 because it was just copied, and there is nothing uncommitted in it. They cannot
 fail, so they must not be reported as passed. The soundness argument is that
 they have nothing to find: an agent of this campaign is launched into
 `<campaign>/repos/<repo>/` and an executor session is recorded in
-`<campaign>/runtime/executors/`, and both need a directory that did not exist —
+`<campaign>/runtime/claims/`, and both need a directory that did not exist —
 so a campaign never taken on this machine can have no local executor to miss.
 The residue is the one case that breaks the premise: a directory that existed
 here and was deleted by hand without a close, leaving agents alive with their
@@ -42,7 +42,7 @@ session's directory costs its work.
 
 **Do not match `ListAgents` names against the branch.** An executor session keeps
 whatever name its harness gave it and cannot rename itself, so a prefix test on
-`campaign-<N>-` finds the delegates and misses exactly what `runtime/executors/`
+`campaign-<N>-` finds the delegates and misses exactly what `runtime/claims/`
 exists to catch. `AGENTS.md` § Who is a campaign session states the rule; this is
 where it bites.
 
