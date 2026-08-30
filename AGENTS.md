@@ -862,9 +862,12 @@ Never answer one with the other.
 - **What exists only on this machine is the third question**, and
   `scripts/campaign-local-work <N> [campaign-dir]` is its one reader — the
   container's own `campaign-<N>/` branches and worktrees, the container's
-  working tree, and every checkout under the campaign's `repos/`. Its exit
-  status is about the reading and never the verdict, so a failed read cannot
-  read as a clean tree. `closing-campaign` step 2 is one call to it; a second
+  working tree, and every checkout under the campaign's `repos/`. **The
+  directory may be given relative or absolute; the script resolves it**, so no
+  caller carries that precondition. Its exit status is about the reading and
+  never the verdict, so a failed read cannot read as a clean tree — and neither
+  can a reading that did not happen: a place it could not read denies `clear`
+  and is counted apart from what it found. `closing-campaign` step 2 is one call to it; a second
   reader written out anywhere else drifts the way the settlement rule would.
 
 An agent never closes itself. It finishes by pushing its branch and opening or

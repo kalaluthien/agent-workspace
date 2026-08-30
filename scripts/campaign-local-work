@@ -57,11 +57,22 @@ error (all probed; the evidence is in
   scoped to the paths the branch itself touched, because a branch cut before
   the base moved on differs on files it never edited.
 
+  A place that could not be read denies `clear`. A REPORT line saying a
+  checkout must be read by hand is a check that never ran, and an absence of
+  findings from a check that never ran is not an absence of findings -- while
+  those lines only informed, a run that skipped every member checkout still
+  summarised `clear`, which is what licenses the delete. Such a run now says
+  NOT clear and counts the unread places separately from the found ones.
+
 Exit status is about the reading, never the verdict: 0 means the reading
 completed and the last line says clear or NOT clear; 1 means the reading itself
 failed and nothing may be concluded from it.
 
 Usage: scripts/campaign-local-work <anchor-issue-number> [campaign-dir]
+
+`campaign-dir` may be relative or absolute; the script resolves it. Callers do
+not have to know, which is the point -- the caller who would have got it wrong
+is the one not reading this.
 """
 import os
 import subprocess
@@ -109,6 +120,7 @@ class Report:
     def __init__(self):
         self.rows = {}
         self.notes = []
+        self.skipped = 0
 
     def add(self, repo, kind, ident, check, clears, note="", counted=True):
         row = self.rows.setdefault((repo, ident), {
@@ -125,6 +137,13 @@ class Report:
 
     def report(self, line):
         self.notes.append(line)
+
+    def unread(self, line):
+        """A place the reading did not happen. Reported like a note, but it also
+        denies `clear`: an absence of findings from a check that never ran is
+        not an absence of findings, and `clear` is what licenses the delete."""
+        self.notes.append(line)
+        self.skipped += 1
 
     def counted(self):
         return [k for k, v in self.rows.items() if v["counted"]]
@@ -269,7 +288,7 @@ def read_checkouts(campaign_dir, rep):
         # this script exists to end, and it read `0 item(s) ... clear` over a
         # tree the close was about to delete.
         if not git(repo, "rev-parse", "--git-dir", check=False):
-            rep.report(f"REPORT: {repo} is not a checkout; read it by hand")
+            rep.unread(f"REPORT: {repo} is not a checkout; read it by hand")
             continue
         name = slug(repo)
         for line in git(repo, "status", "--porcelain", "--ignored=matching").splitlines():
@@ -313,6 +332,16 @@ def main():
         refuse(f"{campaign_dir} is not a directory; nothing was checked")
     if campaign_dir and not os.access(campaign_dir, os.R_OK | os.X_OK):
         refuse(f"{campaign_dir} cannot be read; nothing was checked")
+    # Resolve it here, once, rather than asking every caller to. `git()` passes
+    # the same path as both `cwd=` and `-C`, so git resolves it a second time
+    # from inside the directory it just entered: a relative path doubles, the
+    # command fails, and `check=False` turns that into "not a checkout". Every
+    # member checkout then goes unread while the run still ends `clear`.
+    # A documented precondition nothing enforces is the drift this container
+    # has removed twice already; resolving is the half that does not depend on
+    # the caller having read the docstring.
+    if campaign_dir:
+        campaign_dir = os.path.realpath(campaign_dir)
 
     cont = container()
     rep = Report()
@@ -334,9 +363,16 @@ def main():
         print(f"  -- {line}")
 
     count = len(rep.counted())
-    if count:
-        print(f"  -- {count} item(s) exist only on this machine; NOT clear: "
-              "clear every counted row, or say to discard it, then re-run")
+    if count or rep.skipped:
+        unread = (f", and {rep.skipped} place(s) went unread"
+                  if rep.skipped else "")
+        fix = []
+        if count:
+            fix.append("clear every counted row, or say to discard it")
+        if rep.skipped:
+            fix.append("read every REPORT place by hand")
+        print(f"  -- {count} item(s) exist only on this machine{unread}; "
+              f"NOT clear: {', '.join(fix)}, then re-run")
     else:
         print("  -- 0 item(s) exist only on this machine; clear")
 
