@@ -556,12 +556,15 @@ released — a claim whose branch holds nothing beyond `origin/main` may be
 released, deleted, **only when no agent on your machine works it**.
 
 Read that guard twice here. It rests on an agent being visible, and a repo-less
-subtask is worked by a session's own hands or by an in-process subagent, neither
-of which has a row in `herdr agent list`. So absence from that listing is not
-evidence that such a claim is abandoned. `<campaign>/runtime/executors/` is the
-reading that answers it — an executor session's `CLAIMED` names the branch it
-holds and the pid to test it by, which is what that record exists for — and only
-a claim named by no record and answered by no peer (`STATUS`) may be deleted.
+subtask is worked by a session's own hands or by an in-process subagent — work
+whose session does have a row in `herdr agent list`, which carries every session
+on this machine, and whose row does not say which subtask it holds. So that
+listing can neither confirm nor deny abandonment: its silence is not evidence
+that such a claim is free, and a row in it is not evidence that one is held.
+`<campaign>/runtime/executors/` is the reading that answers it — an executor
+session's `CLAIMED` names the branch it holds and the pid to test it by, which
+is what that record exists for — and only a claim named by no record and
+answered by no peer (`STATUS`) may be deleted.
 Leave it standing if nobody answers: deleting it costs the one thing keeping two
 executors off the subtask.
 
@@ -570,7 +573,8 @@ executors off the subtask.
 allowed to because by then step 0 has established the campaign is bound here and
 step 1 that nothing is live under its tree — by both records, `herdr agent list`
 and `runtime/executors/`, which is what makes the sweep sighted for a repo-less
-campaign whose executors are in the second list only. A ref holding commits is printed there, never deleted. Refs
+campaign, whose executors the listing shows without saying which subtask they
+hold. A ref holding commits is printed there, never deleted. Refs
 in member repositories are not swept: a merged pull request releases those.
 
 **Such a subtask closes as completed with no pull request**, and
@@ -714,6 +718,35 @@ nothing. Neither a delegate nor an executor session writes the body at all.
 
 # Delegating to a repository agent
 
+**A `herdr` command that drives a pane, or that resolves its target implicitly —
+`--current`, or a target left out — is guarded by `test "${HERDR_ENV:-}" = 1`.**
+That is the herdr skill's own rule: an agent failing it says it is not running
+inside herdr and stops. The launches below are guarded, and so is the retirement
+sweep in § Talking to a repository agent. **Listing is not**: `agent list` and
+`pane list` answer from outside a pane exactly as from inside, so the liveness
+reads in § Completion and liveness and `closing-campaign` step 1 need no guard
+and get none. The guard is against acting on somebody else's session, never
+against reading.
+
+**What degrades outside a pane is the target, and it degrades silently.** Caller
+context is what makes `--current` and an omitted target mean "me": stripped of
+`HERDR_*`, `herdr pane current --current` returned the **UI-focused** pane — a
+peer session's — where from inside the pane the same command returned the
+caller's own (both probed 2026-08-29). So name the target on every
+pane-addressing command: `--pane "$HERDR_PANE_ID"`, an explicit pane id, or a
+unique agent name. `herdr agent list` is not one of them and could not be told a
+target if you wanted to — `Usage: herdr agent list`, no options at all.
+
+**That the guard passes on the container's daily path is a measurement, not a
+property, and the first plain-terminal or `-p` session here falsifies it.**
+Probed 2026-08-29 over three kinds of session on this machine — a campaign
+session, a peer executor session and a freshly `agent start`ed delegate — each
+carrying `HERDR_ENV=1` and its own `HERDR_PANE_ID`, while a process started
+outside any pane carried neither. The pin is herdr 0.8.2, client and server on
+protocol 20, `compatible: yes` (read 2026-08-30). A session the measurement does
+not cover is exactly what the guard is for: it reports that it has no pane and
+stops rather than driving one.
+
 Launch it in `<campaign>/repos/<repo>/` with
 `--append-system-prompt-file <campaign>/AGENTS.md`.
 
@@ -803,13 +836,18 @@ Never answer one with the other.
   kind — `complete`, or `dropped` for everything else that is closed. Do not
   hand-roll a second reader; two of them drift, and the campaign's central
   verdict is the worst place for that.
-- **Liveness is a herdr fact for a delegate and a `runtime/executors/` fact for
-  an executor session**, and a gate that reads only the first is blind to half
-  its executors. A delegate is read from `herdr agent list` presence plus the
-  session transcript — never from `agent_status` alone, which reports the screen
-  and calls a mid-turn pause `idle`. An executor session runs no herdr pane at
-  all, so it is read from the record the holder wrote when its `CLAIMED` arrived,
-  and its liveness from the `pid` in that file the way `runtime/holder` is read.
+- **Liveness is readable for both kinds of executor; attribution is not**, and a
+  gate holding one without the other is blind to half its executors.
+  `herdr agent list` is the liveness: it lists every session on this machine,
+  delegate or not — measured 2026-08-30 on herdr 0.8.2, three container
+  sessions, none of them a delegate. It gives attribution only where a row's
+  name is the branch, which is a delegate's name and not an executor session's.
+  The claim record, `<campaign>/runtime/executors/<issue>`, supplies the
+  attribution and not the liveness: the `pid` it names reads `dead` after a
+  harness restart its session survived, so it locates a session rather than
+  proving one. Read a delegate's own progress from the session transcript,
+  never from `agent_status` alone, which reports the screen and calls a mid-turn
+  pause `idle`.
   **Both readings, every time**: the no-live-agent gate in `closing-campaign` and
   the retirement sweep below each run both.
 
@@ -886,15 +924,17 @@ stale.
   existed, and `herdr agent list` carries its liveness — and neither does the
   executor session that launched one, because announcing a claim it does not hold
   would give one process two addresses and the close gate would count it twice.
-  So the two liveness readings partition the executors: `herdr agent list` names
-  every delegate, `runtime/executors/` names every executor session that holds
-  its own claim, nothing is in both, and neither list is a substitute for the
-  other. A launcher is in neither, and that is the intended reading rather than a
-  hole — it holds no claim and no working tree, so what the gate must see is its
-  delegate, which the first list names for as long as it runs. A running session can be
-  renamed, but only by a person typing `/rename` into its pane (probed
-  2026-08-28), so renaming to the flattened branch is an optional courtesy and
-  `CLAIMED` is the mechanism.
+  So the two readings split by question rather than by kind: `herdr agent list`
+  gives liveness for both kinds of executor and attribution only where a row's
+  name is the branch, which is a delegate's name and not an executor session's,
+  and `runtime/executors/` supplies that missing attribution for the executor
+  sessions holding their own claim. Neither is a substitute for the other. A
+  launcher needs no record of its own, and that is the intended reading rather
+  than a hole — it holds no claim and no working tree, so what the gate must
+  see is its delegate, which the listing carries under the branch name for as
+  long as it runs. A running session can be renamed, but only by a person typing
+  `/rename` into its pane (probed 2026-08-28), so renaming to the flattened
+  branch is an optional courtesy and `CLAIMED` is the mechanism.
 
 - **The message is `CLAIMED <branch> <ListAgents name> <pid>`**, and this is the
   one place that format is written. The branch and the subtask are already GitHub
@@ -925,12 +965,13 @@ stale.
   to no session, so a successor that takes a dead holder's directory inherits
   every address in it.
 
-  **That directory is the only reader of executor-session liveness.** The close
-  gate and the retirement sweep enumerate it and read each `pid` the way
-  `runtime/holder` is read; nothing matches names by prefix, because an executor
-  session keeps whatever name its harness gave it and cannot rename itself. **A
-  campaign whose directory has no `runtime/executors/` cannot be enumerated at
-  all, and that is a refusal rather than a pass** — an empty directory says no
+  **That directory is the only thing that can say which subtask an executor
+  session holds.** The close gate and the retirement sweep enumerate it and
+  read each `pid` the way `runtime/holder` is read; nothing matches names by
+  prefix, because an executor session keeps whatever name its harness gave it
+  and cannot rename itself. **A campaign whose directory has no
+  `runtime/executors/` cannot be enumerated at all, and that is a refusal rather
+  than a pass** — an empty directory says no
   executor announced, a missing one says nothing. An executor that skips
   `CLAIMED` is invisible rather than merely quiet: the holder sees a peer in
   `ListAgents` and cannot tell which subtask it works, so the gate reads straight
