@@ -2,9 +2,9 @@
 
 A container for running **campaigns** — units of work across the repositories
 they need — on repositories that live elsewhere. `README.md` says what the
-container is; this file is how to work inside it. `spec/alloy/ledger.als` says why these rules are
-what they are, in its comments, and points at the three layers stacked above
-it.
+container is; this file is how to work inside it. `spec/alloy/ledger.als` says
+why these rules are what they are, in its comments, and points at the three
+layers stacked above it.
 
 This project is early. Where a rule is missing, decide, do the work, and write
 the decision back here.
@@ -13,8 +13,8 @@ the decision back here.
 
 One assignment a person is responsible for, worked across the repositories it
 needs, which may be none. Bigger than a ticket, no size ceiling — a week of
-migration or the whole life of a product. It splits into subtasks, and follow-up subtasks keep
-arriving until someone decides it is over.
+migration or the whole life of a product. It splits into subtasks, and
+follow-up subtasks keep arriving until someone decides it is over.
 
 A campaign is not a repository and not a ticket. It is what collects the
 subtasks of one assignment, and the repositories — none, one, or several — that
@@ -35,12 +35,13 @@ Otherwise, two readings decide it, in this order.
 **One: does any open campaign's Scope cover the request?**
 
 ```sh
-gh issue list -R kalaluthien/agent-workspace --label campaign --state open --limit 200
+gh issue list -R kalaluthien/agent-workspace --label campaign \
+  --state open --limit 200
 ```
 
 Read the body of each one that could plausibly cover it (`gh issue view <N> -R
-kalaluthien/agent-workspace`); the title alone does not carry the Scope. Match on
-Scope, never on `## Repos`, and treat testing or fixing a campaign's own
+kalaluthien/agent-workspace`); the title alone does not carry the Scope. Match
+on Scope, never on `## Repos`, and treat testing or fixing a campaign's own
 deliverable as covered by it, because Scope is written in artifacts and cannot
 separate "build X" from "validate X".
 
@@ -66,10 +67,10 @@ labelled issue *missing* from it is a subtask wearing the label; say so rather
 than joining it.
 
 **Two, only if nothing covers it: is the request finished when this session
-ends?** A campaign is work that outlives the sitting — it splits into subtasks,
-is handed to agents, and keeps producing follow-ups until a person calls it over.
-A question answered, a file corrected, one change that lands complete, is none of
-that and needs none of it.
+ends?** A campaign is work that outlives the sitting — it splits into
+subtasks, is handed to agents, and keeps producing follow-ups until a person
+calls it over. A question answered, a file corrected, one change that lands
+complete, is none of that and needs none of it.
 
 | what the two readings say | what this is |
 | --- | --- |
@@ -78,16 +79,18 @@ that and needs none of it.
 | Nothing covers it, and it ends with this session | **Not campaign work.** Answer it, or make the change and land it. No anchor, no subtask, no directory, no skill. |
 | Nothing covers it, and it will outlive this session | **A new campaign.** Load `opening-campaign`. |
 
-Size is not one of the readings, and asking it first is the mistake this ordering
-prevents. A one-line edit inside a campaign's Scope is that campaign's subtask,
-because the sub-issue index is the only place its close can look and work done
-beside it is invisible there. The converse holds as plainly: a large change that
-no campaign's Scope covers and that finishes here is still not a campaign.
+Size is not one of the readings, and asking it first is the mistake this
+ordering prevents. A one-line edit inside a campaign's Scope is that campaign's
+subtask, because the sub-issue index is the only place its close can look and
+work done beside it is invisible there. The converse holds as plainly: a large
+change that no campaign's Scope covers and that finishes here is still not a
+campaign.
 
 **Not campaign work is not unmanaged work.** The container's own git rules hold
-whatever the work is — its own branch, a pull request, and the `pre-commit` guard
-that refuses a direct commit to `main`. Those are this repository's rules rather
-than a campaign's, so a change lands here without being anybody's subtask.
+whatever the work is — its own branch, a pull request, and the `pre-commit`
+guard that refuses a direct commit to `main`. Those are this repository's rules
+rather than a campaign's, so a change lands here without being anybody's
+subtask.
 
 # Who is a campaign session
 
