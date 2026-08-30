@@ -798,19 +798,27 @@ cannot resolve.
   values, and the run dies on "Input must be provided".
 - Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to this container's pool. A memory
   pool inside a git-ignored campaign directory dies with the directory.
-- **Deliver the opening prompt with `herdr agent prompt <pane> "<text>"`, and
-  give it a `--timeout`.** A prompt put on the launch line is word-split: a
-  launch ending with a whole sentence delivered its first word alone, and the
-  delegate reported it had been given no brief while the launch looked
-  successful. The timeout is about the other half: with `--wait` and no
-  `--timeout`, the settled-state wait is **indefinite** (measured at 0.8.2 from
-  the binary's own help), so the form this file used to give was a hang.
+- **Deliver the opening prompt with `herdr agent prompt <pane> "<text>"`.** A
+  prompt put on the launch line is word-split: a launch ending with a whole
+  sentence delivered its first word alone, and the delegate reported it had
+  been given no brief while the launch looked successful.
 
-  Three outcomes, and they are not the same news:
+  **This form submits and returns; it does not wait.** Every waiting behaviour
+  below belongs to `--wait`, which this form does not pass — checked against
+  0.8.2's help, where `--until` is defined as "after `--wait`" and the
+  indefinite wait is the *settled-state* wait that only `--wait` starts. Two
+  runs of this exact form in one session returned immediately.
+
+  **If you add `--wait`, add a `--timeout` with it**, because without one the
+  settled-state wait is indefinite and a driver that waits forever looks
+  exactly like an agent thinking.
+
+  Three outcomes, and they are not the same news. Only the first can reach a
+  caller who did not pass `--wait`:
 
   | outcome | what it means |
   | --- | --- |
-  | `agent_blocked` | the agent was already at an approval or question dialog. **No input was sent** — the prompt is still yours to deliver once the dialog clears, and clearing it is the person's call. |
+  | `agent_blocked` | the agent was already at an approval or question dialog. **No input was sent** — the prompt is still yours to deliver once the dialog clears, and clearing it is the person's call. This is a refusal to submit, so it does not need `--wait`. |
   | `agent_prompt_stalled` | the prompt was accepted and nothing moved within 5000 ms. The agent has it; something is holding the turn. Go and look. |
   | `timeout` | your `--timeout` elapsed. The agent may be working normally — a long turn reads exactly like this — so read the pane before concluding anything. |
 
