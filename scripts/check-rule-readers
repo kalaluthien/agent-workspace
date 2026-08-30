@@ -12,6 +12,20 @@ This is the authoring-side second reader ~/.claude/CLAUDE.md asks for. It is one
 check over every rule rather than one guard per script, because the rules share
 a single failure mode and a single fix.
 
+WHAT IT DOES NOT CATCH
+
+A re-implementation carrying no marker of the rule it copies. A Python loop that
+reads a README line by line and keeps the ones with a slash in them is a `##
+Repos` parse, and nothing in it names the list; catching that needs judgement
+about what a block of code means, which is the thing a grep-shaped guard cannot
+have and should not pretend to. So the guard is a floor, not a fence: it stops
+the copy somebody makes by pasting, which is how second readers actually get
+written, and it does not stop one somebody sets out to write.
+
+Stated here rather than fixed, because widening the forms until they match a
+paraphrase is how a guard starts firing on prose -- already met once, when
+matching "not planned" fired on closing-campaign's own disposition table.
+
 WHAT IT READS
 
 Only fenced code blocks, and only in tracked files outside scripts/. That line
@@ -54,7 +68,12 @@ FORMS = [
         # `ps` with a comm/ucomm selector in any argument order -- `-p $PID -o
         # ucomm=` is the script's own form and the first one a person writes --
         # and `pgrep`, which answers the same question a different way.
-        re.compile(r"\bps\b[^|;&]*-o\s+u?comm\b|\bpgrep\b|[\"']u?comm[\"']\s*,"),
+        # `-axo` and friends combine the selector with other flags; the selector
+        # may be quoted; and a Python copy passes it as a list element, where
+        # `ucomm=` carries its own `=`.
+        re.compile(r"\bps\b[^|;&]*\B-\w*o\s+[\"']?u?comm\b|\bpgrep\b"
+                   r"|[\"']-?\w*o?[\"']\s*,\s*[\"']u?comm=?[\"']"
+                   r"|[\"']u?comm=[\"']"),
         "the process-name comparison",
     ),
     (

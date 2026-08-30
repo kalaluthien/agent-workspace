@@ -652,9 +652,9 @@ pointer to it rather than a second copy. `scripts/check-rule-readers-test` is
 what makes the guard trustworthy, and its measure is not how many cases pass but
 how many ways of breaking the guard at least one case notices.
 
-Its subtasks are filed on the container tracker, `kalaluthien/agent-workspace`,
-as sub-issues of the anchor exactly like any other — it is the only tracker
-there is. **And the claim is create-ref on the container** for
+A repo-less campaign's subtasks are filed on the container tracker,
+`kalaluthien/agent-workspace`, as sub-issues of the anchor exactly like any
+other — it is the only tracker there is. **And the claim is create-ref on the container** for
 `campaign-<N>/<issue>-<topic>`, even when no container code will change: the
 branch is the claim before it is a workspace, and without it two executors on
 one subtask are serialized by nothing. It is released the way any claim is
