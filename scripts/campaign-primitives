@@ -25,38 +25,75 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
+# How each language in this tree opens a comment. A summary must be one.
+MARKERS = ('"""', "'''", "#", "//", "--")
+
 
 def summary(path):
-    """The line under the shebang, however the language spells a comment. None
-    when there is nothing to read -- reported, never skipped."""
+    """The line under the shebang, however the language spells a comment.
+
+    It must *be* a comment or a docstring. The first draft took the first line
+    that was not a shebang or an obvious keyword, so a script with no summary at
+    all was announced with a line of its own code -- `echo hi` presented to a
+    reader as what the script answers. A wrong description is worse than a
+    missing one, because the missing one is reported.
+
+    None when there is nothing to read, and an `<unreadable: ...>` marker when
+    the file could not be opened. Both are reported by the caller; neither is
+    silently dropped."""
     try:
         lines = path.read_text().splitlines()
     except (OSError, UnicodeDecodeError) as e:
         return f"<unreadable: {e.__class__.__name__}>"
     for line in lines[1:8]:
-        text = re.sub(r'^\s*(#|"""|\'\'\'|//|--)\s*', "", line).strip().strip('"')
-        if text and not text.startswith(("!", "set -", "import", "from")):
-            return text
+        stripped = line.strip()
+        for marker in MARKERS:
+            if stripped.startswith(marker):
+                text = stripped[len(marker):].strip().strip('"').strip()
+                if text:
+                    return text
+                break
     return None
 
 
-def hook_run():
-    """Which scripts git runs by itself, read out of install-hooks rather than
-    listed again here."""
-    src = (HERE / "install-hooks").read_text()
-    names = set()
-    for m in re.finditer(r"^\s*for\s+\w+\s+in\s+([^;]+?);\s*do", src, re.M):
-        names.update(m.group(1).split())
-    return names
+def installed_hooks(src):
+    """Which git hooks install-hooks writes, from its own `hook=$hookdir/<name>`
+    assignments. Pure, so it can be tested against a recorded file."""
+    return sorted(set(re.findall(r"^hook=\$hookdir/([a-z-]+)", src, re.M)))
+
+
+def hook_run(src, names):
+    """Which of these scripts git runs unasked.
+
+    A script's name appearing anywhere in install-hooks is the test, rather than
+    parsing the loop that happens to list them today. The first draft matched
+    `for guard in ...` only, so an ordinary shell refactor -- unrolling the
+    loop, or moving the names into a variable -- silently reclassified both
+    guards as things a flow has to call, which is the opposite of what they are.
+    """
+    # install-hooks names itself in its own help text, and it is the installer
+    # rather than something git runs -- so it is excluded by name, which is the
+    # one special case this test needs and says so here rather than anywhere
+    # else.
+    return {n for n in names if n != "install-hooks" and n in src}
 
 
 def main():
     brief = "--brief" in sys.argv
-    runs = hook_run()
+    try:
+        src = (HERE / "install-hooks").read_text()
+    except OSError as e:
+        print(f"!! could not read install-hooks ({e.__class__.__name__}), so "
+              f"nothing below can be\n   classified as run-by-git. Treat the "
+              f"whole listing as unverified.")
+        src = ""
+    scripts = [p for p in sorted(HERE.iterdir())
+               if not p.is_dir() and not p.name.endswith("-test")
+               and p.stat().st_mode & 0o111]
+    runs = hook_run(src, {p.name for p in scripts})
+    hooks = installed_hooks(src)
     guards, readers, unknown = [], [], []
-    for p in sorted(HERE.iterdir()):
-        if p.is_dir() or p.name.endswith("-test") or not p.stat().st_mode & 0o111:
-            continue
+    for p in scripts:
         s = summary(p)
         if s is None or s.startswith("<unreadable"):
             unknown.append((p.name, s or "<no summary line under the shebang>"))
@@ -65,11 +102,21 @@ def main():
         else:
             readers.append((p.name, s))
 
-    if not runs:
-        print("!! could not read which scripts git runs from install-hooks;")
-        print("   every one below is listed as a reader, which may be wrong.")
+    if src and not runs:
+        print("!! install-hooks names none of these scripts, so the split "
+              "below is not real:")
+        print("   everything is listed as a reader. Read install-hooks before "
+              "believing it.")
 
     print("Machine-decided here. Ask these before writing a check by hand.")
+    # The hooks themselves, not only the scripts they call. The push hook calls
+    # no script, so a listing built from script names alone left the one
+    # mechanism that acts on every commit entirely unannounced.
+    if hooks:
+        print(f"\n  git hooks installed by scripts/install-hooks "
+              f"({len(hooks)}): {', '.join(hooks)}")
+    else:
+        print("\n  !! no git hook could be read out of install-hooks.")
     print(f"\n  git runs these on its own ({len(guards)}):")
     for n, s in guards:
         print(f"    {n:24} {s}")

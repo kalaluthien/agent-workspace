@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Prove the inventory survives an ordinary refactor and admits what it cannot read.
+
+The announcement is what makes deleting a rule from the prose safe, so the way
+it fails matters more than the way it succeeds: a listing that quietly drops a
+mechanism reads as complete, and the reader concludes the thing is not there.
+
+Usage: scripts/campaign-primitives-test
+"""
+import importlib.machinery
+import importlib.util
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+PRIM = Path(__file__).resolve().parent / "campaign-primitives"
+
+LOOP = '''hook=$hookdir/pre-commit
+for guard in check-rule-readers check-tree-shape; do
+	"$g" --staged || exit 1
+done
+hook=$hookdir/post-commit
+'''
+# The same file after a routine refactor: the loop unrolled. A parser keyed on
+# `for guard in ...` reads this as naming no guard at all.
+UNROLLED = '''hook=$hookdir/pre-commit
+"$root"/scripts/check-rule-readers --staged || exit 1
+"$root"/scripts/check-tree-shape --staged || exit 1
+hook=$hookdir/post-commit
+'''
+
+
+def load():
+    spec = importlib.util.spec_from_loader(
+        "prim", importlib.machinery.SourceFileLoader("prim", str(PRIM)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def main():
+    m = load()
+    ran, fails = [], []
+
+    def check(name, cond):
+        ran.append(name)
+        if not cond:
+            fails.append(name)
+
+    names = {"check-rule-readers", "check-tree-shape", "campaign-bound",
+             "install-hooks"}
+
+    check("the guards are found in the loop form",
+          m.hook_run(LOOP, names) == {"check-rule-readers", "check-tree-shape"})
+    check("...and still found once the loop is unrolled",
+          m.hook_run(UNROLLED, names) == {"check-rule-readers", "check-tree-shape"})
+    check("a script install-hooks never mentions is not a guard",
+          "campaign-bound" not in m.hook_run(LOOP, names))
+    check("the installer is not something git runs, even though it names itself",
+          "install-hooks" not in m.hook_run("scripts/install-hooks", names))
+    check("an unreadable install-hooks names no guard at all",
+          m.hook_run("", names) == set())
+
+    check("both hooks are read out of the assignments",
+          m.installed_hooks(LOOP) == ["post-commit", "pre-commit"])
+    check("a file writing no hook yields none", m.installed_hooks("x = 1") == [])
+
+    # The end-to-end shape: it must say when it could not classify.
+    r = subprocess.run([sys.executable, str(PRIM), "--brief"],
+                       capture_output=True, text=True)
+    out = r.stdout + r.stderr
+    check("the real run names the push hook, which calls no script",
+          "post-commit" in out)
+    check("the real run separates guards from readers",
+          "git runs these on its own" in out and "a flow calls these" in out)
+
+    # What a summary may and may not be. The first draft returned the first
+    # line that was not a shebang, so a script with no description at all was
+    # announced with a line of its own code.
+    with tempfile.TemporaryDirectory() as d:
+        def wrote(body):
+            q = Path(d) / "mystery"
+            q.write_text(body)
+            return q
+        check("a comment under the shebang is the summary",
+              m.summary(wrote("#!/bin/sh\n# what it does\n")) == "what it does")
+        check("a docstring is too",
+              m.summary(wrote('#!/usr/bin/env python3\n"""what it does."""\n'))
+              == "what it does.")
+        check("a script with no summary at all reports none, not a line of code",
+              m.summary(wrote("#!/bin/sh\nset -e\necho hi\n")) is None)
+        check("a file that cannot be read says so rather than returning none",
+              str(m.summary(Path(d) / "absent")).startswith("<unreadable"))
+
+    if not ran:
+        print("FAIL  the suite ran no case at all")
+        return 1
+    for f in fails:
+        print(f"FAIL  {f}")
+    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

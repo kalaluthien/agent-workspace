@@ -43,7 +43,13 @@ def main():
     m = load()
     fails = []
 
+    ran = []
+
     def check(name, cond):
+        # Counted as it runs. `total` was a constant, so deleting a case still
+        # printed the same "13/13 pass" -- a suite that cannot report its own
+        # shrinkage.
+        ran.append(name)
         if not cond:
             fails.append(name)
 
@@ -83,6 +89,18 @@ def main():
           not a and len(o) == 1)
     check("...and that live session is then reported as holding no claim", len(i) == 1)
 
+    # The anchor argument, which used to be declared and never read.
+    mine = {"7": {"session": "S1", "branch": "campaign-1/7-x"}}
+    theirs = {"9": {"session": "S2", "branch": "campaign-2/9-y"}}
+    check("a record naming this campaign's branch is not stray",
+          m.stray_branches(mine, "1") == [])
+    check("a record naming another campaign's branch is stray",
+          len(m.stray_branches(theirs, "1")) == 1)
+    check("a record with no branch cannot vouch for itself and is stray",
+          len(m.stray_branches({"7": {"session": "S1"}}, "1")) == 1)
+    check("anchor 1 does not swallow anchor 11",
+          len(m.stray_branches({"7": {"branch": "campaign-11/7-x"}}, "1")) == 1)
+
     got, why = m.parse_agents("not json")
     check("unparseable output is a why, not an empty listing", got is None and why)
     got, why = m.parse_agents(json.dumps({"result": {}}))
@@ -105,10 +123,13 @@ def main():
           r.returncode == 0 and "0 claim(s)" in out)
     check("and it still says both readings were made", "both readings were made" in out)
 
+    # A run that asserted nothing is not a pass either.
+    if not ran:
+        print("FAIL  the suite ran no case at all")
+        return 1
     for f in fails:
         print(f"FAIL  {f}")
-    total = 13
-    print(f"{total - len(fails)}/{total} cases pass")
+    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
     return 1 if fails else 0
 
 

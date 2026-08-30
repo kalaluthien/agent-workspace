@@ -138,22 +138,18 @@ def session_names():
     return mod.NAMES
 
 
-def restarted_since(mtime):
-    """Evidence that a `dead` pid may name a session that is still working: a
-    claude session that started after this record was written.
+def count_newer(ps_text, names, mtime):
+    """How many claude sessions in a recorded `ps` listing started after mtime.
 
-    Returns (count, why_unreadable). A `why` is not zero: it says the check did
-    not run, and the caller must not print it as "no restart"."""
-    try:
-        names = session_names()
-    except Exception as e:
-        return None, (f"could not read the session names from "
-                      f"campaign-session-alive ({e.__class__.__name__})")
-    r = run("ps", "-axo", "lstart=,ucomm=")
-    if r.returncode != 0:
-        return None, "could not read the process table"
+    Pure, and split out because the cases that matter -- a record older than
+    every session, and one newer than all of them -- were passing only because
+    a claude happened to be running on the machine the suite ran on. A test that
+    reads whatever is live tests the machine, not the code.
+
+    Returns (count, why_unreadable); a `why` means the count is unknown, which
+    is not the same as zero and must never be printed as one."""
     newer = 0
-    for line in r.stdout.splitlines():
+    for line in ps_text.splitlines():
         stamp, _, comm = line.strip().rpartition(" ")
         if comm not in names:
             continue
@@ -164,6 +160,20 @@ def restarted_since(mtime):
         if started > mtime:
             newer += 1
     return newer, None
+
+
+def restarted_since(mtime):
+    """Evidence that a `dead` pid may name a session that is still working: a
+    claude session that started after this record was written."""
+    try:
+        names = session_names()
+    except Exception as e:
+        return None, (f"could not read the session names from "
+                      f"campaign-session-alive ({e.__class__.__name__})")
+    r = run("ps", "-axo", "lstart=,ucomm=")
+    if r.returncode != 0:
+        return None, "could not read the process table"
+    return count_newer(r.stdout, names, mtime)
 
 
 def cmd_status(args):
@@ -255,66 +265,109 @@ def cmd_take(args):
     return 0
 
 
+def compare_path(repo, branch):
+    """Where to ask how far a branch is ahead of main."""
+    return f"repos/{repo}/compare/main...{branch}"
+
+
+def delete_path(repo, branch):
+    """Where the ref is deleted. Same repo argument as compare_path, and that
+    is the whole point: the first draft asked local git -- in whatever directory
+    the process was in, off possibly unfetched refs -- and deleted on the named
+    remote. A claim branch has the same name in every member repository, so a
+    container ref sitting at main licensed deleting a member repository's ref
+    holding a delegate's commits."""
+    return f"repos/{repo}/git/refs/heads/{branch}"
+
+
+def release_gate(rec, branch_arg, confirmed, liveness):
+    """Decide whether a release may proceed, and say no with a reason.
+
+    Pure, because this is the destructive path and the effects around it reach
+    GitHub -- so a suite that respects "no case may touch the network" could
+    otherwise not cover the decision at all. Returns (branch, refusal); a
+    refusal is a string and means nothing is deleted.
+
+    Both branches need a confirmed absence. A record can at least be tested; no
+    record is the *weaker* evidence, not the stronger, because it may be a
+    session that claimed and died before writing, or a delegate on a machine
+    this tree knows nothing about. The first draft gated only the recorded path,
+    so the easiest claim to delete was the one nobody could account for."""
+    if rec:
+        if liveness != "dead":
+            return None, (f"the record reads {liveness}. Only a confirmed "
+                          f"absence is safe to act on.")
+        if not confirmed:
+            return None, ("the pid is held by nobody, which is not proof the "
+                          "session is gone. A harness restart renumbers pids. "
+                          "Ask, then pass --confirmed-absent.")
+        return rec.get("branch", ""), None
+    if not branch_arg:
+        return None, "no record here, so pass --branch to say which ref to release."
+    if not confirmed:
+        return None, ("no record means nobody here can say who holds it. Ask "
+                      "(campaign-live, then the peers), then pass "
+                      "--confirmed-absent.")
+    return branch_arg, None
+
+
+def ahead_verdict(returncode, out, err, repo, branch):
+    """Read the comparison. Returns (ok, refusal)."""
+    ahead = (out or "").strip()
+    if returncode != 0 or not ahead.isdigit():
+        return False, (f"could not ask {repo} how far {branch} is ahead of "
+                       f"main; got {ahead!r}; {(err or '').strip()[:200]}. "
+                       f"A comparison that did not happen is not an empty "
+                       f"branch.")
+    if ahead != "0":
+        return False, (f"{repo} says {branch} is {ahead} commit(s) ahead of "
+                       f"main. A ref holding commits is reported, never "
+                       f"deleted.")
+    return True, None
+
+
 def cmd_release(args):
     _, claims = campaign_dir(args.dir)
     path = record_path(claims, args.issue)
     rec = read_record(path)
+    liveness = None
     if rec:
         pid = rec.get("pid", "")
-        v = alive(pid) if pid and pid != "unknown" else "unreadable (no pid)"
-        if v != "dead":
-            print(f"refusing: {path} reads {v}.\n"
-                  f"  Only a confirmed absence is safe to act on, and deleting "
-                  f"a claim costs the\n  one thing keeping two executors off "
-                  f"the subtask. Run `status {args.issue}` and ask.",
-                  file=sys.stderr)
-            return 1
-        # `dead` is never enough on its own. A harness restart makes a live
-        # session read dead, and nothing on this machine can tell that from an
-        # exit -- so the release needs a person who asked, not a heuristic that
-        # guessed. The restart evidence is printed to say how likely it is.
-        newer, why = restarted_since(path.stat().st_mtime)
-        if why:
-            note = f"note: the restart check did not run ({why})."
-        elif newer:
-            note = (f"note: {newer} claude session(s) started after this record "
-                    f"was written, so a restart is likely.")
-        else:
-            note = ("note: no claude session started after this record was "
-                    "written.")
-        print(note, file=sys.stderr)
-        if not args.confirmed_absent:
-            print(f"refusing: pid {pid} is held by nobody, which is not proof "
-                  f"the session is gone.\n"
-                  f"  Ask the session named above, then re-run with "
-                  f"--confirmed-absent '<who said so>'.\n"
-                  f"  Deleting a claim costs the one thing keeping two "
-                  f"executors off the subtask.", file=sys.stderr)
-            return 1
-        print(f"absence confirmed by: {args.confirmed_absent}")
-        branch = rec.get("branch", "")
+        liveness = alive(pid) if pid and pid != "unknown" else "unreadable (no pid)"
+        print(f"{path} reads {liveness}")
+        if liveness == "dead":
+            newer, why = restarted_since(path.stat().st_mtime)
+            if why:
+                print(f"note: the restart check did not run ({why}).",
+                      file=sys.stderr)
+            elif newer:
+                print(f"note: {newer} claude session(s) started after this "
+                      f"record was written, so a restart is likely.",
+                      file=sys.stderr)
+            else:
+                print("note: no claude session started after this record was "
+                      "written.", file=sys.stderr)
     else:
         print(f"no record at {path}; nothing on this machine attributes a "
               f"claim to a session.")
-        branch = args.branch
-        if not branch:
-            print("refusing: pass --branch to say which ref to release.",
-                  file=sys.stderr)
-            return 1
 
-    r = run("git", "rev-list", "--count", f"origin/main..origin/{branch}")
-    if r.returncode != 0:
-        print(f"refusing: could not read {branch} against origin/main.\n"
-              f"  {r.stderr.strip()}", file=sys.stderr)
+    branch, refusal = release_gate(rec, args.branch, args.confirmed_absent,
+                                   liveness)
+    if refusal:
+        print(f"refusing: {refusal}\n  Deleting a claim costs the one thing "
+              f"keeping two executors off the subtask.", file=sys.stderr)
         return 1
-    if r.stdout.strip() != "0":
-        print(f"refusing: {branch} holds {r.stdout.strip()} commit(s) beyond "
-              f"origin/main.\n  A ref holding commits is reported, never "
-              f"deleted.", file=sys.stderr)
+    print(f"absence confirmed by: {args.confirmed_absent}")
+
+    r = run("gh", "api", compare_path(args.repo, branch), "--jq", ".ahead_by")
+    ok, refusal = ahead_verdict(r.returncode, r.stdout, r.stderr, args.repo,
+                                branch)
+    if not ok:
+        print(f"refusing: {refusal}", file=sys.stderr)
         return 1
-    print(f"{branch} holds nothing beyond origin/main")
-    r = run("gh", "api", "-X", "DELETE",
-            f"repos/{args.repo}/git/refs/heads/{branch}")
+    print(f"{args.repo} says {branch} holds nothing beyond main")
+
+    r = run("gh", "api", "-X", "DELETE", delete_path(args.repo, branch))
     if r.returncode != 0:
         print(f"refusing: could not delete the ref.\n  {r.stderr.strip()}",
               file=sys.stderr)

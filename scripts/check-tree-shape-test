@@ -110,9 +110,50 @@ CASES = [
     ("R3 json: a language with no comments is all code",
      {"scripts/x.json": '{"path": "runtime/holder"}\n'}, "R3", False),
 
+    # A file with no text in it at all. The first draft opened every file
+    # before deciding its kind, so this died in the decode -- a traceback
+    # naming no rule, on a guard whose whole point is naming which reading it
+    # could not make.
+    ("R0 a file that is not text is reported, not a traceback",
+     {"docs/x.png": "\x89PNG\r\n\x1a\n\x00\x01\x02\x03"}, "R0", False),
+
+    # A known suffix whose bytes are not text: the decode branch, which the
+    # PNG above does not reach because it is caught a step earlier by suffix.
+    ("R0 a known suffix that will not decode is reported too",
+     {"scripts/x.py": b"x = 1\n\xff\xfe not utf-8\n"}, "R0", False),
+
+    # The other two retired names. One case per pattern, or deleting either
+    # leaves the suite green -- which it did.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 the runtime/executors path is retired too",
+     {"scripts/x.py": 'open("runtime/executors/62")\n'}, "R3", False),
+    ("R3 CLAIMED as a string literal is the retired announcement",
+     {"scripts/x.py": 'send("CLAIMED")\n'}, "R3", False),
+    ("R3 ...but the word in prose is a mention",
+     {"AGENTS.md": "t\n\nThe `CLAIMED` message was retired by #59.\n"}, None, False),
+
     # R4
     ("R4 a member repository's file", {"repos/web/a.py": "x = 1\n"}, "R4", False),
 ]
+
+
+def run_staged_case(staged_files, worktree_files):
+    """The hook runs `--staged`, and nothing pinned that it reads the index
+    rather than the disk. Stage one tree, then overwrite the working tree with
+    another: a guard reading the wrong one gives the opposite verdict."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".gitignore").write_text(IGNORE)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        for rel, body in staged_files.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(body)
+        subprocess.run(["git", "add", "-Af"], cwd=root, check=True)
+        for rel, body in worktree_files.items():
+            (root / rel).write_text(body)
+        return subprocess.run([sys.executable, str(GUARD), "--staged"], cwd=root,
+                              capture_output=True, text=True)
 
 
 def run_case(files):
@@ -122,15 +163,39 @@ def run_case(files):
         for rel, body in files.items():
             p = root / rel
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(body)
+            if isinstance(body, bytes):
+                p.write_bytes(body)
+            else:
+                p.write_text(body)
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
         subprocess.run(["git", "add", "-Af"], cwd=root, check=True)
         return subprocess.run([sys.executable, str(GUARD)], cwd=root,
                               capture_output=True, text=True)
 
 
+STAGED_CASES = [
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("--staged judges what is staged, not what is on disk",
+     {"AGENTS.md": "t\n\n```sh\ncat runtime/holder\n```\n"},
+     {"AGENTS.md": "t\n\nclean now\n"}, "R3"),
+    ("--staged does not fire on a violation only the working tree has",
+     {"AGENTS.md": "t\n\nclean\n"},
+     {"AGENTS.md": "t\n\n```sh\ncat runtime/holder\n```\n"}, None),
+]
+
+
 def main():
     failed = 0
+    for name, staged, worktree, rule in STAGED_CASES:
+        r = run_staged_case(staged, worktree)
+        out = r.stdout + r.stderr
+        ok = (r.returncode == 1 and f"{rule}\t" in out) if rule else \
+             (r.returncode == 0 and not out.strip())
+        if not ok:
+            failed += 1
+            print(f"FAIL  {name}\n      wanted "
+                  f"{'a ' + rule + ' finding' if rule else 'silence'}, got exit "
+                  f"{r.returncode}:\n      {out.strip()[:200] or '(nothing)'}")
     for name, files, rule, crash in CASES:
         r = run_case(files)
         out = r.stdout + r.stderr
@@ -147,7 +212,8 @@ def main():
             failed += 1
             print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}:\n"
                   f"      {out.strip()[:200] or '(nothing)'}")
-    print(f"{len(CASES) - failed}/{len(CASES)} cases pass")
+    total = len(CASES) + len(STAGED_CASES)
+    print(f"{total - failed}/{total} cases pass")
     return 1 if failed else 0
 
 

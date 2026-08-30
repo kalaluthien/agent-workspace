@@ -101,11 +101,27 @@ fi
 # Every guard here judges the same index, so they run one after another and
 # each says what it refused. No \`exec\` on the last: a guard added below it
 # would never run, and nothing would say so.
+#
+# A guard that is absent or not executable REFUSES. The first draft skipped it
+# -- \`if [ -x ]\` with no else -- so a worktree at a commit predating the guard,
+# or one where the bit was lost, committed a violation and auto-pushed it with
+# no output at all. A hook that is installed is a promise the check ran; the
+# only honest answer when it cannot is to stop and say which one.
 for guard in check-rule-readers check-tree-shape; do
 	g=\$(git rev-parse --show-toplevel)/scripts/\$guard
-	if [ -x "\$g" ]; then
-		"\$g" --staged || exit 1
+	if [ ! -x "\$g" ]; then
+		echo "pre-commit: REFUSING -- \$g is missing or not executable." >&2
+		echo "  This hook is installed, so the guard is expected to run. A" >&2
+		echo "  checkout that predates it, or one where the bit was lost," >&2
+		echo "  commits unchecked otherwise, and nothing says so." >&2
+		echo "  chmod +x it, or run \$(git rev-parse --show-toplevel)/scripts/install-hooks" >&2
+		echo "  from a checkout that has it. To commit here anyway you have" >&2
+		echo "  to say so out loud: SKIP_REPO_GUARDS=1 git commit ..." >&2
+		[ "\${SKIP_REPO_GUARDS:-}" = 1 ] || exit 1
+		echo "pre-commit: SKIP_REPO_GUARDS=1 -- committing with \$guard unrun." >&2
+		continue
 	fi
+	"\$g" --staged || exit 1
 done
 HOOK
 

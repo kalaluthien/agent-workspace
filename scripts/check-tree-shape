@@ -219,22 +219,28 @@ def main():
     # R3
     scanned = 0
     for p in paths:
-        text = read(p, staged)
+        # The kind is decided before the file is opened. The first draft read
+        # first, so a file with no text at all -- the first PNG committed here
+        # -- died in the decode with a traceback naming no rule, and R0, the
+        # branch written for exactly that case, was unreachable.
+        spec = None if p.endswith(".md") else PROSE.get(Path(p).suffix)
+        if not p.endswith(".md") and spec is None:
+            # A file this sweep cannot read. Counted apart from what it found,
+            # because "I looked and found nothing" and "I could not look" are
+            # the two outcomes a guard must never merge -- and reported rather
+            # than raised, so the rules that already ran still print what they
+            # saw.
+            note("R0", p, "no prose rule for this suffix; the sweep could not "
+                          "read it. Add the suffix to PROSE.")
+            continue
+        try:
+            text = read(p, staged)
+        except (UnicodeDecodeError, OSError) as e:
+            note("R0", p, f"could not be read as text ({e.__class__.__name__}); "
+                          f"the sweep did not run over it")
+            continue
         scanned += 1
-        if p.endswith(".md"):
-            lines = code_lines(text)
-        else:
-            spec = PROSE.get(Path(p).suffix)
-            if spec is None:
-                # A file this sweep cannot read. Counted apart from what it
-                # found, because "I looked and found nothing" and "I could not
-                # look" are the two outcomes a guard must never merge -- and
-                # reported rather than raised, so the rules that already ran
-                # still get to print what they saw.
-                note("R0", p, "no prose rule for this suffix; the sweep could "
-                              "not read it. Add the suffix to PROSE.")
-                continue
-            lines = code_lines_by_comment(text, spec)
+        lines = code_lines(text) if spec is None else code_lines_by_comment(text, spec)
         for n, line in lines:
             for pat, why in RETIRED:
                 if pat.search(line):

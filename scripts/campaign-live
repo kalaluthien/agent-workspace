@@ -112,6 +112,15 @@ def classify(recs, sessions):
     return answered, orphan, idle
 
 
+def stray_branches(recs, anchor):
+    """Records in this directory naming a branch outside this campaign. Pure,
+    so the check has a case; a record with no branch counts as stray, since a
+    record that cannot say what it claims is not evidence that it claims
+    something of ours."""
+    return [(i, r) for i, r in sorted(recs.items())
+            if not r.get("branch", "").startswith(f"campaign-{anchor}/")]
+
+
 def alive(pid):
     r = run(str(HERE / "campaign-session-alive"), str(pid))
     return (r.stdout or r.stderr).strip() or "unreadable (no output)"
@@ -147,6 +156,21 @@ def main():
         return 1
 
     answered, orphan, idle = classify(recs, sessions)
+
+    # The anchor was declared and never used, so the output read as campaign
+    # scoped while being whatever the directory happened to hold. A campaign
+    # directory should hold only its own campaign's claims; a record whose
+    # branch names another anchor is a mixup worth saying out loud, and it is
+    # the only thing the anchor can honestly check here.
+    stray = stray_branches(recs, args.anchor)
+    if stray:
+        print(f"\n!! {len(stray)} record(s) in this directory name a branch "
+              f"outside campaign-{args.anchor}:")
+        for i, r in stray:
+            print(f"  #{i:<6} {r.get('branch', '<no branch>')}")
+        print("  Either the directory is holding another campaign's records, "
+              "or a branch was\n  named wrongly. Neither is this script's to "
+              "fix.")
 
     print(f"\nclaims answered by a live session ({len(answered)}) -- "
           f"joined on the session id, the one field a restart and a rename "
