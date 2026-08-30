@@ -1025,9 +1025,12 @@ updating a pull request, then goes idle; the campaign session retires it once
 that work is durable.
 
 **Who reviews, and in which mode.** The reviewer is launched by the session that
-wants the merge — never by the session that wrote the commits, which is the
-whole of the non-author condition above — and `/code-review <PR#>` is the whole
-opening prompt either way, because it is model-invocable. The default is an **in-process subagent**: a review only reads,
+wants the merge, **and the author may be that session** — the condition above is
+on who *writes* the review, never on who commissions it. That is the one-session
+landing, and the model pins it: `A16` is SAT, and the old guard forbidding a
+review commissioned by the author is gone precisely because it made the legal
+case inexpressible (`P2`). `/code-review <PR#>` is the whole opening prompt
+either way, because it is model-invocable. The default is an **in-process subagent**: a review only reads,
 so it needs none of what a process boundary is paid for — no handover file, no
 canary, no pane, no sweep. A **herdr session** is for a review that will take
 many turns, or an `ultra` review, which is person-triggered only and never the
