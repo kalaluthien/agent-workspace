@@ -18,7 +18,7 @@ procedure rather than kept beside it, so a step that changes cannot leave a
 predicate behind saying what it used to do.
 
 A campaign bound here with no directory is taken first — `opening-campaign`
-steps 2 and 4, nothing to acquire — because the holder and executor records have
+steps 2 and 4, nothing to acquire — because the holder and claim records have
 no other home (§ Who is a campaign session, "Holding scaffolds"). One path, then.
 
 ## Procedure
@@ -43,11 +43,10 @@ destructive thing a session can do to a campaign it does not hold (§ Who is a
 campaign session in the container's `AGENTS.md`).
 
 ```sh
-gh api --paginate repos/kalaluthien/agent-workspace/issues/"$N"/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body
-        | split("\n")[0] | rtrimstr("\r")' | tail -1
-hostname -s
+"$CONTAINER"/scripts/campaign-bound "$N"     # here | elsewhere <machine> | unbound
 ```
+
+`here` — carry on. Anything else, including a failed read, refuses the close.
 
 Another machine — refuse, naming both machines, and say nothing was closed. No
 output means unbound, which is not consent either: let the person bind it here,
@@ -110,16 +109,21 @@ does, and carry on.
 
 **If `TOOK_IT_HERE` is set, this step and step 2 are not applicable, and that
 is what to report.** Step 0 created the tree seconds ago, so no herdr `cwd` can
-be under it, `runtime/executors/` is empty because it was just copied, and there
+be under it, `runtime/claims/` is empty because it was just copied, and there
 is nothing uncommitted in it: the gates cannot fail, and a gate that cannot fail
 has not passed. Run them anyway — they cost two commands — and report "not
 applicable: this session created the directory in step 0". Why that is sound,
 and the one residue it leaves, is `references/rationale.md`.
 
-**Then the agents, both records** — `herdr agent list` for the delegates,
-`runtime/executors/` for the executor sessions, one alone being no reading at all
-(§ Completion and liveness). Presence is the signal, not `agent_status`; compare
-whole path segments, and never test a name against the branch.
+**Then the agents, both records, split by question rather than by kind** —
+`herdr agent list` gives liveness for every executor, delegate or not, because
+it lists every session on this machine (measured 2026-08-30: three rows, none of
+them a delegate). What it does not give is attribution at all: under § Naming a session
+no name carries a subtask, so no row says which claim it holds. `runtime/claims/`
+is the only answer, and every claimant writes one — a delegate included. One
+alone is no reading at all (§ Completion and liveness). Presence is the signal,
+not `agent_status`; compare whole path segments, and never test a name against
+the branch.
 
 ```sh
 herdr agent list | jq -r --arg tree "$CAMPAIGN_DIR" \
@@ -127,30 +131,31 @@ herdr agent list | jq -r --arg tree "$CAMPAIGN_DIR" \
    | select(.cwd + "/" | startswith(($tree | sub("/$";"")) + "/"))
    | "\(.name // "unnamed")\t\(.agent_status)\t\(.cwd)"'
 
-EXECDIR="$CAMPAIGN_DIR/runtime/executors"
-if [ ! -d "$EXECDIR" ]; then
-  echo "REFUSE: no $EXECDIR — executor sessions cannot be enumerated"
+CLAIMDIR="$CAMPAIGN_DIR/runtime/claims"
+if [ ! -d "$CLAIMDIR" ]; then
+  echo "REFUSE: no $CLAIMDIR — claims cannot be enumerated"
 else
-  find "$EXECDIR" -type f -print | while read -r F; do
+  find "$CLAIMDIR" -type f -print | while read -r F; do
     P=$(awk '$1 == "pid" { print $2 }' "$F")
     V=$("$CONTAINER/scripts/campaign-session-alive" "$P" 2>&1) || V="unreadable ($V)"
     case "$V" in
       dead) ;;
-      alive|other) echo "live executor: $(basename "$F") [$V]"; cat "$F" ;;
+      alive|other) echo "live claim: $(basename "$F") [$V]"; cat "$F" ;;
       *) echo "REFUSE: $(basename "$F") is $V"; cat "$F" ;;
     esac
   done
 fi
 ```
 
-**A missing `runtime/executors/` is a refusal, not a pass**: an empty one says no
-executor announced, an absent one says nothing at all.
+**A missing `runtime/claims/` is a refusal, not a pass**: an empty one says no
+claim was taken here, an absent one says nothing at all.
 
 Any row from either: print the rows, name the agent, stop. The person retires
-it; this skill never kills an agent. No rows still leaves two cases for step 2 — an agent herdr has forgotten, and an
-executor that never sent `CLAIMED` — both leaving work in a checkout.
+it; this skill never kills an agent. No rows still leaves two cases for step 2 — an agent herdr has forgotten, and a
+claim record whose `pid` reads `dead` because a harness restart changed it while
+the session lives on (#76) — both leaving work in a checkout.
 
-Holds when: `runtime/executors/` existed, every record in it read `dead`, no
+Holds when: `runtime/claims/` existed, every record in it read `dead`, no
 `runtime/holder` named a live session other than this one, and no herdr agent's
 `cwd` was under `$CAMPAIGN_DIR` — or `TOOK_IT_HERE` is set and this step reported
 all three as not applicable rather than as passed.
@@ -467,7 +472,7 @@ ls -A "$CAMPAIGN_DIR"
 rm -rf -- "$CAMPAIGN_DIR"
 ```
 
-`runtime/` goes with it — `holder`, every `executors/<issue>` record, every
+`runtime/` goes with it — `holder`, every `claims/<issue>` record, every
 handover brief — by design, since nothing off this machine reads them. Say so.
 
 Holds when: the closing comment carries the listing taken immediately before the

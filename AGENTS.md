@@ -110,19 +110,21 @@ machine holds it.
 
 **An executor session is an agent, not a second campaign session.** It files the
 subtask it was given or takes the one it was handed and claims the branch — and
-it announces itself with `CLAIMED` when the claim is its own to hold, which is
-the case where it works the subtask with its own hands. When it launches a
-delegate instead, the claim is the delegate's and its `--name` already says so,
-so nothing is announced; § Talking to a repository agent is the one statement of
-which is which. From the claim it is in the protocol below: it answers `STATUS`, sends `REPORT` and `BLOCKED`, stops on `STAND DOWN`,
-and never surveys, never syncs, never closes, and never lands its own work —
-§ Talking to a repository agent has that last one in full. It works the subtask
+it writes `runtime/claims/<issue>` for itself when the claim is its own to hold,
+which is the case where it works the subtask with its own hands. When it
+launches a delegate instead, the claim is the delegate's and the delegate writes
+the record; § Talking to a repository agent is the one statement of which is
+which. From the claim it is in the protocol below: it answers `STATUS`, sends `REPORT` and `BLOCKED`, stops on `STAND DOWN`,
+and never surveys, never syncs, and never closes. It **may** land its own work,
+on the three conditions § Talking to a repository agent states — a review read
+at the merged sha, written by an agent that did not write the commits, and a
+branch containing the current `main` — which is what replaced "an executor never
+merges its own pull request". It works the subtask
 whichever way § Running a campaign allows, subject to the mode rule there; what
 changes is only who it reports to.
 
-The holding session is the peer the person named. When nobody named one, the
-announcement goes to every peer session, and a peer that holds no campaign
-covering it ignores it.
+The holding session is the peer the person named. When nobody named one, ask
+every peer session, and a peer that holds no campaign covering it says so.
 
 **`BOUND <machine>` is a comment on the anchor, and the latest one is
 authoritative.** Comments append, so writing one races nothing; that is why the
@@ -130,17 +132,31 @@ binding is a comment and not the body. Its first line is `BOUND <machine>` with
 the machine from `hostname -s`, and anything after that line is prose for a
 person — a migration says there why.
 
+**The reading has one reader, `scripts/campaign-bound <N>`**, and it prints one
+of three words:
+
 ```sh
-gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/comments \
-  --jq '.[] | select(.body | startswith("BOUND ")) | .body
-        | split("\n")[0] | rtrimstr("\r")' | tail -1
+scripts/campaign-bound <N>      # here | elsewhere <machine> | unbound
 ```
 
-REST returns comments oldest first, so the last matching comment is the current
-binding, and taking each one's first line is what makes `tail -1` find it: over
-whole bodies `tail -1` takes the last *line*, which on an annotated binding is
-the prose (both probed 2026-08-29). `rtrimstr` guards a body stored with `\r\n`;
-the bindings probed here hold `\n`. No output means the campaign is not bound.
+`here` is the only one that licenses a write. `elsewhere` names the machine to
+say so with. `unbound` licenses asking the person, never binding on your own.
+**Read the word, never the exit status** — the status is about the reading, as
+it is for `campaign-local-work` and `campaign-session-alive`, and for the same
+reason: a failed read that exited like `unbound` would invite a session to bind
+a campaign another machine is working.
+
+Four things that reading has to get right, each of which is a way to be wrong,
+and all four now live in the script rather than in prose: `--paginate`, because
+comments page at thirty and a truncated listing reads exactly like a complete
+one; oldest-first, so the *last* match is the current binding and taking the
+first returns the original binding forever; the first line only, because a
+migration annotates its binding and `tail -1` over whole bodies takes the last
+line of that prose (probed 2026-08-29); and a trailing `\r`, which a body stored
+with CRLF leaves on the machine name so that it matches nothing. The script also
+folds in the comparison against `hostname -s`, which all three call sites ran as
+their next line and compared by eye.
+
 Read it before every write to the anchor — body, comment, or sub-issue link —
 and before launching any executor onto one of its subtasks.
 
@@ -184,7 +200,8 @@ reader can confirm: no holder was ever recorded, and the recorded pid is held by
 nobody. **`dead` is an absence of the process, not of the session.** A harness
 restart hands a surviving session a new pid, so any record written before one
 reads `dead` while the session that wrote it is still working — measured
-2026-08-30, when `runtime/executors/62` named pid 24840, that pid read `dead`,
+2026-08-30, when the claim record for #62 — then at `runtime/executors/62`,
+before #59 renamed the directory — named pid 24840, that pid read `dead`,
 and the session that wrote it was alive at another pid in the same minute. When
 the record predates a restart, `dead` is stale rather than absent, and only
 asking the session settles it.
@@ -211,27 +228,36 @@ is invariant across *how* a process was started. `ucomm` is the exec'd file's
 basename rather than an identity, so the names it matches are a fact about this
 install — which is why an unrecognised one is `other` and not `dead`.
 
+**The name is narrower than the job, and #93 owns that.** The holder role is
+not retired — it still decides the scaffold, the anchor body and the close,
+which are the campaign-wide writes that genuinely need one writer. What left the
+role is **merge authority**, which is now three conditions on the work. So what
+this file records is whether a live session on this machine owns this tree, and
+that job never depended on the merge rule at all. The path is left standing
+because it is a live file with references across every skill and asset, and
+moving it inside a sweep is how a migration loses a record.
+
 This lock rots one way, and a restart is the way: staleness is a local process
 fact rather than a guess about a machine you cannot see — which is what pinning
 the campaign to one machine was bought for — but a pid stops naming its session
 the moment the harness restarts, and nothing in the record distinguishes that
 from an exit. The session id is the field that survives, and only
 `runtime/holder` carries one. It errs towards refusing to take
-over, and does so two ways now: a pid recycled onto a different `claude` reads
-`alive`, and a pid recycled onto anything else reads `other`. The second is
-wider than the residue `spec/alloy/session.als` records under R3g, which names
-only the first — a claim phase 2 of #59 has to widen when it rewrites that
-model. Ask rather than overwrite. `runtime/`
+over, and does so two ways: a pid recycled onto a different `claude` reads
+`alive`, and a pid recycled onto anything else reads `other`. Both refuse, and
+`spec/alloy/session.als` states them together under R3g — the one place that
+residue is written, because a model is a reader that can be measured wrong and
+prose is a reader that cannot. Ask rather than overwrite. `runtime/`
 dies with the directory, which is the right lifetime — nothing off this machine
 reads the holder.
 
-**Holding scaffolds.** `runtime/holder` and `runtime/executors/` have no home
+**Holding scaffolds.** `runtime/holder` and `runtime/claims/` have no home
 but the campaign directory, so a session that takes a campaign on a machine
 with no directory creates one first — `opening-campaign` steps 2 and 4, with
 nothing to acquire; step 4 builds `<slug>-<YYMMDD>/` and copies the kind's
 principles, so step 2, where both are chosen, cannot be skipped — and a held
 campaign has a directory from that moment. Campaign #1
-ran without one, and its first `CLAIMED` arrived with nowhere to be recorded
+ran without one, and its first claim had nowhere to be recorded
 (#52): the record half of the protocol did not exist on exactly the path #46
 had made first-class. The fix is the scaffold rather than a second home for the
 record, because a record that outlives the tree it describes is what
@@ -279,7 +305,7 @@ two survive unchanged, one holds by construction, and one inverts.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, and
   **optional off the holding machine**. A campaign is its anchor issue; the
   directory is one machine's cache of it, and the machine that holds the
-  campaign always has one, because the holder and executor records live there
+  campaign always has one, because the holder and claim records live there
   and nowhere else. A campaign legitimately has none here when this machine
   does not hold it — not taken here yet, or bound elsewhere.
 
@@ -367,6 +393,7 @@ scripts/campaign-name-session <pane> <name> [<pane> <name> ...]
 Underneath it is the two herdr calls, which is what to run by hand if the script
 is not to hand:
 
+<!-- unguarded: campaign-name-session -- the documented fallback for when the script is not to hand; a reader who needs these two lines cannot call it -->
 ```sh
 herdr agent rename <pane> campaign-<anchor>-<role>-<n>
 herdr agent prompt <pane> "/rename campaign-<anchor>-<role>-<n>"
@@ -620,10 +647,10 @@ whose session does have a row in `herdr agent list`, which carries every session
 on this machine, and whose row does not say which subtask it holds. So that
 listing can neither confirm nor deny abandonment: its silence is not evidence
 that such a claim is free, and a row in it is not evidence that one is held.
-`<campaign>/runtime/executors/` is the reading that answers it — an executor
-session's `CLAIMED` names the branch it holds and the pid to test it by, which
-is what that record exists for — and only a claim named by no record and
-answered by no peer (`STATUS`) may be deleted.
+`<campaign>/runtime/claims/` is the reading that answers it — the record a
+claiming session wrote for itself names the branch it holds and the pid to test
+it by, which is what that record exists for — and only a claim named by no
+record and answered by no peer (`STATUS`) may be deleted.
 Leave it standing if nobody answers: deleting it costs the one thing keeping two
 executors off the subtask.
 
@@ -631,7 +658,7 @@ executors off the subtask.
 `campaign-<N>/` ref on the container that still sits at `origin/main`, and it is
 allowed to because by then step 0 has established the campaign is bound here and
 step 1 that nothing is live under its tree — by both records, `herdr agent list`
-and `runtime/executors/`, which is what makes the sweep sighted for a repo-less
+and `runtime/claims/`, which is what makes the sweep sighted for a repo-less
 campaign, whose executors the listing shows without saying which subtask they
 hold. A ref holding commits is printed there, never deleted. Refs
 in member repositories are not swept: a merged pull request releases those.
@@ -660,11 +687,12 @@ of another repository however it is checked out; and a skill marked
 `disable-model-invocation: true` is unusable by any agent in any mode, so it must
 be spelled out in the brief rather than named.
 
-So an **executor session** can take only a container subtask or
-campaign-directory work. For a member-repository subtask it becomes the launcher
-of a delegate, and the claim is then the delegate's: it is `--name`d its branch
-and `herdr agent list` carries it, so no `CLAIMED` is sent for it by anybody. §
-Talking to a repository agent says who sends that message and who never does.
+So a **campaign session working with its own hands** can take only a container
+subtask or campaign-directory work. For a member-repository subtask it becomes
+the launcher of a delegate, and the claim is then the delegate's: the delegate
+writes its own record, exactly as a session working with its own hands does, and
+the launcher writes none because it holds no claim. § Talking to a repository
+agent says who writes one and who never does.
 
 Then, within what the repository allows, choose by cost:
 
@@ -967,12 +995,16 @@ Never answer one with the other.
   gate holding one without the other is blind to half its executors.
   `herdr agent list` is the liveness: it lists every session on this machine,
   delegate or not — measured 2026-08-30 on herdr 0.8.2, three container
-  sessions, none of them a delegate. It gives attribution only where a row's
-  name is the branch, which is a delegate's name and not an executor session's.
-  The claim record, `<campaign>/runtime/executors/<issue>`, supplies the
+  sessions, none of them a delegate. **It gives no attribution at all.** A row
+  carries a name, and under § Naming a session no name carries a subtask, so
+  the listing cannot say which claim any row holds. It once could, for
+  delegates alone, when a delegate was named its branch; #89 retired that and
+  `runtime/claims/` is now the only answer for every kind of executor.
+  The claim record, `<campaign>/runtime/claims/<issue>`, supplies the
   attribution and not the liveness: the `pid` it names reads `dead` after a
   harness restart its session survived, so it locates a session rather than
-  proving one. Read a delegate's own progress from the session transcript,
+  proving one — and its `session` field is what still identifies that session
+  once the `pid` and the `name` have both gone stale. Read a delegate's own progress from the session transcript,
   never from `agent_status` alone, which reports the screen and calls a mid-turn
   pause `idle`.
   **Both readings, every time**: the no-live-agent gate in `closing-campaign` and
@@ -980,8 +1012,9 @@ Never answer one with the other.
 
   `ListAgents` alone will not do it. It gives a name, not a subtask, so presence
   there cannot say which campaign a peer is in — which is why the record exists,
-  and why an executor session that never announced can be live under a campaign
-  that reads closable.
+  and why a session that wrote no record can be live under a campaign that
+  reads closable — a narrower window than the announcement it replaced, because
+  the write is the claimant's own and cannot fail to be received.
 
   **A `cwd` filter cannot scope a campaign with no directory**, because every
   campaign session's `cwd` is the container root: the session transcript is the
@@ -1001,9 +1034,14 @@ An agent never closes itself. It finishes by pushing its branch and opening or
 updating a pull request, then goes idle; the campaign session retires it once
 that work is durable.
 
-**Who reviews, and in which mode.** The reviewer is one the holder launches, and
-`/code-review <PR#>` is the whole opening prompt either way, because it is
-model-invocable. The default is an **in-process subagent**: a review only reads,
+**Who reviews, and in which mode.** The reviewer is launched by the session that
+wants the merge, **and the author may be that session** — the non-author
+condition (§ Talking to a repository agent, merge condition 2) is on who
+*writes* the review, never on who commissions it. That is the one-session
+landing, and the model pins it: `A16` is SAT, and the old guard forbidding a
+review commissioned by the author is gone precisely because it made the legal
+case inexpressible (`P2`). `/code-review <PR#>` is the whole opening prompt
+either way, because it is model-invocable. The default is an **in-process subagent**: a review only reads,
 so it needs none of what a process boundary is paid for — no handover file, no
 canary, no pane, no sweep. A **herdr session** is for a review that will take
 many turns, or an `ultra` review, which is person-triggered only and never the
@@ -1020,9 +1058,9 @@ angles per pull request died twice on the session limit, and one consolidated
 pass found findings of the same quality at a fraction of the spend (#52).
 
 **The pull request is the review's working memory.** A finding that exists only
-inside a running session is not yet found. The holder posts findings as a
-comment on the pull request the moment they consolidate, before launching
-anything else, and a reviewer that runs long writes findings out as it goes
+inside a running session is not yet found. Findings are posted as a comment on
+the pull request the moment they consolidate, before anything else is launched,
+by whoever consolidated them, and a reviewer that runs long writes findings out as it goes
 rather than only in its final report. Findings held in a session's context died
 with the session limit twice; findings on the pull request survived everything
 and let a fix start while the rest of the review was still running (#52).
@@ -1030,99 +1068,225 @@ and let a fix start while the rest of the review was still running (#52).
 # Talking to a repository agent
 
 `spec/alloy/agent.als` is the contract; this is the short form. `ListAgents`
-resolves the address; herdr's pane label is not one. Where the address comes from
-is the difference between the two kinds of executor — a delegate's was chosen at
-launch, an executor session's was announced — and § Who is a campaign session
-says which is which.
+resolves the address; herdr's pane label is not one. Where the address comes
+from is the difference between the two kinds of executor — a delegate's was
+chosen at launch, and a session working its own claim wrote its own into
+`runtime/claims/<issue>` — and § Who is a campaign session says which is which.
 
-Five messages, carrying **only what the agent alone knows**. Anything a message
+Four messages, carrying **only what the agent alone knows**. Anything a message
 says about finished work duplicates a GitHub fact, and the copy is what goes
-stale.
+stale. **The claim is not among them**: it is a record the claimant writes for
+itself, not an announcement somebody must receive.
 
 | message | direction | carries |
 | --- | --- | --- |
-| `CLAIMED` | executor → campaign | `<branch> <ListAgents name> <pid>`, once, at the claim |
 | `STATUS` | campaign → agent | doing what, blocked on what, what exists only on this machine, safe to stop |
 | `REPORT` | agent → campaign | a pull request URL and the sha it sits at, once per round, unsolicited |
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
 
-- **`CLAIMED` is sent by the process that holds the claim, and only where nobody
-  chose its name.** That is exactly one case: an executor session working a
-  container subtask or campaign-directory work with its own hands. A launched
-  delegate sends none — its `--name` *is* its branch, chosen before the process
-  existed, and `herdr agent list` carries its liveness — and neither does the
-  executor session that launched one, because announcing a claim it does not hold
-  would give one process two addresses and the close gate would count it twice.
-  So the two readings split by question rather than by kind: `herdr agent list`
-  gives liveness for both kinds of executor and attribution only where a row's
-  name is the branch, which is a delegate's name and not an executor session's,
-  and `runtime/executors/` supplies that missing attribution for the executor
-  sessions holding their own claim. Neither is a substitute for the other. A
-  launcher needs no record of its own, and that is the intended reading rather
-  than a hole — it holds no claim and no working tree, so what the gate must
-  see is its delegate, which the listing carries under the branch name for as
-  long as it runs. A running session can be renamed, but only by a person typing
-  `/rename` into its pane (probed 2026-08-28), so renaming to the flattened
-  branch is an optional courtesy and `CLAIMED` is the mechanism.
+- **Every claimant writes a record for itself, at the claim, with no
+  exceptions.** A session working a subtask with its own hands writes one; a
+  launched delegate writes one; the session that *launched* the delegate writes
+  none, because it holds no claim and no working tree, and a second address for
+  one claim would make the close gate count it twice.
 
-- **The message is `CLAIMED <branch> <ListAgents name> <pid>`**, and this is the
-  one place that format is written. The branch and the subtask are already GitHub
-  facts anyone with the anchor can read; the name is how to reach the session,
-  and the pid is what makes its liveness a local `kill -0` rather than a guess —
-  the same argument `runtime/holder` makes for carrying one. **The executor reads
-  its own pid from `$CLAUDE_PID`**, which is the `claude` process; `$$` is the
-  shell one tool call runs in and is dead before the next one starts. **It reads
-  its own name from `ListAgents`, whose first line names the calling session**
-  before it lists the peers (probed 2026-08-29: `This session is <name> [ref]`).
-  The harness named the session, so a name it guessed instead would address
-  nobody.
+  **The delegate used to be the exception and #89 killed it.** The exception
+  read: a delegate needs no record because its `--name` *is* its branch, so
+  `herdr agent list` carries both liveness and attribution for it. Under
+  § Naming a session a delegate is named `campaign-<anchor>-executor-<n>` and
+  the subtask is deliberately absent, so **no row's name is ever a branch
+  again**. Left standing, that exception made a live delegate's claim
+  attributable by nothing on the machine: no record to enumerate, and a name
+  that says which campaign but not which subtask. The release-claim guard —
+  a claim named by no record and answered by no peer may be deleted — would
+  then read a live delegate's claim as abandoned and delete it.
 
-- **The holder writes it down.** This is the record's one definition, and every
-  other site points here:
+  So the two readings split by question, and the split no longer has a
+  per-kind exception in it: `herdr agent list` gives **liveness** for every
+  session on this machine, delegate or not, and says nothing about which
+  subtask any of them holds; `runtime/claims/` gives **attribution** for every
+  claim and cannot prove liveness, because its `pid` reads `dead` after a
+  restart its session survived. Neither substitutes for the other, and a gate
+  that reads one without the other is blind to half of what it is gating.
+
+  **The claimant writes it rather than announcing it**, and that is the change
+  #59 made. An announcement can fail to be sent, and its absence was invisible:
+  an executor that never announced looked like no executor at all, and the close
+  gate read straight past it. A record the claimant writes for itself removes
+  the *send* as a way to lose it, which is what an announcement added.
+
+  **It does not make the loss impossible, and the model does not claim it
+  does.** The claim is a create-ref on the remote and the record is a local
+  `printf`; nothing makes the two atomic, so a session can claim and die before
+  writing exactly as it could skip `CLAIMED`. `A1` is UNSAT **by construction**
+  — `agent.als` says so itself: the same scenario with no discipline conjoined
+  and nothing left to disobey, which makes the unrecorded state inexpressible in
+  the model rather than unreachable on disk. What bounds the real window is that
+  it is short and that the branch outlives it — a claim with no record is still
+  a ref on the remote, visible from every machine (the delete under the record,
+  `A10`).
+
+- **The record, and this is the one place its shape is written:**
 
   ```sh
-  printf 'session %s\npid %s\nbranch %s\n' "<name>" "<pid>" "<branch>" \
-    >| "$CAMPAIGN/runtime/executors/<issue>"
+  printf 'session %s\nname %s\npid %s\nbranch %s\n' \
+    "$CLAUDE_CODE_SESSION_ID" "<ListAgents name>" "$CLAUDE_PID" "<branch>" \
+    >| "$CAMPAIGN/runtime/claims/<issue>"
   ```
 
-  One file per announced subtask, the three fields straight out of the message.
-  The holder writes it because the holder is what must read it back — at a close,
-  at a sweep, possibly from a later session, since a message received is gone the
-  moment the session that received it is. That gives the record `runtime/holder`'s
-  argument exactly, and `runtime/holder`'s lifetime: it is on the bound machine,
-  it dies with the directory, and nothing off the machine reads it. It is keyed
-  to no session, so a successor that takes a dead holder's directory inherits
-  every address in it.
+  One file per claimed subtask. **The four fields are not equally durable, and
+  a reader has to know which is which:**
 
-  **That directory is the only thing that can say which subtask an executor
-  session holds.** The close gate and the retirement sweep enumerate it and
-  read each `pid` the way `runtime/holder` is read; nothing matches names by
-  prefix, because a name is not a branch (§ Naming a session) and can be changed
-  while the claim it belongs to cannot. **A campaign whose directory has no
-  `runtime/executors/` cannot be enumerated at all, and that is a refusal rather
-  than a pass** — an empty directory says no
-  executor announced, a missing one says nothing. An executor that skips
-  `CLAIMED` is invisible rather than merely quiet: the holder sees a peer in
-  `ListAgents` and cannot tell which subtask it works, so the gate reads straight
-  past it (modelled: `spec/alloy/agent.als`, `A1`; the delete under it, `A10`).
+  | field | from | survives a harness restart | survives a rename |
+  | --- | --- | --- | --- |
+  | `session` | `$CLAUDE_CODE_SESSION_ID` | **yes** | yes |
+  | `name` | `ListAgents`' first line | no | no |
+  | `pid` | `$CLAUDE_PID` | no | yes |
+  | `branch` | the claim | yes — it is on the remote | yes |
 
-- **An executor never merges its own pull request, and never reviews it.** It
-  pushes, `REPORT`s the URL once, and waits. The holding session verifies in
-  GitHub, launches a reviewer, reads the findings, and then either merges —
-  telling the executor the work is durable, which is what lets it drop its
-  worktree — or briefs a fresh executor from the pull request and the review,
-  until the review is clean. **The holder never merges unreviewed**, and a push
-  after a review retires that review: a review is of a pull request at a
-  revision. Witnessed 2026-08-28, which is why the rule is written: an executor
-  session squash-merged its own pull request in the same minute the holding
-  session sent a hold, and nothing on disk said who merges (modelled: `A4` the
-  collision, `A5`/`A7` the rule, `A8` the control, `A13` the re-push).
+  `name` is how to reach the session now and `pid` is what makes liveness a
+  local `kill -0` rather than a guess, but **`session` is the only field that
+  identifies the session across everything that happens to it**, which is why it
+  is written first and why the record carries it at all. Measured 2026-08-30: a
+  harness restart returned every session with its id intact and a new pid, and
+  changed the harness names as well — one peer answered to three names in one
+  hour. A record holding only a name and a pid can go stale in both fields while
+  the session it names is alive and working, and `kill -0` cannot tell that from
+  an exit. #76 owns the general problem; this field is what makes the record
+  repairable when it bites.
+
+  **Read the fields for what each can answer.** Liveness is `pid` through
+  `scripts/campaign-session-alive`. Addressing is `name`, and a name that no
+  longer resolves is a stale record rather than a dead session — re-derive it by
+  asking peers which one holds `session`, never by elimination over live
+  processes, which cannot see a session id at all. Attribution is `branch`.
+
+  **The claimant writes it because a message received is gone the moment the
+  session that received it is**, and whoever runs a close or a sweep later may be
+  a session that did not exist at the claim. The record has `runtime/`'s
+  lifetime: it is on the bound machine, it dies with the directory, and nothing
+  off the machine reads it. It is keyed to no session, so a session that takes
+  over a campaign directory inherits every address in it.
+
+  **`$CLAUDE_PID` is the `claude` process**; `$$` is the shell one tool call
+  runs in and is dead before the next one starts. **`ListAgents`' first line
+  names the calling session** before it lists the peers (probed 2026-08-29:
+  `This session is <name> [ref]`). The harness named the session, so a name it
+  guessed instead would address nobody.
+
+  **That directory is the only thing that can say which subtask a session
+  holds.** The close gate and the retirement sweep enumerate it and read each
+  `pid`; nothing matches names by prefix, because a name is not a branch
+  (§ Naming a session) and can be changed while the claim it belongs to cannot. **A campaign whose directory has no `runtime/claims/`
+  cannot be enumerated at all, and that is a refusal rather than a pass** — an
+  empty directory says no claim was taken, a missing one says nothing.
+
+- **Three conditions gate a merge, and none of them names a role.** A pull
+  request is merged only when
+
+  1. a review has been read **at the sha being merged**;
+  2. that review was written by **an agent that did not write the commits** —
+     a separate reviewer process or subagent, which the author may launch
+     itself; and
+  3. the branch **contains the current `main`** at the moment it merges.
+
+  Whoever can satisfy all three may merge, the author included; a session that
+  cannot satisfy one may not, however senior its role.
+
+  **This replaces "an executor never merges its own pull request".** The rule
+  was written from a witnessed collision on 2026-08-28 — a session squash-merged
+  its own pull request in the same minute a hold was sent — but the defect that
+  collision exposed was unreviewed work landing under a racing instruction, not
+  the identity of the merger. Binding the merge to a role fixed it by making one
+  session the gate for every landing, which is a bottleneck the campaign pays on
+  every subtask and which the role's own retirement removes anyway.
+
+  **Condition 3 is what replaces the serialisation the role form provided by
+  accident**, and it was missing from the first draft of this rule. Under the
+  old rule an author who could not merge had to wait for one session, and that
+  session saw every landing, so it saw the pair. Conditions 1 and 2 are each
+  true of each branch *in isolation* and say nothing about two reviewed
+  branches over the same files: both authors merge, neither review was retired
+  because neither head moved, and the combined state is read by nobody. Four
+  semantic clashes surfaced only in the combination of #46 and #47, and no
+  hunk-level merge sees those.
+
+  Condition 3 closes it by feeding the second lander back into condition 1
+  rather than by naming anyone: to contain a `main` that moved, the second
+  branch must merge it in, that merge is a push, **a push retires the review**,
+  and the next merge needs a review read at the combined sha. So the second
+  lander is forced to know it is second, and the mechanism is the rule this
+  file already had.
+
+  **Two of the three are GitHub facts; the second is not, and that is the
+  standing weakness of this rule.** Condition 1 is readable — the sha a review
+  comment names against the sha the merge lands. Condition 3 is *readable* — the branch's
+  behind-count against `main` — but **it is enforced by nothing here**, and the
+  way that survives a setting being switched on is worth the four lines.
+
+  `main` is protected as of 2026-08-30 and the up-to-date requirement is set:
+  `protected: true`, `required_status_checks.strict: true`. **It enforces
+  nothing.** "Require branches to be up to date" is a *modifier on required
+  status checks*, and `contexts` is empty, so there is nothing for it to modify.
+  Measured the same day on a throwaway branch cut one commit behind: `behind=1`,
+  `mergeStateStatus: CLEAN`, mergeable. The setting stores, reads back `true`,
+  and refuses no merge.
+
+  What protection did buy is real and unrelated: `main` now refuses force-pushes
+  and deletion. Making it enforce condition 3 needs at least one required status
+  check, which means CI on this repository — a larger change and the owner's to
+  decide. Until then condition 3 is a discipline with a cheap check, which is a
+  better place to be than condition 2 and is not the same as being enforced. **Condition 2 has no automatic reader
+  on this machine**: one `gh` account signs every session's merges and comments,
+  so GitHub cannot tell an author's review from a reviewer's, and
+  `spec/alloy/agent.als` axiomatizes the separateness in `review`'s comment with
+  no conjunct to enforce it. It is a discipline, and this file's own argument
+  says a contract with no second reader drifts. What would give it one: a review
+  comment that names the reviewing agent and the sha it read, so a checker can
+  compare that name against the commit author. Until something does that,
+  condition 2 is held by whoever writes the review saying honestly that it did
+  not write the code.
+
+  Even so the property form beats the role form on the same test, because
+  nothing on GitHub records which session was the holder either — the role form
+  had **zero** readable conditions where this has two.
+
+  **The push that retires a review does not start the next one, and whoever
+  pushed it asks.** This is the half the role form carried without stating: an
+  author who could not merge was visibly waiting on somebody, so a stalled
+  landing was someone's turn. Under conditions nobody is named, and **a silent
+  wait is indistinguishable from work** — witnessed on this file's own branch,
+  where a fix round was posted, no review was requested, and two subtasks sat
+  blocked behind it while the wait read as progress. So the `REPORT` names the
+  new sha *and* asks for the review, in the pull request where a later reader
+  meets it. **And the wait is bounded**: a session that has asked and received
+  nothing says so and stops, rather than waiting in a shape that reads as
+  working. #92 owns the same terminal-branch argument for a GitHub dependency;
+  this sentence is here because this is where the retirement happens and where a
+  reader is standing when they need it.
+
+  What survives unchanged is the sha half: **a push after a review retires that
+  review**, because a review is of a pull request at a revision. So an executor
+  that pushes a fix round does not inherit its own earlier clearance — the
+  round ends in a `REPORT` naming the new sha, and the next merge needs a
+  review read there (modelled: `A4` the collision, `A5`/`A7` the rule, `A8` the
+  control, `A13` the re-push).
+
+  **The reviewer is launched by whoever wants the merge**, which is usually the
+  session holding the claim — condition 2 is on who *writes* the review, never
+  on who commissions it, and `spec/alloy/agent.als` `A16` pins the author
+  launching its own reviewer as admitted. **The claim-holding session** still
+  pushes, `REPORT`s the URL and its sha once, and waits — for the review, not
+  for a role's permission. When the review is clean at that sha, and the branch
+  contains the current `main`, it merges and drops its worktree; when it is not,
+  the findings go on the pull request and the fix round is its own or a fresh
+  executor's.
 
 - **A claim in a message is never evidence.** It says where to look; then look,
   in GitHub, yourself. It stays cheap to look only while the claim carries its
   evidence: a `REPORT` names the sha it sits at and, for a fix round, the URL of
-  the comment holding its disposition table, so the holder's check is one fetch
+  the comment holding its disposition table, so the reader's check is one fetch
   and one compare. **A verdict, a fix report, or a `REPORT` that does not pin
   its sha is unactionable.** Verdicts and pushes race — a review verdict
   crossed a reconciliation push twice — and the crossing was harmless only
@@ -1193,8 +1357,7 @@ its subtasks.
 
 **That check is local, and under the principle that is nearly enough.** Every
 agent of a campaign runs on the machine it is `BOUND` to, so a local gate sees
-all of them — provided it reads both records and every executor session
-announced itself. What it cannot see is a machine working this campaign against
+all of them — provided it reads both records and every claimant wrote one. What it cannot see is a machine working this campaign against
 that binding, and no cheap mechanism fixes it. What lowers the stakes instead: a
 delegate pushes its branch as soon as it has one commit, so a tree deleted
 underneath it costs uncommitted work and nothing more.
@@ -1205,19 +1368,40 @@ One campaign, one machine (§ Who is a campaign session) settles the hard half.
 The anchor has one structural writer, the campaign directory has one holding
 session, and no lock ever has to be judged stale across a network. What stays
 concurrent is concurrent *within* the bound machine — the holding session, its
-executor sessions, its subagents and its delegates — and the branch claim is
-what serializes them. Survey before editing, scope edits so they do not collide
+executor sessions, its subagents and its delegates — and two things serialize
+them, and only the first of them atomically: the branch claim, per subtask,
+which create-ref refuses server-side, and merge condition 3, per landing, which
+is a discipline nothing currently refuses. Survey before editing, scope edits so they do not collide
 with other worktrees, and rebase onto what landed rather than force-pushing over
 it.
 
 **Two open pull requests over the same normative files are normal, and the
-second to land reconciles.** When two container subtasks touch `AGENTS.md`, a
-skill, or a model at once: the holder publishes the overlap — which hunks of
-which files both touch — beside the first review verdict; the second lander
-merges `main` into its branch and resolves there; and the second pull request's
-final verification reads the *combined* state, because the clashes that matter
-are semantic — four surfaced only in the combination of #46 and #47 — and no
-hunk-level merge sees them.
+second to land reconciles.** Merge condition 3 (§ Talking to a repository agent)
+is what tells the second lander it is second: it may not merge a branch that
+does not contain the current `main`, so once the first lands, the second merges
+`main` in and resolves there. **Today that is a discipline and not a refusal** —
+`main` is protected, but its up-to-date requirement enforces nothing while no
+status check is required, so GitHub stops no merge that skips condition 3 and
+the second lander has to run the check itself — and that merge is a push, which retires its
+review, so its next merge needs a review read at the *combined* sha. The
+reconciliation is forced by the conditions rather than assigned to anyone.
+
+**Containment buys attention from nobody, and this is the sharp edge of
+condition 3.** A clean auto-merge of `main` produces a commit whose diff against
+the branch *is the other branch's work* — structurally present in the reviewed
+sha, and exactly the thing this branch's reviewer has no reason to read and
+every reason to skim as "just the merge". So condition 3 guarantees the review
+sits at the combined state; it does not guarantee anyone read the combination.
+
+**The review after a reconciliation reads the combination, not the branch**,
+and its brief says so. That is the half a condition cannot carry. The clashes
+that matter are semantic — four surfaced only in the combination of #46 and #47
+— and no hunk-level merge sees them. So the
+second pull request's final verification reads the combined state, and whoever
+holds the first claim publishes the overlap — which hunks of which files both
+touch — beside the first review verdict, as a courtesy that saves the second
+lander a diff, not as a gate. **The gate is condition 3**, because a courtesy
+nobody is named to perform is a courtesy that stops happening.
 
 **The named cost: no concurrent cross-machine or cloud work on one campaign.**
 Another machine, a cloud session, or a phone may read a campaign and may open a
