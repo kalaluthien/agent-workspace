@@ -320,17 +320,66 @@ two survive unchanged, one holds by construction, and one inverts.
   holds nothing beyond `origin/main` may be released — deleted — only when no
   agent on *your* machine works it; a live agent elsewhere that has not pushed
   loses its claim to that rule, which is one more reason it pushes early.
-  A *delegate's* every other name is this string projected: it is `--name`d the
-  branch with its slash flattened to a dash
-  (`campaign-1-31-executor-identity`), so the name an address resolves and the
-  branch a reader meets are one string. An executor session is the case that
-  rule cannot reach — its harness named it before this campaign existed and only
-  a person can rename it — so it announces the name it has, and
-  `<campaign>/runtime/executors/<issue>` records that name durably. Two naming
-  rules, then, and one thing follows for every reader: **never test a name
-  against the branch.** A `campaign-<N>-` prefix test finds the delegates and
-  misses exactly what the record exists to catch. § Talking to a repository
-  agent carries the announcement.
+  The branch is not a name. **Every session on this machine is named
+  `campaign-<issue>-<role>`** — see § Naming a session — so a name says what a
+  session is doing, and a reader who wants the branch reads the claim record or
+  GitHub. **Never test a name against a branch**: they are two strings on
+  purpose, and a test that treats them as one finds whatever happens to match
+  and misses the rest.
+
+# Naming a session
+
+**`campaign-<issue>-<role>`.** One rule for every session on this machine,
+whatever it is doing.
+
+- `<issue>` is the issue this session is working — the **anchor** number for a
+  holder, the **subtask** number for an executor or a reviewer.
+- `<role>` is `holder`, `executor`, or `reviewer`.
+
+`campaign-1-holder`, `campaign-80-executor`, `campaign-82-reviewer`. The issue
+is what the session can be looked up by, and the role is what it may be asked to
+do; a campaign number would lead the name with the part that is usually not in
+question, since a machine rarely runs one campaign alone.
+
+**A delegate is an executor**, and gets no role word of its own. Where it runs —
+a clone under `<campaign>/repos/`, rather than this checkout — changes how it is
+launched and how its liveness is read, not what it is doing. So a delegate on
+subtask #31 is `campaign-31-executor`, exactly as a session working #31 with its
+own hands would be. **That cannot collide**: a subtask has one claim and a claim
+has one holder, so at most one process is entitled to the name at a time. A
+second process answering to it is a claim violation, which is worth seeing
+rather than hiding behind a different word.
+
+**A session has two names and neither propagates to the other** (measured
+2026-08-30). Set both, always:
+
+```sh
+herdr agent rename <pane> campaign-<issue>-<role>
+herdr agent prompt <pane> "/rename campaign-<issue>-<role>"
+```
+
+The second is the harness name — what `ListAgents` resolves, what a peer
+addresses, and what the claim record's `name` field holds. The first is what
+`herdr agent list` shows. A session renamed on one path only answers to two
+different names depending on who is asking.
+
+**A session cannot rename itself this way**, and that is a guard rather than a
+gap: the permission classifier refuses a session injecting `/rename` into its
+own pane. A person types it, or another session does it for them — which is
+that pane's user acting, and is the same thing.
+
+**This retires the delegate rule that made a name the branch with its slash
+flattened.** One rule replaces two, so nothing has to remember which kind of
+session it is looking at. The cost is that a name no longer projects to a
+branch, which was never safe to rely on: a session's name was always its
+harness's to give, and a rename retires the mapping without touching the branch.
+
+**The residue, stated rather than solved.** A member-repository subtask is
+filed on that repository's own tracker, so two subtasks of one campaign can
+share an issue number across repositories and their sessions would collide on
+one name. The branch does not collide, because it carries the repository. This
+needs two same-numbered subtasks live at once, and it is visible the moment it
+happens.
 
 # Three planes
 
@@ -790,9 +839,9 @@ cannot resolve.
   launch line into the pane, and a terminal silently drops a line past 1024
   bytes — nothing runs and the launch looks like a slow agent.
 - Choose the session UUID in advance (`claude --session-id`) so the transcript
-  path is known before the agent starts, and `--name` it its branch with the
-  slash flattened (`campaign-<N>-<issue>-<topic>`) so the name an address
-  resolves and the branch a reader meets are one string, not two rules.
+  path is known before the agent starts, and `--name` it `campaign-<issue>-executor`,
+  the one naming rule (§ Naming a session). `--name` sets the harness name only;
+  give it the same herdr pane name too, because the two do not propagate.
 - Put the prompt **before** any variadic flag on the `claude` command line.
   `--add-dir` and `--allowedTools` swallow a trailing prompt as one of their own
   values, and the run dies on "Input must be provided".
