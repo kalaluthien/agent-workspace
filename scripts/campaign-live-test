@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Prove campaign-live joins on the durable key and refuses a half-made reading.
+
+The herdr half is tested against a recorded listing rather than whatever is
+running, so the cases mean the same thing tomorrow. The directory half runs the
+shipped script.
+
+Usage: scripts/campaign-live-test
+"""
+import importlib.machinery
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+LIVE = Path(__file__).resolve().parent / "campaign-live"
+
+
+def load():
+    spec = importlib.util.spec_from_loader(
+        "campaign_live",
+        importlib.machinery.SourceFileLoader("campaign_live", str(LIVE)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def agent(sid, name=None, pane="w1:p1"):
+    a = {"agent_session": {"value": sid} if sid else None,
+         "agent_status": "working", "cwd": "/x", "pane_id": pane}
+    if name:
+        a["name"] = name
+    return a
+
+
+def listing(*agents):
+    return json.dumps({"result": {"agents": list(agents)}})
+
+
+def main():
+    m = load()
+    fails = []
+
+    def check(name, cond):
+        if not cond:
+            fails.append(name)
+
+    got, why = m.parse_agents(listing(agent("S1", "campaign-1-executor-1")))
+    check("a listed session is keyed by its session id", why is None and "S1" in got)
+    check("its name comes along", got and got["S1"]["name"] == "campaign-1-executor-1")
+
+    got, why = m.parse_agents(listing(agent("S1")))
+    check("a session with no name is still listed", why is None and got["S1"]["name"] == "<unnamed>")
+
+    # The row the first draft dropped. A session herdr cannot identify still
+    # occupies a pane, and dropping it shrinks the count a close gate reads.
+    got, why = m.parse_agents(listing(agent(None, pane="w1:p9")))
+    key = next(iter(got)) if got else ""
+    check("a session herdr cannot identify is counted under a key naming its pane",
+          why is None and len(got) == 1 and isinstance(key, str) and "w1:p9" in key)
+
+    # The join, which is the whole point and which no case reached until a
+    # mutation run showed that swapping the key for the name failed nothing.
+    sessions, _ = m.parse_agents(listing(agent("S1", "campaign-1-executor-1")))
+    same = {"7": {"session": "S1", "name": "campaign-1-executor-1", "branch": "b"}}
+    a, o, i = m.classify(same, sessions)
+    check("a claim whose session id is live is answered", len(a) == 1 and not o)
+    # ...and is not also counted as holding nothing. The two lists are a
+    # partition of the live sessions, and a session appearing on both would be
+    # read by a close as one live executor too many.
+    check("a session that answers a claim is not also listed as unattributed",
+          not i)
+
+    # The case that separates the two possible keys. The name matches and the
+    # session id does not, which is exactly what a rename leaves behind: joining
+    # on the name calls this answered, and a close then reads a live claim as
+    # attributed to a session that is not the one holding it.
+    renamed = {"7": {"session": "S9", "name": "campaign-1-executor-1", "branch": "b"}}
+    a, o, i = m.classify(renamed, sessions)
+    check("a claim whose name matches but session id does not is unanswered",
+          not a and len(o) == 1)
+    check("...and that live session is then reported as holding no claim", len(i) == 1)
+
+    got, why = m.parse_agents("not json")
+    check("unparseable output is a why, not an empty listing", got is None and why)
+    got, why = m.parse_agents(json.dumps({"result": {}}))
+    check("a listing with no agents key is a why, not zero sessions", got is None and why)
+
+    # A reading that did not happen must not come back as a clean tree.
+    with tempfile.TemporaryDirectory() as d:
+        r = subprocess.run([sys.executable, str(LIVE), "1", "--dir", d],
+                           capture_output=True, text=True)
+        out = r.stdout + r.stderr
+    check("a missing claims directory refuses", r.returncode == 1
+          and "says nothing" in out)
+
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "runtime" / "claims").mkdir(parents=True)
+        r = subprocess.run([sys.executable, str(LIVE), "1", "--dir", d],
+                           capture_output=True, text=True)
+        out = r.stdout + r.stderr
+    check("an empty claims directory is read, not refused",
+          r.returncode == 0 and "0 claim(s)" in out)
+    check("and it still says both readings were made", "both readings were made" in out)
+
+    for f in fails:
+        print(f"FAIL  {f}")
+    total = 13
+    print(f"{total - len(fails)}/{total} cases pass")
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
