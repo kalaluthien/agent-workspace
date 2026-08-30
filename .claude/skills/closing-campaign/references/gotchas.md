@@ -55,7 +55,7 @@ input file, not a shadowed name. Write `command diff`; `cmp`, `sed`, `grep` and
 `cp` are unaffected.
 
 
-## `git/matching-refs` does not paginate, and the docs say it does
+## `git/matching-refs` does not paginate, and is documented that way
 
 Step 5 reads every `campaign-<N>/` ref with a bare `gh api`. That looks like the
 truncation hazard this container guards everywhere else — a paged endpoint read
@@ -64,29 +64,46 @@ and it was filed as one (#74). It is not. Measured 2026-08-30 against a
 repository with 241 matching refs:
 
 ```
-gh api "repos/cli/cli/git/matching-refs/heads/" --jq 'length'              -> 241
-gh api --paginate "repos/cli/cli/git/matching-refs/heads/" --jq 'length'   -> 241
-gh api "repos/cli/cli/git/matching-refs/heads/?per_page=30" --jq 'length'  -> 241
-gh api -i "repos/cli/cli/git/matching-refs/heads/" | grep -i '^link'       -> nothing
+gh api "repos/cli/cli/git/matching-refs/heads/" --jq 'length'                 -> 241
+gh api --paginate "repos/cli/cli/git/matching-refs/heads/" --jq 'length'      -> 241
+gh api "repos/cli/cli/git/matching-refs/heads/?per_page=30" --jq 'length'     -> 241
+gh api "repos/cli/cli/git/matching-refs/heads/?per_page=1&page=2" --jq 'length' -> 241
+gh api -i "repos/cli/cli/git/matching-refs/heads/" | grep -i '^link'          -> nothing
 ```
 
-`per_page` is ignored and no `Link` header is sent. **The control, which is what
-makes this decisive**, rules out `gh` following pages by itself:
+`per_page` and `page` are both ignored and no `Link` header is sent. **The
+control is what makes this decisive**, ruling out `gh` following pages by
+itself:
 
 ```
-gh api "repos/cli/cli/branches" --jq 'length'                              -> 30
+gh api "repos/cli/cli/branches" --jq 'length'                                -> 30
+gh api -i "repos/cli/cli/branches" | grep -ic '^link'                        -> 1
 ```
 
-Same client, same invocation shape, no `--paginate`: `branches` pages at thirty
-and stops. So the difference is the endpoint, not the client.
+Same client, same invocation shape, no `--paginate`: `branches` stops at thirty
+*and says so in a `Link` header*. So the difference is the endpoint, not the
+client. And the size is not a ceiling near 241 — `tensorflow/tensorflow` returns
+**2093** refs in one response.
 
 **Why the flag is not added anyway.** A `--paginate` on a call that does not
 page is a false statement about the endpoint, and this campaign has spent itself
 removing those. The comment at the call site is the cheaper true thing.
 
-**GitHub's own documentation lists pagination parameters for this endpoint**, so
-this is docs lagging the API. Whoever revisits it should re-measure rather than
-re-read: a documented behaviour is a hypothesis, and one live probe settles it.
+**The documentation agrees, which is the second independent reason not to add
+the flag.** The endpoint's own page lists no pagination parameters at all, and
+the absence is meaningful rather than an omission — the control page renders
+them where they exist:
+
+```
+curl -s https://docs.github.com/en/rest/git/refs          | grep -c per_page -> 0
+curl -s https://docs.github.com/en/rest/branches/branches | grep -c per_page -> 2
+```
+
+An earlier draft of this section claimed the opposite — that the docs listed
+pagination parameters and were lagging the API. Nobody had probed it. It is
+recorded here rather than quietly deleted because of where it sat: inside a
+section whose own moral is that a documented behaviour is a hypothesis, the one
+hypothesis nobody tested was the claim about the documentation.
 
 **It is the opposite decision from #77's, and both are the same rule.** #77 added
 `--limit 200` to a survey that *does* page; this declines `--paginate` on a call
