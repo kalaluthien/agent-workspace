@@ -322,7 +322,7 @@ two survive unchanged, one holds by construction, and one inverts.
   agent on *your* machine works it; a live agent elsewhere that has not pushed
   loses its claim to that rule, which is one more reason it pushes early.
   The branch is not a name. **Every session on this machine is named
-  `campaign-<issue>-<role>`** — see § Naming a session — so a name says what a
+  `campaign-<anchor>[-<issue>]-<role>`** — see § Naming a session — so a name says what a
   session is doing, and a reader who wants the branch reads the claim record or
   GitHub. **Never test a name against a branch**: they are two strings on
   purpose, and a test that treats them as one finds whatever happens to match
@@ -330,33 +330,42 @@ two survive unchanged, one holds by construction, and one inverts.
 
 # Naming a session
 
-**`campaign-<issue>-<role>`.** One rule for every session on this machine,
-whatever it is doing.
+**`campaign-<anchor>[-<issue>]-<role>`.** One rule for every session on this
+machine, whatever it is doing.
 
-- `<issue>` is the issue this session is working — the **anchor** number for a
-  holder, the **subtask** number for an executor or a reviewer.
+- `<anchor>` is the campaign's anchor issue number. It is always present,
+  because the campaign is what a session belongs to for as long as it runs.
+- `<issue>` is the subtask the session is working, present only when it is on
+  one. A holder is not, so it has none.
 - `<role>` is `holder`, `executor`, or `reviewer`.
 
-`campaign-1-holder`, `campaign-80-executor`, `campaign-82-reviewer`. The issue
-is what the session can be looked up by, and the role is what it may be asked to
-do; a campaign number would lead the name with the part that is usually not in
-question, since a machine rarely runs one campaign alone.
+```
+campaign-1-holder            holds campaign #1
+campaign-1-80-executor       works subtask #80 of campaign #1
+campaign-1-82-reviewer       reviews the pull request for subtask #82
+```
+
+**The anchor leads because it is the part that lasts.** Subtasks keep arriving
+for as long as a campaign runs — that is what a campaign is — so a name that led
+with the subtask would lead with the field that turns over fastest, and
+`campaign-80-` would read as "campaign 80" for something that is not a campaign
+at all.
 
 **A delegate is an executor**, and gets no role word of its own. Where it runs —
 a clone under `<campaign>/repos/`, rather than this checkout — changes how it is
 launched and how its liveness is read, not what it is doing. So a delegate on
-subtask #31 is `campaign-31-executor`, exactly as a session working #31 with its
-own hands would be. **That cannot collide**: a subtask has one claim and a claim
-has one holder, so at most one process is entitled to the name at a time. A
-second process answering to it is a claim violation, which is worth seeing
-rather than hiding behind a different word.
+subtask #31 of campaign #1 is `campaign-1-31-executor`, exactly as a session
+working #31 with its own hands would be. **That cannot collide**: a subtask has
+one claim and a claim has one holder, so at most one process is entitled to the
+name at a time. A second process answering to it is a claim violation, which is
+worth seeing rather than hiding behind a different word.
 
 **A session has two names and neither propagates to the other** (measured
 2026-08-30). Set both, always:
 
 ```sh
-herdr agent rename <pane> campaign-<issue>-<role>
-herdr agent prompt <pane> "/rename campaign-<issue>-<role>"
+herdr agent rename <pane> campaign-<anchor>[-<issue>]-<role>
+herdr agent prompt <pane> "/rename campaign-<anchor>[-<issue>]-<role>"
 ```
 
 The second is the harness name — what `ListAgents` resolves, what a peer
@@ -366,21 +375,13 @@ different names depending on who is asking.
 
 **A session cannot rename itself this way**, and that is a guard rather than a
 gap: the permission classifier refuses a session injecting `/rename` into its
-own pane. A person types it, or another session does it for them — which is
-that pane's user acting, and is the same thing.
+own pane. A person types it, or another session drives that pane — which is that
+pane's user acting, and is the same thing.
 
-**This retires the delegate rule that made a name the branch with its slash
+**This retires the rule that made a delegate's name its branch with the slash
 flattened.** One rule replaces two, so nothing has to remember which kind of
-session it is looking at. The cost is that a name no longer projects to a
-branch, which was never safe to rely on: a session's name was always its
-harness's to give, and a rename retires the mapping without touching the branch.
-
-**The residue, stated rather than solved.** A member-repository subtask is
-filed on that repository's own tracker, so two subtasks of one campaign can
-share an issue number across repositories and their sessions would collide on
-one name. The branch does not collide, because it carries the repository. This
-needs two same-numbered subtasks live at once, and it is visible the moment it
-happens.
+session it is looking at, and **never test a name against a branch** survives as
+a consequence rather than as a workaround: they are two strings on purpose.
 
 # Three planes
 
@@ -841,7 +842,7 @@ cannot resolve.
   launch line into the pane, and a terminal silently drops a line past 1024
   bytes — nothing runs and the launch looks like a slow agent.
 - Choose the session UUID in advance (`claude --session-id`) so the transcript
-  path is known before the agent starts, and `--name` it `campaign-<issue>-executor`,
+  path is known before the agent starts, and `--name` it `campaign-<anchor>-<issue>-executor`,
   the one naming rule (§ Naming a session). `--name` sets the harness name only;
   give it the same herdr pane name too, because the two do not propagate.
 - Put the prompt **before** any variadic flag on the `claude` command line.

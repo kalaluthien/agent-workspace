@@ -15,7 +15,7 @@
  * can be checked are checked below rather than asserted in prose.
  *
  *   event             performed by
- *   Launch (executor) the `claude --session-id ... --name campaign-<issue>-executor`
+ *   Launch (executor) the `claude --session-id ... --name campaign-<N>-<issue>-executor`
  *                     that starts an executor on the claim its launcher made
  *   Work              the executor edits its checkout
  *   Push              git push -- the one act that makes work survivable
@@ -44,7 +44,7 @@
  * difference is one field, `peer`:
  *
  *   a herdr DELEGATE, launched into a clone by a campaign session, `--name`d
- *   campaign-<issue>-executor -- a delegate is an executor and gets no role
+ *   campaign-<N>-<issue>-executor -- a delegate is an executor and gets no role
  *   word of its own -- so its address was chosen by its launcher and is known
  *   before the process exists; and
  *
@@ -86,7 +86,7 @@
  * The harness's own peer messaging. ListAgents resolves the address; herdr's
  * pane label is not one. Where the address comes from is the difference between
  * the two kinds of executor: a delegate's was chosen at launch (claude --name,
- * campaign-<issue>-executor), and a
+ * campaign-<N>-<issue>-executor), and a
  * session's own claim carries the address the session wrote for itself into
  * `runtime/claims/<issue>` at the claim -- its ListAgents name and its pid.
  * Before #59 that address travelled as a message, CLAIMED, whose absence was
@@ -99,7 +99,7 @@
  * session cannot do is rename ITSELF: the permission classifier refuses a
  * session injecting `/rename` into its own pane (probed 2026-08-30, superseding
  * the 2026-08-28 reading that only a person could). Every session carries
- * campaign-<issue>-<role>, AGENTS.md's one naming rule, so a name says what a
+ * campaign-<N>[-<issue>]-<role>, AGENTS.md's one naming rule, so a name says what a
  * session does; the record stays the mechanism for tying that name to a claim,
  * because a name can be changed and the record is what a later reader has.
  *
