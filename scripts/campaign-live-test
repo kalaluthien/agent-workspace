@@ -27,6 +27,23 @@ def load():
     return m
 
 
+# A stand-in herdr. Two cases run the shipped script end to end, and they
+# passed here and failed on a runner for the same reason the campaign-claim
+# cases did: they read what happens to be installed. A suite that needs a
+# command present must supply it.
+HERDR_SHIM = """#!/bin/sh
+echo '{"result":{"agents":[]}}'
+"""
+
+
+def with_herdr(d):
+    shim = Path(d) / "bin"
+    shim.mkdir(exist_ok=True)
+    (shim / "herdr").write_text(HERDR_SHIM)
+    (shim / "herdr").chmod(0o755)
+    return {"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(d)}
+
+
 def agent(sid, name=None, pane="w1:p1"):
     a = {"agent_session": {"value": sid} if sid else None,
          "agent_status": "working", "cwd": "/x", "pane_id": pane}
@@ -109,7 +126,7 @@ def main():
     # A reading that did not happen must not come back as a clean tree.
     with tempfile.TemporaryDirectory() as d:
         r = subprocess.run([sys.executable, str(LIVE), "1", "--dir", d],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, env=with_herdr(d))
         out = r.stdout + r.stderr
     check("a missing claims directory refuses", r.returncode == 1
           and "says nothing" in out)
@@ -117,7 +134,7 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         (Path(d) / "runtime" / "claims").mkdir(parents=True)
         r = subprocess.run([sys.executable, str(LIVE), "1", "--dir", d],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, env=with_herdr(d))
         out = r.stdout + r.stderr
     check("an empty claims directory is read, not refused",
           r.returncode == 0 and "0 claim(s)" in out)
