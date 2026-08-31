@@ -6,7 +6,7 @@ arbitrary, or when you are about to change it.
 ## Finished when — reading the `## Repos` list
 
 `scripts/campaign-repos` is the one reader of that list, and its refusals are
-listed in `AGENTS.md` § Running a campaign. The bare `grep '<'` that `SKILL.md`
+enumerated in its own header. The bare `grep '<'` that `SKILL.md`
 forbids fails because a correct Requirements section quotes things like
 `issues/<N>/sub_issues`, so it reports hits on a clean README — which is why the
 check is a reader scoped to the one section.

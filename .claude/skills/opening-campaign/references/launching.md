@@ -75,7 +75,7 @@ an agent thinking.
 | what | how it shows |
 | --- | --- |
 | the folder-trust question | the delegate sits on a dialog, having read nothing — and herdr reports it `idle` with `interactive_ready: true`, never `blocked` |
-| the external-import question for an ancestor `CLAUDE.md` | same, and declining it silently drops the campaign's principles |
+| the external-import question for an ancestor `CLAUDE.md` | declining it silently drops the campaign's principles. **Whether herdr classifies this one as `blocked` at all is unmeasured** -- do not inherit the row above's reading | 
 | the first shell-command permission prompt | `--permission-mode acceptEdits` covers edits but not shell, so it stalls on its first `ls`; it appears *after* the opening prompt is accepted, so `agent prompt` has nothing to refuse |
 
 **Read the pane once after every launch.** That is the only check that catches a

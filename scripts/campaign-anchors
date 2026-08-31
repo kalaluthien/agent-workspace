@@ -4,22 +4,30 @@
 AGENTS.md's first routing question is whether an open campaign's Scope covers the
 request, and answering it wrongly opens a second campaign over one scope. Two
 readings identify an anchor and they cross-check each other: the hand-applied
-`campaign` label, and the one property a subtask cannot have -- no parent. Both
-were prose with a `gh` line beside them, so both were copy-pasted, and the
-`--limit` on each was one paste away from being dropped.
+`campaign` label, and the one property a subtask cannot have -- no parent.
 
-WHY --limit MATTERS, AND WHY TRUNCATION IS REPORTED
+BOTH READINGS COME FROM ONE LISTING
+
+An earlier version made two `gh` calls -- one filtered by label, one unfiltered --
+and inferred a property from *absence* in the other. Absence is not evidence: a
+truncated listing, or an issue created between the two calls, denounced a real
+anchor as a subtask wearing the label, and a caller reading "no campaign covers
+this" opens the duplicate this script exists to prevent. One listing carrying
+`labels` and `parent` gives both readings off the same snapshot, so there is no
+cross-call inference left to be wrong.
+
+WHY --limit MATTERS, AND WHY AT-THE-LIMIT REFUSES
 
 `gh issue list` defaults to thirty, newest first, and anchors are the oldest
 issues here. A tracker whose thirty newest are all subtasks returns no anchor and
 looks clean. So the limit is raised -- and a listing that comes back *at* the
-limit is reported as possibly truncated, because a count read from a paginating
-tool is its page size until proven otherwise, and a truncated listing reads
-exactly like a complete one.
+limit refuses rather than printing, because a capped listing is a reading not
+made in full and the rows below it would be wrong rather than merely short.
 
 WHAT IT PRINTS
 
-One row per open anchor, then any disagreement between the two readings:
+One row per open anchor -- labelled and parentless -- then the two ways the
+readings disagree:
 
   labelled but has a parent   a subtask wearing the label. Say so rather than
                               joining it.
@@ -28,10 +36,13 @@ One row per open anchor, then any disagreement between the two readings:
                               its body against the anchor template; that reading
                               decides, not this listing.
 
+An issue with a parent and no label is an ordinary subtask and is not reported.
+
 EXIT
 
-0 when both readings were made, whatever they found -- including finding no
-anchors, which is a reading. 1 when either could not be made.
+0 when the listing was read and was not capped. 1 when it could not be read, or
+came back at the limit -- both are readings not made, and neither is an empty
+tracker.
 
 Usage: scripts/campaign-anchors [--repo owner/repo] [--limit N]
 """
@@ -43,9 +54,9 @@ import sys
 REPO = "kalaluthien/agent-workspace"
 
 
-def listing(repo, limit, *extra):
+def listing(repo, limit):
     cmd = ["gh", "issue", "list", "-R", repo, "--state", "open",
-           "--limit", str(limit), "--json", "number,title,labels,parent", *extra]
+           "--limit", str(limit), "--json", "number,title,labels,parent"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True)
     except (FileNotFoundError, PermissionError) as e:
@@ -53,34 +64,31 @@ def listing(repo, limit, *extra):
     if r.returncode != 0:
         return None, f"gh exited {r.returncode}: {r.stderr.strip()[:160]}"
     try:
-        return json.loads(r.stdout), None
+        data = json.loads(r.stdout)
     except ValueError as e:
         return None, f"could not parse gh's output ({e.__class__.__name__})"
+    if not isinstance(data, list):
+        return None, f"gh returned {type(data).__name__}, not a list of issues"
+    return data, None
 
 
-def classify(labelled, allopen):
-    """Cross the two readings. Returns (anchors, stray, bare, skew).
+def classify(issues):
+    """Split one listing by its two readings. Returns (anchors, stray, bare).
 
-    Each issue's parent is read from **its own record**, in whichever listing it
-    came from. The first draft derived one set of parentless numbers from the
-    all-open listing and tested the labelled issues against it, so *absence*
-    from that listing read as *has a parent* — and the two listings are separate
-    `gh` calls, so truncation or a snapshot taken a second apart denounced a real
-    anchor as a subtask wearing the label. A caller reads "no campaign covers
-    this" and opens a duplicate, which is the failure this script exists to
-    prevent.
+    Every issue carries both properties, so each row is decided by what that
+    issue itself says -- never by its absence from somewhere else."""
+    def labelled(i):
+        return any(l.get("name") == "campaign" for l in i.get("labels") or [])
+    anchors = [i for i in issues if labelled(i) and not i.get("parent")]
+    stray = [i for i in issues if labelled(i) and i.get("parent")]
+    bare = [i for i in issues if not labelled(i) and not i.get("parent")]
+    return anchors, stray, bare
 
-    `skew` is the labelled issues missing from the all-open listing: nothing here
-    can tell a truncated listing from a genuinely closed issue, so they are
-    reported rather than classified."""
-    seen = {i["number"] for i in allopen}
-    anchors = [i for i in labelled if not i.get("parent") and i["number"] in seen]
-    stray = [i for i in labelled if i.get("parent")]
-    skew = [i for i in labelled if not i.get("parent") and i["number"] not in seen]
-    lab = {i["number"] for i in labelled}
-    bare = [i for i in allopen
-            if not i.get("parent") and i["number"] not in lab]
-    return anchors, stray, bare, skew
+
+def rows(title, items, note=""):
+    print(f"\n{title} ({len(items)})" + (f" -- {note}" if note else ""))
+    for i in sorted(items, key=lambda x: x["number"]):
+        print(f"  #{i['number']:<5} {i['title'][:88]}")
 
 
 def main():
@@ -89,55 +97,30 @@ def main():
     ap.add_argument("--limit", type=int, default=200)
     args = ap.parse_args()
 
-    labelled, why1 = listing(args.repo, args.limit, "--label", "campaign")
-    allopen, why2 = listing(args.repo, args.limit)
-    print(f"read {args.repo}, limit {args.limit}")
-    for name, data, why in (("labelled `campaign`", labelled, why1),
-                            ("every open issue", allopen, why2)):
-        if why:
-            print(f"  {name}: FAILED -- {why}", file=sys.stderr)
-        else:
-            print(f"  {name}: {len(data)} issue(s)"
-                  + ("  (AT THE LIMIT)" if len(data) >= args.limit else ""))
-    if why1 or why2:
-        print("A reading that did not happen is not an empty tracker.",
+    issues, why = listing(args.repo, args.limit)
+    if why:
+        print(f"campaign-anchors: could not read {args.repo} -- {why}\n"
+              f"  A reading that did not happen is not an empty tracker.",
               file=sys.stderr)
         return 1
-    if len(labelled) >= args.limit or len(allopen) >= args.limit:
-        # A capped listing is a reading not made in full, and the rows below it
-        # are actively wrong rather than merely short. Refuse.
-        print(f"REFUSING: a listing came back at --limit {args.limit}, so it may "
-              f"be truncated and\n  a truncated listing reads exactly like a "
-              f"complete one. Raise --limit and re-run.", file=sys.stderr)
+    print(f"read {args.repo}, limit {args.limit}: {len(issues)} open issue(s)")
+    if len(issues) >= args.limit:
+        print(f"REFUSING: the listing came back at --limit {args.limit}, so it "
+              f"may be truncated,\n  and a truncated listing reads exactly like "
+              f"a complete one. Raise --limit and re-run.", file=sys.stderr)
         return 1
 
-    anchors, stray, bare, skew = classify(labelled, allopen)
-    print(f"\nopen anchors ({len(anchors)}) -- labelled, and with no parent")
-    for i in sorted(anchors, key=lambda x: x["number"]):
-        print(f"  #{i['number']:<5} {i['title'][:88]}")
+    anchors, stray, bare = classify(issues)
+    rows("open anchors", anchors, "labelled `campaign`, and with no parent")
     if not anchors:
         print("  (none: this is a reading, not a failed one)")
-
     if stray:
-        print(f"\n!! labelled but has a parent ({len(stray)}) -- a subtask "
-              f"wearing the label; say so rather than joining it")
-        for i in stray:
-            print(f"  #{i['number']:<5} {i['title'][:88]}")
-
-    if skew:
-        print(f"\n!! labelled and parentless, but absent from the all-open "
-              f"listing ({len(skew)}) --\n   closed between the two calls, or "
-              f"the listing was short. Not classified either way.")
-        for i in skew:
-            print(f"  #{i['number']:<5} {i['title'][:88]}")
-
+        rows("!! labelled but has a parent", stray,
+             "a subtask wearing the label; say so rather than joining it")
     if bare:
-        print(f"\n!! no parent and not labelled ({len(bare)}) -- an anchor whose "
-              f"label was forgotten, or the third\n   kind of issue this tracker "
-              f"holds. Read the body against the anchor template; that\n   "
-              f"reading decides, not this listing.")
-        for i in bare:
-            print(f"  #{i['number']:<5} {i['title'][:88]}")
+        rows("!! no parent and not labelled", bare,
+             "an anchor whose label was forgotten, or the third kind of issue "
+             "this\n   tracker holds. Read the body against the anchor template")
     return 0
 
 

@@ -36,7 +36,7 @@ body so nothing in the directory carries it. Take it from the person, or match i
 among the open anchors and say which.
 
 ```sh
-gh issue list -R kalaluthien/agent-workspace --label campaign --state open --limit 200
+"$CONTAINER"/scripts/campaign-anchors
 ```
 
 **Then the binding, before any other gate**, because closing is the most
@@ -300,7 +300,7 @@ rm -f /tmp/repos-before /tmp/repos-after
     echo "REFUSE: the ## Repos list did not read; nothing was written"; }
 ```
 
-`scripts/campaign-repos` is the one reader of that list (its own header lists its refusals). Stop on a non-zero exit, do not re-derive the list
+`scripts/campaign-repos` is the one reader of that list (its own header enumerates its refusals). Stop on a non-zero exit, do not re-derive the list
 with `sed` here, and read empty output as a repo-less campaign rather than a
 failure. Keep the `.tmp`-then-`mv` and the leading `rm -f`, or a failed read
 leaves what a legitimate `- none` leaves.

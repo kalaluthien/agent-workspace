@@ -43,36 +43,36 @@ def main():
         if not cond:
             fails.append(name)
 
-    # --- campaign-anchors: the two readings, and each way of disagreeing.
-    labelled = [issue(1), issue(9, parent={"number": 1})]
-    allopen = [issue(1), issue(9, parent={"number": 1}), issue(7),
-               issue(8, parent={"number": 1})]
-    anchors, stray, bare, skew = a.classify(labelled, allopen)
+    # --- campaign-anchors: two readings off one listing.
+    def iss(n, label=False, parent=False):
+        return {"number": n, "title": f"t{n}",
+                "labels": [{"name": "campaign"}] if label else [],
+                "parent": {"number": 1} if parent else None}
+
+    listing = [iss(1, label=True), iss(9, label=True, parent=True),
+               iss(7), iss(8, parent=True)]
+    anchors, stray, bare = a.classify(listing)
     check("an anchor is labelled and parentless",
           [i["number"] for i in anchors] == [1])
     check("a labelled issue with a parent is a subtask wearing the label",
           [i["number"] for i in stray] == [9])
     check("an unlabelled issue with no parent is reported, not silently an anchor",
           [i["number"] for i in bare] == [7])
-    check("a subtask that is neither labelled nor parentless is in no list",
-          8 not in [i["number"] for i in anchors + stray + bare + skew])
+    check("an ordinary subtask is in no list",
+          8 not in [i["number"] for i in anchors + stray + bare])
+    check("the three lists partition nothing twice",
+          len(anchors) + len(stray) + len(bare) == 3)
 
-    # The blocking defect: each issue's parent must come from its own record.
-    # Deriving one parentless set from the all-open listing made *absence* from
-    # that listing read as *has a parent*, so a real anchor missing from a
-    # separate `gh` call was denounced as a mislabelled subtask, and the caller
-    # opened a duplicate campaign.
-    anchors, stray, bare, skew = a.classify([issue(1)], [])
-    check("an anchor absent from the all-open listing is not called a subtask",
-          stray == [])
-    check("...it is reported as skew, classified neither way",
-          [i["number"] for i in skew] == [1])
-    check("...and it is not counted as an anchor on one reading alone",
-          anchors == [])
-
-    anchors, stray, bare, skew = a.classify([], [])
+    # The blocking defect and its sibling: every row must be decided by what the
+    # issue itself carries. Deriving either reading from membership in a second
+    # `gh` call made *absence* read as a property, so a truncated listing or an
+    # issue created between the calls produced a wrong row rather than none.
+    check("the label reading comes from the issue, not from a filtered listing",
+          [i["number"] for i in a.classify([iss(1, label=True)])[0]] == [1])
+    check("...and an unlabelled issue is not promoted by being alone",
+          a.classify([iss(1)])[0] == [])
     check("an empty tracker yields empty lists rather than an error",
-          (anchors, stray, bare, skew) == ([], [], [], []))
+          a.classify([]) == ([], [], []))
 
     # --- campaign-subtasks: the index reading.
     one = json.dumps([{"number": 1}, {"number": 2}])
@@ -107,10 +107,12 @@ def main():
         argv = log.read_text()
         check("campaign-anchors passes --limit, since the default is thirty",
               "--limit" in argv)
+        check("...and reads labels and parent from the one listing",
+              "number,title,labels,parent" in argv)
+        check("...and does not make a second, label-filtered call",
+              argv.count("--state") == 1)
         check("...and raises it well past the default",
               any(x.isdigit() and int(x) >= 100 for x in argv.split()))
-        check("...and asks for the parent field it classifies on",
-              "number,title,labels,parent" in argv)
         # A listing that came back *at* the limit is a reading not made in
         # full, and the rows it would print are actively wrong rather than
         # merely short. It must refuse, not print a note and exit 0.
@@ -141,6 +143,22 @@ def main():
               "sub_issues" in argv)
 
     # --- the end-to-end refusal, with no gh on PATH.
+    # A tracker that cannot be read must never print "open anchors (0)".
+    with tempfile.TemporaryDirectory() as d:
+        shim = Path(d) / "bin"
+        shim.mkdir()
+        for body, label in (("#!/bin/sh\nexit 1\n", "a failing gh"),
+                            ("#!/bin/sh\necho 'not json'\n", "unparseable output"),
+                            ("#!/bin/sh\necho '{}'\n", "an object instead of a list")):
+            (shim / "gh").write_text(body)
+            (shim / "gh").chmod(0o755)
+            r = subprocess.run([sys.executable, str(HERE / "campaign-anchors")],
+                               capture_output=True, text=True,
+                               env={"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(d)})
+            out = r.stdout + r.stderr
+            check(f"{label} refuses rather than printing an empty tracker",
+                  r.returncode == 1 and "open anchors" not in out)
+
     for name in ("campaign-anchors", "campaign-subtasks"):
         args = [sys.executable, str(HERE / name)] + (["1"] if "sub" in name else [])
         r = subprocess.run(args, capture_output=True, text=True,

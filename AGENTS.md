@@ -390,45 +390,30 @@ pull request, then goes idle, and the session that launched it retires it once
 its work is durable.
 
 **Every review runs as an in-process subagent. There is no other way to run one.**
-Not a default and not the cheapest option — the one mode. A review changes no
-working tree, so it needs nothing a process boundary is paid for.
+Not a default and not the cheapest option -- the one mode. A review changes no
+working tree, so it needs nothing a process boundary is paid for. It is launched
+by whoever wants the merge, the author included: merge condition 2 is on who
+*writes* the review, never on who commissions it.
 
-```
-Agent(subagent_type: "general-purpose", model: "<named below>",
-      description: "Review PR <N>",
-      prompt: "/code-review <low|medium|high|xhigh|max> <PR#>\n\n…")
-```
+**Name the model and the level on every launch**, and they answer different
+questions: the model by the **depth** of the change, because a weaker reader
+returns "looks fine" on exactly the reasoning that needed a reader; the level by
+**how much there is to read**, `medium` being the baseline. **The level is the
+first token after the command and nowhere else** -- asking for it in the brief
+sets nothing, and omitting it runs the review at a level chosen by neither the
+launcher nor the work.
 
-`general-purpose` because `fork` inherits the author's context and would review
-the author's own reasoning; `description` because the tool requires it;
-`isolation` unset, because a worktree buys a review nothing. **Name the model,
-always.** `ultra` is not a level — it is a person-only mode, and putting it in
-that slot is the one way to write this block illegally. **Two knobs answering
-different questions.** The **model** by the depth of the
-change — a correctness that is not local takes the heavier one, because a weaker
-reader returns "looks fine" on exactly the reasoning that needed a reader; judge
-the change, not the launcher's own model. The **level** by how much there is to
-read; `medium` is the baseline. So a broad mechanical sweep is a lighter model at
-a higher level and a subtle local change the reverse, and a review needing both at
-their limit is a brief covering two reviews — **a reviewer that needs more than
-the brief allows is a brief written too wide; split it**. **The level is the first
-token after the command and nowhere else** — asking for it in the brief sets nothing, and omitting it
-runs the review at a level chosen by neither the launcher nor the work.
-
-**Three ways to get this wrong**: a peer session, reading the diff yourself and
-calling it reviewed, or a herdr session. The one exception is an `ultra` review,
-which a person triggers and no session may launch. A session that cannot start a
-subagent is **blocked** — it says so and the pull request waits, which is never a
-licence to review some other way.
-
-**One reviewer per pull request, one verifier per fix round**, every angle a
-section of the one brief. Fan out only when the angles are independent and the
-budget carries them: eight parallel angles died twice on the session limit, and
-one consolidated pass found findings of the same quality far cheaper.
+**A session that cannot start a subagent is blocked**: it says so and the pull
+request waits, which is never a licence to review some other way. The one
+exception to the mode is an `ultra` review, which a person triggers and no
+session may launch.
 
 **The pull request is the review's working memory.** A finding that exists only
-inside a running session is not yet found: post them the moment they consolidate,
-before anything else is launched, and write them out as you go.
+inside a running session is not yet found: post findings the moment they
+consolidate, before anything else is launched, and write them out as you go.
+
+The call itself, the two knobs in full, the three wrong modes and the shape of a
+round are `.claude/skills/opening-campaign/references/reviewing.md`.
 
 # Talking to a repository agent
 
@@ -470,10 +455,9 @@ one says nothing.
   isolation*, so containing a `main` that moved means merging it in, that merge
   is a push, **a push retires the review**, and the next merge needs a review at
   the combined sha. **Condition 3 is enforced by GitHub; condition 1 is readable
-  and read by nothing.** `main` requires `check`, `strict: true`,
-  `enforce_admins: true` — and `strict` enforces nothing until `contexts` names a
-  check, so a reader asking whether it still bites reads `contexts`.
-  `.github/workflows/check.yml` carries what keeps that run reachable. A
+  and read by nothing.** A reader asking whether condition 3 still bites reads
+  `main`'s `required_status_checks.contexts`; `.github/workflows/check.yml`'s
+  header says why, and carries what keeps that run reachable. A
   `pull_request` check resolves from the **merge commit**, so a branch predating
   the workflow still produces one; a check missing on an open pull request means
   its head has not moved since, and clears on its next push. **A branch that has

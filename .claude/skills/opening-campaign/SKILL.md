@@ -136,7 +136,7 @@ Before scaffolding anything, because its number is the campaign ID.
 minutes old and two sessions that each checked before either filed both file.
 
 ```sh
-gh issue list -R kalaluthien/agent-workspace --label campaign --state open --limit 200
+"$CONTAINER"/scripts/campaign-anchors
 gh issue create -R kalaluthien/agent-workspace \
   --label campaign --title "<title>" --body-file <path>
 ```
@@ -355,10 +355,11 @@ Read the campaign's subtasks back from the anchor, in one call, across every
 repository:
 
 ```sh
-gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
+"$CONTAINER"/scripts/campaign-subtasks <N>
 ```
 
-`--paginate` is not optional: the endpoint pages at thirty, and a truncated index
+That script owns `--paginate`, which is not optional: the endpoint pages at
+thirty, and a truncated index
 reads exactly like a complete one.
 
 If the target repository is not in the anchor's `## Repos` list, add it to the

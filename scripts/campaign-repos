@@ -3,8 +3,26 @@
 
     scripts/campaign-repos <path>
 
-The one reader of that list. Its refusals, and why each is a refusal, are stated
-in AGENTS.md, "Running a campaign"; this is what makes them true.
+The one reader of that list, and the one statement of what it refuses. AGENTS.md
+used to enumerate these and no longer does, which left the enumeration alive only
+as exit strings in the code below.
+
+  no `## Repos` heading       the list is not there at all, and a missing list is
+                              not an empty one.
+  a malformed line under it   anything that is not `- owner/repo` or `- none`,
+                              which is also what a surviving `<owner/repo>`
+                              placeholder is. Skipping it silently made a list
+                              written `* owner/repo` read as empty.
+  an empty list               indistinguishable from a list a bad write dropped,
+                              and this list is the only copy of the repository
+                              index the close does not delete.
+  a mixed list                `- none` beside a repository. Nothing in it says
+                              whether `none` is a sentinel somebody forgot or a
+                              repository the list means to name, and neither
+                              reading can be acted on.
+  colliding checkouts         two entries whose checkout directory `repos/<name>/`
+                              is the same, so the second acquire overwrites the
+                              first without a word.
 
 scripts/check-rule-readers is the second reader that keeps this claim true: it
 refuses a commit that stages a `grep`, `sed`, `awk`, `rg`, `jq` or Python

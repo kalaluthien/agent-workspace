@@ -55,6 +55,18 @@ FORM_CASES = [
     # ...and the boundary the narrowed claim now names, so widening the form
     # later has to move this row rather than pass silently.
     ("session-alive: another field first is outside the claim", fence("ps -o pid,ucomm -p 1"), 0),
+    # The two forms #112's scripts own. Each was prose the day before, and a
+    # guard with no form for them lets the deleted survey be pasted straight
+    # back.
+    ("anchors: the open-anchor survey by label",
+     fence("gh issue list -R o/r --label campaign --state open --limit 200"), 1),
+    ("anchors: the same survey by the parent field",
+     fence("gh issue list -R o/r --state open --json number,title,parent"), 1),
+    ("anchors: an issue list that reads neither is outside the claim",
+     fence("gh issue list -R o/r --state closed --json number,title"), 0),
+    ("subtasks: the index read", fence("gh api --paginate repos/o/r/issues/1/sub_issues"), 1),
+    ("subtasks: the endpoint named in prose is a mention",
+     "# t\n\nRead it back from `sub_issues`.\n", 0),
     ("repos: a shell parse of the list", fence("grep '^- ' README.md | grep owner/repo"), 1),
     ("repos: the heading named in an error message", fence('echo "REFUSE: the ## Repos list did not read"'), 0),
     ("repos: a parse naming no tool is outside the claim",
