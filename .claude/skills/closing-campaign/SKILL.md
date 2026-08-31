@@ -36,6 +36,7 @@ body so nothing in the directory carries it. Take it from the person, or match i
 among the open anchors and say which.
 
 ```sh
+CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
 "$CONTAINER"/scripts/campaign-anchors
 ```
 

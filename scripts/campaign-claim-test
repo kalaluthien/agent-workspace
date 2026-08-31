@@ -20,7 +20,15 @@ import tempfile
 from pathlib import Path
 
 CLAIM = Path(__file__).resolve().parent / "campaign-claim"
-DEAD = "78513"      # long gone; any absent pid does
+def _free_pid():
+    """A pid held by nobody. A hardcoded one passed on a runner and could name a
+    live process on a dev machine -- the residue running the other way."""
+    p = subprocess.Popen(["/usr/bin/true"])
+    p.wait()
+    return str(p.pid)
+
+
+DEAD = _free_pid()
 DEAD_REC = f"session s1\nname n1\npid {DEAD}\nbranch campaign-1/7-x\n"
 DIR = object()   # a fixture that is a directory rather than a file
 

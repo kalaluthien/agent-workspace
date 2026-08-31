@@ -11,8 +11,9 @@ when three conditions hold — a review read at the sha being merged, written by
 an agent that did not write the commits, and a branch containing the current
 `main` — so you commission that review yourself, and it is not you: an
 in-process subagent, always, with the model named for the depth of the change
-and the review level named in the prompt. AGENTS.md, "Who reviews, and in which
-mode", is the one statement of both.
+and the review level named in the prompt. `AGENTS.md`, § Completion and liveness, states
+the rules, and `.claude/skills/opening-campaign/references/reviewing.md` gives
+the call, the two knobs and the three wrong modes.
 
 ## The task
 

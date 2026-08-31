@@ -147,7 +147,14 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         shim = Path(d) / "bin"
         shim.mkdir()
-        for body, label in (("#!/bin/sh\nexit 1\n", "a failing gh"),
+        for body, label in ((
+                # A non-zero exit that still prints a valid listing. Without the
+                # status check the parse succeeds and the failure is invisible;
+                # the earlier failing-gh case printed nothing, so the parse
+                # branch did the refusing and the status branch was pinned by
+                # nothing.
+                "#!/bin/sh\necho '[]'\nexit 1\n", "a gh that fails but prints valid output"),
+                ("#!/bin/sh\nexit 1\n", "a failing gh"),
                             ("#!/bin/sh\necho 'not json'\n", "unparseable output"),
                             ("#!/bin/sh\necho '{}'\n", "an object instead of a list")):
             (shim / "gh").write_text(body)
@@ -158,6 +165,18 @@ def main():
             out = r.stdout + r.stderr
             check(f"{label} refuses rather than printing an empty tracker",
                   r.returncode == 1 and "open anchors" not in out)
+
+    # The same branch on the index reader.
+    with tempfile.TemporaryDirectory() as d:
+        shim = Path(d) / "bin"
+        shim.mkdir()
+        (shim / "gh").write_text("#!/bin/sh\necho '[]'\nexit 1\n")
+        (shim / "gh").chmod(0o755)
+        r = subprocess.run([sys.executable, str(HERE / "campaign-subtasks"), "1"],
+                           capture_output=True, text=True,
+                           env={"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(d)})
+        check("a gh that fails but prints valid output is not an empty index",
+              r.returncode == 1 and "0 subtask(s)" not in r.stdout)
 
     for name in ("campaign-anchors", "campaign-subtasks"):
         args = [sys.executable, str(HERE / name)] + (["1"] if "sub" in name else [])

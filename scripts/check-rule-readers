@@ -89,7 +89,7 @@ FORMS = [
         # own a rule that was prose the day before, and neither had a form here
         # -- so the exact survey #112 deleted could be pasted back tomorrow.
         re.compile(r"\bgh\b[^|;&]*\bissue\s+list\b[^|;&]*"
-                   r"(--label\s+campaign|--json[^|;&]*parent)"),
+                   r"(-l\s+[\"']?campaign|--label\s+[\"']?campaign|--json[^|;&]*parent)"),
         "the open-anchor survey",
     ),
     (
@@ -204,6 +204,7 @@ def findings(text):
     inside = None            # the opener's run, while a fence is open
     exempted = None          # owner exempted for the open fence
     pending = None           # exemption seen, waiting for its fence
+    carry, carry_n = "", None   # a shell continuation, joined before matching
     for n, line in enumerate(text.splitlines(), 1):
         fence = FENCE.match(line)
         if inside is not None:
@@ -257,10 +258,21 @@ def findings(text):
                 # dies with it rather than leaking into the next block.
                 pending, exempted = None, None
         if not code:
+            carry, carry_n = "", None
             continue
+        # A shell continuation is one command, so it is matched as one. Scanning
+        # line-at-a-time let the exact survey this repository deleted pass by
+        # putting `--json …parent` after a backslash -- the form was right and
+        # the reading was one line too short.
+        joined = (carry + " " + line.strip()) if carry else line
+        start = carry_n or n
+        if line.rstrip().endswith("\\"):
+            carry, carry_n = joined.rstrip()[:-1].rstrip(), start
+            continue
+        carry, carry_n = "", None
         for owner, form, what in FORMS:
-            if form.search(line) and owner not in (exempted or frozenset()):
-                yield n, owner, what, line.strip()
+            if form.search(joined) and owner not in (exempted or frozenset()):
+                yield start, owner, what, joined.strip()[:160]
 
 
 def main(argv):

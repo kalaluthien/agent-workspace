@@ -80,7 +80,8 @@ def anchor_reports(head):
 
 
 def read_index(repo, anchor):
-    """The campaign's members, through the one script that owns that reading."""
+    """The campaign's members, through the one script that owns that reading --
+    the request as well as the parse."""
     import importlib.machinery
     import importlib.util
     here = Path(__file__).resolve().parent
@@ -90,12 +91,7 @@ def read_index(repo, anchor):
                                              str(here / "campaign-subtasks")))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    r = subprocess.run(["gh", "api", "--paginate",
-                        f"repos/{repo}/issues/{anchor}/sub_issues"],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        return None, f"gh exited {r.returncode}: {r.stderr.strip()[:160]}"
-    return mod.parse_index(r.stdout)
+    return mod.fetch_index(repo, anchor)
 
 
 def main():

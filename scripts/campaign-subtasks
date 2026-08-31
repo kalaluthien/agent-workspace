@@ -54,27 +54,34 @@ def parse_index(text):
     return items, None
 
 
+def fetch_index(repo, anchor):
+    """Ask GitHub for a campaign's members. Returns (items, why_unreadable).
+
+    The request and the parse are one call on purpose. Moving only the parse
+    behind this script left `--paginate` hand-written in campaign-settlement,
+    where deleting it turned a live campaign's verdict from "NOT closable" into
+    "closable" with fourteen subtasks silently gone and nothing red -- and
+    check-rule-readers does not scan scripts/, so nothing held that copy."""
+    try:
+        r = subprocess.run(["gh", "api", "--paginate",
+                            f"repos/{repo}/issues/{anchor}/sub_issues"],
+                           capture_output=True, text=True)
+    except (FileNotFoundError, PermissionError) as e:
+        return None, f"could not run gh ({e.__class__.__name__})"
+    if r.returncode != 0:
+        return None, (f"gh exited {r.returncode}: {r.stderr.strip()[:200]}. "
+                      f"An index that did not read is not an empty campaign.")
+    return parse_index(r.stdout)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("anchor")
     ap.add_argument("--repo", default=REPO)
     args = ap.parse_args()
 
-    path = f"repos/{args.repo}/issues/{args.anchor}/sub_issues"
-    try:
-        r = subprocess.run(["gh", "api", "--paginate", path],
-                           capture_output=True, text=True)
-    except (FileNotFoundError, PermissionError) as e:
-        print(f"campaign-subtasks: could not run gh ({e.__class__.__name__}).",
-              file=sys.stderr)
-        return 1
-    print(f"read {path} --paginate")
-    if r.returncode != 0:
-        print(f"FAILED -- gh exited {r.returncode}: {r.stderr.strip()[:200]}\n"
-              f"An index that did not read is not an empty campaign.",
-              file=sys.stderr)
-        return 1
-    items, why = parse_index(r.stdout)
+    print(f"read repos/{args.repo}/issues/{args.anchor}/sub_issues --paginate")
+    items, why = fetch_index(args.repo, args.anchor)
     if why:
         print(f"FAILED -- {why}", file=sys.stderr)
         return 1

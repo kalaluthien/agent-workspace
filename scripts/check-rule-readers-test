@@ -62,6 +62,14 @@ FORM_CASES = [
      fence("gh issue list -R o/r --label campaign --state open --limit 200"), 1),
     ("anchors: the same survey by the parent field",
      fence("gh issue list -R o/r --state open --json number,title,parent"), 1),
+    # The wrapped form: the survey this repository deleted put `--json …parent`
+    # on a continuation line, and a line-at-a-time scan read past it.
+    ("anchors: the survey wrapped across a backslash continuation",
+     fence("gh issue list -R o/r --state open \\\n  --json number,title,parent"), 1),
+    ("anchors: the short flag spelling", fence("gh issue list -l campaign -R o/r"), 1),
+    ("anchors: the quoted label spelling", fence('gh issue list --label "campaign" -R o/r'), 1),
+    ("anchors: a continuation that never completes the form stays quiet",
+     fence("gh issue list -R o/r \\\n  --state closed"), 0),
     ("anchors: an issue list that reads neither is outside the claim",
      fence("gh issue list -R o/r --state closed --json number,title"), 0),
     ("subtasks: the index read", fence("gh api --paginate repos/o/r/issues/1/sub_issues"), 1),
