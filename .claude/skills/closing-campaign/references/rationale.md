@@ -128,3 +128,21 @@ times and says nothing.
 **A machine the campaign was `BOUND` to before a migration may still hold a
 directory of its own**: a stale cache, untouched by this delete, with nothing
 durable in it.
+
+## A moved anchor body has three causes, and they look identical
+
+Step 4's compare-then-write refuses when the body has moved since the `README.md`
+was derived from it. Read the binding first: `campaign-bound` saying anything but
+`here` means *you* are out of position, and the write stops there whatever the
+diff says. With the campaign bound here, the refusal is a diff and nothing else,
+and three things produce it:
+
+| cause | how to tell | what it wants |
+| --- | --- | --- |
+| a session on this machine wrote it | ask the peers: `ListAgents`, then `SendMessage` to each | ask what it meant, then fold. Moving a subtask between campaigns writes *two* anchors, and one of them is never the writer's own campaign |
+| a person edited the charter on GitHub | no peer claims the write | their words win: fold them into the `README.md`, refresh the derived copy, re-run |
+| a session on a machine the anchor is not `BOUND` to wrote it | nothing on this machine can see it — one `gh` account signs a person's edit and a session's alike | ask the person. The fold is the same; what differs is that the binding was broken and the other machine has to be told |
+
+**The last two are not separable from here, and the refusal says so** rather than
+picking one. Naming all three is still worth it: a session meeting the refusal
+knows to ask its peers before reconstructing anybody's intent from a diff.

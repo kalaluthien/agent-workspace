@@ -35,6 +35,7 @@ Usage: scripts/campaign-settlement <anchor-issue-number> [owner/repo]
 """
 import json
 import subprocess
+from pathlib import Path
 import sys
 
 DEFAULT_ANCHOR_REPO = "kalaluthien/agent-workspace"
@@ -78,6 +79,21 @@ def anchor_reports(head):
                " -- closing that campaign will not settle this one")
 
 
+def read_index(repo, anchor):
+    """The campaign's members, through the one script that owns that reading --
+    the request as well as the parse."""
+    import importlib.machinery
+    import importlib.util
+    here = Path(__file__).resolve().parent
+    spec = importlib.util.spec_from_loader(
+        "campaign_subtasks",
+        importlib.machinery.SourceFileLoader("campaign_subtasks",
+                                             str(here / "campaign-subtasks")))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.fetch_index(repo, anchor)
+
+
 def main():
     if len(sys.argv) < 2:
         raise SystemExit(__doc__)
@@ -86,12 +102,14 @@ def main():
 
     head = gh("issue", "view", anchor, "-R", anchor_repo,
               "--json", "state,title,labels,parent")
-    # --paginate --slurp, never a bare read: the endpoint pages at thirty and a
-    # truncated index reads exactly like a complete one. --slurp returns one
-    # array per page, so flatten.
-    pages = gh("api", "--paginate", "--slurp",
-               f"repos/{anchor_repo}/issues/{anchor}/sub_issues")
-    subs = [sub for page in pages for sub in page]
+    # One reader of the sub-issue index, and it is campaign-subtasks. This used
+    # to carry a second one on a different pagination model (--slurp plus a
+    # flatten), which is the drift AGENTS.md forbids two sections above where
+    # it forbids it.
+    subs, why = read_index(anchor_repo, anchor)
+    if why:
+        sys.exit(f"campaign-settlement: could not read the sub-issue index -- "
+                 f"{why}\n  An index that did not read is not an empty campaign.")
 
     print(f"anchor {anchor_repo}#{anchor}  [{head['state']}]  {head['title']}")
     for line in anchor_reports(head):

@@ -20,12 +20,35 @@ import tempfile
 from pathlib import Path
 
 CLAIM = Path(__file__).resolve().parent / "campaign-claim"
-DEAD = "78513"      # long gone; any absent pid does
+def _free_pid():
+    """A pid held by nobody. A hardcoded one passed on a runner and could name a
+    live process on a dev machine -- the residue running the other way."""
+    p = subprocess.Popen(["/usr/bin/true"])
+    p.wait()
+    return str(p.pid)
+
+
+DEAD = _free_pid()
 DEAD_REC = f"session s1\nname n1\npid {DEAD}\nbranch campaign-1/7-x\n"
 DIR = object()   # a fixture that is a directory rather than a file
 
 
-def run(args, files=None, mtime=None, env=None):
+# A stand-in process table. The three cases that turn on `stale?` used to read
+# the live one, so they passed on a machine with a claude running and failed on
+# a runner with none -- which is how the CI step added in #112 went red on its
+# first run. `campaign-claim` splits `count_newer` pure for exactly this reason
+# and these cases were left going round it.
+PS_SHIM = """#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    *lstart*) echo "Sat Aug 30 12:00:00 2026     claude.exe"; exit 0 ;;
+  esac
+done
+exit 1
+"""
+
+
+def run(args, files=None, mtime=None, env=None, stub_ps=False):
     with tempfile.TemporaryDirectory() as d:
         claims = Path(d) / "runtime" / "claims"
         claims.mkdir(parents=True)
@@ -40,6 +63,12 @@ def run(args, files=None, mtime=None, env=None):
             if mtime is not None:
                 os.utime(claims / name, (mtime, mtime))
         e = dict(os.environ, **(env or {}))
+        if stub_ps:
+            shim = Path(d) / "shim"
+            shim.mkdir()
+            (shim / "ps").write_text(PS_SHIM)
+            (shim / "ps").chmod(0o755)
+            e["PATH"] = f"{shim}:{e.get('PATH', '')}"
         return subprocess.run([sys.executable, str(CLAIM), *args, "--dir", d],
                               capture_output=True, text=True, env=e)
 
@@ -48,8 +77,9 @@ OLD = 1767225600.0     # 2026-01-01, before any session on this machine
 CASES = []
 
 
-def case(name, args, files=None, mtime=None, env=None, want=None, code=None):
-    CASES.append((name, args, files, mtime, env, want, code))
+def case(name, args, files=None, mtime=None, env=None, want=None, code=None,
+         stub_ps=False):
+    CASES.append((name, args, files, mtime, env, want, code, stub_ps))
 
 
 # The reading that says nothing is here, which must not read like a refusal.
@@ -60,9 +90,11 @@ case("no record for this subtask says so and names the path it read",
 
 # The verdict that costs work if it is wrong.
 case("a dead pid on an old record is stale?, never dead",
-     ["status", "7"], {"7": DEAD_REC}, OLD, want="verdict stale?", code=0)
+     ["status", "7"], {"7": DEAD_REC}, OLD, want="verdict stale?", code=0,
+     stub_ps=True)
 case("...and it says why, so the reader knows to ask",
-     ["status", "7"], {"7": DEAD_REC}, OLD, want="do not read this as free", code=0)
+     ["status", "7"], {"7": DEAD_REC}, OLD, want="do not read this as free", code=0,
+     stub_ps=True)
 case("a dead pid on a record written since the last restart is plain dead",
      ["status", "7"], {"7": DEAD_REC}, None, want="verdict dead", code=0)
 
@@ -75,7 +107,8 @@ case("a record with no pid is unreadable, not dead",
 case("release refuses a dead pid with no confirmation",
      ["release", "7"], {"7": DEAD_REC}, OLD, want="not proof the session is gone", code=1)
 case("release names the restart evidence when it refuses",
-     ["release", "7"], {"7": DEAD_REC}, OLD, want="a restart is likely", code=1)
+     ["release", "7"], {"7": DEAD_REC}, OLD, want="a restart is likely", code=1,
+     stub_ps=True)
 
 # A missing directory is not an empty one.
 case("a missing claims directory refuses rather than reading empty",
@@ -232,7 +265,7 @@ def main():
     for name in pure_failed:
         print(f"FAIL  {name}")
     failed += len(pure_failed)
-    for name, args, files, mtime, env, want, code in CASES:
+    for name, args, files, mtime, env, want, code, stub_ps in CASES:
         if name.startswith("a missing claims directory"):
             with tempfile.TemporaryDirectory() as d:
                 r = subprocess.run([sys.executable, str(CLAIM), "list", "--dir", d],
@@ -243,7 +276,7 @@ def main():
                 print(f"FAIL  {name}\n      got exit {r.returncode}: "
                       f"{(r.stdout + r.stderr).strip()[:160]}")
             continue
-        r = run(args, files, mtime, env)
+        r = run(args, files, mtime, env, stub_ps)
         out = r.stdout + r.stderr
         ok = (want is None or want in out) and (code is None or r.returncode == code)
         if not ok:

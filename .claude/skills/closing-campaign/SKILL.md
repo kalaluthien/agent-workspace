@@ -19,7 +19,7 @@ predicate behind saying what it used to do.
 
 A campaign bound here with no directory is scaffolded first — `opening-campaign`
 steps 2 and 4, nothing to acquire — because the claim records have no other home
-(§ Who is a campaign session, "The claim records need a directory"). One path,
+(§ Who is a campaign session, under **Directory**). One path,
 then.
 
 ## Procedure
@@ -36,7 +36,8 @@ body so nothing in the directory carries it. Take it from the person, or match i
 among the open anchors and say which.
 
 ```sh
-gh issue list -R kalaluthien/agent-workspace --label campaign --state open --limit 200
+CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
+"$CONTAINER"/scripts/campaign-anchors
 ```
 
 **Then the binding, before any other gate**, because closing is the most
@@ -300,8 +301,7 @@ rm -f /tmp/repos-before /tmp/repos-after
     echo "REFUSE: the ## Repos list did not read; nothing was written"; }
 ```
 
-`scripts/campaign-repos` is the one reader of that list (`AGENTS.md` § Running a
-campaign lists its refusals). Stop on a non-zero exit, do not re-derive the list
+`scripts/campaign-repos` is the one reader of that list (its own header enumerates its refusals). Stop on a non-zero exit, do not re-derive the list
 with `sed` here, and read empty output as a repo-less campaign rather than a
 failure. Keep the `.tmp`-then-`mv` and the leading `rm -f`, or a failed read
 leaves what a legitimate `- none` leaves.
@@ -335,7 +335,8 @@ runtime/anchor-body-derived.md from /tmp/body-now, then re-run.
 
 **Name the cause in the same breath, because the repairs differ and the diff
 alone does not say which happened** (`AGENTS.md` § Running a campaign has the
-three-cause table). Step 0 has already read the binding, so the case where *you*
+three-cause table, now in this skill's `references/rationale.md`). Step 0 has
+already read the binding, so the case where *you*
 are out of position is settled: `elsewhere` never reaches this step. What is
 left is one question and one residue.
 
@@ -401,7 +402,7 @@ gh issue view "$N" -R kalaluthien/agent-workspace --comments
 
 **A directory and the file inside it both appear, and that is correct.** The
 scaffold ships `scripts/` holding a `.gitkeep`, so the listing carries both
-`scripts` and `scripts/.gitkeep`. `AGENTS.md` requires files, directories and
+`scripts` and `scripts/.gitkeep`. The listing must carry files, directories and
 symlinks alike, because `rm -rf` destroys all of them and a filter that guessed
 would drop the one entry somebody wanted — so do not narrow the `find` to
 `-type f`. A reader meeting the pair is meant to see the container and its

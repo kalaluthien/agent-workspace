@@ -91,7 +91,8 @@ Then file the subtask or take the one you were handed, and decide the mode
 **before you claim anything**, because the mode names the branch and the process
 holding it: a container or campaign-directory subtask is yours to work, so you
 write your own claim record to `$CAMPAIGN/runtime/claims/<issue>` at the claim
-(§ Talking to a repository agent has its four fields and the `printf`); a
+(§ Talking to a repository agent names the fields; `scripts/campaign-claim`
+writes them); a
 member-repository subtask makes you the *launcher* of a delegate, which writes
 its own record exactly as you would write yours, and makes step 5 yours
 (§ Delegating to a repository agent). A launcher writes no record, because it
@@ -102,7 +103,7 @@ holds no claim.
 only to mint an ID it already has. Do this before launching or receiving
 anything: the directory is the only home `runtime/claims/` has, so until it
 exists a claim record has nowhere to be written (§ Who is a campaign session,
-"The claim records need a directory"). Step 2 still runs because neither the slug
+under **Directory**). Step 2 still runs because neither the slug
 nor the kind is recoverable from GitHub; say which kind you picked.
 
 ### 2. Name it and pick its kind
@@ -135,7 +136,7 @@ Before scaffolding anything, because its number is the campaign ID.
 minutes old and two sessions that each checked before either filed both file.
 
 ```sh
-gh issue list -R kalaluthien/agent-workspace --label campaign --state open --limit 200
+"$CONTAINER"/scripts/campaign-anchors
 gh issue create -R kalaluthien/agent-workspace \
   --label campaign --title "<title>" --body-file <path>
 ```
@@ -220,7 +221,8 @@ Then finish it:
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
 - Delete `subtask.md` and `handover.md`. Both are filled from the skill's own
   copy — `AGENTS.md` names `assets/subtask.md` for a subtask and
-  `assets/handover.md` for a brief, and a brief is written to
+  `assets/handover.md` for a brief (named by
+  `references/launching.md`), and a brief is written to
   `runtime/handover/<issue>.md`, never to `handover.md` — so neither top-level
   copy has a reader, and a copy in a git-ignored directory can be filled long
   after it has gone stale.
@@ -353,10 +355,11 @@ Read the campaign's subtasks back from the anchor, in one call, across every
 repository:
 
 ```sh
-gh api --paginate repos/kalaluthien/agent-workspace/issues/<N>/sub_issues
+"$CONTAINER"/scripts/campaign-subtasks <N>
 ```
 
-`--paginate` is not optional: the endpoint pages at thirty, and a truncated index
+That script owns `--paginate`, which is not optional: the endpoint pages at
+thirty, and a truncated index
 reads exactly like a complete one.
 
 If the target repository is not in the anchor's `## Repos` list, add it to the
