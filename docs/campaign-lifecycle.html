@@ -100,7 +100,7 @@
 <dl class="provenance">
   <dt>Doctype</dt>  <dd>explanation</dd>
   <dt>Question</dt> <dd>캠페인은 어떻게 열리고, 하위 과제로 갈라지고, 실행자에게 넘어가고, 닫히는가?</dd>
-  <dt>Updated</dt>  <dd>2026-08-29</dd>
+  <dt>Updated</dt>  <dd>2026-08-31</dd>
 </dl>
 
 <h2>캠페인 산출물의 세 평면</h2>
@@ -123,6 +123,27 @@
 <div class="callout">
   <span class="g" aria-hidden="true">⚠️</span>
   <p><strong>캠페인 디렉터리는 지워져도 된다.</strong> 오직 거기에만 있는 것은 남지 않으므로, 남아야 하는 것은 GitHub 이슈나 저장소 원격에 먼저 올린다.</p>
+</div>
+
+<h2>규칙에서 기계로</h2>
+
+<table>
+  <thead>
+    <tr><th>언제 도는가</th><th>무엇이</th><th>무엇을 거절하거나 답하는가</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>pre-commit</code></td><td><code>check-tree-shape</code></td><td><code>spec/</code> 아래의 마크다운, 허용 목록에 없는 최상위 이름, 코드로 돌아온 은퇴한 이름, 멤버 저장소의 파일</td></tr>
+    <tr><td><code>pre-commit</code></td><td><code>check-rule-readers</code></td><td>스크립트가 소유한 규칙을 손으로 베낀 사본</td></tr>
+    <tr><td><code>post-commit</code></td><td><code>push-campaign-branch</code></td><td>커밋 하나가 생기는 즉시 <code>campaign-*</code> 브랜치를 민다</td></tr>
+    <tr><td><code>SessionStart</code></td><td><code>campaign-primitives</code></td><td>어떤 기계가 실제로 걸려 있는지를 세션에게 말한다</td></tr>
+  </tbody>
+</table>
+
+<p>규칙을 기계가 판정할 수 있는지로 나눈다. 판정할 수 있는 것은 검사가 되고, 산문에는 그 기계가 있다는 사실과 무엇에 답하는지만 남는다. 판단이 필요한 것만 문장으로 남는다. 이 정리로 <code>AGENTS.md</code> 는 1585줄에서 540줄이 되었고, 그중 이력이 차지하던 비중은 31%에서 9%로 줄었다. 나머지 답은 스크립트가 한다. 청구는 <code>campaign-claim</code>, 묶임은 <code>campaign-bound</code>, 정산은 <code>campaign-settlement</code>, 생존과 귀속은 <code>campaign-live</code>, 이 기계에만 있는 것은 <code>campaign-local-work</code> 이 하나씩 답하고, 같은 질문의 두 번째 구현은 어디에도 없다. <span class="src">AGENTS.md, scripts/campaign-primitives @ 8f8529d</span></p>
+
+<div class="callout">
+  <span class="g" aria-hidden="true">⚠️</span>
+  <p><strong>기계로 옮기면 실패가 조용해진다.</strong> 세션 id가 바뀌고, 이름이 바뀌고, 맥락이 압축되고, 기대한 파일이 애초에 없었던 경우가 모두 검사에는 <em>없음</em> 으로 똑같이 도착한다. 그래서 검사는 <em>보았더니 없었다</em> 와 <em>볼 수 없었다</em> 를 갈라야 하고, 무엇을 어디에서 읽었으며 어느 갈래를 탔는지 찍어야 한다. 판정 단어 하나만 내놓는 검사는, 아무것도 강제하지 않으면서 몇 달 동안 믿긴다.</p>
 </div>
 
 <h2>캠페인 개시 순서</h2>
@@ -177,7 +198,7 @@
     <li><span class="k">1</span><p><strong>요청 도착</strong> — 단계. 사람이 컨테이너 루트에 문장 하나, 이슈 번호, 또는 스크린샷을 들고 온다. <span class="hum">사람만 캠페인을 시작한다</span></p></li>
     <li><span class="k">2</span><p><strong>앵커 확인</strong> — 판단. 열린 앵커 이슈를 먼저 읽는다. 세 갈래로 갈린다. 어느 열린 캠페인의 범위가 덮으면 그 캠페인의 후속 하위 과제다. 아무것도 덮지 않고 이 세션으로 끝나는 일이면 캠페인이 아니라 그냥 여기서 한다. 아무것도 덮지 않고 이 세션보다 오래 갈 일일 때만 새 캠페인이다. 크기는 판단 항목이 아니다.</p></li>
     <li><span class="k">3</span><p><strong>앵커 이슈 발행</strong> — 단계. <code>kalaluthien/agent-workspace</code> 에 앵커 이슈를 만들고 <span class="chip">campaign</span> 라벨을 단다. 그 이슈 번호가 캠페인 ID다. 앵커 이슈가 <code>#6</code> 이면 캠페인 ID는 <code>#6</code> 이다. 모든 조사가 그 라벨로 나열하므로, 라벨 없는 앵커는 아무 목록에도 없다.</p></li>
-    <li><span class="k">4</span><p><strong>디렉터리와 클론</strong> — 단계, 그리고 선택 사항. 컨테이너 루트에 <code>&lt;slug&gt;-&lt;YYMMDD&gt;/</code> 를 만들고 멤버 저장소를 그 아래 <code>repos/</code> 로 가져온다. 캠페인 <code>#6</code> 의 디렉터리는 <code>lifecycle-drill-260828/</code> 이다. 캠페인 <code>#1</code> 은 컨테이너 루트에서 돌았고 디렉터리를 아예 가지지 않았다.</p></li>
+    <li><span class="k">4</span><p><strong>디렉터리와 클론</strong> — 단계, 그리고 선택 사항. 컨테이너 루트에 <code>&lt;slug&gt;-&lt;YYMMDD&gt;/</code> 를 만들고 멤버 저장소를 그 아래 <code>repos/</code> 로 가져온다. 캠페인 <code>#6</code> 의 디렉터리는 <code>lifecycle-drill-260828/</code> 이다. 묶인 기계는 누구든 그 캠페인을 한 번 작업한 순간부터 디렉터리를 가진다. 청구 기록이 거기 말고는 살 곳이 없기 때문이다.</p></li>
   </ol>
 </figure>
 
