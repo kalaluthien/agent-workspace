@@ -205,6 +205,12 @@ def findings(text):
     exempted = None          # owner exempted for the open fence
     pending = None           # exemption seen, waiting for its fence
     carry, carry_n = "", None   # a shell continuation, joined before matching
+
+    def scan(start, joined, exempted):
+        for owner, form, what in FORMS:
+            if form.search(joined) and owner not in (exempted or frozenset()):
+                yield start, owner, what, joined.strip()[:160]
+
     for n, line in enumerate(text.splitlines(), 1):
         fence = FENCE.match(line)
         if inside is not None:
@@ -216,10 +222,16 @@ def findings(text):
                 and not fence.group("info").strip()
             )
             if closes:
+                # A continuation left open at the end of a run is scanned, not
+                # dropped: the trailing backslash is a typo, not an exemption.
+                yield from scan(carry_n, carry, exempted) if carry else ()
+                carry, carry_n = "", None
                 inside, exempted = None, None
                 continue
             code = True
         elif fence:
+            yield from scan(carry_n, carry, exempted) if carry else ()
+            carry, carry_n = "", None
             inside, exempted, pending = fence.group("run"), pending, None
             continue
         elif INDENTED.match(line):
@@ -258,6 +270,7 @@ def findings(text):
                 # dies with it rather than leaking into the next block.
                 pending, exempted = None, None
         if not code:
+            yield from scan(carry_n, carry, exempted) if carry else ()
             carry, carry_n = "", None
             continue
         # A shell continuation is one command, so it is matched as one. Scanning
@@ -270,9 +283,8 @@ def findings(text):
             carry, carry_n = joined.rstrip()[:-1].rstrip(), start
             continue
         carry, carry_n = "", None
-        for owner, form, what in FORMS:
-            if form.search(joined) and owner not in (exempted or frozenset()):
-                yield start, owner, what, joined.strip()[:160]
+        yield from scan(start, joined, exempted)
+    yield from scan(carry_n, carry, exempted) if carry else ()
 
 
 def main(argv):

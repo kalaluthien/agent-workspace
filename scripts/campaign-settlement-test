@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""Pin campaign-settlement, the campaign's central verdict.
+
+It runs the installed script behind a `gh` on PATH that answers from a fixture,
+so the request shapes and the exit codes are the ones a person gets. The case
+that matters most is the one with no verdict at all: an index that did not read
+must refuse, because printing "the index is empty" at exit 0 reads exactly like
+a campaign with no subtasks and closes it.
+
+Usage: scripts/campaign-settlement-test
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+SETTLEMENT = HERE / "campaign-settlement"
+
+SHIM = '''#!/usr/bin/env python3
+import json, os, sys
+data = json.load(open(os.environ["SHIM_DATA"]))
+a = sys.argv[1:]
+if a[0] == "api":
+    key = "index"
+elif a[0] == "pr":
+    key = f"pr:{a[4]}#{a[2]}"
+elif "labels" in a[-1]:
+    key = "head"
+else:
+    key = f"issue:{a[4]}#{a[2]}"
+v = data.get(key)
+if v is None:
+    print(f"no fixture for {key}", file=sys.stderr); sys.exit(3)
+if isinstance(v, dict) and "exit" in v:
+    print(v.get("stderr", ""), file=sys.stderr); sys.exit(v["exit"])
+sys.stdout.write(v if isinstance(v, str) else json.dumps(v))
+'''
+
+
+def head(state="OPEN", labels=("campaign",), parent=None):
+    return {"state": state, "title": "a campaign",
+            "labels": [{"name": n} for n in labels], "parent": parent}
+
+
+def sub(n, repo="kalaluthien/agent-workspace", nested=0):
+    return {"number": n, "sub_issues_summary": {"total": nested},
+            "repository_url": f"https://api.github.com/repos/{repo}"}
+
+
+def issue(state, reason=None, prs=(), title="a subtask"):
+    return {"state": state, "stateReason": reason, "title": title,
+            "closedByPullRequestsReferences": [
+                {"number": n, "url": f"https://x/{n}",
+                 "repository": {"owner": {"login": "kalaluthien"},
+                                "name": "agent-workspace"}} for n in prs]}
+
+
+def run(fixture, tmp):
+    bin_dir = Path(tmp) / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    gh = bin_dir / "gh"
+    gh.write_text(SHIM)
+    gh.chmod(0o755)
+    data = Path(tmp) / "data.json"
+    data.write_text(json.dumps(fixture))
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}",
+               SHIM_DATA=str(data))
+    r = subprocess.run([sys.executable, str(SETTLEMENT), "1"],
+                       capture_output=True, text=True, env=env)
+    return r.returncode, r.stdout, r.stderr
+
+
+def main():
+    ran, fails = [], []
+
+    def check(name, ok):
+        ran.append(name)
+        print(("ok    " if ok else "FAIL  ") + name)
+        if not ok:
+            fails.append(name)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        merged = {"state": "MERGED"}
+        base = {"head": head(),
+                "index": [sub(10), sub(11)],
+                "issue:kalaluthien/agent-workspace#10":
+                    issue("CLOSED", "COMPLETED", prs=[90]),
+                "issue:kalaluthien/agent-workspace#11":
+                    issue("CLOSED", "COMPLETED", prs=[91]),
+                "pr:kalaluthien/agent-workspace#90": merged,
+                "pr:kalaluthien/agent-workspace#91": merged}
+
+        # The whole reason this suite exists: no verdict is not a clean verdict.
+        for what, index in (("gh exits non-zero", {"exit": 1, "stderr": "HTTP 404"}),
+                            ("the body is not JSON", "<html>not json</html>"),
+                            ("the endpoint returns an object", {"total": 2})):
+            code, out, err = run(dict(base, index=index), tmp)
+            check(f"an index that did not read refuses -- {what}",
+                  code != 0 and "the index is empty" not in out
+                  and "could not read the sub-issue index" in err
+                  and "Traceback" not in err)
+
+        code, out, err = run(dict(base, index=[]), tmp)
+        check("an index that read empty is a campaign with no subtasks",
+              code == 0 and "the index is empty" in out)
+
+        code, out, err = run(base, tmp)
+        check("every subtask settled reads closable",
+              code == 0 and "2/2 settled; closable" in out)
+
+        code, out, err = run(dict(base, **{
+            "issue:kalaluthien/agent-workspace#11": issue("OPEN")}), tmp)
+        check("one open subtask refuses the close",
+              code == 0 and "1/2 settled; NOT closable" in out
+              and "#11" in out and " open " in out)
+
+        # A subtask closed on purpose is settled; the note says which kind, and
+        # AGENTS.md tells a reader to quote the note rather than the word.
+        code, out, err = run(dict(base, **{
+            "issue:kalaluthien/agent-workspace#11":
+                issue("CLOSED", "NOT_PLANNED")}), tmp)
+        check("a subtask dropped as not planned still settles",
+              code == 0 and "2/2 settled; closable" in out
+              and "[not planned]" in out)
+
+        code, out, err = run(dict(base, **{
+            "issue:kalaluthien/agent-workspace#11":
+                issue("CLOSED", "COMPLETED")}), tmp)
+        check("closed as completed with nothing to merge names its note",
+              code == 0 and "[completed, no merged pull request]" in out)
+
+        code, out, err = run(dict(base, **{
+            "pr:kalaluthien/agent-workspace#91": {"state": "CLOSED"}}), tmp)
+        check("a closing pull request that never merged is dropped, not complete",
+              code == 0 and "dropped" in out and "2/2 settled" in out)
+
+        code, out, err = run(dict(base, head=head(labels=())), tmp)
+        check("a number with no campaign label is reported as maybe a subtask",
+              code == 0 and "may be a subtask" in out)
+
+        code, out, err = run(dict(base, head=head(parent={"number": 7})), tmp)
+        check("an anchor that is itself a sub-issue is reported",
+              code == 0 and "sub-issue of #7" in out)
+
+        code, out, err = run(dict(base, index=[sub(10), sub(11, nested=3)]), tmp)
+        check("a subtask with members of its own is reported, not counted",
+              code == 0 and "3 sub-issue(s) of its own" in out)
+
+        code, out, err = run(dict(base, head=head(state="CLOSED"), **{
+            "issue:kalaluthien/agent-workspace#11": issue("OPEN")}), tmp)
+        check("an anchor closed over an open subtask is reported",
+              code == 0 and "the anchor is closed with subtasks still open" in out)
+
+        # A subtask filed on another repository is read there, not here.
+        code, out, err = run(dict(base, index=[sub(10), sub(5, repo="o/other")],
+                                  **{"issue:o/other#5": issue("OPEN")}), tmp)
+        check("a subtask in another repository is read against that repository",
+              code == 0 and "o/other#5" in out and "1/2 settled" in out)
+
+    if not ran:
+        print("FAIL  the suite ran no case at all")
+        return 1
+    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

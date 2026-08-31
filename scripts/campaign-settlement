@@ -79,9 +79,9 @@ def anchor_reports(head):
                " -- closing that campaign will not settle this one")
 
 
-def read_index(repo, anchor):
-    """The campaign's members, through the one script that owns that reading --
-    the request as well as the parse."""
+def subtasks():
+    """The one script that owns the sub-issue index -- the request, the parse,
+    and the sentence that says an unread index is not an empty one."""
     import importlib.machinery
     import importlib.util
     here = Path(__file__).resolve().parent
@@ -91,7 +91,7 @@ def read_index(repo, anchor):
                                              str(here / "campaign-subtasks")))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod.fetch_index(repo, anchor)
+    return mod
 
 
 def main():
@@ -102,14 +102,12 @@ def main():
 
     head = gh("issue", "view", anchor, "-R", anchor_repo,
               "--json", "state,title,labels,parent")
-    # One reader of the sub-issue index, and it is campaign-subtasks. This used
-    # to carry a second one on a different pagination model (--slurp plus a
-    # flatten), which is the drift AGENTS.md forbids two sections above where
-    # it forbids it.
-    subs, why = read_index(anchor_repo, anchor)
+    # One reader of the sub-issue index, and it is campaign-subtasks.
+    mod = subtasks()
+    subs, why = mod.fetch_index(anchor_repo, anchor)
     if why:
         sys.exit(f"campaign-settlement: could not read the sub-issue index -- "
-                 f"{why}\n  An index that did not read is not an empty campaign.")
+                 f"{why}\n  {mod.NOT_EMPTY}")
 
     print(f"anchor {anchor_repo}#{anchor}  [{head['state']}]  {head['title']}")
     for line in anchor_reports(head):

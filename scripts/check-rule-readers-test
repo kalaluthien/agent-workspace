@@ -70,6 +70,16 @@ FORM_CASES = [
     ("anchors: the quoted label spelling", fence('gh issue list --label "campaign" -R o/r'), 1),
     ("anchors: a continuation that never completes the form stays quiet",
      fence("gh issue list -R o/r \\\n  --state closed"), 0),
+    # A backslash on the last line of a block is a typo, not an exemption: the
+    # carried text is scanned when the run ends rather than dropped unread.
+    ("anchors: a continuation left open at the end of a fence is still scanned",
+     fence("gh issue list -R o/r --state open --json number,title,parent \\"), 1),
+    ("anchors: a continuation left open when prose resumes is still scanned",
+     "# t\n\n    gh issue list -R o/r --state open --json number,title,parent \\\n\nprose.\n", 1),
+    # ...and it does not reach across the close into the next block, which would
+    # let two harmless blocks report a form neither of them holds.
+    ("anchors: a continuation does not join across a fence close",
+     fence("gh issue list -R o/r --state open \\") + fence("--json number,title,parent"), 0),
     ("anchors: an issue list that reads neither is outside the claim",
      fence("gh issue list -R o/r --state closed --json number,title"), 0),
     ("subtasks: the index read", fence("gh api --paginate repos/o/r/issues/1/sub_issues"), 1),

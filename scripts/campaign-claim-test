@@ -23,7 +23,7 @@ CLAIM = Path(__file__).resolve().parent / "campaign-claim"
 def _free_pid():
     """A pid held by nobody. A hardcoded one passed on a runner and could name a
     live process on a dev machine -- the residue running the other way."""
-    p = subprocess.Popen(["/usr/bin/true"])
+    p = subprocess.Popen([sys.executable, "-c", ""])
     p.wait()
     return str(p.pid)
 

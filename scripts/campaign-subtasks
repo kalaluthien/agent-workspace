@@ -28,6 +28,9 @@ import sys
 REPO = "kalaluthien/agent-workspace"
 
 
+NOT_EMPTY = "An index that did not read is not an empty campaign."
+
+
 def parse_index(text):
     """Returns (items, why_unreadable).
 
@@ -45,8 +48,7 @@ def parse_index(text):
         items = json.loads(text)
     except ValueError as e:
         return None, (f"could not parse the index ({e.__class__.__name__}: "
-                      f"{str(e)[:60]}). An index that did not read is not an "
-                      f"empty campaign.")
+                      f"{str(e)[:60]})")
     if not isinstance(items, list):
         return None, (f"the endpoint returned {type(items).__name__}, not a "
                       f"list; --paginate concatenates object pages, so this "
@@ -69,8 +71,7 @@ def fetch_index(repo, anchor):
     except (FileNotFoundError, PermissionError) as e:
         return None, f"could not run gh ({e.__class__.__name__})"
     if r.returncode != 0:
-        return None, (f"gh exited {r.returncode}: {r.stderr.strip()[:200]}. "
-                      f"An index that did not read is not an empty campaign.")
+        return None, f"gh exited {r.returncode}: {r.stderr.strip()[:200]}"
     return parse_index(r.stdout)
 
 
@@ -83,7 +84,7 @@ def main():
     print(f"read repos/{args.repo}/issues/{args.anchor}/sub_issues --paginate")
     items, why = fetch_index(args.repo, args.anchor)
     if why:
-        print(f"FAILED -- {why}", file=sys.stderr)
+        print(f"FAILED -- {why}. {NOT_EMPTY}", file=sys.stderr)
         return 1
 
     for it in items:
