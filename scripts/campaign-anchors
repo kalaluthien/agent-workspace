@@ -59,19 +59,28 @@ def listing(repo, limit, *extra):
 
 
 def classify(labelled, allopen):
-    """Cross the two readings. Returns (anchors, stray, bare).
+    """Cross the two readings. Returns (anchors, stray, bare, skew).
 
-    Pure, because the disagreement between the readings is the whole product and
-    the listings that produce it need the network. An issue is an anchor when
-    BOTH readings agree; the label alone and the parent relation alone each name
-    a different way of being wrong, and neither is dropped."""
-    parentless = {i["number"] for i in allopen if not i.get("parent")}
+    Each issue's parent is read from **its own record**, in whichever listing it
+    came from. The first draft derived one set of parentless numbers from the
+    all-open listing and tested the labelled issues against it, so *absence*
+    from that listing read as *has a parent* — and the two listings are separate
+    `gh` calls, so truncation or a snapshot taken a second apart denounced a real
+    anchor as a subtask wearing the label. A caller reads "no campaign covers
+    this" and opens a duplicate, which is the failure this script exists to
+    prevent.
+
+    `skew` is the labelled issues missing from the all-open listing: nothing here
+    can tell a truncated listing from a genuinely closed issue, so they are
+    reported rather than classified."""
+    seen = {i["number"] for i in allopen}
+    anchors = [i for i in labelled if not i.get("parent") and i["number"] in seen]
+    stray = [i for i in labelled if i.get("parent")]
+    skew = [i for i in labelled if not i.get("parent") and i["number"] not in seen]
     lab = {i["number"] for i in labelled}
-    anchors = [i for i in labelled if i["number"] in parentless]
-    stray = [i for i in labelled if i["number"] not in parentless]
     bare = [i for i in allopen
-            if i["number"] in parentless and i["number"] not in lab]
-    return anchors, stray, bare
+            if not i.get("parent") and i["number"] not in lab]
+    return anchors, stray, bare, skew
 
 
 def main():
@@ -88,15 +97,21 @@ def main():
         if why:
             print(f"  {name}: FAILED -- {why}", file=sys.stderr)
         else:
-            note = "  (at the limit: may be TRUNCATED, raise --limit)" \
-                if len(data) >= args.limit else ""
-            print(f"  {name}: {len(data)} issue(s){note}")
+            print(f"  {name}: {len(data)} issue(s)"
+                  + ("  (AT THE LIMIT)" if len(data) >= args.limit else ""))
     if why1 or why2:
         print("A reading that did not happen is not an empty tracker.",
               file=sys.stderr)
         return 1
+    if len(labelled) >= args.limit or len(allopen) >= args.limit:
+        # A capped listing is a reading not made in full, and the rows below it
+        # are actively wrong rather than merely short. Refuse.
+        print(f"REFUSING: a listing came back at --limit {args.limit}, so it may "
+              f"be truncated and\n  a truncated listing reads exactly like a "
+              f"complete one. Raise --limit and re-run.", file=sys.stderr)
+        return 1
 
-    anchors, stray, bare = classify(labelled, allopen)
+    anchors, stray, bare, skew = classify(labelled, allopen)
     print(f"\nopen anchors ({len(anchors)}) -- labelled, and with no parent")
     for i in sorted(anchors, key=lambda x: x["number"]):
         print(f"  #{i['number']:<5} {i['title'][:88]}")
@@ -107,6 +122,13 @@ def main():
         print(f"\n!! labelled but has a parent ({len(stray)}) -- a subtask "
               f"wearing the label; say so rather than joining it")
         for i in stray:
+            print(f"  #{i['number']:<5} {i['title'][:88]}")
+
+    if skew:
+        print(f"\n!! labelled and parentless, but absent from the all-open "
+              f"listing ({len(skew)}) --\n   closed between the two calls, or "
+              f"the listing was short. Not classified either way.")
+        for i in skew:
             print(f"  #{i['number']:<5} {i['title'][:88]}")
 
     if bare:

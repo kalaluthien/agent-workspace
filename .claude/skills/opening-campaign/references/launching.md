@@ -101,3 +101,36 @@ property: probed over a campaign session, a peer executor session and a freshly
 started delegate, each carrying `HERDR_ENV=1` and its own `HERDR_PANE_ID`, while
 a process started outside any pane carried neither. The first plain-terminal or
 `-p` session here falsifies it, which is what the guard is for.
+
+## The container as a member of its own campaign
+
+The container gets cloned into `<campaign>/repos/agent-workspace/`, so one
+repository has two checkouts. Read both hazards with one command — **before
+launching a delegate, right after merging its pull request, and before the outer
+session next edits anything**:
+
+```sh
+CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
+git -C "$CONTAINER" fetch origin -q
+git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0	0"
+```
+
+Behind means a merged pull request this checkout has not caught up to, and
+editing from here can silently revert work that landed: pull, then read zero
+again before editing.
+
+**The clone must not be behind *at launch*, which is a different check.** "Do not
+clone while the container is ahead" is the wrong invariant and a live run
+disproved it: the outer check read `0	0` immediately before both clones, three
+commits landed on `origin/main` between the clone and the launch, and the
+delegate came up three behind. On a campaign of any length the remote moving in
+between is normal.
+
+```sh
+git -C <campaign>/repos/<repo> fetch origin -q
+git -C <campaign>/repos/<repo> rev-list --left-right --count origin/main...HEAD
+```
+
+A delegate launched behind obeys an `AGENTS.md` the launching session has already
+superseded, and nothing reports it. Pull the clone, then launch. Pushing the
+container before cloning is worth doing and is not sufficient.

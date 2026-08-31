@@ -13,6 +13,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -44,48 +45,100 @@ def main():
 
     # --- campaign-anchors: the two readings, and each way of disagreeing.
     labelled = [issue(1), issue(9, parent={"number": 1})]
-    allopen = [issue(1), issue(9, parent={"number": 1}), issue(7), issue(8, parent={"number": 1})]
-    anchors, stray, bare = a.classify(labelled, allopen)
-    check("an anchor needs both readings to agree",
+    allopen = [issue(1), issue(9, parent={"number": 1}), issue(7),
+               issue(8, parent={"number": 1})]
+    anchors, stray, bare, skew = a.classify(labelled, allopen)
+    check("an anchor is labelled and parentless",
           [i["number"] for i in anchors] == [1])
     check("a labelled issue with a parent is a subtask wearing the label",
           [i["number"] for i in stray] == [9])
     check("an unlabelled issue with no parent is reported, not silently an anchor",
           [i["number"] for i in bare] == [7])
     check("a subtask that is neither labelled nor parentless is in no list",
-          8 not in [i["number"] for i in anchors + stray + bare])
+          8 not in [i["number"] for i in anchors + stray + bare + skew])
 
-    # The two failure directions are different rows, so neither can be dropped
-    # into the other: a label alone and a missing parent alone each name a
-    # distinct mistake, and merging them loses which repair applies.
-    anchors, stray, bare = a.classify([], [])
+    # The blocking defect: each issue's parent must come from its own record.
+    # Deriving one parentless set from the all-open listing made *absence* from
+    # that listing read as *has a parent*, so a real anchor missing from a
+    # separate `gh` call was denounced as a mislabelled subtask, and the caller
+    # opened a duplicate campaign.
+    anchors, stray, bare, skew = a.classify([issue(1)], [])
+    check("an anchor absent from the all-open listing is not called a subtask",
+          stray == [])
+    check("...it is reported as skew, classified neither way",
+          [i["number"] for i in skew] == [1])
+    check("...and it is not counted as an anchor on one reading alone",
+          anchors == [])
+
+    anchors, stray, bare, skew = a.classify([], [])
     check("an empty tracker yields empty lists rather than an error",
-          (anchors, stray, bare) == ([], [], []))
+          (anchors, stray, bare, skew) == ([], [], [], []))
 
-    # --- campaign-subtasks: what --paginate actually returns.
+    # --- campaign-subtasks: the index reading.
     one = json.dumps([{"number": 1}, {"number": 2}])
-    items, why = s.parse_pages(one)
-    check("a single page reads", why is None and len(items) == 2)
-
-    # The case the plain json.loads could not do, and the reason this exists:
-    # --paginate concatenates arrays, so any campaign past thirty subtasks --
-    # exactly the ones where the whole index matters -- raised.
-    two = json.dumps([{"number": i} for i in range(30)]) + "\n" + \
-        json.dumps([{"number": 30}])
-    items, why = s.parse_pages(two)
-    check("two concatenated pages read as one index",
-          why is None and len(items) == 31)
-    check("...where a single-page parser would have raised",
-          _raises(lambda: json.loads(two)))
-
-    items, why = s.parse_pages("")
+    items, why = s.parse_index(one)
+    check("an array of subtasks reads", why is None and len(items) == 2)
+    items, why = s.parse_index("")
     check("an empty response is an empty index, not a failure",
           why is None and items == [])
-    items, why = s.parse_pages("[{]")
+    items, why = s.parse_index("[{]")
     check("malformed output is a why, not an empty index", items is None and why)
-    items, why = s.parse_pages(json.dumps({"message": "Not Found"}))
-    check("an object where a page was expected is a why, not zero subtasks",
+    items, why = s.parse_index(json.dumps({"message": "Not Found"}))
+    check("an object where an array was expected is a why, not zero subtasks",
           items is None and why)
+    items, why = s.parse_index(json.dumps([{"number": 1}]) + json.dumps([{"number": 2}]))
+    check("concatenated pages are a why rather than a silently short index",
+          items is None and why)
+
+    # --- the flags themselves, which are the whole reason these scripts exist.
+    # Nothing pinned them: the pure functions above pass whatever `gh` was asked
+    # for, so deleting `--paginate` or `--limit` left the suite green while the
+    # scripts silently went back to reading a truncated first page.
+    with tempfile.TemporaryDirectory() as d:
+        shim, log = Path(d) / "bin", Path(d) / "argv"
+        shim.mkdir()
+        (shim / "gh").write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> " + str(log) + "\n"
+            "case \"$*\" in *sub_issues*) echo '[]' ;; *) echo '[]' ;; esac\n")
+        (shim / "gh").chmod(0o755)
+        env = {"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(d)}
+        subprocess.run([sys.executable, str(HERE / "campaign-anchors")],
+                       capture_output=True, text=True, env=env)
+        argv = log.read_text()
+        check("campaign-anchors passes --limit, since the default is thirty",
+              "--limit" in argv)
+        check("...and raises it well past the default",
+              any(x.isdigit() and int(x) >= 100 for x in argv.split()))
+        check("...and asks for the parent field it classifies on",
+              "number,title,labels,parent" in argv)
+        # A listing that came back *at* the limit is a reading not made in
+        # full, and the rows it would print are actively wrong rather than
+        # merely short. It must refuse, not print a note and exit 0.
+        (shim / "gh").write_text(
+            "#!/bin/sh\necho '[{\"number\":1,\"title\":\"t\",\"labels\":[],"
+            "\"parent\":null}]'\n")
+        (shim / "gh").chmod(0o755)
+        r = subprocess.run([sys.executable, str(HERE / "campaign-anchors"),
+                            "--limit", "1"], capture_output=True, text=True,
+                           env=env)
+        check("a listing at the limit refuses rather than printing wrong rows",
+              r.returncode == 1 and "REFUSING" in r.stdout + r.stderr)
+        r = subprocess.run([sys.executable, str(HERE / "campaign-anchors"),
+                            "--limit", "9"], capture_output=True, text=True,
+                           env=env)
+        check("...and a listing under the limit does not", r.returncode == 0)
+
+        (shim / "gh").write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> " + str(log) + "\necho '[]'\n")
+        (shim / "gh").chmod(0o755)
+        log.write_text("")
+        subprocess.run([sys.executable, str(HERE / "campaign-subtasks"), "1"],
+                       capture_output=True, text=True, env=env)
+        argv = log.read_text()
+        check("campaign-subtasks passes --paginate, since the endpoint pages at thirty",
+              "--paginate" in argv)
+        check("...against the sub_issues endpoint, which is the index",
+              "sub_issues" in argv)
 
     # --- the end-to-end refusal, with no gh on PATH.
     for name in ("campaign-anchors", "campaign-subtasks"):

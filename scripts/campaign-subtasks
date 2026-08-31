@@ -3,10 +3,10 @@
 
 `gh issue create --parent` is the only write that records a campaign's
 membership, and this endpoint is the only read. AGENTS.md carried the command in
-prose with `--paginate` and a sentence saying it is not optional; the endpoint
+prose with `--paginate` and a sentence saying it is not optional. The endpoint
 pages at thirty, and a truncated index reads exactly like a complete one to every
 caller that matters -- including the close, which is the one place the index is
-read before a directory is deleted.
+read before a directory is deleted. Dropping the flag is the failure this owns.
 
 WHAT IT PRINTS
 
@@ -28,25 +28,29 @@ import sys
 REPO = "kalaluthien/agent-workspace"
 
 
-def parse_pages(text):
-    """`gh api --paginate` concatenates one JSON array per page rather than
-    returning one array, so `json.loads` sees trailing data and raises on any
-    campaign with more than thirty subtasks -- the ones where reading the whole
-    index matters. Returns (items, why_unreadable)."""
-    items, decoder, i = [], json.JSONDecoder(), 0
+def parse_index(text):
+    """Returns (items, why_unreadable).
+
+    `gh api --paginate` behaves by the response's own shape, measured both ways
+    2026-08-31: an endpoint returning a JSON **array** has its pages merged into
+    one array, while an object endpoint has its page objects concatenated and
+    needs a streaming decode. This endpoint returns an array — 44 items over two
+    pages parsed clean — so a plain decode is right, and the earlier loop here
+    was justified by a claim about this endpoint that I had reasoned from a note
+    about `--slurp` rather than run."""
     text = text.strip()
+    if not text:
+        return [], None
     try:
-        while i < len(text):
-            page, end = decoder.raw_decode(text, i)
-            if not isinstance(page, list):
-                return None, f"a page was {type(page).__name__}, not a list"
-            items.extend(page)
-            i = end
-            while i < len(text) and text[i] in " \n\r\t":
-                i += 1
+        items = json.loads(text)
     except ValueError as e:
-        return None, (f"could not parse the index ({e.__class__.__name__}). "
-                      f"An index that did not read is not an empty campaign.")
+        return None, (f"could not parse the index ({e.__class__.__name__}: "
+                      f"{str(e)[:60]}). An index that did not read is not an "
+                      f"empty campaign.")
+    if not isinstance(items, list):
+        return None, (f"the endpoint returned {type(items).__name__}, not a "
+                      f"list; --paginate concatenates object pages, so this "
+                      f"needs a streaming decode rather than a plain one")
     return items, None
 
 
@@ -70,7 +74,7 @@ def main():
               f"An index that did not read is not an empty campaign.",
               file=sys.stderr)
         return 1
-    items, why = parse_pages(r.stdout)
+    items, why = parse_index(r.stdout)
     if why:
         print(f"FAILED -- {why}", file=sys.stderr)
         return 1

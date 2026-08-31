@@ -9,9 +9,11 @@ This project is early. Where a rule is missing, decide, do the work, and write
 the decision back here.
 
 **Much of what used to be written here is now enforced.**
-`scripts/campaign-primitives` lists every mechanism and what it decides, and a
-`SessionStart` hook prints it. Ask it before writing a check by hand, and use
-`gh` for every GitHub operation; it is authenticated on this machine.
+`scripts/campaign-primitives` lists this repository's own scripts and hooks, and
+a `SessionStart` hook prints a brief form of it; run it in full for what each
+decides. It cannot see what lives off this tree — `main`'s branch protection, the
+machine-wide git hooks — so its silence is not evidence that no mechanism exists.
+Use `gh` for every GitHub operation; it is authenticated on this machine.
 
 # What a campaign is
 
@@ -95,7 +97,9 @@ its own work on the three merge conditions, and may make the campaign-wide write
 on their own guards. **No role licenses a write, and neither does asking**: a
 session that cannot satisfy a guard does not make the write.
 
-When a person names a peer to ask, that name is an address and nothing more.
+When a person names a peer to ask, that name is an address and nothing more; when
+nobody is named, ask every peer, and one in no campaign covering the request says
+so.
 
 **Four rules, each written from a witnessed breakage:**
 
@@ -135,7 +139,10 @@ session of its own. `<n>` distinguishes sessions sharing the first two.
 
 **The subtask is deliberately not in the name.** A session works several subtasks,
 in parallel or one after another. A name identifies the session for as long as it
-runs; the claim record says which subtask it holds.
+runs; the claim record says which subtask it holds. **Never test a name against a
+branch**: they are two strings on purpose, and a test treating them as one finds
+whatever happens to match and misses the rest. `<n>` is assigned in the order
+sessions appear, so two of them do not both pick `-1`.
 
 **A session has two names and neither propagates to the other**, so
 `scripts/campaign-name-session <pane> <name>` sets both and refuses a name the
@@ -158,8 +165,15 @@ and whether it survives the machine. Identify the plane before any git command.
 | **campaign** | which repositories, what for, how far along | GitHub issues |
 
 `spec/` is normative and is Alloy whose comments are the spec; `docs/` is views
-drawn for a reader, as HTML. `check-tree-shape` refuses markdown under either,
-and refuses a tracked top-level name with no `!` line in `.gitignore`.
+drawn for a reader, as HTML. Two `pre-commit` guards refuse a commit that breaks
+either: `check-tree-shape` on the tree's shape, and `check-rule-readers` on a
+hand-rolled copy of a rule a script owns. The second fires on text that renders
+as **code** in a tracked markdown file, so a block that must hold a guarded form
+is exempted by an HTML comment on the line above it naming the owning script and
+the reason; the guard's own header gives the exact syntax, and writing it out
+here would be a second copy the guard itself refuses. **Do not write a second reader of a rule a script
+owns**: two of them drift, and a campaign's central verdicts are the worst place
+for it.
 
 The campaign directory holds no plane of its own: a scratch assembly of things
 versioned elsewhere, git-ignored on purpose, and nothing durable may live only
@@ -185,33 +199,29 @@ files here.
 
 The container gets cloned into `<campaign>/repos/agent-workspace/`, so one
 repository has two checkouts: the **outer** one a session runs from and the
-**inner** clone a delegate works in, which the outer git-ignores.
+**inner** clone a delegate works in, which the outer git-ignores. **Behind is a
+merged pull request you have not caught up to**, and editing from here can
+silently revert work that landed; **the clone must not be behind at launch**;
+and **a skill edited inside the clone does not change the running campaign**,
+which is deliberate — the tool must not move under a session using it. The
+commands, and when to run each, are
+`.claude/skills/opening-campaign/references/launching.md`.
 
-```sh
-git -C "$CONTAINER" fetch origin -q
-git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0	0"
-```
+**One tracker then holds three kinds of issue** — anchors, subtasks, and
+everything else a tracker collects. **Structure classifies:** an anchor has the
+`campaign` label and no parent; a subtask has a parent. The parent relation is an
+API relation, so no edit to a body can forge or lose it, while the label is
+applied by hand — the two cross-check each other, and `scripts/campaign-anchors`
+makes both readings and reports every way they disagree.
 
-- **Behind is a merged pull request you have not caught up to.** Editing from
-  here can silently revert work that landed. Pull, then read zero again.
-- **The clone must not be behind *at launch*** — check inside the clone, at
-  launch, not before cloning: the remote moving in between is normal, and a
-  delegate launched behind obeys an `AGENTS.md` already superseded.
-- **A skill edited inside the clone does not change the running campaign**, and
-  that is deliberate: the tool must not move under a session using it.
-- **One tracker then holds three kinds of issue** — anchors, subtasks, and
-  everything else a tracker collects. **Structure classifies:** an anchor has the
-  `campaign` label and no parent; a subtask has a parent. The parent relation is
-  an API relation, so no edit to a body can forge or lose it, while the label is
-  applied by hand — the two cross-check each other.
-
-  Body shape is the layer under that, for the case structure cannot answer: an
-  issue with no parent and no label is an anchor whose label was forgotten if it
-  carries the anchor template's sections, and a subtask filed without `--parent`
-  if it carries the `Campaign:` line. It never overrules the parent relation, and
-  reading it is a person's job. **An issue matching neither template is the third
-  kind, and every reader leaves it alone.** `campaign-settlement` reports a
-  mismatch instead of guessing. Never survey this tracker unfiltered.
+Body shape is the layer under that, for the case structure cannot answer: an
+issue with no parent and no label is an anchor whose label was forgotten if it
+carries the anchor template's sections, and a subtask filed without `--parent`
+if it carries the `Campaign:` line. Both templates are in
+`.claude/skills/opening-campaign/assets/`. It
+never overrules the parent relation, and reading it is a person's job. **An issue
+matching neither template is the third kind, and every reader leaves it alone.**
+Never survey this tracker unfiltered.
 
 # Running a campaign
 
@@ -225,7 +235,8 @@ changes, and created **as a sub-issue of the anchor**:
 gh issue create -R <owner/repo> --parent https://github.com/kalaluthien/agent-workspace/issues/<N> ...
 ```
 
-That one flag is the whole index; `scripts/campaign-subtasks <N>` reads it back.
+That one flag is the whole index; `scripts/campaign-subtasks <N>` reads it back,
+in any repository, public or private.
 The link is made by the same command that creates the issue, so there is no
 second write to forget, and it is prunable — moving a subtask out of the campaign
 removes it from the index, which a back-reference cannot do. Fill the body from
@@ -240,14 +251,17 @@ as nothing.
 being indistinguishable from one a bad write dropped, and `- none` is retired
 rather than joined. `scripts/campaign-repos <path>` is its one reader.
 
-A repo-less campaign's subtasks are filed on the container tracker as sub-issues
-of the anchor, and **the claim is still create-ref on the container**, even when
+**A repo-less campaign has the first two modes and not the third**, its subagent
+running with the campaign directory as its working directory. Its subtasks are
+filed on the container tracker as sub-issues of the anchor, and **the claim is still create-ref on the container**, even when
 no container code will change: the branch is the claim before it is a workspace.
 A claim whose branch holds nothing beyond `origin/main` may be released — by
 `scripts/campaign-claim release`, which refuses on anything but a confirmed
-absence, because `dead` is not proof a session is gone. Such a subtask closes as
-completed with no pull request, which `campaign-settlement` prints as `dropped
-[completed, no merged pull request]`; quote the note, never the word.
+absence, because `dead` is not proof a session is gone. **A subtask whose work lives only under `<campaign>/scripts/` has no commit to
+land**, whatever kind of campaign it belongs to: it closes as completed with no
+pull request, its closing comment saying what was built and where the close
+listed it. `campaign-settlement` prints that row as `dropped [completed, no
+merged pull request]`; quote the note, never the word.
 
 **Do it here, hand it to a subagent, or hand it to a delegate.** The mode is
 chosen before the work starts, **first by the repository and only then by cost**.
@@ -269,7 +283,8 @@ together.
 
 **Weigh the setup against the work.** The delegate's price is paid per launch, so
 for the container it is the mode of last resort — a worktree subagent gets the
-same conventions at none of it. For a member repository it is the only mode that
+same conventions at none of it, and needs none of the delegate rules that exist
+to cross a process boundary: no handover file, no canary, no herdr liveness. For a member repository it is the only mode that
 changes the code, which is why one delegate gets a subtask worth many turns rather
 than many delegates small ones.
 
@@ -296,7 +311,11 @@ to prevent happens anyway.
 
 **Compare then write the anchor issue body.** Re-read it immediately before
 `gh issue edit` and refuse if it has moved since your `README.md` was derived
-from it: two sessions on the one bound machine are both sessions of the campaign,
+from it. The two carry **the same sections in the same shapes** — the anchor
+template `.claude/skills/opening-campaign/assets/README.md` is the one copy of
+that shape — so the sync is an overwrite with nothing to merge; a README shaped
+differently forces it to compose, and a compose step is where the repository
+index gets silently dropped. As for why the comparison and not the binding: two sessions on the one bound machine are both sessions of the campaign,
 so the binding never serialized the body and the comparison is what does. Without
 it one write silently discards another — and a body write cannot touch a
 sub-issue link, so the index goes on naming work in a repository the `## Repos`
@@ -330,19 +349,13 @@ guard is against acting on somebody else's session, never against reading, so
 
 A delegate is launched in `<campaign>/repos/<repo>/` with
 `--append-system-prompt-file <campaign>/AGENTS.md`, because ancestor instruction
-files load only behind a dialog that defaults to declining. Four invariants:
-
-- **The brief is a file**, named by a one-sentence prompt. A terminal drops a
-  launch line past 1024 bytes and nothing says so.
-- **The prompt is delivered by `herdr agent prompt`**, never on the launch line,
-  where it is word-split.
-- **A canary proves the injection arrived**, since nothing on disk records it and
-  asking the delegate would be the self-report this design refuses.
-- **Read the pane once after every launch** — three dialogs halt a fresh delegate
-  and two report `idle`, so this catches one that stopped before it began.
-
-A campaign `AGENTS.md` only ever *adds*; one contradicting the repository's own
-conventions puts the delegate in a conflict it cannot resolve.
+files load only behind a dialog that defaults to declining. Four invariants: the
+brief is **a file** named by a one-sentence prompt; the prompt is delivered by
+**`herdr agent prompt`**, never on the launch line; **a canary** proves the
+injection arrived, since nothing on disk records it; and **read the pane once
+after every launch**, because the dialogs that halt a fresh delegate do not all
+report `blocked`. A campaign `AGENTS.md` only ever *adds*; one contradicting the
+repository's own conventions puts the delegate in an unresolvable conflict.
 
 The full procedure — the launch line, the outcome names, the canary, the three
 dialogs, and what the guard was measured against — is
@@ -358,17 +371,19 @@ Never answer one with the other.
   purpose never reads settled and its campaign can never close. Nothing on a
   terminal screen is evidence: a delegate that died after pushing has succeeded; a
   delegate alive and chatty may have done nothing. `scripts/campaign-settlement <N>`
-  is the one implementation.
+  is the one implementation, and a second reader written out anywhere else
+  drifts.
 - **Liveness and attribution are different readings and a gate needs both.**
   `herdr agent list` gives liveness for every session on this machine and no
   attribution at all; `runtime/claims/` gives attribution and cannot prove
   liveness, because its `pid` reads dead after a restart its session survived.
   `scripts/campaign-live <N>` makes both and joins them on the harness session id,
-  the only field surviving both a restart and a rename. It concludes nothing: a
+  the only field *on both sides* that survives a restart and a rename. It concludes nothing: a
   close reads its counts. Read a delegate's progress from its transcript, never
   from `agent_status`, which reports the screen and calls a mid-turn pause `idle`.
 - **What exists only on this machine is the third question**, and
-  `scripts/campaign-local-work <N> [dir]` is its one reader.
+  `scripts/campaign-local-work <N> [dir]` is its one reader; the same
+  prohibition applies.
 
 An agent never closes itself: it finishes by pushing and opening or updating a
 pull request, then goes idle, and the session that launched it retires it once
@@ -385,13 +400,19 @@ Agent(subagent_type: "general-purpose", model: "<named below>",
 ```
 
 `general-purpose` because `fork` inherits the author's context and would review
-the author's own reasoning. **Name the model, always.** **Two knobs answering
+the author's own reasoning; `description` because the tool requires it;
+`isolation` unset, because a worktree buys a review nothing. **Name the model,
+always.** `ultra` is not a level — it is a person-only mode, and putting it in
+that slot is the one way to write this block illegally. **Two knobs answering
 different questions.** The **model** by the depth of the
 change — a correctness that is not local takes the heavier one, because a weaker
 reader returns "looks fine" on exactly the reasoning that needed a reader; judge
 the change, not the launcher's own model. The **level** by how much there is to
-read; `medium` is the baseline. **The level is the first token after the command
-and nowhere else** — asking for it in the brief sets nothing, and omitting it
+read; `medium` is the baseline. So a broad mechanical sweep is a lighter model at
+a higher level and a subtle local change the reverse, and a review needing both at
+their limit is a brief covering two reviews — **a reviewer that needs more than
+the brief allows is a brief written too wide; split it**. **The level is the first
+token after the command and nowhere else** — asking for it in the brief sets nothing, and omitting it
 runs the review at a level chosen by neither the launcher nor the work.
 
 **Three ways to get this wrong**: a peer session, reading the diff yourself and
@@ -421,19 +442,21 @@ resolves the address; herdr's pane label is not one.
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
 
-Four messages, carrying **only what the agent alone knows**. Anything a message
-says about finished work duplicates a GitHub fact, and the copy is what goes
-stale. **The claim is not among them**: it is a record the claimant writes for
-itself, not an announcement somebody must receive — an announcement can fail to
-be sent, and its absence is invisible.
+Four messages, carrying **only what the agent alone knows**: anything about
+finished work duplicates a GitHub fact, and the copy is what goes stale. **The
+claim is not among them** — it is a record the claimant writes for itself, not an
+announcement, which can fail to be sent with its absence invisible.
 
 **Every claimant writes a record, and `scripts/campaign-claim` writes it**, so the
 shape lives in one place and a delegate runs the script rather than copying it.
 The session that *launched* a delegate writes none: it holds no claim, and a
-second address for one claim would make the close gate count it twice. Each field
+second address would make the close gate count one claim twice. Each field
 answers one question — liveness from `pid`, addressing from `name`, and `session`
-when both have gone stale, it being the only field surviving a restart and a
-rename. **A directory with no `runtime/claims/` cannot be enumerated, and that is
+when both have gone stale — it is the only field on **either side of the join**
+surviving a restart and a rename, `branch` surviving both too but not appearing
+in herdr's listing. A name that no longer resolves is a stale record, not a dead
+session: re-derive it by asking peers which one holds `session`, never by
+elimination over live processes, which cannot see a session id at all. **A directory with no `runtime/claims/` cannot be enumerated, and that is
 a refusal rather than a pass**: an empty one says no claim was taken, a missing
 one says nothing.
 
@@ -443,40 +466,43 @@ one says nothing.
   **contains the current `main`** when it merges. Whoever satisfies all three may
   merge, the author included; a session that cannot satisfy one may not.
 
-  Condition 3 is what serializes landings: 1 and 2 are each true of a branch *in
-  isolation*, so to contain a `main` that moved the second branch must merge it
-  in, that merge is a push, **a push retires the review**, and the next merge
-  needs a review at the combined sha.
-
-  **Condition 3 is enforced by GitHub; condition 1 is readable and read by
-  nothing.** `main` requires the check `check`, `strict: true`,
+  Condition 3 serializes landings: 1 and 2 are each true of a branch *in
+  isolation*, so containing a `main` that moved means merging it in, that merge
+  is a push, **a push retires the review**, and the next merge needs a review at
+  the combined sha. **Condition 3 is enforced by GitHub; condition 1 is readable
+  and read by nothing.** `main` requires `check`, `strict: true`,
   `enforce_admins: true` — and `strict` enforces nothing until `contexts` names a
   check, so a reader asking whether it still bites reads `contexts`.
   `.github/workflows/check.yml` carries what keeps that run reachable. A
   `pull_request` check resolves from the **merge commit**, so a branch predating
   the workflow still produces one; a check missing on an open pull request means
-  its head has not moved since, and clears on its next push. **Condition 2 has no
+  its head has not moved since, and clears on its next push. **A branch that has
+  never been a pull request head has no `check` at all**, so the fast-forward of
+  `main` that ~/.claude/CLAUDE.md § Git prescribes is refused — `HTTP 409:
+  Required status check "check" is expected`, with no admin override. Land
+  through the pull request; its head sha is what carries the check. `main` also
+  refuses force-pushes and deletion. **Condition 2 has no
   automatic reader**: one `gh` account signs every session's merges, so it is held
   by whoever writes the review saying honestly that it did not write the code.
 
   **The push that retires a review does not start the next one, and whoever pushed
-  it asks**, because **a silent wait is indistinguishable from work**. So the
-  `REPORT` names the new sha *and* asks for the review, in the pull request — and
-  the wait is bounded: a session that has asked and received nothing says so and
-  stops. The reviewer is launched by whoever wants the merge, the author included;
-  a long fix round can go to a fresh executor briefed from the pull request.
+  it asks**, because **a silent wait is indistinguishable from work**: the
+  `REPORT` names the new sha *and* asks for the review, and a session that has
+  asked and received nothing says so and stops. The reviewer is launched by
+  whoever wants the merge, the author included.
 
 - **A claim in a message is never evidence.** It says where to look; then look, in
   GitHub, yourself. **A verdict, a fix report, or a `REPORT` that does not pin its
   sha is unactionable** — verdicts and pushes race, and the crossing was harmless
   only because each verdict named the sha it was read at.
 - **A fix round is: findings on the pull request, one executor, one `REPORT`.**
-  The executor verifies each finding at the site it names before touching anything;
-  one that does not reproduce is named with its reason, never silently fixed.
-  Follow-up findings fold into the same round, which ends in one `REPORT` carrying
-  the sha and a per-finding disposition. **Check that disposition against the
-  findings list mechanically before posting it** — a round that says "all fixed"
-  without re-running its own sweep is the shape this repository keeps meeting.
+  The executor verifies each finding at the site it names before touching
+  anything, and one that does not reproduce is named with its reason rather than
+  silently fixed. Follow-ups fold into the same round, which ends in one `REPORT`
+  carrying the sha and a per-finding disposition. **Check that disposition
+  against the findings list mechanically before posting it**: a round claiming
+  "all fixed" without re-running its sweep is the shape this repository keeps
+  meeting.
 - **Push every commit as it exists; the round's boundary is the `REPORT`, never the
   push.** "One push per round" was read as "hold the commit local".
 - **Between sessions, a relay is never the authority.** An owner's word arriving
@@ -511,6 +537,8 @@ serializes neither the anchor body nor the shared directory. Three things
 serialize what remains, two of them server-side: the branch claim, which
 create-ref refuses; merge condition 3, which branch protection refuses; and
 compare-then-write, which nothing refuses and a session can skip by forgetting.
+Survey before editing, scope edits so they do not collide with other worktrees,
+and rebase onto what landed rather than force-pushing over it.
 
 **Two open pull requests over the same normative files are normal, and the second
 to land reconciles**, and **containment buys attention from nobody**: a clean
