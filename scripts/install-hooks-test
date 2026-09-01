@@ -19,8 +19,31 @@ import tempfile
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
-NEEDED = ["install-hooks", "check-rule-readers", "check-tree-shape",
-          "push-campaign-branch"]
+
+
+def _needed():
+    """The scripts a fixture repository must hold, read from the installer.
+
+    Derived, never listed. The hook install-hooks writes REFUSES every commit
+    when a guard on its `# runs:` line is missing, so a hand-kept list here goes
+    stale the moment a guard is added -- and it fails as an unrelated crash far
+    downstream (nothing commits, so nothing is pushed, so a later ls-remote
+    reads empty) rather than as a case named for the list.
+
+    Both `# runs:` lines in the installer are read: the pre-commit one inside
+    its heredoc and the post-commit one, which is where push-campaign-branch
+    comes from.
+    """
+    out = ["install-hooks"]
+    for line in (SCRIPTS / "install-hooks").read_text().splitlines():
+        if line.startswith("# runs: "):
+            for n in line[len("# runs: "):].split():
+                if n not in out:
+                    out.append(n)
+    return out
+
+
+NEEDED = _needed()
 IGNORE = "/*\n!/.gitignore\n!/scripts/\n!/spec/\n!/docs/\n"
 
 
@@ -128,8 +151,14 @@ def main():
         r = Repo(d)
         installer(r.root)
         h = r.hook("pre-commit")
-        h.write_text(h.read_text().replace(
-            "# runs: check-rule-readers check-tree-shape", "# runs:   "))
+        # Rewrite the line by its PREFIX, never by a copy of its contents. The
+        # guard list is install-hooks' to change, and a literal of it here is a
+        # second reader: adding a guard made this replace silently match
+        # nothing, so the hook kept a working declaration and the case passed
+        # its own name while testing the opposite branch.
+        h.write_text("\n".join(
+            "# runs:   " if l.startswith("# runs: ") else l
+            for l in h.read_text().splitlines()) + "\n")
         before = r.head()
         r.violate()
         c = r.commit()
