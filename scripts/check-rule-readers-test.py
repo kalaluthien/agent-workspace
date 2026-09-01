@@ -269,7 +269,19 @@ def announce_case():
         run_git("add", "kept.md", "gone.md")
         (Path(d) / "gone.md").unlink()          # tracked, no content on disk
         out = subprocess.run([str(GUARD)], cwd=d, capture_output=True, text=True)
-        return out.returncode, out.stdout
+
+        # A file with content the run cannot read is the other answer: it may
+        # hold the very copy this guard looks for, so it must refuse rather
+        # than join either the examined files or the empty ones.
+        bad = Path(d) / "locked.md"
+        bad.write_text("# t\n\nstill prose\n")
+        run_git("add", "locked.md")
+        bad.chmod(0o000)
+        blocked = subprocess.run([str(GUARD)], cwd=d,
+                                 capture_output=True, text=True)
+        bad.chmod(0o644)
+        return (out.returncode, out.stdout,
+                blocked.returncode, blocked.stdout, blocked.stderr)
 
 
 def run(body):
@@ -300,7 +312,7 @@ def main():
         if not ok:
             failures += 1
             print("".join(f"        {l}\n" for l in out.splitlines()))
-    code, out = announce_case()
+    code, out, blocked_code, blocked_out, blocked_err = announce_case()
     checks = [
         ("a clean run says how many files it examined",
          "check-rule-readers: 1 markdown file(s)" in out),
@@ -309,6 +321,13 @@ def main():
         ("a tracked path with no content is named as unread",
          "unread: gone.md" in out),
         ("a clean run still exits 0", code == 0),
+        ("a file that could not be read is named as unreadable",
+         "unreadable: locked.md" in blocked_out),
+        ("a file that could not be read still gets the announcement",
+         "check-rule-readers: 1 markdown file(s)" in blocked_out),
+        ("a file that could not be read refuses on its own", blocked_code == 1),
+        ("a file that could not be read is diagnosed, not raised",
+         "Traceback" not in blocked_err),
     ]
     for label, ok in checks:
         print(f"{'ok  ' if ok else 'FAIL'}  {label}")
@@ -332,9 +351,9 @@ def main():
         failures += 1
 
     if failures:
-        print(f"\n{failures} of {len(CASES) + 6} cases failed.", file=sys.stderr)
+        print(f"\n{failures} of {len(CASES) + 10} cases failed.", file=sys.stderr)
         return 1
-    print(f"\nall {len(CASES) + 6} cases pass.")
+    print(f"\nall {len(CASES) + 10} cases pass.")
     return 0
 
 

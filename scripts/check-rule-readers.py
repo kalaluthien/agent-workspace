@@ -55,9 +55,15 @@ empty file list gives.
 script to call, the token to exempt, and the source line.
 
 A path that is tracked but has no content to judge -- being deleted, or unmerged
-in the index -- is *counted apart and named*, never folded into the files that
-were examined. The count printed is what was read, not what was globbed, so a
-run whose whole file list went unread cannot read as a clean one.
+in the index -- is *counted apart and named*. It is never a violation site, since
+nothing holding no content can hold a copied rule. The count printed is what was
+read, not what was globbed.
+
+A path whose content the run *could not read* -- permission denied, a directory
+in its place -- is a different answer and gets its own line and its own refusal.
+It may hold exactly the rule this guard looks for, so folding it into either the
+examined files or the harmless empty ones is the silent downgrade this guard
+exists to stop. Exit is 1 whenever any file was unreadable, found or not.
 
 Usage: scripts/check-rule-readers.py [<path> ...]      (default: every tracked file)
 """
@@ -353,9 +359,15 @@ def main(argv):
 
     # Read every file first, so the announcement precedes any finding: a
     # finding above the count reads as the whole of what the run did.
-    texts, unread = [], []
+    texts, unread, broken = [], [], []
     for p in sorted(paths):
-        text = content(root, p, staged and not given)
+        try:
+            text = content(root, p, staged and not given)
+        except OSError as exc:
+            # Distinct from `unread`: this path has content and the run failed
+            # to see it, so it cannot be reported as holding nothing.
+            broken.append((p, exc.strerror or exc))
+            continue
         if text is None:
             # Tracked, but nothing to judge: staged for deletion, or unmerged.
             # Not a violation, and not an examined file either.
@@ -367,6 +379,8 @@ def main(argv):
           f"read from {where}")
     for p in unread:
         print(f"  unread: {p} (no content in {where})")
+    for p, why in broken:
+        print(f"  unreadable: {p} ({why})")
 
     found = 0
     for p, text in texts:
@@ -388,6 +402,14 @@ def main(argv):
             f"`<!-- unguarded: <owner> -- <why> -->` line above it.",
             file=sys.stderr,
         )
+    if broken:
+        print(
+            f"\ncheck-rule-readers: {len(broken)} file(s) could not be read, so "
+            f"this run cannot say they hold no hand-rolled reading. Fix the read "
+            f"-- see `unreadable` above -- and re-run.",
+            file=sys.stderr,
+        )
+    if found or broken:
         return 1
     return 0
 
