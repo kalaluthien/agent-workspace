@@ -46,10 +46,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
-      - name: Rule readers have a second reader
+      - name: Every guard that refuses a commit also refuses here
         run: |
           scripts/check-rule-readers
           scripts/check-tree-shape
+          scripts/check-cross-references
 
       # Every suite, found rather than listed: a hand-kept list is one more copy
       # to forget, and the five suites #111 added were run by nobody here until
