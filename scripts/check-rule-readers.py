@@ -46,11 +46,32 @@ and it is spent on the *next* block whichever shape that block has.
 
 EXIT
 
-0 with nothing printed when clean. 1 with one line per finding: the file, the
-line, the script to call, the token to exempt, and the source line. The status
-is about the verdict,
-not about the reading -- an unreadable file is a crash, deliberately, because a
-guard that skips what it cannot read reports nothing and reads as a pass.
+Every run opens by saying how many files it read, from where, and whether it read
+the working tree or the index -- because a clean tree and a tree nobody looked at
+print the same nothing otherwise, and the second is what a wrong checkout or an
+empty file list gives.
+
+0 when nothing was found. 1 with one line per finding: the file, the line, the
+script to call, the token to exempt, and the source line.
+
+A path that is tracked but has no content to judge -- being deleted, or unmerged
+in the index -- is *counted apart and named*. It is never a violation site, since
+nothing holding no content can hold a copied rule. The count printed is what was
+read, not what was globbed.
+
+A path whose content the run *could not read* -- permission denied, a directory
+in its place -- is a different answer and gets its own line and its own refusal.
+It may hold exactly the rule this guard looks for, so folding it into either the
+examined files or the harmless empty ones is the silent downgrade this guard
+exists to stop. Exit is 1 whenever any file was unreadable, found or not.
+
+That is a working-tree read, and it is the ad-hoc run it protects. Under
+`--staged` -- the installed invocation -- content comes from the index by
+`git show :<path>`, which never touches disk, so a permission bit or a directory
+swapped in cannot make the read fail: the index copy is read and scanned like
+any other. Nothing goes unexamined there; `broken` simply cannot arise. Said
+here because a reader meeting the paragraph above would otherwise take the hook
+to be the thing it guards.
 
 Usage: scripts/check-rule-readers.py [<path> ...]      (default: every tracked file)
 """
@@ -341,11 +362,36 @@ def main(argv):
         p for p in paths
         if p.endswith((".md", ".markdown")) and not p.startswith("scripts/")
     ]
-    found = 0
+    # Said before any verdict and on every run, as the sibling guards do.
+    where = "the index" if (staged and not given) else "the working tree"
+
+    # Read every file first, so the announcement precedes any finding: a
+    # finding above the count reads as the whole of what the run did.
+    texts, unread, broken = [], [], []
     for p in sorted(paths):
-        text = content(root, p, staged and not given)
-        if text is None:
+        try:
+            text = content(root, p, staged and not given)
+        except OSError as exc:
+            # Distinct from `unread`: this path has content and the run failed
+            # to see it, so it cannot be reported as holding nothing.
+            broken.append((p, exc.strerror or exc))
             continue
+        if text is None:
+            # Tracked, but nothing to judge: staged for deletion, or unmerged.
+            # Not a violation, and not an examined file either.
+            unread.append(p)
+        else:
+            texts.append((p, text))
+
+    print(f"check-rule-readers: {len(texts)} markdown file(s) under {root}, "
+          f"read from {where}")
+    for p in unread:
+        print(f"  unread: {p} (no content in {where})")
+    for p, why in broken:
+        print(f"  unreadable: {p} ({why})")
+
+    found = 0
+    for p, text in texts:
         for n, token, path, what, src in findings(text):
             found += 1
             if what == "an exemption naming no script":
@@ -364,6 +410,14 @@ def main(argv):
             f"`<!-- unguarded: <owner> -- <why> -->` line above it.",
             file=sys.stderr,
         )
+    if broken:
+        print(
+            f"\ncheck-rule-readers: {len(broken)} file(s) could not be read, so "
+            f"this run cannot say they hold no hand-rolled reading. Fix the read "
+            f"-- see `unreadable` above -- and re-run.",
+            file=sys.stderr,
+        )
+    if found or broken:
         return 1
     return 0
 

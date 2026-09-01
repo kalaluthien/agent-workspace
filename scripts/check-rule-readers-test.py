@@ -248,7 +248,40 @@ def staged_case():
         out = subprocess.run([str(GUARD), "--staged"], cwd=d,
                              capture_output=True, text=True)
         clean = subprocess.run([str(GUARD)], cwd=d, capture_output=True, text=True)
-        return out.returncode, clean.returncode
+        return out.returncode, clean.returncode, out.stdout
+
+
+def announce_case():
+    """A clean run must not print the same nothing as a run that read nothing.
+
+    Two readings, because the count alone cannot tell them apart: the guard says
+    how many files it examined, and it names separately every tracked path it
+    could not read. A file staged for deletion is tracked, is globbed, and has
+    no content in the working tree -- so it must appear as unread and must not
+    be counted among the files examined.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        run_git = lambda *a: subprocess.run(
+            ["git", "-C", d, *a], capture_output=True, text=True, check=True)
+        run_git("init", "-q")
+        (Path(d) / "kept.md").write_text("# t\n\nnothing to see\n")
+        (Path(d) / "gone.md").write_text("# t\n\nnor here\n")
+        run_git("add", "kept.md", "gone.md")
+        (Path(d) / "gone.md").unlink()          # tracked, no content on disk
+        out = subprocess.run([str(GUARD)], cwd=d, capture_output=True, text=True)
+
+        # A file with content the run cannot read is the other answer: it may
+        # hold the very copy this guard looks for, so it must refuse rather
+        # than join either the examined files or the empty ones.
+        bad = Path(d) / "locked.md"
+        bad.write_text("# t\n\nstill prose\n")
+        run_git("add", "locked.md")
+        bad.chmod(0o000)
+        blocked = subprocess.run([str(GUARD)], cwd=d,
+                                 capture_output=True, text=True)
+        bad.chmod(0o644)
+        return (out.returncode, out.stdout,
+                blocked.returncode, blocked.stdout, blocked.stderr)
 
 
 def run(body):
@@ -279,7 +312,38 @@ def main():
         if not ok:
             failures += 1
             print("".join(f"        {l}\n" for l in out.splitlines()))
-    staged, worktree = staged_case()
+    code, out, blocked_code, blocked_out, blocked_err = announce_case()
+    checks = [
+        ("a clean run says how many files it examined",
+         "check-rule-readers: 1 markdown file(s)" in out),
+        ("a clean run says which of the two sources it read",
+         "read from the working tree" in out),
+        ("a tracked path with no content is named as unread",
+         "unread: gone.md" in out),
+        ("a clean run still exits 0", code == 0),
+        ("a file that could not be read is named as unreadable",
+         "unreadable: locked.md" in blocked_out),
+        ("a file that could not be read still gets the announcement",
+         "check-rule-readers: 1 markdown file(s)" in blocked_out),
+        ("a file that could not be read refuses on its own", blocked_code == 1),
+        ("a file that could not be read is diagnosed, not raised",
+         "Traceback" not in blocked_err),
+    ]
+    for label, ok in checks:
+        print(f"{'ok  ' if ok else 'FAIL'}  {label}")
+        if not ok:
+            failures += 1
+            print("".join(f"        {l}\n" for l in out.splitlines()))
+
+    staged, worktree, staged_out = staged_case()
+    # The announcement names its source, and only a --staged run can pin the
+    # other half of that sentence: hardcoding "the working tree" passes every
+    # working-tree case there is.
+    said = "read from the index" in staged_out
+    print(f"{'ok  ' if said else 'FAIL'}  a --staged run says it read the index")
+    if not said:
+        failures += 1
+        print("".join(f"        {l}\n" for l in staged_out.splitlines()))
     ok = staged == 1 and worktree == 0
     print(f"{'ok  ' if ok else 'FAIL'}  a staged violation reverted on disk "
           f"(--staged exit {staged}, wanted 1; working-tree exit {worktree}, wanted 0)")
@@ -287,9 +351,9 @@ def main():
         failures += 1
 
     if failures:
-        print(f"\n{failures} of {len(CASES) + 1} cases failed.", file=sys.stderr)
+        print(f"\n{failures} of {len(CASES) + 10} cases failed.", file=sys.stderr)
         return 1
-    print(f"\nall {len(CASES) + 1} cases pass.")
+    print(f"\nall {len(CASES) + 10} cases pass.")
     return 0
 
 
