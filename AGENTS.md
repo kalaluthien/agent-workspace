@@ -210,6 +210,11 @@ for the container it is the mode of last resort. All modes share the mechanics â
 the branch is claimed by `campaign-claim take` after the issue exists, because the
 number is minted there; the `post-commit` hook pushes; it lands by a pull request.
 
+**Open that pull request on the first commit, not when the work is ready.** The
+hook has already pushed the branch, so a late pull request only keeps published
+work out of sight. An open one is where a review writes its findings, and it is
+what survives the session that opened it.
+
 ## The anchor body
 
 **The anchor body is a charter, not a status board.** Intent, Scope and
