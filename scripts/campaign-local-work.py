@@ -208,7 +208,7 @@ def read_branches(repo, name, rep, base, refspec="refs/heads/"):
         if local and local == remote:
             note, counted = "pushed", False
         elif base:
-            note, counted = landed(repo, br, base)
+            note, counted = landed(repo, br, base, name, rep)
         else:
             note, counted = "no base to compare against", True
         # An uncounted row is not work to move: saying "clears by push" over a
@@ -219,7 +219,7 @@ def read_branches(repo, name, rep, base, refspec="refs/heads/"):
             rep.add(name, kind, br, check, clears, note=note, counted=counted)
 
 
-def landed(repo, br, base):
+def landed(repo, br, base, name, rep):
     """Content, not ancestry -- the squash discriminator, scoped to the branch's own paths.
 
     Two-dot `diff <base>..<branch>` alone answers "no" for every branch cut
@@ -227,14 +227,23 @@ def landed(repo, br, base):
     the comparison is restricted to the paths the branch itself touched, and
     what is left over is reported with its file count and how far behind the
     branch is -- a count the reader judges, not a verdict the script invents.
+
+    With no merge base -- an orphan branch, a checkout whose base ref is gone --
+    there is nothing to scope the comparison to, and the count that came out was
+    `0 files differ`: the campaign's own defect, a measurement never taken
+    printed as a clean result. That goes to `unread`, which denies `clear`.
     """
     mb = git(repo, "merge-base", base, br, check=False)
-    paths = git(repo, "diff", "--name-only", mb, br, check=False).splitlines() if mb else []
-    if mb and not paths:
+    if not mb:
+        rep.unread(f"REPORT: {name}: {br} and {base} share no merge base, so "
+                   f"nothing of {br}'s content could be compared -- read it by hand")
+        return f"could not be compared against {base}: no merge base", True
+    paths = git(repo, "diff", "--name-only", mb, br, check=False).splitlines()
+    if not paths:
         return f"landed: nothing of its own beyond {base}", False
     files = git(repo, "diff", "--name-only", f"{base}..{br}", "--", *paths,
-                check=False).splitlines() if paths else []
-    if paths and not files:
+                check=False).splitlines()
+    if not files:
         return f"landed: its own paths carry nothing beyond {base}", False
     behind = git(repo, "rev-list", "--count", f"{br}..{base}", check=False)
     note = f"{len(files)} of its own file(s) differ from {base}"

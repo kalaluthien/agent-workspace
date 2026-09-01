@@ -284,30 +284,66 @@ def cmd_index(args):
 
 
 def gh_json(*args):
-    out = subprocess.run(["gh", *args], capture_output=True, text=True)
+    """(parsed, why_unreadable). Never raises on a reading it could not make.
+
+    This is the shape the whole file uses, and settlement is why: one subtask
+    whose repository went private would otherwise abort the table before the
+    reader saw any verdict at all, and a close reads that table."""
+    try:
+        out = subprocess.run(["gh", *args], capture_output=True, text=True)
+    except OSError as exc:
+        return None, f"cannot run gh: {exc}"
     if out.returncode != 0:
-        raise SystemExit(f"gh {' '.join(args)} failed:\n{out.stderr.strip()}")
-    return json.loads(out.stdout) if out.stdout.strip() else None
+        return None, (f"gh {' '.join(args)} exited {out.returncode}: "
+                      f"{out.stderr.strip().splitlines()[0][:100] if out.stderr.strip() else 'no message'}")
+    if not out.stdout.strip():
+        return None, f"gh {' '.join(args)} printed nothing"
+    try:
+        return json.loads(out.stdout), None
+    except ValueError as exc:
+        return None, (f"gh {' '.join(args)} returned something that is not JSON "
+                      f"({exc.__class__.__name__})")
 
 
 def verdict(repo, number):
-    """(verdict, note, title) for one subtask issue."""
-    info = gh_json("issue", "view", str(number), "-R", repo,
-                   "--json", "state,stateReason,closedByPullRequestsReferences,title")
+    """(verdict, note, title) for one subtask issue.
+
+    Four verdicts, not three. `unread` is a subtask whose issue, or whose
+    closing pull request, this account cannot see -- a repository since made
+    private, transferred, or deleted. It is neither settled nor open: an
+    absence is not a pass and it is not a failure, and settlement counts it in
+    a column of its own so a close is refused over it with the reason said.
+    Before it existed, the failed read raised out of the table and the reader
+    got a message about `gh` where it had asked for a settlement."""
+    info, why = gh_json("issue", "view", str(number), "-R", repo,
+                        "--json", "state,stateReason,closedByPullRequestsReferences,title")
+    if why:
+        return "unread", f"the issue could not be read -- {why}", ""
     if info["state"] == "OPEN":
         return "open", "", info["title"]
+    title = info["title"]
     for ref in info["closedByPullRequestsReferences"]:
-        pr_repo = f"{ref['repository']['owner']['login']}/{ref['repository']['name']}"
-        pr = gh_json("pr", "view", str(ref["number"]), "-R", pr_repo, "--json", "state")
+        home = ref.get("repository") or {}
+        owner = (home.get("owner") or {}).get("login")
+        if not owner or not home.get("name"):
+            # A pull request the API declined to place: deleted, or moved
+            # somewhere this account cannot follow it to.
+            return ("unread", f"the pull request at {ref.get('url') or '?'} is in "
+                    "a repository the API did not name", title)
+        pr, why = gh_json("pr", "view", str(ref["number"]), "-R",
+                          f"{owner}/{home['name']}", "--json", "state")
+        if why:
+            return ("unread", f"the closing pull request could not be read -- {why}",
+                    title)
         if pr["state"] == "MERGED":
-            return "complete", ref["url"], info["title"]
+            return "complete", ref["url"], title
     # The note says which kind of closed, because "dropped" alone reads as
     # abandoned and a completed subtask with nothing to merge lands here too.
     note = {"NOT_PLANNED": "not planned",
             "COMPLETED": "completed, no merged pull request",
             "DUPLICATE": "duplicate"}.get(info["stateReason"] or "",
                                           "closed, no reason recorded")
-    return "dropped", note, info["title"]
+    return "dropped", note, title
 
 
 def anchor_reports(head):
@@ -326,8 +362,12 @@ def anchor_reports(head):
 
 
 def cmd_settlement(args):
-    head = gh_json("issue", "view", args.anchor, "-R", args.repo,
-                   "--json", "state,title,labels,parent")
+    head, why = gh_json("issue", "view", args.anchor, "-R", args.repo,
+                        "--json", "state,title,labels,parent")
+    if why:
+        sys.exit(f"campaign-tracker settlement: could not read the anchor "
+                 f"{args.repo}#{args.anchor} -- {why}\n  No verdict was reached "
+                 f"for any subtask.")
     subs, why = fetch_index(args.repo, args.anchor)
     if why:
         sys.exit(f"campaign-tracker settlement: could not read the sub-issue "
@@ -340,11 +380,12 @@ def cmd_settlement(args):
         print("  (no sub-issues: the index is empty)")
         return 0
 
-    rows_out, settled, nested = [], 0, []
+    rows_out, settled, unread, nested = [], 0, 0, []
     for s in subs:
         repo = "/".join(s["repository_url"].split("/")[-2:])
         v, note, title = verdict(repo, s["number"])
-        settled += v != "open"
+        settled += v in ("complete", "dropped")
+        unread += v == "unread"
         rows_out.append((f"{repo}#{s['number']}", v, title[:44], note))
         # sub_issues is not recursive (probed), so a subtask that is itself an
         # anchor hides its own members from this table.
@@ -359,9 +400,19 @@ def cmd_settlement(args):
         print(f"  -- REPORT: {ref} has {total} sub-issue(s) of its own, not listed"
               " above; run this on it too")
 
-    closable = settled == len(rows_out)
-    print(f"  -- {settled}/{len(rows_out)} settled; "
-          + ("closable" if closable else "NOT closable: open subtasks remain"))
+    # Two ways not to be closable, named apart because they want different
+    # repairs: an open subtask is work to finish, an unread one is a reading to
+    # get back -- an account to re-authorise, a repository to ask for.
+    blockers = []
+    if any(v == "open" for _, v, _, _ in rows_out):
+        blockers.append("open subtasks remain")
+    if unread:
+        blockers.append(f"{unread} subtask(s) could not be read, which settles "
+                        "nothing either way")
+    closable = not blockers
+    print(f"  -- {settled}/{len(rows_out)} settled"
+          + (f", {unread} unread" if unread else "") + "; "
+          + ("closable" if closable else "NOT closable: " + "; ".join(blockers)))
     if head["state"] == "CLOSED" and not closable:
         print("  -- REPORT: the anchor is closed with subtasks still open")
     return 0

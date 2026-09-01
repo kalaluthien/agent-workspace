@@ -75,6 +75,26 @@ FORM_CASES = [
     ("subtasks: the index read", fence("gh api --paginate repos/o/r/issues/1/sub_issues"), 1),
     ("subtasks: the endpoint named in prose is a mention",
      "# t\n\nRead it back from `sub_issues`.\n", 0),
+    # The binding reading: the anchor's comments filtered for BOUND, and the
+    # machine comparison. One case per alternation, and then the two shapes
+    # that are the *write* of a binding rather than a reading of one -- both
+    # already in this tree, both of which a bare `hostname` form would refuse.
+    ("bound: the comments endpoint the reading walks",
+     fence("gh api --paginate --slurp repos/o/r/issues/1/comments"), 1),
+    ("bound: the comment bodies filtered for the marker",
+     fence("gh issue view 1 -R o/r --json comments -q '.comments[].body' | grep '^BOUND'"), 1),
+    ("bound: a jq that names the marker",
+     fence("""jq -r '.[] | select(.body | startswith("BOUND"))' comments.json"""), 1),
+    ("bound: the machine comparison in shell",
+     fence('[ "$M" = "$(hostname -s)" ] && echo here'), 1),
+    ("bound: ...and the same comparison written the other way round",
+     fence('[ "$(hostname -s)" = "$M" ] && echo here'), 1),
+    ("bound: the machine comparison in Python",
+     fence("here = machine == socket.gethostname()", lang="python"), 1),
+    ("bound: posting a binding is a write, not a reading",
+     fence('gh issue comment 1 -R o/r --body "BOUND $(hostname -s)"'), 0),
+    ("bound: naming this host in a comment body is a write too",
+     fence("HOST=$(hostname -s)"), 0),
     ("repos: a shell parse of the list", fence("grep '^- ' README.md | grep owner/repo"), 1),
     ("repos: the heading named in an error message", fence('echo "REFUSE: the ## Repos list did not read"'), 0),
     ("repos: a parse naming no tool is outside the claim",

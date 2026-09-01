@@ -18,6 +18,10 @@ from pathlib import Path
 
 PRIM = Path(__file__).resolve().parent / "campaign-primitives.py"
 
+# Spelled with chr() so this file's own text holds no triple quote of its
+# own: check-tree-shape reads one as a docstring opening.
+SQ = chr(39) * 3
+
 DECLARING = "#!/bin/sh\n# runs: check-rule-readers.py check-tree-shape.py\nfor g in $(sed ...); do :; done\n"
 # The same hook after an ordinary refactor of its loop. Both readers use the
 # declaration, so the loop's shape does not matter.
@@ -96,10 +100,36 @@ def main():
         check("a docstring is too",
               m.summary(wrote('#!/usr/bin/env python3\n"""what it does."""\n'))
               == "what it does.")
-        check("a script with no summary at all reports none, not a line of code",
-              m.summary(wrote("#!/bin/sh\nset -e\necho hi\n")) is None)
+        check("a single-quoted docstring is a docstring too",
+              m.summary(wrote("#!/usr/bin/env python3\n" + SQ + "what it does."
+                              + SQ + "\n")) == "what it does.")
+        # The two halves of the same defect. Without an opener for it, a
+        # single-quoted docstring did not report "no summary": the scan walked
+        # past it and announced the next `#` line in the file, which is a wrong
+        # answer wearing the shape of a right one.
+        check("...and a stray comment below one is not mistaken for it",
+              m.summary(wrote("#!/usr/bin/env python3\n" + SQ + "what it does."
+                              + SQ + "\nimport sys\n# not the summary\n"))
+              == "what it does.")
+        check("a first line that opens no comment is named, not read past",
+              m.summary(wrote("#!/bin/sh\nset -e\n# not the summary\necho hi\n"))
+              == "<unrecognised comment opener: 'set -e'>")
+        check("a file holding only a shebang has nothing to read",
+              m.summary(wrote("#!/bin/sh\n")) is None)
         check("a file that cannot be read says so rather than returning none",
               str(m.summary(Path(d) / "absent")).startswith("<unreadable"))
+        # End to end: what summary() names must reach the reader, and the
+        # section that admits a script it could not classify is the one place
+        # it can. A summary silently invented from a later line lands the
+        # script in the reader list instead, where nothing says it was guessed.
+        (Path(d) / "opaque").write_text("#!/bin/sh\nset -e\n# not the summary\n")
+        (Path(d) / "opaque").chmod(0o755)
+        r = subprocess.run([sys.executable, str(PRIM), "--scripts-dir", d],
+                           capture_output=True, text=True)
+        check("a script it could not classify is listed as such, and the run "
+              "still exits 0",
+              r.returncode == 0 and "could not be classified" in r.stdout
+              and "unrecognised comment opener" in r.stdout)
 
     # This is the SessionStart hook's command, so it must deliver the listing
     # whatever it found: a non-zero exit there drops stdout entirely, which

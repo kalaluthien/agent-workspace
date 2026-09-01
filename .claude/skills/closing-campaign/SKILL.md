@@ -171,11 +171,15 @@ until GitHub shows them.
 cat /tmp/settlement-after-$N
 grep -q '; closable$' /tmp/settlement-after-$N ||
   grep -q 'the index is empty' /tmp/settlement-after-$N ||
-  echo "REFUSE: open subtasks remain after the dispositions were carried out"
+  echo "REFUSE: not closable -- read the NOT closable line for which cause"
 ```
 
-`; closable$`, not `closable` — the failing line ends `NOT closable: open subtasks
-remain`. The empty-index line is the other accepted reading. A `-- REPORT:` line
+`; closable$`, not `closable` — the failing line ends `NOT closable:` and then
+names its cause. Two are possible and they want different repairs: `open
+subtasks remain` is work to finish, while `N subtask(s) could not be read` is a
+reading to get back, an `unread` row whose issue or whose closing pull request
+this account cannot see. Neither settles anything. The empty-index line is the
+other accepted reading. A `-- REPORT:` line
 about nested sub-issues isn't covered here: a subtask that is itself an anchor
 hides its own members, so run the script on it too.
 

@@ -77,12 +77,15 @@ def sub(n, repo="kalaluthien/agent-workspace", nested=0):
             "repository_url": f"https://api.github.com/repos/{repo}"}
 
 
-def issue(state, reason=None, prs=(), title="a subtask"):
+def issue(state, reason=None, prs=(), title="a subtask", homeless=False):
+    """`homeless` is the shape GitHub returns for a pull request it will not
+    place -- its repository deleted, or moved out of this account's reach."""
     return {"state": state, "stateReason": reason, "title": title,
             "closedByPullRequestsReferences": [
                 {"number": n, "url": f"https://x/{n}",
-                 "repository": {"owner": {"login": "kalaluthien"},
-                                "name": "agent-workspace"}} for n in prs]}
+                 "repository": None if homeless else
+                 {"owner": {"login": "kalaluthien"},
+                  "name": "agent-workspace"}} for n in prs]}
 
 
 def settlement(fixture, tmp):
@@ -335,6 +338,32 @@ def main():
             "pr:kalaluthien/agent-workspace#91": {"state": "CLOSED"}}), tmp)
         check("a closing pull request that never merged is dropped, not complete",
               code == 0 and "dropped" in out and "2/2 settled" in out)
+
+        # A reading that could not be made is its own verdict. Every one of
+        # these aborted the table before the fourth column existed: the reader
+        # asked for a settlement and got a message about `gh`, or a traceback.
+        for what, fixture in (
+                ("its closing pull request is in a repository gone private",
+                 {"pr:kalaluthien/agent-workspace#91": {"exit": 1, "stderr": "HTTP 404"}}),
+                ("its own issue cannot be read",
+                 {"issue:kalaluthien/agent-workspace#11": {"exit": 1, "stderr": "HTTP 404"}}),
+                ("the API places its pull request in no repository",
+                 {"issue:kalaluthien/agent-workspace#11":
+                  issue("CLOSED", "COMPLETED", prs=[91], homeless=True)})):
+            code, out, err = settlement(dict(base, **fixture), tmp)
+            check(f"a subtask reads unread when {what}",
+                  code == 0 and " unread " in out and "Traceback" not in err)
+            check(f"...and the count separates it from settled -- {what}",
+                  "1/2 settled, 1 unread; NOT closable" in out)
+            check(f"...and the refusal names the reading, not open work -- {what}",
+                  "could not be read" in out and "open subtasks remain" not in out)
+
+        # The other end of the same rule: the anchor read is one call too, and
+        # its failure must not come back as a table with nothing in it.
+        code, out, err = settlement(dict(base, head={"exit": 1, "stderr": "HTTP 404"}), tmp)
+        check("an anchor that did not read refuses, saying no verdict was reached",
+              code != 0 and "could not read the anchor" in err
+              and "No verdict was reached" in err and "Traceback" not in err)
 
         code, out, err = settlement(dict(base, head=head(labels=())), tmp)
         check("a number with no campaign label is reported as maybe a subtask",

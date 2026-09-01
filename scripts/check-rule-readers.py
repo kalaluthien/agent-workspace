@@ -112,6 +112,26 @@ FORMS = [
         "the open-anchor survey",
     ),
     (
+        "campaign-bound",
+        "campaign-tracker.py",
+        # The binding reading: the anchor's comments filtered for `BOUND`, and
+        # the last one's machine compared against this one's.
+        #
+        # `hostname` alone is not the form, and deliberately. Two blocks in this
+        # tree *write* a binding -- `--body "BOUND $(hostname -s)"` posts one,
+        # and the close comment names the host it is closing from -- so a bare
+        # `hostname` cannot separate writing a binding from reading one. What
+        # only the reading does is filter comments for `BOUND`, or compare a
+        # host name against something; hence the spaced `=` and `==`, which a
+        # `HOST=$(hostname -s)` assignment does not carry.
+        re.compile(r"\bgh\b[^|;&]*\bapi\b[^|;&]*/comments\b"
+                   r"|(\bgrep\b|\bsed\b|\bawk\b|\bjq\b|--jq|startswith)"
+                   r"[^|;&]*\bBOUND\b"
+                   r"|(==|\s=\s)[^|;&]*\bhostname\b|\bhostname\b[^|;&]*(==|\s=\s)"
+                   r"|\bgethostname\b|\bplatform\.node\b"),
+        "the binding reading",
+    ),
+    (
         "campaign-subtasks",
         "campaign-tracker.py",
         # The sub-issue index read, in either pagination form.

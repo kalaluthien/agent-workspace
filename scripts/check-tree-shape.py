@@ -36,6 +36,22 @@ different word passes. R1 does not read a file's contents, so HTML named .md is
 caught and markdown named .html is not. Both are floors -- they stop the commit
 somebody makes without noticing, which is how every one of these got broken.
 
+EXEMPTING A BLOCK FROM R3
+
+Code that must spell a retired name anyway -- this guard's own suite, whose
+fixtures have to -- carries a marker in whatever comment its language has:
+
+    unguarded: <owner> -- <why>
+
+`<owner>` is `check-tree-shape` and nothing else. A marker naming a sibling
+guard's token belongs to that guard and silences nothing here, and prose that
+merely spells the word (this paragraph) names no owner and exempts nothing --
+which is the point, since the unowned form let this header exempt this body.
+
+It reaches the code beneath the comment it is the last thing to say, up to the
+next blank line. Prose after it on a later line spends it; the comment's own
+closing delimiter does not.
+
 READING VERSUS VERDICT
 
 A file it cannot read is reported as R0 and refuses the commit. It is never
@@ -46,8 +62,12 @@ nothing" and "I could not look" want different repairs.
 
 EXIT
 
-0 silent when clean. 1 with one line per finding: the rule, the path, and what
-was found. The status is about the verdict; an unreadable tree crashes.
+Every run prints how many paths it read and from where -- the index under
+`--staged`, the working tree otherwise -- because a silent clean run and a run
+that examined nothing read the same, and "examined nothing" is what a wrong
+checkout or an empty file list looks like. 1 adds one line per finding on
+stderr: the rule, the path, and what was found. The status is about the verdict;
+an unreadable tree crashes.
 
 Usage: scripts/check-tree-shape.py [--staged]
 """
@@ -108,8 +128,42 @@ RETIRED = [
 ]
 
 FENCE = re.compile(r"^\s*(```|~~~)")
-EXEMPT = re.compile(r"<!--\s*unguarded:")
-EXEMPT_ANY = re.compile(r"\bunguarded:")
+
+# An exemption names the guard it exempts, the way check-rule-readers' does, and
+# `check-tree-shape` is the only owner this one answers to. Two things turn on
+# that. A marker naming another guard -- `campaign-repos`, one of
+# check-rule-readers' tokens -- is that guard's business and silences nothing
+# here. And a docstring *explaining* the syntax names no owner at all, so this
+# guard's own header no longer exempts this guard's body: the failure that
+# taught it, since an unowned marker had exempted every line under the
+# explanation up to the next blank one.
+OWNER = "check-tree-shape"
+EXEMPT = re.compile(r"<!--\s*unguarded:\s*(?P<owner>[\w-]+)\s*--")
+EXEMPT_ANY = re.compile(r"\bunguarded:\s*(?P<owner>[\w-]+)\s*--")
+
+# A prose line carrying nothing but the comment's own punctuation -- ` */`, a
+# docstring's closing `"""`, `-->`. Such a line says nothing, so it neither
+# grants an exemption nor spends one; every other prose line spends it.
+DELIMITER_ONLY = re.compile(r"^[\s*/#<>!'\"-]*$")
+
+
+def exempts(text, pattern=EXEMPT_ANY):
+    m = pattern.search(text)
+    return bool(m and m.group("owner") == OWNER)
+
+
+def prose_exempt(text, current, pattern=EXEMPT_ANY):
+    """Whether the code beneath this prose line is exempt.
+
+    A marker naming this guard sets it. Any other prose line clears it, so a
+    marker buried in the middle of a docstring cannot reach the code the
+    docstring precedes -- only a marker the code is actually written under can.
+    A delimiter-only line is not prose and leaves the reading where it was, so
+    a marker on a block comment's last content line still reaches past ` */`.
+    """
+    if exempts(text, pattern):
+        return True
+    return current if DELIMITER_ONLY.match(text.strip()) else False
 
 # Where the prose lives differs by language, and a sweep that knows only one of
 # them is the sweep that comes up a copy short. ~/.claude/CLAUDE.md states the
@@ -138,7 +192,7 @@ def code_lines_by_comment(text, spec):
     line either.
 
     The same per-block exemption markdown gets, spelled in whichever comment the
-    language has: `unguarded:` in a comment exempts the run of code beneath it,
+    language has: a marker naming this guard exempts the run of code beneath it,
     up to the next blank line. One syntax across both guards and every language,
     and it names its owner so a reader can check the claim. Its first user is
     this guard's own test, whose fixtures have to spell the names it bans."""
@@ -149,23 +203,27 @@ def code_lines_by_comment(text, spec):
             exempt = False
             continue
         if closing:
-            if EXEMPT_ANY.search(line):
-                exempt = True
+            exempt = prose_exempt(line, exempt)
             if closing in line:
                 closing = None
             continue
-        opened = False
+        before = None
         for o, c in spec["block"]:
             if o in line:
                 # A one-line block opens and closes on the same line.
-                rest = line.split(o, 1)[1]
+                before, rest = line.split(o, 1)
                 if c not in rest:
                     closing = c
-                opened = True
                 break
-        if opened:
-            if EXEMPT_ANY.search(line):
-                exempt = True
+        if before is not None:
+            # Same split the line-comment cut makes below, for the same reason:
+            # an opener with code in front of it is a string literal as often as
+            # it is a docstring, so it may grant an exemption and never spends
+            # one. An opener at the head of its line is prose and does both.
+            if before.strip():
+                exempt = exempt or exempts(line)
+            else:
+                exempt = prose_exempt(line, exempt)
             continue
         # A line comment makes the rest of the line prose, so the earliest
         # marker wins -- taking the first marker in table order instead lets a
@@ -173,8 +231,15 @@ def code_lines_by_comment(text, spec):
         # needs no case of its own: it is this cut at column zero.
         cut = min((line.index(m) for m in spec["line"] if m in line), default=None)
         if cut is not None:
-            if EXEMPT_ANY.search(line[cut:]):
-                exempt = True
+            # A whole-line comment is prose and spends the exemption. A comment
+            # trailing code annotates that code, so it may grant one and never
+            # spends one: this cut cannot tell a comment from a `#` inside a
+            # string literal, and letting one end an exemption granted several
+            # lines above would make the marker unusable over a run of code.
+            if line[:cut].strip():
+                exempt = exempt or exempts(line[cut:])
+            else:
+                exempt = prose_exempt(line[cut:], exempt)
             line = line[:cut]
         if line.strip() and not exempt:
             out.append((n, line))
@@ -215,7 +280,7 @@ def code_lines(text):
             if not exempt_block:
                 out.append((n, line))
             continue
-        if EXEMPT.search(line):
+        if exempts(line, EXEMPT):
             exempt_next = True
             continue
         if line.startswith(("    ", "\t")) and line.strip():
@@ -230,6 +295,12 @@ def code_lines(text):
 def main():
     staged = "--staged" in sys.argv
     paths = tracked(staged)
+    # Said before any verdict, and on every run: a clean tree and a tree nobody
+    # looked at both print nothing otherwise, and the second is what a wrong
+    # checkout or an empty file list gives.
+    root = git("rev-parse", "--show-toplevel").strip()
+    print(f"check-tree-shape: {len(paths)} tracked path(s) under {root}, "
+          f"read from {'the index' if staged else 'the working tree'}")
     findings = []
 
     def note(rule, path, what):
@@ -289,6 +360,9 @@ def main():
         if p == "repos" or p.startswith("repos/") or "/repos/" in p:
             note("R4", p, "a member repository's file in the container plane")
 
+    unread = sum(1 for f in findings if f.startswith("R0\t"))
+    print(f"  {len(findings)} finding(s)"
+          + (f", {unread} of them a path the sweep could not read" if unread else ""))
     if findings:
         print("check-tree-shape: refusing", file=sys.stderr)
         for f in findings:

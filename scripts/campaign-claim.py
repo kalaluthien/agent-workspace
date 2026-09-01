@@ -90,9 +90,10 @@ Two residuals stay, and stay stated here rather than in a caller:
 
   * A pid recycled onto a DIFFERENT claude session reads `alive`, and a pid
     recycled onto anything else reads `other`. Either way a caller refuses a
-    takeover it should have been allowed, which is the safe direction. The
-    second is wider than the residue `spec/alloy/session.als` records under R3g,
-    which names only the first.
+    takeover it should have been allowed, which is the safe direction. This
+    paragraph is the only record of either form: the Alloy verdict that held
+    the first was retired with the holder role, and no model in `spec/alloy/`
+    represents a pid at all, so there is no longer a spec to defer to.
   * `alive` means a claude holds this pid, not that it is *this campaign's*
     session. The record carries a `session` name that nothing here compares,
     because a pid is all a record is guaranteed to carry.

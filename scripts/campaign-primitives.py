@@ -46,9 +46,16 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 # How each language in this tree opens a comment. A summary must be one. Python
-# and sh are the two; a third language arriving adds its opener here, and until
-# then a marker no file uses is a branch nothing can take.
-MARKERS = ('"""', "#")
+# and sh are the two, and Python spells a docstring two ways.
+#
+# The list being short is exactly why an opener missing from it must not fail
+# quietly. Dropping `'''` as dead -- no file in the tree used it -- did not make
+# a `'''` script report "no summary"; the scan walked past the docstring and
+# returned whatever `#` comment came next, announcing that line as what the
+# script answers. So the scan stops at the first non-blank line under the
+# shebang and names an opener it does not recognise, and a language arriving
+# tomorrow is reported here rather than mis-summarised.
+MARKERS = ('"""', "'''", "#")
 
 
 def summary(path):
@@ -59,21 +66,28 @@ def summary(path):
     what the script answers. A wrong description is worse than a missing one,
     because the missing one is reported.
 
-    None when there is nothing to read, and an `<unreadable: ...>` marker when
-    the file could not be opened. Both are reported by the caller; neither is
-    silently dropped."""
+    None when there is nothing to read, an `<unreadable: ...>` marker when the
+    file could not be opened, and an `<unrecognised comment opener: ...>` marker
+    when the first line under the shebang opens no comment this script knows.
+    All three are reported by the caller; none is silently dropped."""
     try:
         lines = path.read_text().splitlines()
     except (OSError, UnicodeDecodeError) as e:
         return f"<unreadable: {e.__class__.__name__}>"
     for line in lines[1:8]:
         stripped = line.strip()
+        if not stripped:
+            continue
         for marker in MARKERS:
             if stripped.startswith(marker):
-                text = stripped[len(marker):].strip().strip('"').strip()
-                if text:
-                    return text
-                break
+                # A one-line docstring closes on the same line, so the opener's
+                # own quote character comes off both ends.
+                text = stripped[len(marker):].strip().strip(marker[0]).strip()
+                return text or None
+        # The first thing under the shebang is not a comment. Reading on would
+        # find some later `#` and present it as the summary, which is the wrong
+        # answer given in the shape of a right one.
+        return f"<unrecognised comment opener: {stripped[:40]!r}>"
     return None
 
 
@@ -192,7 +206,10 @@ def main():
     guards, readers, unknown = [], [], []
     for name, p, top in scripts:
         summ = summary(p)
-        if summ is None or summ.startswith("<unreadable"):
+        if summ is None or summ.startswith("<"):
+            # `<unreadable: ...>` and `<unrecognised comment opener: ...>` are
+            # both readings this inventory could not make, and the section that
+            # says so is the one place a reader learns a script went unnamed.
             unknown.append((name, summ or "<no comment under the shebang>"))
         elif top and p.name in runs:
             guards.append((name, summ))

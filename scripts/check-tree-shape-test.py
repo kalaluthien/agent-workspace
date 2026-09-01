@@ -18,6 +18,12 @@ GUARD = Path(__file__).resolve().parent / "check-tree-shape.py"
 
 IGNORE = "/*\n!/.gitignore\n!/spec/\n!/docs/\n!/scripts/\n!/AGENTS.md\n"
 
+# A fixture that spells a triple quote spells it with chr(), the way this
+# file already spells the single-quoted one: written out, the guard reading
+# *this* file takes it for a docstring opening and mis-reads what follows.
+DQ = chr(34) * 3
+SQ = chr(39) * 3
+
 # (name, {path: contents}, expected_rule or None)
 CASES = [
     # R1 -- misfiled markdown, and the two shapes that are not it.
@@ -33,8 +39,8 @@ CASES = [
     ("R2 an entry written with its trailing slash still matches",
      {"docs/x.html": "<p>hi</p>\n"}, None),
 
-    # unguarded: check-tree-shape -- fixtures must spell the names it bans
     # R3 markdown -- the split check-rule-readers already makes.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 md: a retired path in a fence",
      {"AGENTS.md": "t\n\n```sh\ncat runtime/holder\n```\n"}, "R3"),
     ("R3 md: the same path named in prose is a mention",
@@ -42,10 +48,10 @@ CASES = [
     ("R3 md: an indented block is code too",
      {"AGENTS.md": "t\n\n    cat runtime/holder\n"}, "R3"),
     ("R3 md: an exempted block is spent on the next block",
-     {"AGENTS.md": "t\n\n<!-- unguarded: history -- the retired form, quoted -->\n```sh\ncat runtime/holder\n```\n"}, None),
+     {"AGENTS.md": "t\n\n<!-- unguarded: check-tree-shape -- the retired form, quoted -->\n```sh\ncat runtime/holder\n```\n"}, None),
 
-    # unguarded: check-tree-shape -- fixtures must spell the names it bans
     # R3 Alloy -- where the prose lives inside the comment.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 als: a retired name in a signature",
      {"spec/a.als": "sig S { holder: runtime/holder }\n"}, "R3"),
     ("R3 als: the same name inside a block comment",
@@ -59,8 +65,8 @@ CASES = [
     ("R3 als: a one-line block comment does not swallow the rest of the file",
      {"spec/a.als": "/* a note */\nsig S { h: runtime/holder }\n"}, "R3"),
 
-    # unguarded: check-tree-shape -- fixtures must spell the names it bans
     # R3 scripts -- docstring and hash prose.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 py: a retired path in code",
      {"scripts/x.py": 'open("runtime/holder")\n'}, "R3"),
     ("R3 py: the same path in the docstring",
@@ -70,20 +76,55 @@ CASES = [
     ("R3 py: code before a trailing hash still counts",
      {"scripts/x.py": 'open("runtime/holder")  # a note\n'}, "R3"),
 
-    # unguarded: check-tree-shape -- fixtures must spell the names it bans
     # The exemption itself, which is a branch and needs pinning both ways.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 py: a marker exempts the run of code below it",
-     {"scripts/x.py": '# unguarded: t -- fixture\nopen("runtime/holder")\n'}, None),
+     {"scripts/x.py": '# unguarded: check-tree-shape -- fixture\nopen("runtime/holder")\n'}, None),
     ("R3 py: the exemption is spent at the next blank line",
-     {"scripts/x.py": '# unguarded: t -- fixture\nx = 1\n\nopen("runtime/holder")\n'}, "R3"),
+     {"scripts/x.py": '# unguarded: check-tree-shape -- fixture\nx = 1\n\nopen("runtime/holder")\n'}, "R3"),
     ("R3 als: the marker is read on a block comment's opening line",
-     {"spec/a.als": "/* unguarded: t -- fixture */\nsig S { h: runtime/holder }\n"}, None),
+     {"spec/a.als": "/* unguarded: check-tree-shape -- fixture */\nsig S { h: runtime/holder }\n"}, None),
     # A block comment runs many lines and the marker is usually not on the
     # first: that is a separate branch, and the one-line fixture above pins
     # nothing about it.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 als: the marker is read on a block comment's continuation line",
-     {"spec/a.als": "/*\n * why this is here\n * unguarded: t -- fixture\n */\nsig S { h: runtime/holder }\n"}, None),
+     {"spec/a.als": "/*\n * why this is here\n * unguarded: check-tree-shape -- fixture\n */\nsig S { h: runtime/holder }\n"}, None),
+
+    # Who the exemption belongs to. Both halves were live: an unowned marker
+    # exempted whatever followed it, so this guard's own header -- which spells
+    # `unguarded:` while explaining the syntax -- exempted this guard's body;
+    # and a marker naming a sibling guard's token silenced this one too.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 py: a docstring explaining the marker is not a marker",
+     {"scripts/x.py": DQ + "The `unguarded:` marker exempts the code below.\n"
+                      + DQ + '\nopen("runtime/holder")\n'}, "R3"),
+    ("R3 py: a marker naming another guard's token exempts nothing here",
+     {"scripts/x.py": "# unguarded: campaign-repos -- check-rule-readers' token\n"
+                      'open("runtime/holder")\n'}, "R3"),
+
+    # The exemption reaches the code the comment sits on top of, and no
+    # further back than the last thing that comment says. Without the second
+    # of these the first passes with the marker buried anywhere in a docstring.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 py: a marker on the comment's last line reaches the code below it",
+     {"scripts/x.py": DQ + "Docs.\nunguarded: check-tree-shape -- fixture\n"
+                      + DQ + '\nopen("runtime/holder")\n'}, None),
+    ("R3 py: ...and prose after the marker spends it before the code",
+     {"scripts/x.py": DQ + "Docs.\nunguarded: check-tree-shape -- fixture\n"
+                      "More prose, and the marker is no longer what this says.\n"
+                      + DQ + '\nopen("runtime/holder")\n'}, "R3"),
+
+    # A hash or a triple quote inside a string literal is indistinguishable
+    # from a comment to this cut, so neither may spend an exemption granted
+    # above it.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 py: a hash inside a string literal does not spend an exemption",
+     {"scripts/x.py": '# unguarded: check-tree-shape -- fixture\n'
+                      'x = "a # b"\nopen("runtime/holder")\n'}, None),
+    ("R3 py: nor does a quoted docstring delimiter with code in front of it",
+     {"scripts/x.py": '# unguarded: check-tree-shape -- fixture\n'
+                      "x = " + SQ + "y" + SQ + '\nopen("runtime/holder")\n'}, None),
 
     # R3 html -- the language a path grep in one syntax cannot see.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
@@ -92,9 +133,9 @@ CASES = [
     ("R3 html: the same path in an html comment",
      {"docs/x.html": "<!-- runtime/holder is retired -->\n<p>hi</p>\n"}, None),
 
-    # unguarded: check-tree-shape -- fixtures must spell the names it bans
     # The reading-versus-verdict rule: an unknown language is a file the sweep
     # cannot read, and an unread file must not come back as a clean tree.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R0 an unknown suffix is reported, not skipped",
      {"scripts/x.rb": 'puts "runtime/holder"\n'}, "R0"),
     ("R0 an unread file does not hide what the other rules found",
@@ -137,8 +178,8 @@ CASES = [
     # double-quoted form, so a retired name mentioned in one read as code.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 py: a single-quoted docstring is prose",
-     {"scripts/x.py": "#!/usr/bin/env python3\n" + chr(39) * 3
-      + "about runtime/holder" + chr(39) * 3 + "\nx = 1\n"}, None),
+     {"scripts/x.py": "#!/usr/bin/env python3\n" + SQ
+      + "about runtime/holder" + SQ + "\nx = 1\n"}, None),
 
     # R2 could not read its input: reported, not raised, so R1's findings are
     # not discarded and R3, R4 still run.
@@ -151,8 +192,8 @@ CASES = [
     # suffix cases never reach.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 an extensionless script's docstring is prose",
-     {"scripts/x": "#!/usr/bin/env python3\n" + chr(39) * 3
-      + "about runtime/holder" + chr(39) * 3 + "\nx = 1\n"}, None),
+     {"scripts/x": "#!/usr/bin/env python3\n" + SQ
+      + "about runtime/holder" + SQ + "\nx = 1\n"}, None),
     ("R3 ...and its code is still code",
      {"scripts/x": "#!/usr/bin/env python3\nopen('runtime/holder')\n"}, "R3"),
 
@@ -256,38 +297,72 @@ def committed_then_staged():
                               capture_output=True, text=True)
 
 
+def judge(r, rule):
+    """(ok, what was wanted). A clean run is not silence: every run says how
+    many paths it read and from where, so a clean verdict is `0 finding(s)`
+    beside that reading and not an empty screen."""
+    out = r.stdout + r.stderr
+    said_what_it_read = "tracked path(s) under " in r.stdout
+    if rule:
+        return (r.returncode == 1 and f"{rule}\t" in out and said_what_it_read,
+                f"a {rule} finding beside the reading")
+    return (r.returncode == 0 and "refusing" not in out and said_what_it_read
+            and "0 finding(s)" in r.stdout,
+            "0 finding(s) beside the reading")
+
+
+def says_what_it_read():
+    """A clean run names its count and its root, and which of the two trees.
+
+    Silence would read the same as a run that examined nothing, which is what a
+    wrong checkout and an empty file list both look like -- and the count and
+    the root are the two things that tell those apart from a clean tree.
+    """
+    files = {"docs/x.html": "<p>hi</p>\n"}          # plus the .gitignore: 2
+    wrong = []
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        (root / ".gitignore").write_text(IGNORE)
+        (root / "docs").mkdir()
+        (root / "docs" / "x.html").write_text(files["docs/x.html"])
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-Af"], cwd=root, check=True)
+        for args, where in ((["--staged"], "the index"), ([], "the working tree")):
+            r = subprocess.run([sys.executable, str(GUARD), *args], cwd=root,
+                               capture_output=True, text=True)
+            want = f"2 tracked path(s) under {root}, read from {where}"
+            if want not in r.stdout:
+                wrong.append(f"wanted `{want}`, got: {r.stdout.strip()[:160]!r}")
+    return wrong
+
+
 def main():
     failed = 0
+    for line in says_what_it_read():
+        failed += 1
+        print(f"FAIL  a run says how many paths it read and from where\n      {line}")
     r = committed_then_staged()
-    out = r.stdout + r.stderr
-    if not (r.returncode == 0 and not out.strip()):
+    ok, want = judge(r, None)
+    if not ok:
         failed += 1
         print(f"FAIL  --staged does not judge a violation this commit does not "
-              f"touch\n      got exit {r.returncode}: {out.strip()[:160]}")
+              f"touch\n      wanted {want}, got exit {r.returncode}: "
+              f"{(r.stdout + r.stderr).strip()[:160]}")
     for name, staged, worktree, rule in STAGED_CASES:
         r = run_staged_case(staged, worktree)
-        out = r.stdout + r.stderr
-        ok = (r.returncode == 1 and f"{rule}\t" in out) if rule else \
-             (r.returncode == 0 and not out.strip())
-        if not ok:
-            failed += 1
-            print(f"FAIL  {name}\n      wanted "
-                  f"{'a ' + rule + ' finding' if rule else 'silence'}, got exit "
-                  f"{r.returncode}:\n      {out.strip()[:200] or '(nothing)'}")
-    for name, files, rule in CASES:
-        r = run_case(files)
-        out = r.stdout + r.stderr
-        if rule:
-            ok = r.returncode == 1 and f"{rule}\t" in out
-            want = f"a {rule} finding"
-        else:
-            ok = r.returncode == 0 and not out.strip()
-            want = "silence"
+        ok, want = judge(r, rule)
         if not ok:
             failed += 1
             print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}:\n"
-                  f"      {out.strip()[:200] or '(nothing)'}")
-    total = len(CASES) + len(STAGED_CASES) + 1
+                  f"      {(r.stdout + r.stderr).strip()[:200] or '(nothing)'}")
+    for name, files, rule in CASES:
+        r = run_case(files)
+        ok, want = judge(r, rule)
+        if not ok:
+            failed += 1
+            print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}:\n"
+                  f"      {(r.stdout + r.stderr).strip()[:200] or '(nothing)'}")
+    total = len(CASES) + len(STAGED_CASES) + 2
     print(f"{total - failed}/{total} cases pass")
     return 1 if failed else 0
 
