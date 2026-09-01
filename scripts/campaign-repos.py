@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read the `## Repos` list of a campaign README or anchor issue body.
 
-    scripts/campaign-repos <path>
+    scripts/campaign-repos.py <path>
 
 The one reader of that list, and the one statement of what it refuses. AGENTS.md
 used to enumerate these and no longer does, which left the enumeration alive only
@@ -24,7 +24,7 @@ as exit strings in the code below.
                               is the same, so the second acquire overwrites the
                               first without a word.
 
-scripts/check-rule-readers is the second reader that keeps this claim true: it
+scripts/check-rule-readers.py is the second reader that keeps this claim true: it
 refuses a commit that stages a `grep`, `sed`, `awk`, `rg`, `jq` or Python
 line-reading parse naming `## Repos` or `owner/repo` -- as code in any tracked
 markdown outside scripts/, inside a fence or a four-space indent, reading the

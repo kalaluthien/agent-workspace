@@ -19,14 +19,14 @@ throwaway version get them wrong:
     that folds them reports a tree clean while a whole class of pointer is
     unchecked.
 
-Usage: scripts/check-cross-references-test
+Usage: scripts/check-cross-references-test.py
 """
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-GUARD = Path(__file__).resolve().parent / "check-cross-references"
+GUARD = Path(__file__).resolve().parent / "check-cross-references.py"
 
 SKILL = ".claude/skills/demo"
 

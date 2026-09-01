@@ -7,7 +7,7 @@ over-calling makes a reader look for a guard that is not there, while reporting
 a deleted guard as installed makes a reader believe the tree is guarded when
 nothing guards it.
 
-Usage: scripts/campaign-primitives-test
+Usage: scripts/campaign-primitives-test.py
 """
 import importlib.machinery
 import importlib.util
@@ -16,15 +16,15 @@ import sys
 import tempfile
 from pathlib import Path
 
-PRIM = Path(__file__).resolve().parent / "campaign-primitives"
+PRIM = Path(__file__).resolve().parent / "campaign-primitives.py"
 
-DECLARING = "#!/bin/sh\n# runs: check-rule-readers check-tree-shape\nfor g in $(sed ...); do :; done\n"
+DECLARING = "#!/bin/sh\n# runs: check-rule-readers.py check-tree-shape.py\nfor g in $(sed ...); do :; done\n"
 # The same hook after an ordinary refactor of its loop. Both readers use the
 # declaration, so the loop's shape does not matter.
-REFACTORED = "#!/bin/sh\n# runs: check-rule-readers check-tree-shape\nG=$(sed ...)\nfor g in $G; do :; done\n"
+REFACTORED = "#!/bin/sh\n# runs: check-rule-readers.py check-tree-shape.py\nG=$(sed ...)\nfor g in $G; do :; done\n"
 # A hook mentioning scripts in prose and declaring nothing. The classifier that
 # matched a name anywhere reported these as installed guards.
-PROSE_ONLY = "#!/bin/sh\n# see scripts/check-rule-readers and scripts/check-tree-shape\nexit 0\n"
+PROSE_ONLY = "#!/bin/sh\n# see scripts/check-rule-readers.py and scripts/check-tree-shape.py\nexit 0\n"
 
 
 def load():
@@ -44,9 +44,10 @@ def main():
         if not cond:
             fails.append(name)
 
-    names = {"check-rule-readers", "check-tree-shape", "campaign-tracker",
-             "install-hooks", "push-campaign-branch"}
-    both = {"check-rule-readers", "check-tree-shape"}
+    names = {"check-rule-readers.py", "check-tree-shape.py",
+             "campaign-tracker.py", "install-hooks.sh",
+             "push-campaign-branch.sh"}
+    both = {"check-rule-readers.py", "check-tree-shape.py"}
 
     found, probs = m.hook_run({"pre-commit": DECLARING}, names)
     check("a hook's declaration names its guards", found == both and not probs)
@@ -108,9 +109,9 @@ def main():
     out = r.stdout + r.stderr
     check("it exits 0 so SessionStart delivers the listing", r.returncode == 0)
     check("the push hook is announced, being a mechanism that acts unasked",
-          "push-campaign-branch" in out)
+          "push-campaign-branch.sh" in out)
     check("the two guards are announced",
-          "check-tree-shape" in out and "check-rule-readers" in out)
+          "check-tree-shape.py" in out and "check-rule-readers.py" in out)
     check("it separates what runs unasked from what a flow calls",
           "run by a git hook, unasked" in out and "a flow calls these" in out)
 
@@ -193,7 +194,7 @@ def main():
     # the claim this two-root walk exists to keep true.
     r = subprocess.run([sys.executable, str(PRIM)], capture_output=True, text=True)
     check("the real listing announces the script that lives under a skill",
-          "acquire-repo" in r.stdout and r.returncode == 0)
+          "acquire-repo.sh" in r.stdout and r.returncode == 0)
 
     if not ran:
         print("FAIL  the suite ran no case at all")

@@ -52,7 +52,7 @@ is about the verdict,
 not about the reading -- an unreadable file is a crash, deliberately, because a
 guard that skips what it cannot read reports nothing and reads as a pass.
 
-Usage: scripts/check-rule-readers [<path> ...]      (default: every tracked file)
+Usage: scripts/check-rule-readers.py [<path> ...]      (default: every tracked file)
 """
 import re
 import subprocess
@@ -77,10 +77,18 @@ from pathlib import Path
 # reporting that two more forms had been exempted than the author named.
 # Splitting the fields keeps the exemption as granular as the form, and keeps
 # the finding pointing at a script that exists.
+#
+# The extension went on `path` and not on `token` when #105 gave every script
+# one. `path` is a path -- it is printed as `scripts/<path>` and a reader runs
+# it -- while `token` is the form's name, and four of them name scripts that no
+# longer exist as files at all. A token also has a second reader nobody can
+# grep: every `<!-- unguarded: ... -->` already written in the tree, and in a
+# tree this check does not see. Changing one silently turns those exemptions
+# into non-matches, and a non-matching exemption is reported, not honoured.
 FORMS = [
     (
         "campaign-session-alive",
-        "campaign-claim",
+        "campaign-claim.py",
         # `ps` with a comm/ucomm selector in any argument order -- `-p $PID -o
         # ucomm=` is the script's own form and the first one a person writes --
         # and `pgrep`, which answers the same question a different way.
@@ -96,7 +104,7 @@ FORMS = [
     ),
     (
         "campaign-anchors",
-        "campaign-tracker",
+        "campaign-tracker.py",
         # The open-anchor survey: a `gh issue list` on this tracker asking for
         # the fields the classification reads.
         re.compile(r"\bgh\b[^|;&]*\bissue\s+list\b[^|;&]*"
@@ -105,7 +113,7 @@ FORMS = [
     ),
     (
         "campaign-subtasks",
-        "campaign-tracker",
+        "campaign-tracker.py",
         # The sub-issue index read, in either pagination form.
         re.compile(r"\bgh\b[^|;&]*\bapi\b[^|;&]*sub_issues"
                    r"|sub_issues[^|;&]*--paginate"),
@@ -113,14 +121,14 @@ FORMS = [
     ),
     (
         "campaign-repos",
-        "campaign-repos",
+        "campaign-repos.py",
         re.compile(r"(\bgrep\b|\bsed\b|\bawk\b|\brg\b|\bjq\b|--jq|re\.|readlines|splitlines)"
                    r"[^|;&]*(##\s*Repos|owner/repo)|(##\s*Repos|owner/repo)[^|;&]*(\bgrep\b|\bawk\b|\bjq\b)"),
         "the ## Repos parse",
     ),
     (
         "campaign-settlement",
-        "campaign-tracker",
+        "campaign-tracker.py",
         # The API field names only, not the words "not planned" / "not-planned"
         # a disposition table writes as prose: matching those false-fires on
         # prose that merely mentions a verdict rather than computing one.
@@ -129,7 +137,7 @@ FORMS = [
     ),
     (
         "campaign-local-work",
-        "campaign-local-work",
+        "campaign-local-work.py",
         re.compile(r"\bgit\b[^|;&]*\b(status|worktree\s+list|for-each-ref|stash\s+list)\b"
                    r"|\bgit\b[^|;&]*\bdiff\b[^|;&]*--quiet"
                    r"|\bgit\b[^|;&]*\bbranch\b[^|;&]*--no-merged"),
@@ -137,7 +145,7 @@ FORMS = [
     ),
     (
         "campaign-name-session",
-        "campaign-name-session",
+        "campaign-name-session.py",
         re.compile(r"herdr\s+agent\s+rename\b|agent\s+prompt\b[^|;&]*/rename"),
         "the session-name shape",
     ),

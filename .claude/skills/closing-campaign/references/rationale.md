@@ -59,7 +59,7 @@ read here too.
 `repos/` and unreadable `repos/`, a pipeline swallowing the enumeration's own
 exit status, and a portable enumeration are four things a gate written in prose
 has to get right in whatever shell the person is in — and each of them fails by
-reporting nothing, which reads as a pass. `scripts/campaign-local-work` owns all
+reporting nothing, which reads as a pass. `scripts/campaign-local-work.py` owns all
 four, its exit status separates "the reading failed" from the verdict, and its
 docstring carries the evidence. This step keeps only what a reader must decide:
 which rows are blockers.

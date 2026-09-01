@@ -9,7 +9,7 @@ A squash merge making a landed branch read unmerged forever, `git status
 --porcelain` never listing an ignored file, an unreadable `repos/` that reads as
 a campaign with no member repository, and a checkout whose `.git` is a file
 dropping out of the verdict entirely: each could report nothing while testing
-nothing. Step 2 is one call to `scripts/campaign-local-work` now, so they are
+nothing. Step 2 is one call to `scripts/campaign-local-work.py` now, so they are
 the script's to get right and its docstring states each with its evidence.
 Nothing of them is restated here — two copies of a probe is how one goes stale.
 

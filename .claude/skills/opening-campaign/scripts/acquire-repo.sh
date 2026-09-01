@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # acquire-repo — leave a ready checkout of <owner/repo> at <dest-path>.
 #
-#   .claude/skills/opening-campaign/scripts/acquire-repo \
+#   .claude/skills/opening-campaign/scripts/acquire-repo.sh \
 #       <owner/repo> <dest-path> [--branch <branch>]
 #
 # The one interface through which a campaign gets a repository. A caller asks
@@ -10,7 +10,7 @@
 #
 # It lives under the skill because opening-campaign is its only caller: a
 # repository is acquired when a campaign is opened or joined, and at no other
-# moment. scripts/campaign-primitives walks .claude/skills/*/scripts/ as a
+# moment. scripts/campaign-primitives.py walks .claude/skills/*/scripts/ as a
 # second root so a script parked here is still announced.
 #
 # Bash, not Python: every step is already a `git` or `gh` invocation, so a

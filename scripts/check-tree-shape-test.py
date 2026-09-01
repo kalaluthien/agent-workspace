@@ -7,14 +7,14 @@ ways of breaking the guard at least one case notices -- so each row that expects
 a hit is aimed at one branch, and each row that expects quiet names a boundary
 somebody would otherwise widen the guard straight past.
 
-Usage: scripts/check-tree-shape-test
+Usage: scripts/check-tree-shape-test.py
 """
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-GUARD = Path(__file__).resolve().parent / "check-tree-shape"
+GUARD = Path(__file__).resolve().parent / "check-tree-shape.py"
 
 IGNORE = "/*\n!/.gitignore\n!/spec/\n!/docs/\n!/scripts/\n!/AGENTS.md\n"
 
@@ -155,6 +155,28 @@ CASES = [
       + "about runtime/holder" + chr(39) * 3 + "\nx = 1\n"}, None),
     ("R3 ...and its code is still code",
      {"scripts/x": "#!/usr/bin/env python3\nopen('runtime/holder')\n"}, "R3"),
+
+    # Shell, which #105 gave a suffix of its own. Before it, every shell script
+    # was extensionless and reached PROSE through the "" entry; a `.sh` with no
+    # rule of its own is R0, and R0 skips the file, so R3 would stop reading
+    # the two hooks' installer entirely.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 sh: a # comment is prose",
+     {"scripts/x.sh": "#!/usr/bin/env sh\n# about runtime/holder\n"}, None),
+    ("R3 ...and a .sh file's code is still code",
+     {"scripts/x.sh": "#!/usr/bin/env sh\ngrep runtime/holder .\n"}, "R3"),
+
+    # The extensionless-call ban, whose name list is read from the scripts
+    # directory rather than written down. Three cases, because the lookahead
+    # that lets the correct spellings through is the part that breaks silently:
+    # drop it and the first two below still pass while the last two fail.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 a call to a script here that omits its extension",
+     {"scripts/x.py": 'run("scripts/campaign-claim")\n'}, "R3"),
+    ("R3 ...and the correct spelling is not a finding",
+     {"scripts/x.py": 'run("scripts/campaign-claim.py")\n'}, None),
+    ("R3 ...nor is a suite, whose stem opens with a banned name",
+     {"scripts/x.py": 'run("scripts/campaign-claim-test.py")\n'}, None),
 
     # R4
     ("R4 a member repository's file", {"repos/web/a.py": "x = 1\n"}, "R4"),

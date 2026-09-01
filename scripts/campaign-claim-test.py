@@ -15,7 +15,7 @@ script.
 No case may reach the network: a case that does writes to production, hidden
 inside a green line of output.
 
-Usage: scripts/campaign-claim-test
+Usage: scripts/campaign-claim-test.py
 """
 import json
 import os
@@ -24,7 +24,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-CLAIM = Path(__file__).resolve().parent / "campaign-claim"
+CLAIM = Path(__file__).resolve().parent / "campaign-claim.py"
 def _free_pid():
     """A pid held by nobody. A hardcoded one passed on a runner and could name a
     live process on a dev machine -- the residue running the other way."""

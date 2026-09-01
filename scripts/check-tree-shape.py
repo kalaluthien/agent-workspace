@@ -49,12 +49,32 @@ EXIT
 0 silent when clean. 1 with one line per finding: the rule, the path, and what
 was found. The status is about the verdict; an unreadable tree crashes.
 
-Usage: scripts/check-tree-shape [--staged]
+Usage: scripts/check-tree-shape.py [--staged]
 """
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+def extensionless_call():
+    """A call to a script beside this one that omits its language extension.
+
+    #105 gave every script here `.py` or `.sh`, so `scripts/campaign-claim`
+    names no file. The names are read from the directory this guard was loaded
+    out of, never listed: the other bans below are literals because they name
+    things that will never come back, and this one names things that arrive --
+    a script added tomorrow is covered with no edit here. The directory exists
+    by construction, the interpreter having just read this file out of it.
+
+    `(?![\\w.-])` is what lets the correct spellings through:
+    `scripts/campaign-claim` is refused, while `scripts/campaign-claim.py` and
+    `scripts/campaign-claim-test.py` both pass.
+    """
+    names = sorted((p.stem for p in Path(__file__).resolve().parent.iterdir()
+                    if p.suffix in (".py", ".sh")), key=len, reverse=True)
+    return re.compile(r"\bscripts/(" + "|".join(re.escape(n) for n in names)
+                      + r")(?![\w.-])")
+
 
 # A retired name and the issue that retired it, so a finding says why.
 # Prose may name any of these; code may not.
@@ -73,16 +93,18 @@ RETIRED = [
     # that is the authoritative record of those tokens. What a reintroduction
     # actually looks like is a call, and a call names the path.
     (re.compile(r"\bscripts/campaign-(anchors|bound|subtasks|settlement)\b"),
-     "#105 -- merged into scripts/campaign-tracker <subcommand>"),
+     "#105 -- merged into scripts/campaign-tracker.py <subcommand>"),
     (re.compile(r"\bscripts/campaign-(live|session-alive)\b"),
-     "#105 -- merged into scripts/campaign-claim live | alive"),
+     "#105 -- merged into scripts/campaign-claim.py live | alive"),
     (re.compile(r"\bscripts/alloy-trace-digest\b"),
-     "#105 -- merged into scripts/alloy-check --digest"),
+     "#105 -- merged into scripts/alloy-check.py --digest"),
     # The lookbehind is load-bearing: the destination path *ends* in
-    # `scripts/acquire-repo`, so a bare pattern would refuse every correct call
+    # `scripts/acquire-repo.sh`, so a bare pattern would refuse every correct call
     # as well as every stale one.
     (re.compile(r"(?<!opening-campaign/)\bscripts/acquire-repo\b"),
-     "#105 -- moved to .claude/skills/opening-campaign/scripts/acquire-repo"),
+     "#105 -- moved to .claude/skills/opening-campaign/scripts/acquire-repo.sh"),
+    (extensionless_call(),
+     "#105 -- a script carries the extension of its language; add .py or .sh"),
 ]
 
 FENCE = re.compile(r"^\s*(```|~~~)")
@@ -103,6 +125,7 @@ PROSE = {
     ".als":  {"block": [("/*", "*/")], "line": ["//", "--"]},
     ".yml":  {"block": [], "line": ["#"]},
     ".py":   {"block": [('"""', '"""'), ("'''", "'''")], "line": ["#"]},
+    ".sh":   {"block": [], "line": ["#"]},      # no block comment in POSIX sh
     ".html": {"block": [("<!--", "-->")], "line": []},
     ".json": {"block": [], "line": []},        # no comment syntax; all code
     "":      {"block": [('"""', '"""'), ("'''", "'''")], "line": ["#"]},

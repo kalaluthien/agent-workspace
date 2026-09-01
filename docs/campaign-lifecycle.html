@@ -139,7 +139,7 @@
   </tbody>
 </table>
 
-<p>규칙을 기계가 판정할 수 있는지로 나눈다. 판정할 수 있는 것은 검사가 되고, 산문에는 그 기계가 있다는 사실과 무엇에 답하는지만 남는다. 판단이 필요한 것만 문장으로 남는다. 이 정리로 <code>AGENTS.md</code> 는 1585줄에서 540줄이 되었고, 그중 이력이 차지하던 비중은 31%에서 9%로 줄었다. 나머지 답은 스크립트가 한다. 캠페인 평면의 네 가지 읽기 — 앵커 목록, 묶임, 하위 이슈 색인, 정산 — 은 <code>campaign-tracker</code> 의 네 부속 명령이고, 청구와 생존·귀속은 <code>campaign-claim</code>, 이 기계에만 있는 것은 <code>campaign-local-work</code> 이 답한다. 같은 질문의 두 번째 구현은 어디에도 없다. <span class="src">AGENTS.md, scripts/campaign-primitives @ 8f8529d</span></p>
+<p>규칙을 기계가 판정할 수 있는지로 나눈다. 판정할 수 있는 것은 검사가 되고, 산문에는 그 기계가 있다는 사실과 무엇에 답하는지만 남는다. 판단이 필요한 것만 문장으로 남는다. 이 정리로 <code>AGENTS.md</code> 는 1585줄에서 540줄이 되었고, 그중 이력이 차지하던 비중은 31%에서 9%로 줄었다. 나머지 답은 스크립트가 한다. 캠페인 평면의 네 가지 읽기 — 앵커 목록, 묶임, 하위 이슈 색인, 정산 — 은 <code>campaign-tracker</code> 의 네 부속 명령이고, 청구와 생존·귀속은 <code>campaign-claim</code>, 이 기계에만 있는 것은 <code>campaign-local-work</code> 이 답한다. 같은 질문의 두 번째 구현은 어디에도 없다. <span class="src">AGENTS.md, scripts/campaign-primitives.py @ 8f8529d</span></p>
 
 <div class="callout">
   <span class="g" aria-hidden="true">⚠️</span>
@@ -279,7 +279,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   </div>
 </div>
 
-<p>herdr 위임은 <code>&lt;campaign&gt;/repos/&lt;repo&gt;/</code> 에서 <code>--append-system-prompt-file &lt;campaign&gt;/AGENTS.md</code> 로 실행한다. 이름은 <code>--name</code> 으로 <code>campaign-&lt;anchor&gt;-&lt;role&gt;-&lt;n&gt;</code> 을 준다. 이 기계의 모든 세션에 걸리는 하나의 규칙이고, 위임자도 실행자라 자기 역할 단어를 따로 갖지 않는다. 하위 과제는 일부러 이름에 넣지 않는다. 한 세션이 하위 과제를 여러 개 이어서 하므로, 하위 과제를 담은 이름은 넘길 때마다 거짓이 된다. <code>--name</code> 은 하네스 이름만 바꾸므로 herdr 창 이름도 같이 줘야 하고, <code>scripts/campaign-name-session</code> 이 그 둘을 한 번에 세우는 이 규칙의 유일한 소비자다. 상위 지시 파일은 그 디렉터리에 <code>hasClaudeMdExternalIncludesApproved</code> 가 켜져야 읽힌다. 기본값은 거짓이고, 대화형 대화 상자로 묻는다. 방금 가져온 저장소는 정확히 그 값이 꺼져 있는 상태다. 이 플래그는 그 승인에 기대지 않으므로 메커니즘이 된다. <span class="src">AGENTS.md @ 24cb850</span></p>
+<p>herdr 위임은 <code>&lt;campaign&gt;/repos/&lt;repo&gt;/</code> 에서 <code>--append-system-prompt-file &lt;campaign&gt;/AGENTS.md</code> 로 실행한다. 이름은 <code>--name</code> 으로 <code>campaign-&lt;anchor&gt;-&lt;role&gt;-&lt;n&gt;</code> 을 준다. 이 기계의 모든 세션에 걸리는 하나의 규칙이고, 위임자도 실행자라 자기 역할 단어를 따로 갖지 않는다. 하위 과제는 일부러 이름에 넣지 않는다. 한 세션이 하위 과제를 여러 개 이어서 하므로, 하위 과제를 담은 이름은 넘길 때마다 거짓이 된다. <code>--name</code> 은 하네스 이름만 바꾸므로 herdr 창 이름도 같이 줘야 하고, <code>scripts/campaign-name-session.py</code> 이 그 둘을 한 번에 세우는 이 규칙의 유일한 소비자다. 상위 지시 파일은 그 디렉터리에 <code>hasClaudeMdExternalIncludesApproved</code> 가 켜져야 읽힌다. 기본값은 거짓이고, 대화형 대화 상자로 묻는다. 방금 가져온 저장소는 정확히 그 값이 꺼져 있는 상태다. 이 플래그는 그 승인에 기대지 않으므로 메커니즘이 된다. <span class="src">AGENTS.md @ 24cb850</span></p>
 
 <details>
   <summary>갓 시작한 위임은 세 곳에서 조용히 멈추고, 밖에서는 셋 다 생각 중인 에이전트로 보인다</summary>

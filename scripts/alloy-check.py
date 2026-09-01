@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Run one spec/alloy module, hold its command list, and digest its traces.
 
-    scripts/alloy-check <file.als> [-o <dir>]
-    scripts/alloy-check --commands <dir> [--write]
-    scripts/alloy-check --digest <solution-0.txt> [...]
+    scripts/alloy-check.py <file.als> [-o <dir>]
+    scripts/alloy-check.py --commands <dir> [--write]
+    scripts/alloy-check.py --digest <solution-0.txt> [...]
 
 Every command in spec/alloy/*.als carries its own verdict, in the `expect`
 clause the solver enforces: `expect 0` where the solver says UNSAT -- a check
@@ -95,7 +95,7 @@ def commands_mode(directory, write):
     # of a triple on its own line: one command per line is the whole point, so
     # that a deletion is one removed line naming the command that went.
     head = {
-        "generated_by": "scripts/alloy-check --commands <dir> --write",
+        "generated_by": "scripts/alloy-check.py --commands <dir> --write",
         "why": "A deleted command misses no `expect` clause, and an inventory "
                "regenerated from the models cannot see the deletion either. "
                "This copy is committed so the diff is the reader.",

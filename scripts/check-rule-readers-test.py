@@ -6,14 +6,14 @@ fixture written to a temporary tree and run through the real script, so what is
 tested is the shipped behaviour rather than a re-implementation of it -- which
 would be the second reader the guard itself exists to forbid.
 
-Usage: scripts/check-rule-readers-test
+Usage: scripts/check-rule-readers-test.py
 """
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-GUARD = Path(__file__).resolve().parent / "check-rule-readers"
+GUARD = Path(__file__).resolve().parent / "check-rule-readers.py"
 
 def fence(body, lang="sh"):
     return f"# t\n\n```{lang}\n{body}\n```\n"
@@ -201,7 +201,7 @@ GRANULARITY_CASES = [
     # a reader told only the token cannot find the code.
     ("tracker: a finding names the script to call and the token to exempt",
      fence("gh api --paginate repos/o/r/issues/1/sub_issues"),
-     1, "scripts/campaign-tracker (exempt with `campaign-subtasks`)", None),
+     1, "scripts/campaign-tracker.py (exempt with `campaign-subtasks`)", None),
     # The same split, on the other merge.
     ("claim: the liveness form is exempted by its own token, not the script's",
      "# t\n\n<!-- unguarded: campaign-claim -- x -->\n\n```sh\nps -o comm= -p 1\n```\n",

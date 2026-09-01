@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Take, read and release a subtask's claim, and say who is alive holding one.
 
-    campaign-claim take <N> <issue> <topic> [--repo owner/repo] [--name NAME]
-    campaign-claim status <issue>
-    campaign-claim list
-    campaign-claim release <issue> [--branch B] [--confirmed-absent WHO]
-    campaign-claim live <N> [--dir CAMPAIGN]
-    campaign-claim alive <pid>
+    campaign-claim.py take <N> <issue> <topic> [--repo owner/repo] [--name NAME]
+    campaign-claim.py status <issue>
+    campaign-claim.py list
+    campaign-claim.py release <issue> [--branch B] [--confirmed-absent WHO]
+    campaign-claim.py live <N> [--dir CAMPAIGN]
+    campaign-claim.py alive <pid>
 
 A claim is two things that must agree: a branch on the remote, which is what
 actually stops two executors working one subtask, and a record on this machine
@@ -100,7 +100,7 @@ Two residuals stay, and stay stated here rather than in a caller:
 A zombie -- exited, unreaped -- still answers `alive`: `kill -0` succeeds and
 `ucomm` is unchanged. A caller sees a live executor it cannot retire.
 
-scripts/check-rule-readers is the second reader that keeps the `alive` claim
+scripts/check-rule-readers.py is the second reader that keeps the `alive` claim
 true: it refuses a commit that stages a `ps` whose `-o` selector *opens* with
 `comm`/`ucomm`, that selector passed as a Python list element, a bare quoted
 `ucomm=`, or a `pgrep` -- as code in any tracked markdown outside scripts/. A

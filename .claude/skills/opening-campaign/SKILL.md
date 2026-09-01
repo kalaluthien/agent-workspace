@@ -9,13 +9,13 @@ Finished when all of these hold:
 
 - An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
   no parent, and the sections of the anchor template `assets/README.md`, with a
-  `## Repos` list that `scripts/campaign-repos` reads and exits 0 on.
+  `## Repos` list that `scripts/campaign-repos.py` reads and exits 0 on.
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
   `CLAUDE.md`, `scripts/`, `runtime/handover/`, `runtime/claims/`,
   `runtime/repos`, and a `README.md` and `runtime/anchor-body-derived.md` that
   each hold the anchor issue body byte for byte.
-- Every line `scripts/campaign-repos` prints resolves to a checkout at
+- Every line `scripts/campaign-repos.py` prints resolves to a checkout at
   `<campaign>/repos/<name>/` — vacuous under `- none`, where it prints nothing.
 - At least one subtask is filed as a sub-issue of the anchor, and the reply names
   it along with the campaign ID, the directory and the anchor issue URL.
@@ -33,7 +33,7 @@ mistake this read exists to stop.
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-"$CONTAINER"/scripts/campaign-tracker bound <N>    # here | elsewhere <machine> | unbound
+"$CONTAINER"/scripts/campaign-tracker.py bound <N>    # here | elsewhere <machine> | unbound
 ```
 
 `here` — carry on, and that one read is the whole membership question. Anything
@@ -89,7 +89,7 @@ that does not exist yet is bound to nobody: if two anchors appear anyway, close
 one as `not planned` and say which survived.
 
 ```sh
-"$CONTAINER"/scripts/campaign-tracker anchors
+"$CONTAINER"/scripts/campaign-tracker.py anchors
 gh issue create -R kalaluthien/agent-workspace \
   --label campaign --title "<title>" --body-file <path>
 ```
@@ -160,7 +160,7 @@ Then finish it:
   gh issue view <N> -R kalaluthien/agent-workspace --json body --jq .body \
     >| "$CAMPAIGN/README.md"
   cp "$CAMPAIGN/README.md" "$CAMPAIGN/runtime/anchor-body-derived.md"
-  "$CONTAINER/scripts/campaign-repos" "$CAMPAIGN/README.md" \
+  "$CONTAINER/scripts/campaign-repos.py" "$CAMPAIGN/README.md" \
     >| "$CAMPAIGN/runtime/repos.tmp" &&
     mv "$CAMPAIGN/runtime/repos.tmp" "$CAMPAIGN/runtime/repos" ||
     { rm -f "$CAMPAIGN/runtime/repos.tmp"
@@ -177,12 +177,12 @@ Then finish it:
 
 ### 5. Acquire the member repositories
 
-Yours whenever you launch a delegate. For each line `scripts/campaign-repos`
+Yours whenever you launch a delegate. For each line `scripts/campaign-repos.py`
 printed in step 4, by absolute path — step 4 has just created an empty
 `$CAMPAIGN/scripts/`, so a relative path resolves there and fails.
 
 ```sh
-ACQUIRE="$CONTAINER/.claude/skills/opening-campaign/scripts/acquire-repo"
+ACQUIRE="$CONTAINER/.claude/skills/opening-campaign/scripts/acquire-repo.sh"
 while read -r REPO; do
   "$ACQUIRE" "$REPO" "$CAMPAIGN/repos/${REPO##*/}"
 done < "$CAMPAIGN/runtime/repos"
@@ -211,7 +211,7 @@ is half the branch name, and the branch is the claim**, so the claim cannot be
 cut until the issue exists and this is the step that mints it.
 
 ```sh
-"$CONTAINER/scripts/campaign-claim" take <N> <issue> <topic> \
+"$CONTAINER/scripts/campaign-claim.py" take <N> <issue> <topic> \
   --dir "$CAMPAIGN" --repo <owner/repo> --name "<this session's ListAgents name>"
 ```
 

@@ -20,7 +20,7 @@ Launch in `<campaign>/repos/<repo>/` with `--append-system-prompt-file
 - Choose the session UUID in advance (`--session-id`) so the transcript path is
   known before the agent starts, and `--name` it per § The session name. `--name`
   sets the harness name only; set the herdr pane name too, because the two do not
-  propagate. `scripts/campaign-name-session` does both.
+  propagate. `scripts/campaign-name-session.py` does both.
 - Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to the container's pool. A memory pool
   inside a git-ignored campaign directory dies with the directory.
 

@@ -16,34 +16,27 @@ A script it cannot read, or one whose kind it cannot tell, is printed as such.
 An inventory that silently omits a primitive is worse than none: it reads as a
 complete list, and the reader concludes the thing is not there.
 
-HOW A SCRIPT HERE IS NAMED
+WHAT IS LOCAL TO THIS REPOSITORY
 
-This is the one statement of the rule, because a name is the only part of a
-script every reader sees:
+How a script is named and where it lives are `~/.claude/rules/script-authoring.md`,
+which loads whenever anyone opens one of these files. Three facts are this
+repository's own and are stated only here.
 
-    a reader is <plane>-<question>            campaign-tracker, campaign-repos
-    a thing git or the harness runs unasked   check-tree-shape, install-hooks
-    is <verb>-<object>
+The listing splits by *who calls it* -- a reader is asked a question by a flow,
+and a guard acts without being asked -- which is why the output has two sections
+rather than one alphabetical list.
 
-The plane is one of the three AGENTS.md names, so `campaign-` prefixes a reading
-of the campaign plane and nothing else. The split is by *who calls it*: a reader
-is asked a question by a flow, and everything under the second form acts without
-being asked, which is why the listing below separates them.
-
-`campaign-primitives` is the one name that breaks the rule -- it reads the
-container plane, not the campaign plane. It stays, because renaming it means
+A reader's subject is one of AGENTS.md's three planes, so `campaign-` prefixes a
+reading of the campaign plane and nothing else. By that, `campaign-primitives`
+is misnamed: it reads the container plane. It stays, because renaming it means
 editing the SessionStart hook path in .claude/settings.json, whose failure mode
-is silent: the announcement simply stops appearing and nothing says so.
+is silent -- the announcement simply stops appearing and nothing says so.
 
-WHERE A SCRIPT LIVES
+Scripts here sit in two roots, and this walks both. A script in a root it did
+not walk is a script it does not announce, which is the precise failure it
+exists to prevent, so adding a root is the same edit here as anywhere.
 
-Two roots, and this walks both. `scripts/` holds what more than one caller uses;
-`.claude/skills/<skill>/scripts/` holds a script that belongs to exactly one
-skill. A script in a root this did not walk is a script it does not announce,
-which is the precise failure it exists to prevent -- so adding a root here is
-the same edit as adding one anywhere.
-
-Usage: scripts/campaign-primitives [--brief] [--scripts-dir DIR]
+Usage: scripts/campaign-primitives.py [--brief] [--scripts-dir DIR]
 """
 import re
 import subprocess
@@ -166,9 +159,13 @@ def script_roots(scripts_dir):
 
 def executables(root):
     """The scripts in one root. A suite is not one: it is run by CI and by a
-    person, never by a flow that needs to be told it exists."""
+    person, never by a flow that needs to be told it exists.
+
+    A suite is recognised by its `-test` element, on the stem and not the name:
+    the extension names the language, so `-test.py` and a later `-test.sh` are
+    both suites and neither is announced."""
     return [p for p in sorted(root.iterdir())
-            if not p.is_dir() and not p.name.endswith("-test")
+            if not p.is_dir() and not p.stem.endswith("-test")
             and p.stat().st_mode & 0o111]
 
 
@@ -209,7 +206,7 @@ def main():
               f"below is\n     known to run on its own.")
     elif not hook_texts:
         print(f"\n  !! NO git hook is installed in {hdir}. Nothing in this "
-              f"checkout is guarded.\n     Run scripts/install-hooks.")
+              f"checkout is guarded.\n     Run scripts/install-hooks.sh.")
     else:
         print(f"\n  git hooks installed ({len(hook_texts)}): "
               f"{', '.join(sorted(hook_texts))}")
@@ -235,7 +232,7 @@ def main():
             line += " " + n
         out.append(line)
         print("\n".join(out))
-        print("\n  scripts/campaign-primitives says what each one answers.")
+        print("\n  scripts/campaign-primitives.py says what each one answers.")
     else:
         for n, summ in readers:
             print(f"    {n:30} {summ}")

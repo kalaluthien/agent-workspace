@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Read the campaign plane: its anchors, its binding, its index, its settlement.
 
-    campaign-tracker anchors [--repo owner/repo] [--limit N]
-    campaign-tracker bound <N> [owner/repo]
-    campaign-tracker index <N> [owner/repo]
-    campaign-tracker settlement <N> [owner/repo]
+    campaign-tracker.py anchors [--repo owner/repo] [--limit N]
+    campaign-tracker.py bound <N> [owner/repo]
+    campaign-tracker.py index <N> [owner/repo]
+    campaign-tracker.py settlement <N> [owner/repo]
 
 Four readings of one plane -- GitHub issues, plus `hostname -s` for `bound`.
 They were four scripts, and every one of them carried the same lesson in its own
@@ -55,7 +55,7 @@ hand-written in the settlement path, where deleting it turned a live campaign's
 verdict from "NOT closable" into "closable" with fourteen subtasks silently gone
 and nothing red.
 
-scripts/check-rule-readers is the second reader that keeps these claims true: it
+scripts/check-rule-readers.py is the second reader that keeps these claims true: it
 refuses a commit that stages a hand-rolled copy of the anchor survey, the index
 read, or the settlement verdict as code in any tracked markdown outside scripts/.
 It catches a pasted copy, not a re-implementation that names nothing.

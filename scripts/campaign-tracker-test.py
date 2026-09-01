@@ -14,7 +14,7 @@ verdict at all: an index that did not read must refuse, because printing "the
 index is empty" at exit 0 reads exactly like a campaign with no subtasks and
 closes it.
 
-Usage: scripts/campaign-tracker-test
+Usage: scripts/campaign-tracker-test.py
 """
 import importlib.machinery
 import importlib.util
@@ -26,7 +26,7 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-TRACKER = HERE / "campaign-tracker"
+TRACKER = HERE / "campaign-tracker.py"
 
 
 def load():

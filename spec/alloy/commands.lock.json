@@ -1,5 +1,5 @@
 {
-  "generated_by": "scripts/alloy-check --commands <dir> --write",
+  "generated_by": "scripts/alloy-check.py --commands <dir> --write",
   "why": "A deleted command misses no `expect` clause, and an inventory regenerated from the models cannot see the deletion either. This copy is committed so the diff is the reader.",
   "commands": [
     ["agent.als", "check", "NoLostWork"],

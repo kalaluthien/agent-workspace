@@ -26,9 +26,9 @@
  * list is stated a second time, in commands.lock.json beside them, which is
  * committed and compared rather than regenerated:
  *
- *   scripts/alloy-check spec/alloy/ledger.als -o /tmp/alloy-ledger
- *   scripts/alloy-check --commands spec/alloy            -- and --write to update
- *   scripts/alloy-check --digest /tmp/alloy-ledger/S1_HappyPath-solution-0.txt
+ *   scripts/alloy-check.py spec/alloy/ledger.als -o /tmp/alloy-ledger
+ *   scripts/alloy-check.py --commands spec/alloy            -- and --write to update
+ *   scripts/alloy-check.py --digest /tmp/alloy-ledger/S1_HappyPath-solution-0.txt
  *
  * HOW THE LAYERS COMPOSE
  *

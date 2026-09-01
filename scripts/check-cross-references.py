@@ -110,7 +110,7 @@ something also dangled, because a reading that did not complete is not a
 verdict. Under the installed pre-commit hook every non-zero status blocks, so
 an undecided token stops the commit without being called a finding.
 
-Usage: scripts/check-cross-references [--staged] [--list] [<path> ...]
+Usage: scripts/check-cross-references.py [--staged] [--list] [<path> ...]
 """
 import re
 import subprocess

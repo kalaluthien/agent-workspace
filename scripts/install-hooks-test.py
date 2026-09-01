@@ -9,7 +9,7 @@ actually stops a violation.
 These cases build a throwaway repository, run the shipped installer, and commit.
 The remote is a local bare repo; nothing here reaches the network.
 
-Usage: scripts/install-hooks-test
+Usage: scripts/install-hooks-test.py
 """
 import os
 import shutil
@@ -34,8 +34,8 @@ def _needed():
     its heredoc and the post-commit one, which is where push-campaign-branch
     comes from.
     """
-    out = ["install-hooks"]
-    for line in (SCRIPTS / "install-hooks").read_text().splitlines():
+    out = ["install-hooks.sh"]
+    for line in (SCRIPTS / "install-hooks.sh").read_text().splitlines():
         if line.startswith("# runs: "):
             for n in line[len("# runs: "):].split():
                 if n not in out:
@@ -83,7 +83,7 @@ class Repo:
     def commit_amend_push(self):
         """Run the push hook by hand after an amend: the post-commit hook has
         already fired, and what is under test is the rejection path."""
-        r = subprocess.run([str(self.root / "scripts" / "push-campaign-branch")],
+        r = subprocess.run([str(self.root / "scripts" / "push-campaign-branch.sh")],
                            cwd=self.root, capture_output=True, text=True)
         return r.stdout + r.stderr
 
@@ -92,7 +92,7 @@ class Repo:
 
 
 def installer(root):
-    return subprocess.run([str(root / "scripts" / "install-hooks")], cwd=root,
+    return subprocess.run([str(root / "scripts" / "install-hooks.sh")], cwd=root,
                           capture_output=True, text=True)
 
 
@@ -190,7 +190,7 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
         installer(r.root)
-        (r.root / "scripts" / "check-tree-shape").chmod(0o644)
+        (r.root / "scripts" / "check-tree-shape.py").chmod(0o644)
         before = r.head()
         r.violate()
         c = r.commit()
@@ -265,14 +265,14 @@ def main():
         shim.mkdir()
         (shim / "mktemp").write_text("#!/bin/sh\nexit 1\n")
         (shim / "mktemp").chmod(0o755)
-        p = subprocess.run([str(r.root / "scripts" / "push-campaign-branch")],
+        p = subprocess.run([str(r.root / "scripts" / "push-campaign-branch.sh")],
                            cwd=r.root, capture_output=True, text=True,
                            env=dict(os.environ,
                                     PATH=f"{shim}:{os.environ['PATH']}"))
         check("mktemp failing says the commit was not pushed",
               "mktemp failed" in p.stdout + p.stderr, (p.stdout + p.stderr)[:160])
 
-        (r.root / "scripts" / "push-campaign-branch").chmod(0o644)
+        (r.root / "scripts" / "push-campaign-branch.sh").chmod(0o644)
         (r.root / "docs" / "c.html").write_text("<p>c</p>\n")
         git(r.root, "add", "docs/c.html")
         c = r.commit()

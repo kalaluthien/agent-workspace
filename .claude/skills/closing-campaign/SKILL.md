@@ -26,8 +26,8 @@ match it among the open anchors and say which.
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-"$CONTAINER"/scripts/campaign-tracker anchors
-"$CONTAINER"/scripts/campaign-tracker bound "$N"   # here | elsewhere <machine> | unbound
+"$CONTAINER"/scripts/campaign-tracker.py anchors
+"$CONTAINER"/scripts/campaign-tracker.py bound "$N"   # here | elsewhere <machine> | unbound
 ```
 
 `here` — carry on. Anything else, a failed read included, refuses the close:
@@ -74,7 +74,7 @@ if [ ! -d "$CLAIMDIR" ]; then
 else
   find "$CLAIMDIR" -type f -print | while read -r F; do
     P=$(awk '$1 == "pid" { print $2 }' "$F")
-    V=$("$CONTAINER/scripts/campaign-claim" alive "$P" 2>&1) || V="unreadable ($V)"
+    V=$("$CONTAINER/scripts/campaign-claim.py" alive "$P" 2>&1) || V="unreadable ($V)"
     case "$V" in
       dead) ;;
       alive|other) echo "live claim: $(basename "$F") [$V]"; cat "$F" ;;
@@ -99,7 +99,7 @@ the whole question, over this campaign's branches and worktrees, the container's
 working tree, and every checkout under `repos/`. Do not re-derive any of it here.
 
 ```sh
-"$CONTAINER/scripts/campaign-local-work" "$N" "$CAMPAIGN_DIR" >| /tmp/local-work-$N
+"$CONTAINER/scripts/campaign-local-work.py" "$N" "$CAMPAIGN_DIR" >| /tmp/local-work-$N
 cat /tmp/local-work-$N
 ```
 
@@ -129,7 +129,7 @@ say which issue `$N` actually is.
 ```sh
 gh issue view "$N" -R kalaluthien/agent-workspace --json labels,parent \
   -q '"\([.labels[].name] | join(","))\t\(.parent.number // "-")"'
-"$CONTAINER/scripts/campaign-tracker" settlement "$N" >| /tmp/settlement-$N
+"$CONTAINER/scripts/campaign-tracker.py" settlement "$N" >| /tmp/settlement-$N
 cat /tmp/settlement-$N
 ```
 
@@ -167,7 +167,7 @@ reason, or `reparent` with the anchor that inherits it.
 until GitHub shows them.
 
 ```sh
-"$CONTAINER/scripts/campaign-tracker" settlement "$N" >| /tmp/settlement-after-$N
+"$CONTAINER/scripts/campaign-tracker.py" settlement "$N" >| /tmp/settlement-after-$N
 cat /tmp/settlement-after-$N
 grep -q '; closable$' /tmp/settlement-after-$N ||
   grep -q 'the index is empty' /tmp/settlement-after-$N ||
@@ -195,13 +195,13 @@ silently dropped. Validate first.
 ```sh
 README="$CAMPAIGN_DIR/README.md"
 rm -f /tmp/repos-before /tmp/repos-after
-"$CONTAINER/scripts/campaign-repos" "$README" >| /tmp/repos-before.tmp &&
+"$CONTAINER/scripts/campaign-repos.py" "$README" >| /tmp/repos-before.tmp &&
   mv /tmp/repos-before.tmp /tmp/repos-before ||
   { rm -f /tmp/repos-before.tmp
     echo "REFUSE: the ## Repos list did not read; nothing was written"; }
 ```
 
-`scripts/campaign-repos` is the one reader of that list. Stop on a non-zero exit;
+`scripts/campaign-repos.py` is the one reader of that list. Stop on a non-zero exit;
 read empty output as a repo-less campaign, not a failure. Keep the
 `.tmp`-then-`mv` and the leading `rm -f`, or a failed read leaves what a
 legitimate `- none` leaves.
@@ -229,7 +229,7 @@ against this one.
 ```sh
 gh issue edit "$N" -R kalaluthien/agent-workspace --body-file "$README"
 gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/body-after
-"$CONTAINER/scripts/campaign-repos" /tmp/body-after >| /tmp/repos-after.tmp &&
+"$CONTAINER/scripts/campaign-repos.py" /tmp/body-after >| /tmp/repos-after.tmp &&
   mv /tmp/repos-after.tmp /tmp/repos-after ||
   { rm -f /tmp/repos-after.tmp
     echo "REFUSE: the body GitHub stored does not read; the index may be lost"; }
@@ -321,7 +321,7 @@ that holds commits reported and not deleted.
 The probes and the failures behind these: `references/gotchas.md`.
 
 - An unmatched `repos/*/` glob fails silently in both shells, which is why no
-  step here globs; `scripts/campaign-local-work` enumerates instead.
+  step here globs; `scripts/campaign-local-work.py` enumerates instead.
 - `dropped` covers four closes and its note says which; only `not planned` is
   abandonment, so quote the note, not the word.
 - `state_reason` is lowercase from `gh api` and uppercase from `gh issue list

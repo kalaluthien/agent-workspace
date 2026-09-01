@@ -4,7 +4,7 @@ A container for running **campaigns**: units of work across the repositories the
 need, on repositories that live elsewhere. `README.md` says what the container is
 and `spec/alloy/*.als` why these rules are what they are; this is how to work here.
 
-**Much of what used to be written here is now enforced.** `scripts/campaign-primitives`
+**Much of what used to be written here is now enforced.** `scripts/campaign-primitives.py`
 lists this repository's scripts and hooks; run it in full for what each decides. It
 cannot see what lives off this tree — `main`'s branch protection, the machine-wide
 git hooks — so its silence is not evidence that no mechanism exists. Use `gh` for
@@ -25,7 +25,7 @@ Settle this before anything else. Most of what arrives here loads no skill.
 
 Otherwise, two readings, in this order.
 
-**One: does any open campaign's Scope cover the request?** `scripts/campaign-tracker anchors`
+**One: does any open campaign's Scope cover the request?** `scripts/campaign-tracker.py anchors`
 lists the open anchors — **never survey the tracker unfiltered**, since it holds
 three kinds of issue and only structure classifies them; where structure cannot
 answer, both templates are in `.claude/skills/opening-campaign/assets/`, and **an
@@ -130,7 +130,7 @@ they are two strings on purpose, and a test treating them as one finds whatever
 happens to match and misses the rest.
 
 **A session has two names and neither propagates to the other**, so
-`scripts/campaign-name-session <pane> <name>` sets both and refuses a name the rule
+`scripts/campaign-name-session.py <pane> <name>` sets both and refuses a name the rule
 does not admit; read what it reports applied, and confirm with `ListAgents`, which
 resolves the harness name a claim record holds. `herdr agent list` shows the pane.
 
@@ -176,11 +176,11 @@ what was built. Quote `campaign-tracker settlement`'s note for that row, not its
 ## The `## Repos` list
 
 **`## Repos`** says which repositories to clone when a campaign is opened, and
-`scripts/campaign-repos <path>` is its one reader; `- none` is the whole list for
+`scripts/campaign-repos.py <path>` is its one reader; `- none` is the whole list for
 a repo-less campaign, which files its subtasks on the container tracker. **The
 claim is still create-ref on the container** even when no container code will
 change: the branch is the claim before it is a workspace. A claim whose branch
-holds nothing beyond `origin/main` is released by `scripts/campaign-claim
+holds nothing beyond `origin/main` is released by `scripts/campaign-claim.py
 release`, which refuses on anything but a confirmed absence — `dead` is not proof.
 
 ## Execution mode
@@ -262,7 +262,7 @@ Three readings, and never answer one with another.
   Read a delegate's progress from its transcript, never from `agent_status`, which
   reports the screen and calls a mid-turn pause `idle`.
 - **What exists only on this machine is the third question**, and
-  `scripts/campaign-local-work <N> [dir]` is its one reader.
+  `scripts/campaign-local-work.py <N> [dir]` is its one reader.
 
 ## The four messages
 
@@ -291,7 +291,7 @@ from elsewhere reads *its* working tree and comes back clean regardless.
 
 ## The claim record
 
-**Every claimant writes a record, and `scripts/campaign-claim` writes it**, so the
+**Every claimant writes a record, and `scripts/campaign-claim.py` writes it**, so the
 shape lives in one place and a delegate runs the script rather than copying it.
 The session that *launched* a delegate writes none: it holds no claim, and a
 second address would make the close gate count one claim twice. Each field answers

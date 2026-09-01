@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Set a session's two names, both paths, from one call.
 
-    scripts/campaign-name-session <pane> <name> [<pane> <name> ...]
+    scripts/campaign-name-session.py <pane> <name> [<pane> <name> ...]
 
 A session has two names and neither propagates to the other: the herdr pane
 name that `herdr agent list` shows, and the harness name that `ListAgents`
@@ -13,7 +13,7 @@ It is also the naming rule's one consumer. `AGENTS.md` § The session name state
 rather than half-applied, because a rule nothing must consume is a rule that
 drifts.
 
-scripts/check-rule-readers is the second reader that keeps this claim true: it
+scripts/check-rule-readers.py is the second reader that keeps this claim true: it
 refuses a commit that stages either of the two herdr rename calls as code in
 any tracked markdown outside scripts/ -- inside a fence or a four-space indent,
 reading the index rather than the working tree. It catches a pasted copy, not a
@@ -66,7 +66,7 @@ def herdr(*args):
 def main():
     args = sys.argv[1:]
     if not args or len(args) % 2:
-        refuse("usage: campaign-name-session <pane> <name> [<pane> <name> ...]")
+        refuse("usage: campaign-name-session.py <pane> <name> [<pane> <name> ...]")
 
     pairs = list(zip(args[::2], args[1::2]))
 
