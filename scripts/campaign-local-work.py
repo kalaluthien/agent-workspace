@@ -7,7 +7,7 @@ and what on this campaign's own branches has never left this machine?" -- so
 closing-campaign step 2 is one call to this script rather than nine git
 commands in prose. A second reader written by hand somewhere else is what
 drifts, which is the same reason spec/alloy/ledger.als's settlement has exactly
-one implementation in scripts/campaign-settlement.
+one implementation, `campaign-tracker settlement`.
 
 It reads two places, and the second only when it is handed one:
 
@@ -72,7 +72,7 @@ Exit status is about the reading, never the verdict: 0 means the reading
 completed and the last line says clear or NOT clear; 1 means the reading itself
 failed and nothing may be concluded from it.
 
-scripts/check-rule-readers is the second reader that keeps this claim true: it
+scripts/check-rule-readers.py is the second reader that keeps this claim true: it
 refuses a commit that stages a `git status`, `git worktree list`, `git
 for-each-ref`, `git stash list`, `git diff --quiet` or `git branch --no-merged`
 as code in any tracked markdown outside scripts/ -- inside a fence or a
@@ -80,7 +80,7 @@ four-space indent, reading the index rather than the working tree. It catches
 a pasted copy, not a re-implementation that names nothing; see its header.
 Removing the guard returns this line to being a hope.
 
-Usage: scripts/campaign-local-work <anchor-issue-number> [campaign-dir]
+Usage: scripts/campaign-local-work.py <anchor-issue-number> [campaign-dir]
 
 `campaign-dir` may be relative or absolute; the script resolves it. Callers do
 not have to know, which is the point -- the caller who would have got it wrong
@@ -112,7 +112,7 @@ def git(repo, *args, check=True):
 
 
 def container():
-    """The main checkout, resolved the one sanctioned way (AGENTS.md § Three planes)."""
+    """The main checkout, resolved the one sanctioned way (AGENTS.md § The three planes)."""
     here = os.path.dirname(os.path.abspath(__file__))
     common = git(here, "rev-parse", "--path-format=absolute", "--git-common-dir")
     return os.path.realpath(os.path.dirname(common))
@@ -208,7 +208,7 @@ def read_branches(repo, name, rep, base, refspec="refs/heads/"):
         if local and local == remote:
             note, counted = "pushed", False
         elif base:
-            note, counted = landed(repo, br, base)
+            note, counted = landed(repo, br, base, name, rep)
         else:
             note, counted = "no base to compare against", True
         # An uncounted row is not work to move: saying "clears by push" over a
@@ -219,7 +219,7 @@ def read_branches(repo, name, rep, base, refspec="refs/heads/"):
             rep.add(name, kind, br, check, clears, note=note, counted=counted)
 
 
-def landed(repo, br, base):
+def landed(repo, br, base, name, rep):
     """Content, not ancestry -- the squash discriminator, scoped to the branch's own paths.
 
     Two-dot `diff <base>..<branch>` alone answers "no" for every branch cut
@@ -227,14 +227,23 @@ def landed(repo, br, base):
     the comparison is restricted to the paths the branch itself touched, and
     what is left over is reported with its file count and how far behind the
     branch is -- a count the reader judges, not a verdict the script invents.
+
+    With no merge base -- an orphan branch, a checkout whose base ref is gone --
+    there is nothing to scope the comparison to, and the count that came out was
+    `0 files differ`: the campaign's own defect, a measurement never taken
+    printed as a clean result. That goes to `unread`, which denies `clear`.
     """
     mb = git(repo, "merge-base", base, br, check=False)
-    paths = git(repo, "diff", "--name-only", mb, br, check=False).splitlines() if mb else []
-    if mb and not paths:
+    if not mb:
+        rep.unread(f"REPORT: {name}: {br} and {base} share no merge base, so "
+                   f"nothing of {br}'s content could be compared -- read it by hand")
+        return f"could not be compared against {base}: no merge base", True
+    paths = git(repo, "diff", "--name-only", mb, br, check=False).splitlines()
+    if not paths:
         return f"landed: nothing of its own beyond {base}", False
     files = git(repo, "diff", "--name-only", f"{base}..{br}", "--", *paths,
-                check=False).splitlines() if paths else []
-    if paths and not files:
+                check=False).splitlines()
+    if not files:
         return f"landed: its own paths carry nothing beyond {base}", False
     behind = git(repo, "rev-list", "--count", f"{br}..{base}", check=False)
     note = f"{len(files)} of its own file(s) differ from {base}"
@@ -296,12 +305,9 @@ def read_checkouts(campaign_dir, rep):
         refuse(f"{repos} exists and did not enumerate ({e.strerror}); "
                "nothing was checked")
     for repo in found:
-        # Ask git, never stat `.git`. A checkout made with --separate-git-dir,
-        # and every linked worktree, has `.git` as a *file* holding a gitdir:
-        # pointer -- so an isdir() test calls it "not a checkout" and its
-        # uncommitted edits leave the verdict entirely. That is the false clean
-        # this script exists to end, and it read `0 item(s) ... clear` over a
-        # tree the close was about to delete.
+        # Ask git, never stat `.git`: --separate-git-dir and every linked
+        # worktree make `.git` a *file* holding a gitdir: pointer, so an
+        # isdir() test would drop the whole checkout from the verdict.
         if not git(repo, "rev-parse", "--git-dir", check=False):
             rep.unread(f"REPORT: {repo} is not a checkout; read it by hand")
             continue
@@ -352,9 +358,9 @@ def main():
     # from inside the directory it just entered: a relative path doubles, the
     # command fails, and `check=False` turns that into "not a checkout". Every
     # member checkout then goes unread while the run still ends `clear`.
-    # A documented precondition nothing enforces is the drift this container
-    # has removed twice already; resolving is the half that does not depend on
-    # the caller having read the docstring.
+    # A documented precondition nothing enforces is a drift waiting to happen;
+    # resolving here is the half that does not depend on the caller having
+    # read the docstring.
     if campaign_dir:
         campaign_dir = os.path.realpath(campaign_dir)
 

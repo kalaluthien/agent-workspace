@@ -46,19 +46,23 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
-      - name: Rule readers have a second reader
+      - name: Every guard that refuses a commit also refuses here
         run: |
-          scripts/check-rule-readers
-          scripts/check-tree-shape
+          scripts/check-rule-readers.py
+          scripts/check-tree-shape.py
+          scripts/check-cross-references.py
 
       # Every suite, found rather than listed: a hand-kept list is one more copy
       # to forget, and the five suites #111 added were run by nobody here until
       # a review noticed. A suite that exits non-zero fails the job; a run that
       # finds no suite at all fails it too, since an empty loop is green.
+      # `*-test.*`, not `*-test.py`: the `-test` element is what names a suite
+      # and the extension names its language, so a shell suite is found too
+      # rather than silently skipped by a glob that pins one interpreter.
       - name: Every suite
         run: |
           n=0
-          for t in scripts/*-test; do
+          for t in scripts/*-test.*; do
             echo "== $t"
             "$t" || exit 1
             n=$((n + 1))
@@ -110,9 +114,15 @@ jobs:
           chmod +x ~/.local/bin/alloy
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Every model matches its own verdict table
+      # Seconds, and it needs no solver, so it runs before the slow step: a
+      # deleted command is the one thing the `expect` clauses below cannot
+      # catch, having no clause left to miss.
+      - name: The command lockfile still names every declared command
+        run: scripts/alloy-check.py --commands spec/alloy
+
+      - name: Every command comes out as its `expect` clause says
         run: |
           for m in spec/alloy/*.als; do
             echo "== $m"
-            scripts/alloy-check "$m"
+            scripts/alloy-check.py "$m"
           done

@@ -6,14 +6,14 @@ fixture written to a temporary tree and run through the real script, so what is
 tested is the shipped behaviour rather than a re-implementation of it -- which
 would be the second reader the guard itself exists to forbid.
 
-Usage: scripts/check-rule-readers-test
+Usage: scripts/check-rule-readers-test.py
 """
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-GUARD = Path(__file__).resolve().parent / "check-rule-readers"
+GUARD = Path(__file__).resolve().parent / "check-rule-readers.py"
 
 def fence(body, lang="sh"):
     return f"# t\n\n```{lang}\n{body}\n```\n"
@@ -21,33 +21,26 @@ def fence(body, lang="sh"):
 
 # One per FORM, in the shape a competent person actually writes it -- the flag
 # order the owning script itself uses, and the sibling command that answers the
-# same question. Every one of these slipped past the first version of the
-# regexes; three of the five forms had no case at all.
+# same question.
 FORM_CASES = [
     ("session-alive: the script's own flag order", fence('ps -p "$PID" -o ucomm='), 1),
     ("session-alive: comm instead of ucomm", fence("ps -o comm= -p 1"), 1),
     ("session-alive: pgrep answers the same question", fence("pgrep -x claude"), 1),
     ("session-alive: no `=` on the selector", fence("ps -o comm -p 1"), 1),
-    # Round 3: the widening that answered round 2 was pinned by nothing --
-    # every part of it could be reverted and all 35 cases passed. One case per
-    # alternation, so a revert fails here instead of shipping quietly.
+    # One case per alternation of the regex, so a revert of any one
+    # alternation fails here instead of shipping quietly.
     ("session-alive: the selector combined with other flags", fence("ps -axo ucomm="), 1),
     ("session-alive: a quoted selector", fence('ps -o "ucomm" -p 1'), 1),
     # Synthetic, and deliberately so: `\B` is what stops `-o` matching when a
-    # word character precedes the dash, and no realistic line exercises it. A
-    # narrowing nothing pins is a claim nothing holds, which is what this guard
-    # exists to refuse -- so the boundary gets a fixture even where the shape
-    # does not occur. Drop `\B` and this fires. It must hold no `|`, `;` or `&`:
-    # the form cannot cross one, so a piped fixture is quiet either way and
-    # would pin nothing -- which is how the first draft of this row passed.
+    # word character precedes the dash, and no realistic line exercises it.
+    # Drop `\B` and this fires. It must hold no `|`, `;` or `&`, since the form
+    # cannot cross one and a piped fixture would pin nothing.
     ("session-alive: a dash inside a word is not the selector flag",
      fence("ps -p 1 --color-o ucomm="), 0),
     # Each of the next two is matched by exactly one alternation: the list-pair
     # spelling carries no `=`, so only the list form sees it, and the bare
-    # selector names no `ps`, so only the quoted-constant form does. The
-    # obvious fixture -- a Python list holding `"ucomm="` -- is caught by both
-    # and therefore pins neither, which is how the first draft of these rows
-    # passed while both alternations could be deleted.
+    # selector names no `ps`, so only the quoted-constant form does. A fixture
+    # matched by both would pin neither.
     ("session-alive: a Python copy passing the selector as a list element",
      fence('subprocess.run(["ps", "-o", "comm", "-p", pid])'), 1),
     ("session-alive: the selector held in a constant",
@@ -55,26 +48,53 @@ FORM_CASES = [
     # ...and the boundary the narrowed claim now names, so widening the form
     # later has to move this row rather than pass silently.
     ("session-alive: another field first is outside the claim", fence("ps -o pid,ucomm -p 1"), 0),
-    # The two forms #112's scripts own. Each was prose the day before, and a
-    # guard with no form for them lets the deleted survey be pasted straight
-    # back.
+    # Two spellings of the open-anchor survey campaign-anchors owns.
     ("anchors: the open-anchor survey by label",
      fence("gh issue list -R o/r --label campaign --state open --limit 200"), 1),
     ("anchors: the same survey by the parent field",
      fence("gh issue list -R o/r --state open --json number,title,parent"), 1),
-    # The wrapped form: the survey this repository deleted put `--json …parent`
-    # on a continuation line, and a line-at-a-time scan read past it.
+    # The wrapped form: a continuation line a line-at-a-time scan would read past.
     ("anchors: the survey wrapped across a backslash continuation",
      fence("gh issue list -R o/r --state open \\\n  --json number,title,parent"), 1),
     ("anchors: the short flag spelling", fence("gh issue list -l campaign -R o/r"), 1),
     ("anchors: the quoted label spelling", fence('gh issue list --label "campaign" -R o/r'), 1),
     ("anchors: a continuation that never completes the form stays quiet",
      fence("gh issue list -R o/r \\\n  --state closed"), 0),
+    # A backslash on the last line of a block is a typo, not an exemption: the
+    # carried text is scanned when the run ends rather than dropped unread.
+    ("anchors: a continuation left open at the end of a fence is still scanned",
+     fence("gh issue list -R o/r --state open --json number,title,parent \\"), 1),
+    ("anchors: a continuation left open when prose resumes is still scanned",
+     "# t\n\n    gh issue list -R o/r --state open --json number,title,parent \\\n\nprose.\n", 1),
+    # ...and it does not reach across the close into the next block, which would
+    # let two harmless blocks report a form neither of them holds.
+    ("anchors: a continuation does not join across a fence close",
+     fence("gh issue list -R o/r --state open \\") + fence("--json number,title,parent"), 0),
     ("anchors: an issue list that reads neither is outside the claim",
      fence("gh issue list -R o/r --state closed --json number,title"), 0),
     ("subtasks: the index read", fence("gh api --paginate repos/o/r/issues/1/sub_issues"), 1),
     ("subtasks: the endpoint named in prose is a mention",
      "# t\n\nRead it back from `sub_issues`.\n", 0),
+    # The binding reading: the anchor's comments filtered for BOUND, and the
+    # machine comparison. One case per alternation, and then the two shapes
+    # that are the *write* of a binding rather than a reading of one -- both
+    # already in this tree, both of which a bare `hostname` form would refuse.
+    ("bound: the comments endpoint the reading walks",
+     fence("gh api --paginate --slurp repos/o/r/issues/1/comments"), 1),
+    ("bound: the comment bodies filtered for the marker",
+     fence("gh issue view 1 -R o/r --json comments -q '.comments[].body' | grep '^BOUND'"), 1),
+    ("bound: a jq that names the marker",
+     fence("""jq -r '.[] | select(.body | startswith("BOUND"))' comments.json"""), 1),
+    ("bound: the machine comparison in shell",
+     fence('[ "$M" = "$(hostname -s)" ] && echo here'), 1),
+    ("bound: ...and the same comparison written the other way round",
+     fence('[ "$(hostname -s)" = "$M" ] && echo here'), 1),
+    ("bound: the machine comparison in Python",
+     fence("here = machine == socket.gethostname()", lang="python"), 1),
+    ("bound: posting a binding is a write, not a reading",
+     fence('gh issue comment 1 -R o/r --body "BOUND $(hostname -s)"'), 0),
+    ("bound: naming this host in a comment body is a write too",
+     fence("HOST=$(hostname -s)"), 0),
     ("repos: a shell parse of the list", fence("grep '^- ' README.md | grep owner/repo"), 1),
     ("repos: the heading named in an error message", fence('echo "REFUSE: the ## Repos list did not read"'), 0),
     ("repos: a parse naming no tool is outside the claim",
@@ -94,11 +114,9 @@ FORM_CASES = [
 # How far the pinning goes, stated because a reader would otherwise infer more:
 # every *form* is pinned by at least one case, and within `campaign-session-alive`
 # every alternation is pinned individually. Alternations of the other four forms
-# are not: an exhaustive per-alternation sweep found roughly fourteen deletable
-# with the suite green, including `mergedAt` -- the first spelling
-# campaign-settlement's own claim names -- and the `## Repos` half of
-# campaign-repos'. That is scope, and it is larger than the deferred-scope
-# comment on PR #91 first said, so do not read that comment as the list.
+# are not -- an exhaustive per-alternation sweep found roughly fourteen deletable
+# with the suite green, including `mergedAt` and the `## Repos` half of
+# campaign-repos'. That is known scope, not full coverage.
 
 # The parser decides what counts as code. Each of these was an unsafe silence:
 # the guard exited 0 on a violation that renders as code.
@@ -108,8 +126,8 @@ PARSER_CASES = [
     ("a tab-indented code block", "# t\n\nLike so:\n\n\tps -o comm= -p 1\n", 1),
     # The violation sits *after* the impostor closer and before the real one,
     # so a parser that ends the block early stops scanning and reports clean.
-    # With the violation in a later fence both parsers catch it, and the case
-    # proves nothing -- which is how the first version of these two passed.
+    # With the violation in a later fence both parsers catch it and the case
+    # proves nothing.
     ("a ``` run does not close a ```` fence",
      "# t\n\n````sh\n```\nps -o comm= -p 1\n````\n", 1),
     ("a ~~~ run does not close a ``` fence",
@@ -158,8 +176,7 @@ EXEMPTION_CASES = [
     ("an exemption inside an indented block exempts nothing",
      "# t\n\n    <!-- unguarded: campaign-session-alive -- x -->\n    ps -o comm= -p 1\n", 1),
     # No prose between the fence and the indent: a prose line resets the
-    # exemption too, which masked the fence-close reset and let its case pass
-    # with that reset deleted -- while still carrying the name of the leak.
+    # exemption too, so this alone would not expose a missing fence-close reset.
     ("an exemption does not survive a closed fence into an indented block",
      "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n```sh\nps -o comm= -p 1\n```\n\n"
      "    ps -o comm= -p 1\n", 1),
@@ -167,16 +184,58 @@ EXEMPTION_CASES = [
      "# t\n\n```sh\n<!-- unguarded: campaign-session-alive -- x -->\nps -o comm= -p 1\n```\n", 1),
 ]
 
-CASES = FORM_CASES + PARSER_CASES + EXEMPTION_CASES
+# Three forms now live in one script, `campaign-tracker`. `EXEMPT` takes
+# `[\w-]+` with no spaces, so had the exemption token been merged along with the
+# scripts, one `<!-- unguarded: campaign-tracker -->` would silence the anchor
+# survey, the index read and the settlement verdict at once -- two more forms
+# than the author named, with nothing reporting it. Each case below holds two
+# forms of that one script in a single fence and exempts one; the surviving
+# finding is what a collapsed token would have swallowed.
+#
+# The `forbid` field is what makes these bite. Exit 1 alone passes under the
+# collapsed design too: `campaign-anchors` would not be an owner there, so the
+# run reports "an exemption naming no script" and both forms fire -- also
+# exit 1, for the opposite reason.
+BOTH_TRACKER_FORMS = ("gh issue list -R o/r --state open --json number,title,parent\n"
+                      "gh api --paginate repos/o/r/issues/1/sub_issues")
+
+GRANULARITY_CASES = [
+    ("tracker: exempting the anchor survey leaves the index read reported",
+     f"# t\n\n<!-- unguarded: campaign-anchors -- x -->\n\n```sh\n{BOTH_TRACKER_FORMS}\n```\n",
+     1, "the sub-issue index read", "the open-anchor survey"),
+    ("tracker: ...and exempting the index read leaves the anchor survey reported",
+     f"# t\n\n<!-- unguarded: campaign-subtasks -- x -->\n\n```sh\n{BOTH_TRACKER_FORMS}\n```\n",
+     1, "the open-anchor survey", "the sub-issue index read"),
+    # Named separately, both are silenced -- so the split did not simply make
+    # the exemption unusable.
+    ("tracker: two tokens of one script, named separately, silence both",
+     "# t\n\n<!-- unguarded: campaign-anchors -- x -->\n"
+     f"<!-- unguarded: campaign-subtasks -- y -->\n\n```sh\n{BOTH_TRACKER_FORMS}\n```\n",
+     0, None, None),
+    # The script's own name is not a token, and saying so is the report a
+    # collapsed design could not make.
+    ("tracker: the merged script's name is not an exemption token",
+     f"# t\n\n<!-- unguarded: campaign-tracker -- x -->\n\n```sh\n{BOTH_TRACKER_FORMS}\n```\n",
+     1, "an exemption naming no script", None),
+    # The finding says which script to call as well as which token to exempt:
+    # a reader told only the token cannot find the code.
+    ("tracker: a finding names the script to call and the token to exempt",
+     fence("gh api --paginate repos/o/r/issues/1/sub_issues"),
+     1, "scripts/campaign-tracker.py (exempt with `campaign-subtasks`)", None),
+    # The same split, on the other merge.
+    ("claim: the liveness form is exempted by its own token, not the script's",
+     "# t\n\n<!-- unguarded: campaign-claim -- x -->\n\n```sh\nps -o comm= -p 1\n```\n",
+     1, "an exemption naming no script", None),
+]
+
+CASES = FORM_CASES + PARSER_CASES + EXEMPTION_CASES + GRANULARITY_CASES
 
 
 def staged_case():
     """The index branch has no other reader: exercise it through a real repo.
 
-    Deleting `content()`'s staged branch survived all 34 file-path cases,
-    because none of them passed --staged. This is the only case that fails when
-    the guard goes back to reading the working tree -- which is the whole point
-    of the hook running --staged.
+    No fixture above passes --staged, so this is the only case that fails if
+    the guard falls back to reading the working tree instead of the index.
     """
     with tempfile.TemporaryDirectory() as d:
         run_git = lambda *a: subprocess.run(
@@ -207,12 +266,15 @@ def main():
     for case in CASES:
         name, body, want = case[0], case[1], case[2]
         expect = case[3] if len(case) > 3 else None
+        forbid = case[4] if len(case) > 4 else None
         code, out = run(body)
         # An exit code alone lets a case pass for the wrong reason: a fixture
         # aimed at the exemption reporter is satisfied by the fence violation it
         # also contains. Where a case names the text it expects, that is checked
-        # too.
-        ok = code == want and (expect is None or expect in out)
+        # too -- and `forbid` names the finding that must be *absent*, which is
+        # the only way to pin an exemption that silenced exactly one form.
+        ok = (code == want and (expect is None or expect in out)
+              and (forbid is None or forbid not in out))
         print(f"{'ok  ' if ok else 'FAIL'}  {name}  (exit {code}, wanted {want})")
         if not ok:
             failures += 1

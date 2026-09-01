@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """Set a session's two names, both paths, from one call.
 
-    scripts/campaign-name-session <pane> <name> [<pane> <name> ...]
+    scripts/campaign-name-session.py <pane> <name> [<pane> <name> ...]
 
-A session has two names and neither propagates to the other (measured
-2026-08-30): the herdr pane name that `herdr agent list` shows, and the harness
-name that `ListAgents` resolves and a peer addresses. Renaming one leaves the
-session answering to two different names depending on who is asking, so this
-sets both and reports each.
+A session has two names and neither propagates to the other: the herdr pane
+name that `herdr agent list` shows, and the harness name that `ListAgents`
+resolves and a peer addresses. Renaming one leaves the session answering to two
+different names depending on who is asking, so this sets both and reports each.
 
-It is also the naming rule's one consumer. `AGENTS.md` § Naming a session states
+It is also the naming rule's one consumer. `AGENTS.md` § The session name states
 `campaign-<anchor>-<role>-<n>`; a name that does not match is refused here
 rather than half-applied, because a rule nothing must consume is a rule that
 drifts.
 
-scripts/check-rule-readers is the second reader that keeps this claim true: it
+scripts/check-rule-readers.py is the second reader that keeps this claim true: it
 refuses a commit that stages either of the two herdr rename calls as code in
 any tracked markdown outside scripts/ -- inside a fence or a four-space indent,
 reading the index rather than the working tree. It catches a pasted copy, not a
@@ -28,11 +27,10 @@ returns this line to being a hope.
 The harness half is `herdr agent prompt <pane> "/rename <name>"`, which is
 another session driving that pane -- the same act as a person typing it, and it
 works on the caller's own pane too. Whether a given call is PERMITTED is a
-per-session permission decision rather than a property of the tool, and it
-varies: measured 2026-08-30, one session's self-rename was refused and the same
-call was accepted later, while a peer's was accepted throughout. So this reports
-what was applied and what was not rather than assuming either, and the caller's
-own rename is the one most likely to need a person.
+per-session permission decision rather than a property of the tool, and it is
+not stable: the same call can be refused and then accepted minutes apart. So
+this reports what was applied and what was not rather than assuming either,
+and the caller's own rename is the one most likely to need a person.
 """
 import json
 import re
@@ -41,9 +39,8 @@ import sys
 
 # One shape, no branches. The subtask is deliberately absent: a session works
 # several subtasks, in parallel or one after another, and a name that tracked
-# the work in hand would go false at every handover -- witnessed the day this
-# was written, on the session that wrote it. <n> distinguishes sessions sharing
-# a campaign and a role.
+# the work in hand would go false at every handover. <n> distinguishes sessions
+# sharing a campaign and a role.
 # `executor` is the only role: a review runs as a subagent of the session that
 # wants the merge, so it has no session to name. AGENTS.md, "Naming a session".
 NAME = re.compile(r"^campaign-[0-9]+-executor-[0-9]+$")
@@ -69,7 +66,7 @@ def herdr(*args):
 def main():
     args = sys.argv[1:]
     if not args or len(args) % 2:
-        refuse("usage: campaign-name-session <pane> <name> [<pane> <name> ...]")
+        refuse("usage: campaign-name-session.py <pane> <name> [<pane> <name> ...]")
 
     pairs = list(zip(args[::2], args[1::2]))
 

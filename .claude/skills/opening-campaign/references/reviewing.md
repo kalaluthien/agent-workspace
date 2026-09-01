@@ -1,6 +1,6 @@
 # Commissioning a review, in full
 
-The procedure behind `AGENTS.md` § Completion and liveness, which keeps the
+The procedure behind `AGENTS.md` § Review, which keeps the
 rules. A review is the only thing standing between a branch and `main`, and the
 two ways it goes wrong are running it in the wrong mode and running it at a
 level nobody chose.
@@ -73,13 +73,12 @@ other way.
 One reviewer per pull request, one verifier per fix round. Every angle the review
 should take is a section of the one reviewer's brief. Fan out into parallel
 reviewers only when the angles are genuinely independent *and* the budget is
-known to carry them: eight parallel angles per pull request died twice on the
-session limit, and one consolidated pass found findings of the same quality at a
-fraction of the spend.
+known to carry them: many parallel angles on one pull request risk the session
+limit, for findings a single consolidated pass finds at a fraction of the spend.
 
 **The pull request is the review's working memory.** A finding that exists only
 inside a running session is not yet found. Findings are posted as a comment the
 moment they consolidate, before anything else is launched, and a reviewer that
-runs long writes them out as it goes -- findings held in a session's context died
-with the session limit twice, while findings on the pull request survived
-everything and let a fix start while the rest of the review was still running.
+runs long writes them out as it goes -- findings held only in a session's context
+do not survive the session limit, while findings on the pull request do, and let
+a fix start while the rest of the review is still running.

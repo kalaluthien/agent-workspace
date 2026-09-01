@@ -7,23 +7,28 @@ GitHub, and a fixture that mocked them would be testing the mock. What is here
 is the half that decides whether a claim gets deleted, which is the half whose
 failure destroys somebody's work.
 
-No case may reach the network. The first draft had one that did, and it created
-a branch on the real remote every time the suite ran -- a test that writes to
-production, hidden inside a green line of output.
+`live` is covered here too, since it is the same script's two-sided reading. Its
+herdr half is tested against a recorded listing rather than whatever is running,
+so the cases mean the same thing tomorrow; the directory half runs the shipped
+script.
 
-Usage: scripts/campaign-claim-test
+No case may reach the network: a case that does writes to production, hidden
+inside a green line of output.
+
+Usage: scripts/campaign-claim-test.py
 """
+import json
 import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-CLAIM = Path(__file__).resolve().parent / "campaign-claim"
+CLAIM = Path(__file__).resolve().parent / "campaign-claim.py"
 def _free_pid():
     """A pid held by nobody. A hardcoded one passed on a runner and could name a
     live process on a dev machine -- the residue running the other way."""
-    p = subprocess.Popen(["/usr/bin/true"])
+    p = subprocess.Popen([sys.executable, "-c", ""])
     p.wait()
     return str(p.pid)
 
@@ -33,11 +38,8 @@ DEAD_REC = f"session s1\nname n1\npid {DEAD}\nbranch campaign-1/7-x\n"
 DIR = object()   # a fixture that is a directory rather than a file
 
 
-# A stand-in process table. The three cases that turn on `stale?` used to read
-# the live one, so they passed on a machine with a claude running and failed on
-# a runner with none -- which is how the CI step added in #112 went red on its
-# first run. `campaign-claim` splits `count_newer` pure for exactly this reason
-# and these cases were left going round it.
+# A stand-in process table, so the cases that turn on `stale?` do not depend
+# on whether a claude happens to be running on the machine the suite runs on.
 PS_SHIM = """#!/bin/sh
 for a in "$@"; do
   case "$a" in
@@ -114,18 +116,15 @@ case("release names the restart evidence when it refuses",
 case("a missing claims directory refuses rather than reading empty",
      ["list"], want=None, code=None)
 
-# `take` is covered only up to the point where it would reach GitHub. The first
-# draft of this case ran the whole command and created campaign-1/7-x on the
-# real remote, which is the shape of test that quietly does damage: a suite is
-# run over and over, and every run of that one was a live write.
+# `take` is covered only up to the point where it would reach GitHub.
 # pid 1 exists on every machine this runs on and is not a claude, so
-# campaign-session-alive calls it `other` -- a liveness that is neither dead nor
-# alive, and the one the release gate must refuse by name. Hardcoding the wire
-# to "dead" changes this refusal's wording, which is what makes it a case.
-# A record whose bytes are not text. Three call sites used to hand this
-# straight to a traceback.
-# The trace and its notes on one stream, in order. Split across two they
-# reordered under a pipe, and the order is part of the evidence.
+# the pid reading calls it `other` -- a liveness that is neither dead
+# nor alive, and the one the release gate must refuse by name. Hardcoding the
+# wire to "dead" would flip this refusal's reason, which is what makes it a
+# case.
+# A record whose bytes are not text must read as unreadable, not crash.
+# The trace and its notes on one stream, in order -- split across stdout and
+# stderr, a pipe could reorder them relative to each other.
 case("the restart note is on stdout with the rest of the trace",
      ["release", "7"], {"7": DEAD_REC}, OLD, want="note:", code=1)
 # A non-file entry under claims/ is counted apart, never dropped.
@@ -150,11 +149,10 @@ AFTER_ALL = 1790000000.0     # 2026-09, after both
 
 
 def pure_cases(m):
-    """The restart evidence, against a recorded process table. These two used to
-    pass only because a claude was running on this machine."""
+    """The restart evidence, against a recorded process table."""
     # Counted as they run, never a constant. A hardcoded total is a suite that
     # cannot report its own shrinkage -- deleting a case still prints the same
-    # "N/N pass". This file had one, twice.
+    # "N/N pass".
     ran, out = [], []
 
     def c(name, cond):
@@ -176,9 +174,8 @@ def pure_cases(m):
     c("an empty process table is zero, not a why", why is None and n == 0)
 
     # The destructive path's decision, now that it is a calculation and the
-    # suite can reach it. The two blockers this pull request's review found both
-    # live here, and neither had a case: the effects around them touch GitHub,
-    # and the suite may not.
+    # suite can reach it: the effects around it touch GitHub, and the suite
+    # may not.
     rec = {"session": "S1", "branch": "campaign-1/7-x"}
     c("a live record is never releasable",
       m.release_gate(rec, None, "asked the peer", "alive")[0] is None)
@@ -235,11 +232,30 @@ def pure_cases(m):
     c("a missing command is a failed run, not an exception",
       r.returncode != 0 and "FileNotFoundError" in r.stderr)
 
-    # The install's process names, read from the script that owns them. Loading
-    # this file as a module is what broke when importlib.machinery was
-    # referenced without being imported.
-    c("the session names come from the owning script",
-      isinstance(m.session_names(), frozenset) and m.session_names())
+    # The install's process names. A literal, and stated as a fact about this
+    # install rather than about claude: an unrecognised name must read `other`,
+    # never `dead`, so the literal is allowed to be wrong without a tree being
+    # deleted for it.
+    c("the install's process names are a frozenset with something in it",
+      isinstance(m.NAMES, frozenset) and m.NAMES)
+
+    # The pid reading, now in this script. Each verdict, and each way the
+    # question can fail to be asked at all -- the branch whose wrong answer
+    # deletes a tree.
+    c("a pid that is not a number is unreadable, never dead",
+      m.liveness("abc") == (None, "not a pid: 'abc'"))
+    c("pid 0 is not a pid either", m.liveness("0")[0] is None)
+    c("a negative pid is not a pid", m.liveness("-1")[0] is None)
+    c("this process's own pid reads a verdict, not a failure",
+      m.liveness(os.getpid())[1] is None)
+    c("a pid held by nobody is dead", m.liveness(DEAD) == ("dead", None))
+    # pid 1 exists on every machine this runs on and is not a claude, so it is
+    # `other` -- a liveness that is neither dead nor alive, and the one the
+    # release gate must refuse by name.
+    c("a pid held by something this install cannot name is other, not dead",
+      m.liveness("1") == ("other", None))
+    c("the record reader turns an unreadable pid into a word, not an exception",
+      m.alive("abc").startswith("unreadable ("))
 
     # A record that will not decode is a failed reading, not an absence.
     c("an undecodable record is unreadable, never dead",
@@ -253,6 +269,189 @@ def pure_cases(m):
     return ran, out
 
 
+# ------------------------------------------------------------- `live` and its join
+
+# A stand-in herdr, so a case that runs the shipped script end to end does not
+# depend on what happens to be installed.
+HERDR_SHIM = """#!/bin/sh
+echo '{"result":{"agents":[]}}'
+"""
+
+
+def with_herdr(d):
+    shim = Path(d) / "bin"
+    shim.mkdir(exist_ok=True)
+    (shim / "herdr").write_text(HERDR_SHIM)
+    (shim / "herdr").chmod(0o755)
+    return {"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(d)}
+
+
+def agent(sid, name=None, pane="w1:p1"):
+    a = {"agent_session": {"value": sid} if sid else None,
+         "agent_status": "working", "cwd": "/x", "pane_id": pane}
+    if name:
+        a["name"] = name
+    return a
+
+
+def listing(*agents):
+    return json.dumps({"result": {"agents": list(agents)}})
+
+
+def live(m):
+    """The two-sided reading: liveness from herdr, attribution from the records,
+    joined on the one key that survives a restart and a rename."""
+    ran, out = [], []
+
+    def c(name, cond):
+        ran.append(name)
+        if not cond:
+            out.append(name)
+
+    def run_live(d, env=None):
+        return subprocess.run([sys.executable, str(CLAIM), "live", "1", "--dir", d],
+                              capture_output=True, text=True, env=env)
+
+    got, why = m.parse_agents(listing(agent("S1", "campaign-1-executor-1")))
+    c("a listed session is keyed by its session id", why is None and "S1" in got)
+    c("its name comes along", got and got["S1"]["name"] == "campaign-1-executor-1")
+
+    got, why = m.parse_agents(listing(agent("S1")))
+    c("a session with no name is still listed",
+      why is None and got["S1"]["name"] == "<unnamed>")
+
+    # A session herdr cannot identify still occupies a pane, and dropping it
+    # shrinks the count a close gate reads.
+    got, why = m.parse_agents(listing(agent(None, pane="w1:p9")))
+    key = next(iter(got)) if got else ""
+    c("a session herdr cannot identify is counted under a key naming its pane",
+      why is None and len(got) == 1 and isinstance(key, str) and "w1:p9" in key)
+
+    # The join, which is the whole point.
+    sessions, _ = m.parse_agents(listing(agent("S1", "campaign-1-executor-1")))
+    same = {"7": {"session": "S1", "name": "campaign-1-executor-1", "branch": "b"}}
+    a, o, i = m.classify(same, sessions)
+    c("a claim whose session id is live is answered", len(a) == 1 and not o)
+    # ...and is not also counted as holding nothing. The two lists are a
+    # partition of the live sessions, and a session appearing on both would be
+    # read by a close as one live executor too many.
+    c("a session that answers a claim is not also listed as unattributed", not i)
+
+    # The case that separates the two possible keys. The name matches and the
+    # session id does not, which is exactly what a rename leaves behind: joining
+    # on the name calls this answered, and a close then reads a live claim as
+    # attributed to a session that is not the one holding it.
+    renamed = {"7": {"session": "S9", "name": "campaign-1-executor-1", "branch": "b"}}
+    a, o, i = m.classify(renamed, sessions)
+    c("a claim whose name matches but session id does not is unanswered",
+      not a and len(o) == 1)
+    c("...and that live session is then reported as holding no claim", len(i) == 1)
+
+    # The anchor argument: pins that it is actually read, not merely declared.
+    mine = {"7": {"session": "S1", "branch": "campaign-1/7-x"}}
+    theirs = {"9": {"session": "S2", "branch": "campaign-2/9-y"}}
+    c("a record naming this campaign's branch is not stray",
+      m.stray_branches(mine, "1") == [])
+    c("a record naming another campaign's branch is stray",
+      len(m.stray_branches(theirs, "1")) == 1)
+    c("a record with no branch cannot vouch for itself and is stray",
+      len(m.stray_branches({"7": {"session": "S1"}}, "1")) == 1)
+    c("anchor 1 does not swallow anchor 11",
+      len(m.stray_branches({"7": {"branch": "campaign-11/7-x"}}, "1")) == 1)
+
+    got, why = m.parse_agents("not json")
+    c("unparseable output is a why, not an empty listing", got is None and why)
+    got, why = m.parse_agents(json.dumps({"result": {}}))
+    c("a listing with no agents key is a why, not zero sessions",
+      got is None and why)
+
+    # A reading that did not happen must not come back as a clean tree.
+    with tempfile.TemporaryDirectory() as d:
+        r = run_live(d, with_herdr(d))
+        out_text = r.stdout + r.stderr
+    c("a missing claims directory refuses",
+      r.returncode == 1 and "says nothing" in out_text)
+
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "runtime" / "claims").mkdir(parents=True)
+        r = run_live(d, with_herdr(d))
+        out_text = r.stdout + r.stderr
+    c("an empty claims directory is read, not refused",
+      r.returncode == 0 and "0 claim(s)" in out_text)
+    c("and it still says both readings were made",
+      "both readings were made" in out_text)
+
+    # A run that asserted nothing is not a pass either.
+    # The wire from cmd_live into stray_branches, which the pure cases above
+    # cannot reach: replacing the call with [] left the suite green. Run with
+    # PATH stripped so herdr cannot be found -- the stray report must not
+    # depend on the other reading having worked.
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        (claims / "9").write_text("session S9\nbranch campaign-2/9-y\n")
+        r = run_live(d, {"PATH": "/nonexistent"})
+        out_text = r.stdout + r.stderr
+    c("a record from another campaign is reported by the real run",
+      "campaign-2/9-y" in out_text and "outside campaign-1" in out_text)
+    c("...even when the herdr reading could not be made",
+      "did not happen" in out_text and r.returncode == 1)
+
+    # A record that will not decode is a check that did not happen, so it must
+    # deny the clean verdict the way a failed herdr read does.
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        (claims / "7").write_text("session S1\nbranch campaign-1/7-x\n")
+        (claims / "9").write_bytes(b"\xff\xfe not text\n")
+        r = run_live(d)
+        out_text = r.stdout + r.stderr
+    c("an unreadable record denies the clean verdict", r.returncode == 1)
+    c("...and is named as unread rather than as a stray file",
+      "will not decode" in out_text and "1 unread" in out_text)
+    c("...and the run does not claim both readings were made",
+      "both readings were made" not in out_text)
+
+    # A non-file entry under claims/ is counted, not silently dropped.
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        (claims / "7").write_text("session S1\nbranch campaign-1/7-x\n")
+        (claims / "9").mkdir()
+        recs, odd = m.claim_records(claims)
+        c("a directory under claims/ is named, not dropped",
+          len(recs) == 1 and len(odd) == 1 and odd[0].startswith("9 "))
+
+    # `status` and `live` read one record with one parser, so they cannot
+    # disagree about what it says.
+    body = "session S1\nname n1\npid 4\nbranch campaign-1/7-x\n"
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        (claims / "7").write_text(body)
+        recs, _ = m.claim_records(claims)
+        c("one record parser feeds both readings",
+          recs["7"] == m.read_record(claims / "7") == m.fields_of(body))
+
+    # --- the `alive` subcommand, whose printed word is the whole contract.
+    def alive_cli(pid):
+        r = subprocess.run([sys.executable, str(CLAIM), "alive", str(pid)],
+                           capture_output=True, text=True)
+        return r.returncode, r.stdout.strip(), r.stderr
+    code, word, _ = alive_cli(DEAD)
+    c("`alive` prints `dead` for a pid held by nobody, and exits 0",
+      code == 0 and word == "dead")
+    code, word, _ = alive_cli(1)
+    c("`alive` prints `other` for a pid this install cannot name",
+      code == 0 and word == "other")
+    # The status is about the reading, never the verdict: a failed read that
+    # exited like `dead` deletes a tree under a live session.
+    code, word, err = alive_cli("abc")
+    c("`alive` refuses an unreadable pid on exit 2, printing no verdict",
+      code == 2 and word == "" and "not a pid" in err)
+    return ran, out
+
+
 def main():
     failed = 0
     import importlib.machinery, importlib.util
@@ -262,6 +461,9 @@ def main():
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     pure_ran, pure_failed = pure_cases(m)
+    live_ran, live_failed = live(m)
+    pure_ran += live_ran
+    pure_failed += live_failed
     for name in pure_failed:
         print(f"FAIL  {name}")
     failed += len(pure_failed)

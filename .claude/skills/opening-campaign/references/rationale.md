@@ -5,7 +5,7 @@ arbitrary, or when you are about to change it.
 
 ## Finished when — reading the `## Repos` list
 
-`scripts/campaign-repos` is the one reader of that list, and its refusals are
+`scripts/campaign-repos.py` is the one reader of that list, and its refusals are
 enumerated in its own header. The bare `grep '<'` that `SKILL.md`
 forbids fails because a correct Requirements section quotes things like
 `issues/<N>/sub_issues`, so it reports hits on a clean README — which is why the
@@ -13,12 +13,12 @@ check is a reader scoped to the one section.
 
 ## The gate — deciding new or follow-up
 
-The survey itself is `AGENTS.md` § Not every request is a campaign; this is why
+The survey itself is `AGENTS.md` § Routing an arriving request; this is why
 its two readings are shaped the way they are.
 
 **Read an unplaced issue for shape.** Which shape means which kind, and that the
 third kind is left alone rather than surveyed, joined, or edited, is `AGENTS.md`
-§ When the container is a member of its own campaign. What that section leaves
+§ The container as its own member. What that section leaves
 implicit for this step: every anchor is in the no-parent listing whether or not
 it was labelled, which is what makes the two readings cross-check each other.
 
@@ -81,9 +81,9 @@ under a delegate already working in it. Without it,
 
 **The branch name's parts** — what each of `campaign-<N>/<issue>-<topic>` keeps
 apart, and why the branch's existence is the claim — are the Branch bullet of
-`AGENTS.md` § Who is a campaign session.
+`AGENTS.md` § ID, directory, branch.
 
-**Why the addition syncs immediately** is `AGENTS.md` § Running a campaign:
+**Why the addition syncs immediately** is `AGENTS.md` § The anchor body:
 adding a repository is a scope change, and holding it back to the close loses
 exactly what the delay was meant to protect. What that leaves implicit here: the
 session that opens the campaign on another machine clones the `## Repos` list and

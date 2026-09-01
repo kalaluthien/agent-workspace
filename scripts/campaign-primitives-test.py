@@ -5,9 +5,9 @@ The announcement is what makes deleting a rule from the prose safe, so the way
 it fails matters more than the way it succeeds. Two directions, not equally bad:
 over-calling makes a reader look for a guard that is not there, while reporting
 a deleted guard as installed makes a reader believe the tree is guarded when
-nothing guards it. Three earlier classifiers failed in that second direction.
+nothing guards it.
 
-Usage: scripts/campaign-primitives-test
+Usage: scripts/campaign-primitives-test.py
 """
 import importlib.machinery
 import importlib.util
@@ -16,15 +16,19 @@ import sys
 import tempfile
 from pathlib import Path
 
-PRIM = Path(__file__).resolve().parent / "campaign-primitives"
+PRIM = Path(__file__).resolve().parent / "campaign-primitives.py"
 
-DECLARING = "#!/bin/sh\n# runs: check-rule-readers check-tree-shape\nfor g in $(sed ...); do :; done\n"
+# Spelled with chr() so this file's own text holds no triple quote of its
+# own: check-tree-shape reads one as a docstring opening.
+SQ = chr(39) * 3
+
+DECLARING = "#!/bin/sh\n# runs: check-rule-readers.py check-tree-shape.py\nfor g in $(sed ...); do :; done\n"
 # The same hook after an ordinary refactor of its loop. Both readers use the
 # declaration, so the loop's shape does not matter.
-REFACTORED = "#!/bin/sh\n# runs: check-rule-readers check-tree-shape\nG=$(sed ...)\nfor g in $G; do :; done\n"
+REFACTORED = "#!/bin/sh\n# runs: check-rule-readers.py check-tree-shape.py\nG=$(sed ...)\nfor g in $G; do :; done\n"
 # A hook mentioning scripts in prose and declaring nothing. The classifier that
 # matched a name anywhere reported these as installed guards.
-PROSE_ONLY = "#!/bin/sh\n# see scripts/check-rule-readers and scripts/check-tree-shape\nexit 0\n"
+PROSE_ONLY = "#!/bin/sh\n# see scripts/check-rule-readers.py and scripts/check-tree-shape.py\nexit 0\n"
 
 
 def load():
@@ -44,9 +48,10 @@ def main():
         if not cond:
             fails.append(name)
 
-    names = {"check-rule-readers", "check-tree-shape", "campaign-bound",
-             "install-hooks", "push-campaign-branch"}
-    both = {"check-rule-readers", "check-tree-shape"}
+    names = {"check-rule-readers.py", "check-tree-shape.py",
+             "campaign-tracker.py", "install-hooks.sh",
+             "push-campaign-branch.sh"}
+    both = {"check-rule-readers.py", "check-tree-shape.py"}
 
     found, probs = m.hook_run({"pre-commit": DECLARING}, names)
     check("a hook's declaration names its guards", found == both and not probs)
@@ -95,10 +100,36 @@ def main():
         check("a docstring is too",
               m.summary(wrote('#!/usr/bin/env python3\n"""what it does."""\n'))
               == "what it does.")
-        check("a script with no summary at all reports none, not a line of code",
-              m.summary(wrote("#!/bin/sh\nset -e\necho hi\n")) is None)
+        check("a single-quoted docstring is a docstring too",
+              m.summary(wrote("#!/usr/bin/env python3\n" + SQ + "what it does."
+                              + SQ + "\n")) == "what it does.")
+        # The two halves of the same defect. Without an opener for it, a
+        # single-quoted docstring did not report "no summary": the scan walked
+        # past it and announced the next `#` line in the file, which is a wrong
+        # answer wearing the shape of a right one.
+        check("...and a stray comment below one is not mistaken for it",
+              m.summary(wrote("#!/usr/bin/env python3\n" + SQ + "what it does."
+                              + SQ + "\nimport sys\n# not the summary\n"))
+              == "what it does.")
+        check("a first line that opens no comment is named, not read past",
+              m.summary(wrote("#!/bin/sh\nset -e\n# not the summary\necho hi\n"))
+              == "<unrecognised comment opener: 'set -e'>")
+        check("a file holding only a shebang has nothing to read",
+              m.summary(wrote("#!/bin/sh\n")) is None)
         check("a file that cannot be read says so rather than returning none",
               str(m.summary(Path(d) / "absent")).startswith("<unreadable"))
+        # End to end: what summary() names must reach the reader, and the
+        # section that admits a script it could not classify is the one place
+        # it can. A summary silently invented from a later line lands the
+        # script in the reader list instead, where nothing says it was guessed.
+        (Path(d) / "opaque").write_text("#!/bin/sh\nset -e\n# not the summary\n")
+        (Path(d) / "opaque").chmod(0o755)
+        r = subprocess.run([sys.executable, str(PRIM), "--scripts-dir", d],
+                           capture_output=True, text=True)
+        check("a script it could not classify is listed as such, and the run "
+              "still exits 0",
+              r.returncode == 0 and "could not be classified" in r.stdout
+              and "unrecognised comment opener" in r.stdout)
 
     # This is the SessionStart hook's command, so it must deliver the listing
     # whatever it found: a non-zero exit there drops stdout entirely, which
@@ -108,15 +139,15 @@ def main():
     out = r.stdout + r.stderr
     check("it exits 0 so SessionStart delivers the listing", r.returncode == 0)
     check("the push hook is announced, being a mechanism that acts unasked",
-          "push-campaign-branch" in out)
+          "push-campaign-branch.sh" in out)
     check("the two guards are announced",
-          "check-tree-shape" in out and "check-rule-readers" in out)
+          "check-tree-shape.py" in out and "check-rule-readers.py" in out)
     check("it separates what runs unasked from what a flow calls",
           "run by a git hook, unasked" in out and "a flow calls these" in out)
 
-    # core.hooksPath: git looks there and nowhere else. Resolving the hooks
-    # directory by hand instead of asking git meant the inventory went on
-    # reporting two installed hooks while git ran none.
+    # core.hooksPath: git looks there and nowhere else, so resolving the hooks
+    # directory by hand instead of asking git could report hooks as installed
+    # that git never runs.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
@@ -132,9 +163,7 @@ def main():
         check("core.hooksPath sends git elsewhere, and the listing follows it",
               "NO git hook is installed" in r.stdout)
 
-    # The exit status, which is the SessionStart contract. A non-zero exit
-    # there drops stdout, suppressing the whole announcement in exactly the
-    # case the warning block is written for.
+    # The unclassifiable-script case the warning block above exists for.
     with tempfile.TemporaryDirectory() as d:
         q = Path(d) / "mystery"
         q.write_text("#!/bin/sh\nset -e\necho hi\n")
@@ -145,6 +174,57 @@ def main():
     check("an unclassifiable script is reported", "could not be classified" in out2)
     check("...and does not suppress the listing by exiting non-zero",
           r.returncode == 0 and "Machine-decided here" in r.stdout)
+
+    # Two roots. A script parked under the skill that owns it is still a script
+    # a session must be told about, and a root this does not walk is a script it
+    # does not announce -- the exact failure the inventory exists to prevent.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        top = root / "scripts"
+        top.mkdir()
+        (top / "in-scripts").write_text("#!/bin/sh\n# a shared reader\n")
+        (top / "in-scripts").chmod(0o755)
+        owned = root / ".claude" / "skills" / "some-skill" / "scripts"
+        owned.mkdir(parents=True)
+        (owned / "in-skill").write_text("#!/bin/sh\n# a reader one skill owns\n")
+        (owned / "in-skill").chmod(0o755)
+        # A skill directory with no scripts/ of its own is not a root.
+        (root / ".claude" / "skills" / "bare-skill").mkdir(parents=True)
+        # ...and a suite is not announced from either root.
+        (owned / "in-skill-test").write_text("#!/bin/sh\n# a suite\n")
+        (owned / "in-skill-test").chmod(0o755)
+
+        roots = m.script_roots(top)
+        check("the scripts directory is the first root",
+              roots and roots[0] == ("", top))
+        check("a skill with its own scripts/ is a second root",
+              ("some-skill/", owned) in roots)
+        check("a skill with no scripts/ is not a root",
+              not any("bare-skill" in label for label, _ in roots))
+
+        r = subprocess.run([sys.executable, str(PRIM), "--scripts-dir", str(top)],
+                           capture_output=True, text=True)
+        out3 = r.stdout + r.stderr
+        check("a script under a skill is announced", "in-skill" in out3)
+        check("...labelled by the skill that owns it, so it can be found",
+              "some-skill/in-skill" in out3)
+        check("...and the shared root is still listed", "in-scripts" in out3)
+        check("a suite is announced from neither root",
+              "in-skill-test" not in out3)
+
+        # A git hook resolves its guard as <toplevel>/scripts/<name>, so a hook
+        # declaring a skill's script names something git could never run. It is
+        # reported, never quietly counted as an installed guard.
+        found, probs = m.hook_run({"pre-commit": "#!/bin/sh\n# runs: in-skill\n"},
+                                  {"in-scripts"})
+        check("a hook declaring a skill's script is reported, not read as a guard",
+              found == set() and any("not a script" in p for p in probs))
+
+    # The real tree: the moved script must appear in the full listing, which is
+    # the claim this two-root walk exists to keep true.
+    r = subprocess.run([sys.executable, str(PRIM)], capture_output=True, text=True)
+    check("the real listing announces the script that lives under a skill",
+          "acquire-repo.sh" in r.stdout and r.returncode == 0)
 
     if not ran:
         print("FAIL  the suite ran no case at all")

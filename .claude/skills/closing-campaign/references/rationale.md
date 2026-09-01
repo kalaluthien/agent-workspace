@@ -13,11 +13,8 @@ relative value matches nothing and the refusal passes having found nothing; step
 It is always bound to a real directory. A campaign bound here with no directory
 is scaffolded first — `opening-campaign` steps 2 and 4, step 2 being where the
 slug and kind step 4 needs are chosen — because `runtime/claims/` has no other
-home (#52, "The claim records need a directory"). The
-empty-string path that once stood here, with steps 1, 2 and 4 skipped, is
-retired: it skipped exactly the gates that protect the delete. Unset or empty now
-means step 0 never ran, which is the wrong-cwd hazard the guard in step 5 exists
-for.
+home. Unset or empty means step 0 never ran, which is the wrong-cwd hazard the
+guard in step 5 exists for.
 
 **What the gates are worth on that path, which is not what "restored" would
 claim.** When step 0 creates the tree, step 1 and step 2 then read a directory
@@ -36,21 +33,20 @@ is what covers it. Step 1 reports "not applicable" on this path rather than
 
 ## Step 1 — the agents
 
-There is no holder to read. The holding session is retired (`AGENTS.md` § Who is
-a campaign session), so this step asks only what is live under the tree, and it
-asks it of both records because either alone is blind to half the executors.
+There is no holder to read. The holding session is retired (`AGENTS.md`
+§ The binding), so this step asks only what is live under the tree, and it asks
+it of both records because either alone is blind to half the executors.
 
 A live PID that is some other `claude` reads as held. That is the safe direction
 to be wrong in here: leaving a claim standing costs a question, deleting a live
 session's tree costs its work.
 
 **Do not match `ListAgents` names against the branch.** A name and a branch are
-two strings on purpose (`AGENTS.md` § Naming a session): a session is named
-`campaign-<anchor>-<role>-<n>`, which carries no subtask at all, and it can be
-changed while the claim cannot. So a test built on the
-branch string finds whatever happens to match and misses what
-`runtime/claims/` exists to catch. `AGENTS.md` § Who is a campaign session states the rule; this is
-where it bites.
+two strings on purpose (`AGENTS.md` § The session name, which states the rule): a
+session is named `campaign-<anchor>-<role>-<n>`, which carries no subtask at all,
+and it can be changed while the claim cannot. So a test built on the branch
+string finds whatever happens to match and misses what `runtime/claims/` exists
+to catch. This is where that bites.
 
 ## Step 2 — work only on this machine
 
@@ -63,7 +59,7 @@ read here too.
 `repos/` and unreadable `repos/`, a pipeline swallowing the enumeration's own
 exit status, and a portable enumeration are four things a gate written in prose
 has to get right in whatever shell the person is in — and each of them fails by
-reporting nothing, which reads as a pass. `scripts/campaign-local-work` owns all
+reporting nothing, which reads as a pass. `scripts/campaign-local-work.py` owns all
 four, its exit status separates "the reading failed" from the verdict, and its
 docstring carries the evidence. This step keeps only what a reader must decide:
 which rows are blockers.
@@ -79,11 +75,11 @@ survived" over a body nobody managed to read. Absent files make `cmp -s` exit 2,
 and the pre-emptive `rm -f` stops a leftover from an earlier run standing in for
 either of them.
 
-**Why the compare is the everyday guard under one campaign, one machine** — the
-three causes of a silent overwrite it catches, and why the loss is worse than
-it looks — is
-`AGENTS.md` § Compare then write the anchor issue body, which states it in full
-and is the copy to correct.
+**Why the compare is the everyday guard under one campaign, one machine.** Two
+sessions on the one bound machine are both sessions of the campaign, so the
+binding never serialized the body and this comparison is what does. The three
+causes of a silent overwrite it catches are the table below; when the body may be
+written at all is `AGENTS.md` § The anchor body.
 
 ## Step 5 — announce, close, delete
 
@@ -132,7 +128,7 @@ durable in it.
 ## A moved anchor body has three causes, and they look identical
 
 Step 4's compare-then-write refuses when the body has moved since the `README.md`
-was derived from it. Read the binding first: `campaign-bound` saying anything but
+was derived from it. Read the binding first: `campaign-tracker bound` saying anything but
 `here` means *you* are out of position, and the write stops there whatever the
 diff says. With the campaign bound here, the refusal is a diff and nothing else,
 and three things produce it:

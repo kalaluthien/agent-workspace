@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 """Refuse a hand-rolled copy of a rule that one of this repository's scripts owns.
 
-AGENTS.md and four script docstrings each declare that some reading -- the
+AGENTS.md and several script docstrings each declare that some reading -- the
 liveness comparison, the `## Repos` parse, the settlement verdict, the
 local-only-work reading -- lives in exactly one script, and that a second reader
-written by hand somewhere else is what drifts. Nothing enforced that. The four
-prose copies of the liveness test that #65 removed are what the drift looks like
-once it has happened: four copies of one comparison, all wrong together.
-
-This is the authoring-side second reader ~/.claude/CLAUDE.md asks for. It is one
-check over every rule rather than one guard per script, because the rules share
-a single failure mode and a single fix.
+written by hand somewhere else is what drifts. This is the authoring-side second
+reader that enforces it: one check over every rule rather than one guard per
+script, because the rules share a single failure mode and a single fix.
 
 WHAT IT DOES NOT CATCH
 
@@ -22,9 +18,8 @@ have and should not pretend to. So the guard is a floor, not a fence: it stops
 the copy somebody makes by pasting, which is how second readers actually get
 written, and it does not stop one somebody sets out to write.
 
-Stated here rather than fixed, because widening the forms until they match a
-paraphrase is how a guard starts firing on prose -- already met once, when
-matching "not planned" fired on closing-campaign's own disposition table.
+Stated here rather than fixed: widening the forms to match a paraphrase is how
+a guard starts firing on prose instead of code.
 
 WHAT IT READS
 
@@ -41,22 +36,23 @@ reason and both can be exempted the same way, so neither is the special case.
 A code block that must hold a form anyway -- fenced or indented -- is exempted
 by an HTML comment on the line above it:
 
-    <!-- unguarded: <owner> -- <why> -->
+    <!-- unguarded: <token> -- <why> -->
 
-Invisible in rendered markdown, greppable, and it names the owner it is
-exempting so a reader can check the claim. The exemption is per block, not per
-file, so it does not widen as the file grows, and it is spent on the *next*
-block whichever shape that block has -- an exemption that reached only fences
-told an author under an indent to write the line they had just written.
+Invisible in rendered markdown, greppable, and it names the *form* it exempts so
+a reader can check the claim. `<token>` is a FORM's token, one per form, which is
+not always the name of the script that now holds it -- the finding prints both.
+The exemption is per block, not per file, so it does not widen as the file grows,
+and it is spent on the *next* block whichever shape that block has.
 
 EXIT
 
 0 with nothing printed when clean. 1 with one line per finding: the file, the
-line, the owning script, and the source line. The status is about the verdict,
+line, the script to call, the token to exempt, and the source line. The status
+is about the verdict,
 not about the reading -- an unreadable file is a crash, deliberately, because a
 guard that skips what it cannot read reports nothing and reads as a pass.
 
-Usage: scripts/check-rule-readers [<path> ...]      (default: every tracked file)
+Usage: scripts/check-rule-readers.py [<path> ...]      (default: every tracked file)
 """
 import re
 import subprocess
@@ -66,9 +62,33 @@ from pathlib import Path
 # Each form is an *executable* shape, never a topic. `## Repos` in an error
 # message is a mention; `grep '## Repos'` is a second reader. The difference is
 # whether a tool is being pointed at the thing.
+#
+# Four fields, and the first two are deliberately not one string.
+#
+#   token  what an exemption names. One per FORM, always, whatever script the
+#          form now lives in.
+#   path   the script to call instead, printed in the finding.
+#
+# They were one field while every form had a script to itself. Merging three
+# readers into `campaign-tracker` would have collapsed three tokens into one --
+# and `EXEMPT` matches `[\w-]+` with no spaces, so a single
+# `<!-- unguarded: campaign-tracker -->` would then have silenced the anchor
+# survey, the index read and the settlement verdict together, with nothing
+# reporting that two more forms had been exempted than the author named.
+# Splitting the fields keeps the exemption as granular as the form, and keeps
+# the finding pointing at a script that exists.
+#
+# The extension went on `path` and not on `token` when #105 gave every script
+# one. `path` is a path -- it is printed as `scripts/<path>` and a reader runs
+# it -- while `token` is the form's name, and four of them name scripts that no
+# longer exist as files at all. A token also has a second reader nobody can
+# grep: every `<!-- unguarded: ... -->` already written in the tree, and in a
+# tree this check does not see. Changing one silently turns those exemptions
+# into non-matches, and a non-matching exemption is reported, not honoured.
 FORMS = [
     (
         "campaign-session-alive",
+        "campaign-claim.py",
         # `ps` with a comm/ucomm selector in any argument order -- `-p $PID -o
         # ucomm=` is the script's own form and the first one a person writes --
         # and `pgrep`, which answers the same question a different way.
@@ -84,16 +104,36 @@ FORMS = [
     ),
     (
         "campaign-anchors",
+        "campaign-tracker.py",
         # The open-anchor survey: a `gh issue list` on this tracker asking for
-        # the fields the classification reads. Both scripts this campaign added
-        # own a rule that was prose the day before, and neither had a form here
-        # -- so the exact survey #112 deleted could be pasted back tomorrow.
+        # the fields the classification reads.
         re.compile(r"\bgh\b[^|;&]*\bissue\s+list\b[^|;&]*"
                    r"(-l\s+[\"']?campaign|--label\s+[\"']?campaign|--json[^|;&]*parent)"),
         "the open-anchor survey",
     ),
     (
+        "campaign-bound",
+        "campaign-tracker.py",
+        # The binding reading: the anchor's comments filtered for `BOUND`, and
+        # the last one's machine compared against this one's.
+        #
+        # `hostname` alone is not the form, and deliberately. Two blocks in this
+        # tree *write* a binding -- `--body "BOUND $(hostname -s)"` posts one,
+        # and the close comment names the host it is closing from -- so a bare
+        # `hostname` cannot separate writing a binding from reading one. What
+        # only the reading does is filter comments for `BOUND`, or compare a
+        # host name against something; hence the spaced `=` and `==`, which a
+        # `HOST=$(hostname -s)` assignment does not carry.
+        re.compile(r"\bgh\b[^|;&]*\bapi\b[^|;&]*/comments\b"
+                   r"|(\bgrep\b|\bsed\b|\bawk\b|\bjq\b|--jq|startswith)"
+                   r"[^|;&]*\bBOUND\b"
+                   r"|(==|\s=\s)[^|;&]*\bhostname\b|\bhostname\b[^|;&]*(==|\s=\s)"
+                   r"|\bgethostname\b|\bplatform\.node\b"),
+        "the binding reading",
+    ),
+    (
         "campaign-subtasks",
+        "campaign-tracker.py",
         # The sub-issue index read, in either pagination form.
         re.compile(r"\bgh\b[^|;&]*\bapi\b[^|;&]*sub_issues"
                    r"|sub_issues[^|;&]*--paginate"),
@@ -101,21 +141,23 @@ FORMS = [
     ),
     (
         "campaign-repos",
+        "campaign-repos.py",
         re.compile(r"(\bgrep\b|\bsed\b|\bawk\b|\brg\b|\bjq\b|--jq|re\.|readlines|splitlines)"
                    r"[^|;&]*(##\s*Repos|owner/repo)|(##\s*Repos|owner/repo)[^|;&]*(\bgrep\b|\bawk\b|\bjq\b)"),
         "the ## Repos parse",
     ),
     (
         "campaign-settlement",
-        # The API field names only. The words "not planned" and "not-planned"
-        # appear as a disposition a person writes and as prose in an error
-        # message; neither computes a verdict, and matching them made the
-        # guard fire on `closing-campaign`'s own tables.
+        "campaign-tracker.py",
+        # The API field names only, not the words "not planned" / "not-planned"
+        # a disposition table writes as prose: matching those false-fires on
+        # prose that merely mentions a verdict rather than computing one.
         re.compile(r"\b(mergedAt|merged_at|stateReason|state_reason)\b"),
         "the settlement verdict",
     ),
     (
         "campaign-local-work",
+        "campaign-local-work.py",
         re.compile(r"\bgit\b[^|;&]*\b(status|worktree\s+list|for-each-ref|stash\s+list)\b"
                    r"|\bgit\b[^|;&]*\bdiff\b[^|;&]*--quiet"
                    r"|\bgit\b[^|;&]*\bbranch\b[^|;&]*--no-merged"),
@@ -123,6 +165,7 @@ FORMS = [
     ),
     (
         "campaign-name-session",
+        "campaign-name-session.py",
         re.compile(r"herdr\s+agent\s+rename\b|agent\s+prompt\b[^|;&]*/rename"),
         "the session-name shape",
     ),
@@ -134,22 +177,21 @@ FORMS = [
 # after it -- so a ``` line inside a ```` block, or a `~~~` line inside a ```
 # block, is content rather than a closer. Getting this wrong ends the block
 # early and everything after it stops being scanned, which is a silent miss.
-OWNERS = frozenset(owner for owner, _, _ in FORMS)
+OWNERS = frozenset(token for token, _, _, _ in FORMS)
 
 FENCE = re.compile(r"^ {0,3}(?P<run>`{3,}|~{3,})(?P<info>.*)$")
 EXEMPT = re.compile(r"<!--\s*unguarded:\s*(?P<owner>[\w-]+)\s*--")
 # Anything that says `unguarded:` is an attempt at an exemption. Matching it
 # loosely is what lets a malformed one be *reported* rather than skipped: the
-# strict form above takes `[\w-]+`, so a prose owner -- `AGENTS.md § Naming a
-# session`, which is what a person writes first -- matches nothing at all, and
+# strict form above takes `[\w-]+`, so a prose owner -- `AGENTS.md § The session
+# name`, which is what a person writes first -- matches nothing at all, and
 # without this the line would simply not be an exemption and the fence would go
 # on being flagged with no hint that anything had been read and rejected.
 EXEMPT_LOOSE = re.compile(r"<!--\s*unguarded:\s*(?P<owner>.*?)\s*(?:--\s|-->)")
 
 # A line indented four or more spaces renders as code too, so it carries the
 # same copy-paste hazard as a fence. Only lines that match a FORM are reported,
-# and no FORM matches prose, so scanning these costs no false positives on a
-# tree of documents -- measured before it was turned on.
+# and no FORM matches prose, so scanning these costs no false positives.
 INDENTED = re.compile(r"^(\t| {4,})\S")
 
 
@@ -200,11 +242,21 @@ def content(root, path, staged):
 
 
 def findings(text):
-    """Yield (line number, owner, what, source line) for one document."""
+    """Yield (line number, token, path, what, source line) for one document.
+
+    `path` is empty for the malformed-exemption finding, which names no form."""
     inside = None            # the opener's run, while a fence is open
     exempted = None          # owner exempted for the open fence
     pending = None           # exemption seen, waiting for its fence
     carry, carry_n = "", None   # a shell continuation, joined before matching
+
+    def scan(start, joined, exempted):
+        # `token`, never `path`: two forms that now live in one script keep two
+        # exemptions, so silencing one does not silence its neighbour.
+        for token, path, form, what in FORMS:
+            if form.search(joined) and token not in (exempted or frozenset()):
+                yield start, token, path, what, joined.strip()[:160]
+
     for n, line in enumerate(text.splitlines(), 1):
         fence = FENCE.match(line)
         if inside is not None:
@@ -216,10 +268,16 @@ def findings(text):
                 and not fence.group("info").strip()
             )
             if closes:
+                # A continuation left open at the end of a run is scanned, not
+                # dropped: the trailing backslash is a typo, not an exemption.
+                yield from scan(carry_n, carry, exempted) if carry else ()
+                carry, carry_n = "", None
                 inside, exempted = None, None
                 continue
             code = True
         elif fence:
+            yield from scan(carry_n, carry, exempted) if carry else ()
+            carry, carry_n = "", None
             inside, exempted, pending = fence.group("run"), pending, None
             continue
         elif INDENTED.match(line):
@@ -229,9 +287,6 @@ def findings(text):
             # mirror of `an exemption inside an open fence exempts nothing`.
             if pending is not None:
                 # An exemption is spent on the next code block of either shape.
-                # Reaching only fences left an author who needs the form under
-                # an indent with no move the guard accepts, while the refusal
-                # advised the exemption they had already written.
                 exempted, pending = pending, None
             code = True
         else:
@@ -243,7 +298,8 @@ def findings(text):
                 # reported with nothing saying why. `[\w-]+` does not match a
                 # prose owner with dots or spaces, which is what a person writes
                 # first.
-                yield n, loose.group("owner") or "(empty)", "an exemption naming no script", line.strip()
+                yield (n, loose.group("owner") or "(empty)", "",
+                       "an exemption naming no script", line.strip())
                 pending = None
                 continue
             if marker:
@@ -258,21 +314,19 @@ def findings(text):
                 # dies with it rather than leaking into the next block.
                 pending, exempted = None, None
         if not code:
+            yield from scan(carry_n, carry, exempted) if carry else ()
             carry, carry_n = "", None
             continue
-        # A shell continuation is one command, so it is matched as one. Scanning
-        # line-at-a-time let the exact survey this repository deleted pass by
-        # putting `--json …parent` after a backslash -- the form was right and
-        # the reading was one line too short.
+        # A shell continuation is one command, so it is matched as one; scanning
+        # line-at-a-time would miss a form split across a trailing backslash.
         joined = (carry + " " + line.strip()) if carry else line
         start = carry_n or n
         if line.rstrip().endswith("\\"):
             carry, carry_n = joined.rstrip()[:-1].rstrip(), start
             continue
         carry, carry_n = "", None
-        for owner, form, what in FORMS:
-            if form.search(joined) and owner not in (exempted or frozenset()):
-                yield start, owner, what, joined.strip()[:160]
+        yield from scan(start, joined, exempted)
+    yield from scan(carry_n, carry, exempted) if carry else ()
 
 
 def main(argv):
@@ -292,13 +346,17 @@ def main(argv):
         text = content(root, p, staged and not given)
         if text is None:
             continue
-        for n, owner, what, src in findings(text):
+        for n, token, path, what, src in findings(text):
             found += 1
             if what == "an exemption naming no script":
-                print(f"{p}:{n}: {what}: `{owner}` is not one of "
+                print(f"{p}:{n}: {what}: `{token}` is not one of "
                       + ", ".join(sorted(OWNERS)) + f": {src}")
             else:
-                print(f"{p}:{n}: {what} belongs to scripts/{owner}: {src}")
+                # The path is what to call; the token is what to exempt. Both,
+                # because a finding naming only one sends half the readers to
+                # the wrong edit.
+                print(f"{p}:{n}: {what} belongs to scripts/{path} "
+                      f"(exempt with `{token}`): {src}")
     if found:
         print(
             f"\ncheck-rule-readers: {found} hand-rolled reading(s) of a rule a "

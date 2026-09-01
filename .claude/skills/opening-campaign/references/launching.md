@@ -1,6 +1,6 @@
 # Launching a delegate, in full
 
-The procedure behind `AGENTS.md` § Delegating to a repository agent, which keeps
+The procedure behind `AGENTS.md` § Delegate launch, which keeps
 only the invariants. Everything here is a probed fact about herdr 0.8.2 and the
 Claude CLI on this machine, and every item is a failure that raises no error.
 
@@ -18,9 +18,9 @@ Launch in `<campaign>/repos/<repo>/` with `--append-system-prompt-file
   swallow a trailing prompt as one of their own values, and the run dies on
   "Input must be provided".
 - Choose the session UUID in advance (`--session-id`) so the transcript path is
-  known before the agent starts, and `--name` it per § Naming a session. `--name`
+  known before the agent starts, and `--name` it per § The session name. `--name`
   sets the harness name only; set the herdr pane name too, because the two do not
-  propagate. `scripts/campaign-name-session` does both.
+  propagate. `scripts/campaign-name-session.py` does both.
 - Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to the container's pool. A memory pool
   inside a git-ignored campaign directory dies with the directory.
 
@@ -120,11 +120,9 @@ editing from here can silently revert work that landed: pull, then read zero
 again before editing.
 
 **The clone must not be behind *at launch*, which is a different check.** "Do not
-clone while the container is ahead" is the wrong invariant and a live run
-disproved it: the outer check read `0	0` immediately before both clones, three
-commits landed on `origin/main` between the clone and the launch, and the
-delegate came up three behind. On a campaign of any length the remote moving in
-between is normal.
+clone while the container is ahead" is not sufficient: the remote can move
+between the clone and the launch, on a campaign of any length, leaving the
+delegate behind with nothing reporting it.
 
 ```sh
 git -C <campaign>/repos/<repo> fetch origin -q

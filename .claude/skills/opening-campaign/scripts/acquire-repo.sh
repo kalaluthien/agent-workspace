@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 # acquire-repo — leave a ready checkout of <owner/repo> at <dest-path>.
 #
-#   scripts/acquire-repo <owner/repo> <dest-path> [--branch <branch>]
+#   .claude/skills/opening-campaign/scripts/acquire-repo.sh \
+#       <owner/repo> <dest-path> [--branch <branch>]
 #
 # The one interface through which a campaign gets a repository. A caller asks
 # for a repository, at a path, on a branch; how it got there is not its
 # business.
 #
-# Bash rather than Python: every step of this job already is a `git` or `gh`
-# invocation, so a shell function *is* a strategy, with nothing between the
-# code and the command a person would type by hand. Python would spend most of
-# its lines wrapping subprocess calls, which buries the seam instead of showing
-# it.
+# It lives under the skill because opening-campaign is its only caller: a
+# repository is acquired when a campaign is opened or joined, and at no other
+# moment. scripts/campaign-primitives.py walks .claude/skills/*/scripts/ as a
+# second root so a script parked here is still announced.
+#
+# Bash, not Python: every step is already a `git` or `gh` invocation, so a
+# shell function *is* a strategy with nothing between it and the command a
+# person would type by hand.
 
 set -euo pipefail
 
@@ -67,53 +71,24 @@ esac
 
 command -v git >/dev/null 2>&1 || die "git is not installed"
 
-# ------------------------------------------------------------------- the seam
+# ------------------------------------------------------------- building it
 #
-# `select_strategy` names the strategy; `strategy_<name>` builds a checkout that
-# does not exist yet. Those two are the replaceable pair.
-#
-# `acquire()` owns everything that is the same whatever built the checkout: the
+# `clone_into()` builds a checkout that does not exist yet; `acquire()` owns
+# everything that is the same however the checkout arrived -- the
 # already-acquired test, the wrong-repository refusal, convergence on a re-run,
-# and installing the commit guard. A strategy therefore only ever runs against a
+# and installing the commit guard. So `clone_into()` only ever runs against a
 # destination that is absent or empty, and never implements idempotency itself.
 #
-# Only `clone` exists. It is the documented default because it is the only
-# strategy that needs nothing to be on disk beforehand.
-#
-# Adding a strategy — a shared local mirror, a worktree cut from another
-# campaign's checkout, a shallow clone, or adopting a checkout already on disk —
-# costs, honestly:
-#
-#   1. one new `strategy_<name>()` function;
-#   2. one new branch in `select_strategy()` returning its name, plus whatever
-#      parameters it needs as extra fields on that same line (a mirror path, a
-#      source checkout); `acquire()` passes them through untouched.
-#
-# It leaves untouched: the usage text, the argument parsing, `acquire()`,
-# `remote_slug()`, `install_commit_guard()`, every other strategy, and every
-# caller.
-#
-# Two helpers are shared but *not* universal, and a new strategy has to face
-# them rather than assume them:
-#
-#   - `checkout_branch()` selects a branch with `git switch`, which fails inside
-#     a linked worktree when that branch is checked out elsewhere. A worktree
-#     strategy picks its branch at `git worktree add` time and must not call it.
-#   - `install_commit_guard()` resolves the hooks directory, which for a linked
-#     worktree is the *common* directory back in the source checkout. It refuses
-#     when that path falls outside the destination rather than silently guard
-#     another campaign's tree, so a worktree strategy has to solve hooks
-#     deliberately.
+# `checkout_branch()` and `install_commit_guard()` are shared but *not*
+# universal, and another way of producing a checkout would have to face them
+# rather than assume them: `checkout_branch()` selects a branch with `git
+# switch`, which fails inside a linked worktree when that branch is checked out
+# elsewhere. `install_commit_guard()` resolves the hooks directory, which for a
+# linked worktree is the *common* directory back in the source checkout, and
+# refuses when that path falls outside the destination rather than silently
+# guard another campaign's tree.
 
-select_strategy() {
-	# Prints the strategy name, optionally followed by parameters for it. The
-	# arguments (repo, dest, branch) are what a future strategy would branch on
-	# — a mirror that already exists, a sibling checkout of the same repository,
-	# a caller wanting only recent history. Today the answer is unconditional.
-	printf 'clone\n'
-}
-
-strategy_clone() {
+clone_into() {
 	local repo=$1 dest=$2 branch=$3
 
 	mkdir -p "$(dirname "$dest")"
@@ -209,7 +184,6 @@ install_commit_guard() {
 
 acquire() {
 	local repo=$1 dest=$2 branch=$3 have
-	local strategy=()
 
 	if [ -e "$dest/.git" ]; then
 		have=$(remote_slug "$dest") || die "$dest is not a usable git checkout"
@@ -224,13 +198,7 @@ acquire() {
 		[ ! -d "$dest" ] || dir_is_empty "$dest" ||
 			die "$dest is a non-empty directory that is not a git checkout"
 
-		read -r -a strategy <<<"$(select_strategy "$repo" "$dest" "$branch")"
-		[ ${#strategy[@]} -gt 0 ] || die "select_strategy named no strategy"
-		command -v "strategy_${strategy[0]}" >/dev/null 2>&1 ||
-			die "no such strategy: ${strategy[0]}"
-
-		log "strategy: ${strategy[*]}"
-		"strategy_${strategy[0]}" "$repo" "$dest" "$branch" "${strategy[@]:1}"
+		clone_into "$repo" "$dest" "$branch"
 	fi
 
 	install_commit_guard "$dest"

@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """Prove the hooks install-hooks writes actually refuse.
 
-Every other suite here tests a script in isolation. Nothing tested the thing a
-person meets: a repository with the hooks installed, and a commit that ought to
-be stopped. So the pre-commit body was covered by inert fixture strings, and
-deleting its whole guard loop left all five suites green while a violation
-landed clean.
+Every other suite here tests a script in isolation. This one builds a
+repository with the hooks installed and commits against it, because a script
+correct in isolation says nothing about whether the pre-commit body it writes
+actually stops a violation.
 
 These cases build a throwaway repository, run the shipped installer, and commit.
 The remote is a local bare repo; nothing here reaches the network.
 
-Usage: scripts/install-hooks-test
+Usage: scripts/install-hooks-test.py
 """
 import os
 import shutil
@@ -20,8 +19,31 @@ import tempfile
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
-NEEDED = ["install-hooks", "check-rule-readers", "check-tree-shape",
-          "push-campaign-branch"]
+
+
+def _needed():
+    """The scripts a fixture repository must hold, read from the installer.
+
+    Derived, never listed. The hook install-hooks writes REFUSES every commit
+    when a guard on its `# runs:` line is missing, so a hand-kept list here goes
+    stale the moment a guard is added -- and it fails as an unrelated crash far
+    downstream (nothing commits, so nothing is pushed, so a later ls-remote
+    reads empty) rather than as a case named for the list.
+
+    Both `# runs:` lines in the installer are read: the pre-commit one inside
+    its heredoc and the post-commit one, which is where push-campaign-branch
+    comes from.
+    """
+    out = ["install-hooks.sh"]
+    for line in (SCRIPTS / "install-hooks.sh").read_text().splitlines():
+        if line.startswith("# runs: "):
+            for n in line[len("# runs: "):].split():
+                if n not in out:
+                    out.append(n)
+    return out
+
+
+NEEDED = _needed()
 IGNORE = "/*\n!/.gitignore\n!/scripts/\n!/spec/\n!/docs/\n"
 
 
@@ -61,7 +83,7 @@ class Repo:
     def commit_amend_push(self):
         """Run the push hook by hand after an amend: the post-commit hook has
         already fired, and what is under test is the rejection path."""
-        r = subprocess.run([str(self.root / "scripts" / "push-campaign-branch")],
+        r = subprocess.run([str(self.root / "scripts" / "push-campaign-branch.sh")],
                            cwd=self.root, capture_output=True, text=True)
         return r.stdout + r.stderr
 
@@ -70,7 +92,7 @@ class Repo:
 
 
 def installer(root):
-    return subprocess.run([str(root / "scripts" / "install-hooks")], cwd=root,
+    return subprocess.run([str(root / "scripts" / "install-hooks.sh")], cwd=root,
                           capture_output=True, text=True)
 
 
@@ -107,8 +129,7 @@ def main():
               (c.stdout + c.stderr)[:160])
 
     # 3. The declaration is what drives the loop, so removing it must stop the
-    # commit rather than silently run nothing. This is the case that was
-    # missing: the fixtures were strings, and the real hook ran zero guards.
+    # commit rather than silently run nothing.
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
         installer(r.root)
@@ -124,15 +145,20 @@ def main():
               f"exit {c.returncode}; {(c.stdout + c.stderr).strip()[:200]}")
 
     # 3b. A declaration that is present but names nothing. `[ -z "$guards" ]`
-    # is false for a line of whitespace, so the loop ran zero times and a
-    # violation committed with no output at all -- the same silent skip, one
-    # character from the form that was fixed.
+    # is false for a line of whitespace, so the loop would run zero times and
+    # a violation would commit with no output at all -- the same silent skip.
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
         installer(r.root)
         h = r.hook("pre-commit")
-        h.write_text(h.read_text().replace(
-            "# runs: check-rule-readers check-tree-shape", "# runs:   "))
+        # Rewrite the line by its PREFIX, never by a copy of its contents. The
+        # guard list is install-hooks' to change, and a literal of it here is a
+        # second reader: adding a guard made this replace silently match
+        # nothing, so the hook kept a working declaration and the case passed
+        # its own name while testing the opposite branch.
+        h.write_text("\n".join(
+            "# runs:   " if l.startswith("# runs: ") else l
+            for l in h.read_text().splitlines()) + "\n")
         before = r.head()
         r.violate()
         c = r.commit()
@@ -144,17 +170,15 @@ def main():
               and "carries no '# runs:' line" in c.stdout + c.stderr,
               f"exit {c.returncode}; {(c.stdout + c.stderr).strip()[:200]}")
 
-    # The installed hook is what a person reads. Unescaped backticks in the
-    # heredoc ran as command substitution and ate the comment explaining the
-    # very line that had been wrong three times.
+    # The installed hook is what a person reads: an unescaped backtick in the
+    # heredoc runs as command substitution and eats the comment around it.
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
         installer(r.root)
         body = r.hook("pre-commit").read_text()
         # Assert on text that sits AFTER the backticks. Command substitution
         # eats from the first backtick to the second, so a phrase before them
-        # survives the very corruption this case is named for -- which is how
-        # the first version of it pinned nothing.
+        # would survive the very corruption this case is named for.
         check("the installed hook keeps the comments the source writes",
               "followed by a space leaves" in body
               and "EMPTY declaration refuses" in body,
@@ -166,7 +190,7 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
         installer(r.root)
-        (r.root / "scripts" / "check-tree-shape").chmod(0o644)
+        (r.root / "scripts" / "check-tree-shape.py").chmod(0o644)
         before = r.head()
         r.violate()
         c = r.commit()
@@ -234,23 +258,21 @@ def main():
         check("...and the remote still holds the exact commit it had",
               after == remote_sha, f"{remote_sha} -> {after}")
 
-        # mktemp failing. Round 3 added the handler and pinned it with
-        # nothing, because mktemp succeeds -- and it succeeds even with TMPDIR
-        # pointed at nothing, which was the first attempt at this case. A
-        # failing mktemp ahead of it on PATH is what actually reaches the
-        # branch, and it tests the script's handling rather than mktemp.
+        # mktemp failing: TMPDIR pointed at nothing does not make mktemp fail,
+        # so a failing mktemp shimmed ahead of it on PATH is what actually
+        # reaches the branch.
         shim = Path(d) / "shim"
         shim.mkdir()
         (shim / "mktemp").write_text("#!/bin/sh\nexit 1\n")
         (shim / "mktemp").chmod(0o755)
-        p = subprocess.run([str(r.root / "scripts" / "push-campaign-branch")],
+        p = subprocess.run([str(r.root / "scripts" / "push-campaign-branch.sh")],
                            cwd=r.root, capture_output=True, text=True,
                            env=dict(os.environ,
                                     PATH=f"{shim}:{os.environ['PATH']}"))
         check("mktemp failing says the commit was not pushed",
               "mktemp failed" in p.stdout + p.stderr, (p.stdout + p.stderr)[:160])
 
-        (r.root / "scripts" / "push-campaign-branch").chmod(0o644)
+        (r.root / "scripts" / "push-campaign-branch.sh").chmod(0o644)
         (r.root / "docs" / "c.html").write_text("<p>c</p>\n")
         git(r.root, "add", "docs/c.html")
         c = r.commit()
