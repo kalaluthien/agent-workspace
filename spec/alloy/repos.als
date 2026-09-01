@@ -94,7 +94,7 @@ pred deleteDir[t: Tree] {
   Now.ev = DeleteDir and no Now.issue and Site.mach = t.mach and no Site.repo
 }
 
-/* scripts/acquire-repo. On a re-run over an existing checkout it switches the
+/* opening-campaign/scripts/acquire-repo. On a re-run over an existing checkout it switches the
    branch, which is what agent.als's R4c catches it doing under a live agent. */
 pred acquire[t: Tree, r: Repo, b: Topic] {
   t in Present

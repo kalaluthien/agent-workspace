@@ -25,7 +25,7 @@ Settle this before anything else. Most of what arrives here loads no skill.
 
 Otherwise, two readings, in this order.
 
-**One: does any open campaign's Scope cover the request?** `scripts/campaign-anchors`
+**One: does any open campaign's Scope cover the request?** `scripts/campaign-tracker anchors`
 lists the open anchors — **never survey the tracker unfiltered**, since it holds
 three kinds of issue and only structure classifies them; where structure cannot
 answer, both templates are in `.claude/skills/opening-campaign/assets/`, and **an
@@ -94,9 +94,9 @@ change the running campaign**. Commands: `.claude/skills/opening-campaign/refere
 an equal session of it.** No session holds it; each campaign-wide write names its
 own guard.
 
-One reading decides whether a session is in the campaign, and `scripts/campaign-bound <N>`
+One reading decides whether a session is in the campaign, and `campaign-tracker bound <N>`
 is its one reader: `here`, `elsewhere <machine>`, or `unbound`. **Read the word,
-never the exit status**, as for `campaign-local-work` and `campaign-session-alive`.
+never the exit status**, as for `campaign-local-work` and `campaign-claim alive`.
 
 | the word | this session is |
 | --- | --- |
@@ -168,7 +168,7 @@ created **as a sub-issue of the anchor**:
 gh issue create -R <owner/repo> --parent https://github.com/kalaluthien/agent-workspace/issues/<N> ...
 ```
 
-That one flag is the whole index, and `scripts/campaign-subtasks <N>` reads it
+That one flag is the whole index, and `campaign-tracker index <N>` reads it
 back, in any repository, public or private. Fill the body from
 `.claude/skills/opening-campaign/assets/subtask.md`.
 
@@ -177,7 +177,7 @@ it: one held in a session's memory dies with its pane.
 
 **A subtask whose work lives only under `<campaign>/scripts/` has no commit to
 land**: it closes as completed with no pull request, its closing comment saying
-what was built. Quote `campaign-settlement`'s note for that row, not its verdict.
+what was built. Quote `campaign-tracker settlement`'s note for that row, not its verdict.
 
 ## The `## Repos` list
 
@@ -221,7 +221,7 @@ number is minted there; the `post-commit` hook pushes; it lands by a pull reques
 **The anchor body is a charter, not a status board.** Intent, Scope and
 Requirements say what a person signed up for and change only when the scope
 genuinely changes; the sub-issue index is the decomposition, and
-`scripts/campaign-settlement <N>` derives progress from it. So the body is written
+`campaign-tracker settlement <N>` derives progress from it. So the body is written
 at exactly two moments — a scope change, and the close. Adding work is neither,
 and **when a request reads both ways**, ask with `AskUserQuestion` first. Adding a
 repository **is** a scope change, so it syncs when it happens; held back until the
@@ -233,7 +233,7 @@ it. The two carry **the same sections in the same shapes** — the anchor templa
 `.claude/skills/opening-campaign/assets/README.md` is the one copy — so the sync
 is an overwrite with nothing to merge, and a compose step drops the repo index.
 
-**Read the binding first, then name the cause.** `campaign-bound` saying anything
+**Read the binding first, then name the cause.** `campaign-tracker bound` saying anything
 but `here` means *you* are out of position, and the write stops there whatever
 the diff says. With it bound here, a moved body has three causes that
 `.claude/skills/closing-campaign/references/rationale.md` tells apart.
@@ -265,11 +265,11 @@ Three readings, and never answer one with another.
   as completed with its pull request merged, or as **not planned**, which is how a
   subtask gets dropped. Both readings are needed, or a subtask dropped on purpose
   never reads settled and its campaign can never close. **Nothing on a terminal
-  screen is evidence.** `scripts/campaign-settlement <N>` is the one reader.
+  screen is evidence.** `campaign-tracker settlement <N>` is the one reader.
 - **Liveness and attribution are different readings, and a gate needs both.**
   `herdr agent list` gives liveness for every session here and no attribution;
   `runtime/claims/` gives attribution and cannot prove liveness, its `pid` reading
-  dead after a restart its session survived. `scripts/campaign-live <N>` makes both
+  dead after a restart its session survived. `campaign-claim live <N>` makes both
   and joins them on the harness session id, the only field *on both sides* that
   survives a restart and a rename; it concludes nothing, a close reads its counts.
   Read a delegate's progress from its transcript, never from `agent_status`, which

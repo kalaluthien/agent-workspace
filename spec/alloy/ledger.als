@@ -15,7 +15,7 @@
  * scripts/alloy-check reads this table)
  *
  *   scripts/alloy-check spec/alloy/ledger.als -o /tmp/alloy-ledger
- *   scripts/alloy-trace-digest /tmp/alloy-ledger/S1_HappyPath-solution-0.txt
+ *   scripts/alloy-check --digest /tmp/alloy-ledger/S1_HappyPath-solution-0.txt
  *
  * HOW THE LAYERS COMPOSE
  *

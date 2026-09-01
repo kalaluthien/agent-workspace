@@ -112,7 +112,7 @@ def git(repo, *args, check=True):
 
 
 def container():
-    """The main checkout, resolved the one sanctioned way (AGENTS.md § Three planes)."""
+    """The main checkout, resolved the one sanctioned way (AGENTS.md § The three planes)."""
     here = os.path.dirname(os.path.abspath(__file__))
     common = git(here, "rev-parse", "--path-format=absolute", "--git-common-dir")
     return os.path.realpath(os.path.dirname(common))

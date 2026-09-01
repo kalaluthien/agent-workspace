@@ -155,8 +155,8 @@ FENCE = re.compile(r"^ {0,3}(?P<run>`{3,}|~{3,})(?P<info>.*)$")
 EXEMPT = re.compile(r"<!--\s*unguarded:\s*(?P<owner>[\w-]+)\s*--")
 # Anything that says `unguarded:` is an attempt at an exemption. Matching it
 # loosely is what lets a malformed one be *reported* rather than skipped: the
-# strict form above takes `[\w-]+`, so a prose owner -- `AGENTS.md § Naming a
-# session`, which is what a person writes first -- matches nothing at all, and
+# strict form above takes `[\w-]+`, so a prose owner -- `AGENTS.md § The session
+# name`, which is what a person writes first -- matches nothing at all, and
 # without this the line would simply not be an exemption and the fence would go
 # on being flagged with no hint that anything had been read and rejected.
 EXEMPT_LOOSE = re.compile(r"<!--\s*unguarded:\s*(?P<owner>.*?)\s*(?:--\s|-->)")

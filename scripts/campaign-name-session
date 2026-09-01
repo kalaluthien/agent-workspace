@@ -8,7 +8,7 @@ name that `herdr agent list` shows, and the harness name that `ListAgents`
 resolves and a peer addresses. Renaming one leaves the session answering to two
 different names depending on who is asking, so this sets both and reports each.
 
-It is also the naming rule's one consumer. `AGENTS.md` § Naming a session states
+It is also the naming rule's one consumer. `AGENTS.md` § The session name states
 `campaign-<anchor>-<role>-<n>`; a name that does not match is refused here
 rather than half-applied, because a rule nothing must consume is a rule that
 drifts.
