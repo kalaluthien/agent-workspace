@@ -44,7 +44,7 @@ def main():
         if not cond:
             fails.append(name)
 
-    names = {"check-rule-readers", "check-tree-shape", "campaign-bound",
+    names = {"check-rule-readers", "check-tree-shape", "campaign-tracker",
              "install-hooks", "push-campaign-branch"}
     both = {"check-rule-readers", "check-tree-shape"}
 
@@ -143,6 +143,57 @@ def main():
     check("an unclassifiable script is reported", "could not be classified" in out2)
     check("...and does not suppress the listing by exiting non-zero",
           r.returncode == 0 and "Machine-decided here" in r.stdout)
+
+    # Two roots. A script parked under the skill that owns it is still a script
+    # a session must be told about, and a root this does not walk is a script it
+    # does not announce -- the exact failure the inventory exists to prevent.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        top = root / "scripts"
+        top.mkdir()
+        (top / "in-scripts").write_text("#!/bin/sh\n# a shared reader\n")
+        (top / "in-scripts").chmod(0o755)
+        owned = root / ".claude" / "skills" / "some-skill" / "scripts"
+        owned.mkdir(parents=True)
+        (owned / "in-skill").write_text("#!/bin/sh\n# a reader one skill owns\n")
+        (owned / "in-skill").chmod(0o755)
+        # A skill directory with no scripts/ of its own is not a root.
+        (root / ".claude" / "skills" / "bare-skill").mkdir(parents=True)
+        # ...and a suite is not announced from either root.
+        (owned / "in-skill-test").write_text("#!/bin/sh\n# a suite\n")
+        (owned / "in-skill-test").chmod(0o755)
+
+        roots = m.script_roots(top)
+        check("the scripts directory is the first root",
+              roots and roots[0] == ("", top))
+        check("a skill with its own scripts/ is a second root",
+              ("some-skill/", owned) in roots)
+        check("a skill with no scripts/ is not a root",
+              not any("bare-skill" in label for label, _ in roots))
+
+        r = subprocess.run([sys.executable, str(PRIM), "--scripts-dir", str(top)],
+                           capture_output=True, text=True)
+        out3 = r.stdout + r.stderr
+        check("a script under a skill is announced", "in-skill" in out3)
+        check("...labelled by the skill that owns it, so it can be found",
+              "some-skill/in-skill" in out3)
+        check("...and the shared root is still listed", "in-scripts" in out3)
+        check("a suite is announced from neither root",
+              "in-skill-test" not in out3)
+
+        # A git hook resolves its guard as <toplevel>/scripts/<name>, so a hook
+        # declaring a skill's script names something git could never run. It is
+        # reported, never quietly counted as an installed guard.
+        found, probs = m.hook_run({"pre-commit": "#!/bin/sh\n# runs: in-skill\n"},
+                                  {"in-scripts"})
+        check("a hook declaring a skill's script is reported, not read as a guard",
+              found == set() and any("not a script" in p for p in probs))
+
+    # The real tree: the moved script must appear in the full listing, which is
+    # the claim this two-root walk exists to keep true.
+    r = subprocess.run([sys.executable, str(PRIM)], capture_output=True, text=True)
+    check("the real listing announces the script that lives under a skill",
+          "acquire-repo" in r.stdout and r.returncode == 0)
 
     if not ran:
         print("FAIL  the suite ran no case at all")

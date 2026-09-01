@@ -164,7 +164,51 @@ EXEMPTION_CASES = [
      "# t\n\n```sh\n<!-- unguarded: campaign-session-alive -- x -->\nps -o comm= -p 1\n```\n", 1),
 ]
 
-CASES = FORM_CASES + PARSER_CASES + EXEMPTION_CASES
+# Three forms now live in one script, `campaign-tracker`. `EXEMPT` takes
+# `[\w-]+` with no spaces, so had the exemption token been merged along with the
+# scripts, one `<!-- unguarded: campaign-tracker -->` would silence the anchor
+# survey, the index read and the settlement verdict at once -- two more forms
+# than the author named, with nothing reporting it. Each case below holds two
+# forms of that one script in a single fence and exempts one; the surviving
+# finding is what a collapsed token would have swallowed.
+#
+# The `forbid` field is what makes these bite. Exit 1 alone passes under the
+# collapsed design too: `campaign-anchors` would not be an owner there, so the
+# run reports "an exemption naming no script" and both forms fire -- also
+# exit 1, for the opposite reason.
+BOTH_TRACKER_FORMS = ("gh issue list -R o/r --state open --json number,title,parent\n"
+                      "gh api --paginate repos/o/r/issues/1/sub_issues")
+
+GRANULARITY_CASES = [
+    ("tracker: exempting the anchor survey leaves the index read reported",
+     f"# t\n\n<!-- unguarded: campaign-anchors -- x -->\n\n```sh\n{BOTH_TRACKER_FORMS}\n```\n",
+     1, "the sub-issue index read", "the open-anchor survey"),
+    ("tracker: ...and exempting the index read leaves the anchor survey reported",
+     f"# t\n\n<!-- unguarded: campaign-subtasks -- x -->\n\n```sh\n{BOTH_TRACKER_FORMS}\n```\n",
+     1, "the open-anchor survey", "the sub-issue index read"),
+    # Named separately, both are silenced -- so the split did not simply make
+    # the exemption unusable.
+    ("tracker: two tokens of one script, named separately, silence both",
+     "# t\n\n<!-- unguarded: campaign-anchors -- x -->\n"
+     f"<!-- unguarded: campaign-subtasks -- y -->\n\n```sh\n{BOTH_TRACKER_FORMS}\n```\n",
+     0, None, None),
+    # The script's own name is not a token, and saying so is the report a
+    # collapsed design could not make.
+    ("tracker: the merged script's name is not an exemption token",
+     f"# t\n\n<!-- unguarded: campaign-tracker -- x -->\n\n```sh\n{BOTH_TRACKER_FORMS}\n```\n",
+     1, "an exemption naming no script", None),
+    # The finding says which script to call as well as which token to exempt:
+    # a reader told only the token cannot find the code.
+    ("tracker: a finding names the script to call and the token to exempt",
+     fence("gh api --paginate repos/o/r/issues/1/sub_issues"),
+     1, "scripts/campaign-tracker (exempt with `campaign-subtasks`)", None),
+    # The same split, on the other merge.
+    ("claim: the liveness form is exempted by its own token, not the script's",
+     "# t\n\n<!-- unguarded: campaign-claim -- x -->\n\n```sh\nps -o comm= -p 1\n```\n",
+     1, "an exemption naming no script", None),
+]
+
+CASES = FORM_CASES + PARSER_CASES + EXEMPTION_CASES + GRANULARITY_CASES
 
 
 def staged_case():
@@ -202,12 +246,15 @@ def main():
     for case in CASES:
         name, body, want = case[0], case[1], case[2]
         expect = case[3] if len(case) > 3 else None
+        forbid = case[4] if len(case) > 4 else None
         code, out = run(body)
         # An exit code alone lets a case pass for the wrong reason: a fixture
         # aimed at the exemption reporter is satisfied by the fence violation it
         # also contains. Where a case names the text it expects, that is checked
-        # too.
-        ok = code == want and (expect is None or expect in out)
+        # too -- and `forbid` names the finding that must be *absent*, which is
+        # the only way to pin an exemption that silenced exactly one form.
+        ok = (code == want and (expect is None or expect in out)
+              and (forbid is None or forbid not in out))
         print(f"{'ok  ' if ok else 'FAIL'}  {name}  (exit {code}, wanted {want})")
         if not ok:
             failures += 1

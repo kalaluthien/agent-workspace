@@ -109,7 +109,7 @@ joined:
 |---|---|---|
 | `issues/<N>/comments` | `AGENTS.md`, both skills | `--paginate` |
 | `issues/<N>/sub_issues` | `AGENTS.md`, `opening-campaign`, `docs/` | `--paginate` |
-| `issues/<N>/sub_issues` | `scripts/campaign-settlement` | `--paginate --slurp` |
+| `issues/<N>/sub_issues` | `scripts/campaign-tracker` | `--paginate --slurp` |
 | `git/matching-refs/heads/campaign-<N>/` | step 5 above | does not page |
 | `commits/main` | `AGENTS.md`, `opening-campaign` | single object |
 | `compare/main...<sha>` | step 5 above | single object |

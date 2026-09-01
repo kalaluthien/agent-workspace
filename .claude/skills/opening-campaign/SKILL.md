@@ -48,7 +48,7 @@ one bound elsewhere is the mistake this read exists to stop (§ Who is a campaig
 session in the container's `AGENTS.md`).
 
 ```sh
-"$CONTAINER"/scripts/campaign-bound <N>      # here | elsewhere <machine> | unbound
+"$CONTAINER"/scripts/campaign-tracker bound <N>    # here | elsewhere <machine> | unbound
 ```
 
 `here` — carry on. Anything else, including a failed read, stops you.
@@ -135,7 +135,7 @@ Before scaffolding anything, because its number is the campaign ID.
 minutes old and two sessions that each checked before either filed both file.
 
 ```sh
-"$CONTAINER"/scripts/campaign-anchors
+"$CONTAINER"/scripts/campaign-tracker anchors
 gh issue create -R kalaluthien/agent-workspace \
   --label campaign --title "<title>" --body-file <path>
 ```
@@ -268,11 +268,13 @@ Then finish it:
 
 For each line `scripts/campaign-repos` printed in step 4, by absolute path —
 step 4 has just created an empty `$CAMPAIGN/scripts/`, so a relative
-`scripts/acquire-repo` resolves there and fails:
+path resolves there and fails. The script lives under this skill, being called
+from nowhere else:
 
 ```sh
+ACQUIRE="$CONTAINER/.claude/skills/opening-campaign/scripts/acquire-repo"
 while read -r REPO; do
-  "$CONTAINER/scripts/acquire-repo" "$REPO" "$CAMPAIGN/repos/${REPO##*/}"
+  "$ACQUIRE" "$REPO" "$CAMPAIGN/repos/${REPO##*/}"
 done < "$CAMPAIGN/runtime/repos"
 ```
 
@@ -347,14 +349,14 @@ exits non-zero when there is no checkout, and the claim it just made would read
 as a failure to a `set -e` shell.
 Such a subtask runs by your own hands or in an in-process subagent rooted at the
 campaign directory; the delegate-in-a-clone mode needs a checkout. It closes as
-completed with no pull request, which `scripts/campaign-settlement` prints as
+completed with no pull request, which `campaign-tracker settlement` prints as
 `dropped [completed, no merged pull request]` — the designed reading.
 
 Read the campaign's subtasks back from the anchor, in one call, across every
 repository:
 
 ```sh
-"$CONTAINER"/scripts/campaign-subtasks <N>
+"$CONTAINER"/scripts/campaign-tracker index <N>
 ```
 
 That script owns `--paginate`, which is not optional: the endpoint pages at

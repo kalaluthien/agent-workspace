@@ -129,7 +129,7 @@ durable in it.
 ## A moved anchor body has three causes, and they look identical
 
 Step 4's compare-then-write refuses when the body has moved since the `README.md`
-was derived from it. Read the binding first: `campaign-bound` saying anything but
+was derived from it. Read the binding first: `campaign-tracker bound` saying anything but
 `here` means *you* are out of position, and the write stops there whatever the
 diff says. With the campaign bound here, the refusal is a diff and nothing else,
 and three things produce it:

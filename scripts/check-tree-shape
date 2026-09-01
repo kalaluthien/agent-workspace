@@ -42,16 +42,14 @@ A file it cannot read is reported as R0 and refuses the commit. It is never
 skipped: a guard that skips what it cannot read reports nothing and reads
 exactly like a pass, which is the failure mode this whole family of checks
 exists to refuse. R0 is counted apart from R1-R4 because "I looked and found
-nothing" and "I could not look" want different repairs. `--explain` prints what was read
-and which branch each rule took, for a reader who wants to know the guard is
-doing anything at all.
+nothing" and "I could not look" want different repairs.
 
 EXIT
 
 0 silent when clean. 1 with one line per finding: the rule, the path, and what
 was found. The status is about the verdict; an unreadable tree crashes.
 
-Usage: scripts/check-tree-shape [--staged] [--explain]
+Usage: scripts/check-tree-shape [--staged]
 """
 import re
 import subprocess
@@ -67,6 +65,24 @@ RETIRED = [
     # `CLAIMED:`, `send(CLAIMED)`, and `CLAIMED <issue>`. R3 only ever reads
     # code, so prose may still name the message.
     (re.compile(r"\bCLAIMED\b"), "#59 -- the claim is a record, not an announcement"),
+    # #105 folded eighteen scripts into twelve. These bans are on the *path*,
+    # not the bare word, and deliberately: check-rule-readers keeps
+    # `campaign-anchors`, `campaign-subtasks`, `campaign-settlement` and
+    # `campaign-session-alive` as exemption tokens, one per form, and its suite
+    # writes them into fixtures. Banning the bare word would refuse the table
+    # that is the authoritative record of those tokens. What a reintroduction
+    # actually looks like is a call, and a call names the path.
+    (re.compile(r"\bscripts/campaign-(anchors|bound|subtasks|settlement)\b"),
+     "#105 -- merged into scripts/campaign-tracker <subcommand>"),
+    (re.compile(r"\bscripts/campaign-(live|session-alive)\b"),
+     "#105 -- merged into scripts/campaign-claim live | alive"),
+    (re.compile(r"\bscripts/alloy-trace-digest\b"),
+     "#105 -- merged into scripts/alloy-check --digest"),
+    # The lookbehind is load-bearing: the destination path *ends* in
+    # `scripts/acquire-repo`, so a bare pattern would refuse every correct call
+    # as well as every stale one.
+    (re.compile(r"(?<!opening-campaign/)\bscripts/acquire-repo\b"),
+     "#105 -- moved to .claude/skills/opening-campaign/scripts/acquire-repo"),
 ]
 
 FENCE = re.compile(r"^\s*(```|~~~)")
@@ -86,7 +102,6 @@ EXEMPT_ANY = re.compile(r"\bunguarded:")
 PROSE = {
     ".als":  {"block": [("/*", "*/")], "line": ["//", "--"]},
     ".yml":  {"block": [], "line": ["#"]},
-    ".yaml": {"block": [], "line": ["#"]},
     ".py":   {"block": [('"""', '"""'), ("'''", "'''")], "line": ["#"]},
     ".html": {"block": [("<!--", "-->")], "line": []},
     ".json": {"block": [], "line": []},        # no comment syntax; all code
@@ -191,7 +206,6 @@ def code_lines(text):
 
 def main():
     staged = "--staged" in sys.argv
-    explain = "--explain" in sys.argv
     paths = tracked(staged)
     findings = []
 
@@ -203,8 +217,6 @@ def main():
                 if p.endswith(".md") and p.split("/")[0] in ("spec", "docs")]
     for p in misfiled:
         note("R1", p, "markdown under spec/ or docs/ -- spec/ is Alloy, docs/ is HTML")
-    if explain:
-        print(f"R1 read {len(paths)} paths; {len(misfiled)} misfiled markdown")
 
     # R2
     ignore = Path(".gitignore")
@@ -221,12 +233,8 @@ def main():
         for t in tops:
             if t not in allowed:
                 note("R2", t, "tracked but not in .gitignore's allowlist")
-    if explain:
-        print(f"R2 read {len(allowed) if allowed is not None else 'no'} "
-              f"allowlist entries against {len(tops)} tracked top-level names")
 
     # R3
-    scanned = 0
     for p in paths:
         # The kind is decided before the file is opened, so a binary file with
         # no prose rule for its suffix is reported as R0 rather than crashing
@@ -247,21 +255,16 @@ def main():
             note("R0", p, f"could not be read as text ({e.__class__.__name__}); "
                           f"the sweep did not run over it")
             continue
-        scanned += 1
         lines = code_lines(text) if spec is None else code_lines_by_comment(text, spec)
         for n, line in lines:
             for pat, why in RETIRED:
                 if pat.search(line):
                     note("R3", f"{p}:{n}", f"retired name as code ({why}): {line.strip()[:60]}")
-    if explain:
-        print(f"R3 read {scanned} files for {len(RETIRED)} retired names")
 
     # R4
     for p in paths:
         if p == "repos" or p.startswith("repos/") or "/repos/" in p:
             note("R4", p, "a member repository's file in the container plane")
-    if explain:
-        print("R4 read the same path list for repos/ entries")
 
     if findings:
         print("check-tree-shape: refusing", file=sys.stderr)

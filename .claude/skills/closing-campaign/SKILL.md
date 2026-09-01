@@ -26,13 +26,13 @@ match it among the open anchors and say which.
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-"$CONTAINER"/scripts/campaign-anchors
+"$CONTAINER"/scripts/campaign-tracker anchors
 ```
 
 **Then the binding, before any other gate.**
 
 ```sh
-"$CONTAINER"/scripts/campaign-bound "$N"     # here | elsewhere <machine> | unbound
+"$CONTAINER"/scripts/campaign-tracker bound "$N"   # here | elsewhere <machine> | unbound
 ```
 
 `here` — carry on. Anything else, including a failed read, refuses the close.
@@ -89,7 +89,7 @@ if [ ! -d "$CLAIMDIR" ]; then
 else
   find "$CLAIMDIR" -type f -print | while read -r F; do
     P=$(awk '$1 == "pid" { print $2 }' "$F")
-    V=$("$CONTAINER/scripts/campaign-session-alive" "$P" 2>&1) || V="unreadable ($V)"
+    V=$("$CONTAINER/scripts/campaign-claim" alive "$P" 2>&1) || V="unreadable ($V)"
     case "$V" in
       dead) ;;
       alive|other) echo "live claim: $(basename "$F") [$V]"; cat "$F" ;;
@@ -161,7 +161,7 @@ Want `campaign` among the labels and `-` for the parent. Anything else, stop and
 say which issue `$N` actually is.
 
 ```sh
-"$CONTAINER/scripts/campaign-settlement" "$N" >| /tmp/settlement-$N
+"$CONTAINER/scripts/campaign-tracker" settlement "$N" >| /tmp/settlement-$N
 cat /tmp/settlement-$N
 ```
 
@@ -205,7 +205,7 @@ reparent with the anchor that inherits it, then re-run.
 claims until GitHub shows them.
 
 ```sh
-"$CONTAINER/scripts/campaign-settlement" "$N" >| /tmp/settlement-after-$N
+"$CONTAINER/scripts/campaign-tracker" settlement "$N" >| /tmp/settlement-after-$N
 cat /tmp/settlement-after-$N
 grep -q '; closable$' /tmp/settlement-after-$N ||
   grep -q 'the index is empty' /tmp/settlement-after-$N ||
@@ -217,7 +217,7 @@ subtasks remain`. The empty-index line is the other accepted reading. A
 `-- REPORT:` line about nested sub-issues isn't covered here: a subtask that is
 itself an anchor hides its own members — run the script on it too.
 
-Holds when: `campaign-settlement` reads every subtask in the anchor's index as
+Holds when: `campaign-tracker settlement` reads every subtask in the anchor's index as
 settled or moved to another anchor, each open one having been given a named
 disposition and had that act carried out first.
 
