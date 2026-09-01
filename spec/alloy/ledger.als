@@ -6,15 +6,28 @@
  * Four layers, each opening the one below, so the composed model is the top
  * file and there is no fifth integration file:
  *
- *   ledger.als    issues, the sub-issue index, settlement, the anchor body   30
- *   repos.als     a member repository from one machine and on its remote     17
- *   session.als   a campaign session: one role, bound to one machine         30
- *   agent.als     the executor: launch, the four messages, retirement        60
+ *   ledger.als    issues, the sub-issue index, settlement, the anchor body
+ *   repos.als     a member repository from one machine and on its remote
+ *   session.als   a campaign session: one role, bound to one machine
+ *   agent.als     the executor: launch, the four messages, retirement
  *
- * (the trailing number is that file's command count; 137 in all, and
- * scripts/alloy-check reads this table)
+ * WHAT CHECKS WHAT
+ *
+ * Every command states its own verdict, in the `expect` clause the solver
+ * enforces: `expect 0` where the solver says UNSAT -- a check with no
+ * counterexample, a run with no instance -- and `expect 1` where it says SAT.
+ * `alloy exec -f -t text -c '*'` on any of these four files exits non-zero and
+ * names each command that came out other than its clause says. No comment
+ * restates a verdict, and one that did would be a second reader of what the
+ * solver already decided.
+ *
+ * A command someone DELETES misses no expectation, having none left to miss,
+ * and nothing generated from these files can see that either. So the command
+ * list is stated a second time, in commands.lock.json beside them, which is
+ * committed and compared rather than regenerated:
  *
  *   scripts/alloy-check spec/alloy/ledger.als -o /tmp/alloy-ledger
+ *   scripts/alloy-check --commands spec/alloy            -- and --write to update
  *   scripts/alloy-check --digest /tmp/alloy-ledger/S1_HappyPath-solution-0.txt
  *
  * HOW THE LAYERS COMPOSE
@@ -35,32 +48,6 @@
  * satisfiable together with it. Observer fields follow the same rule -- `Now`
  * here, `Site` in repos, `By` in session, `Target` in agent -- so no layer
  * declares a field over a signature it does not own.
- *
- * VERDICTS
- *   ClosedImpliesComplete            X     closed is not completed
- *   IndexExact                       pass  the index is exactly the membership
- *   Reconstitution                   pass  the anchor alone recovers the campaign
- *   TerminationUnderFairness         X     closed-and-merged cannot say "dropped"
- *   TerminationDisciplined           pass
- *   TerminationUnderSettlement       pass  the reading AGENTS.md adopted
- *   SettledWithoutMerge              SAT   control: settlement is weaker
- *   S1_HappyPath                     SAT
- *   S2_SubtaskDropped                SAT
- *   S5_FollowUpAfterSettled          SAT
- *   S6_RepoJoinsMidFlight            SAT
- *   S8_CloseWithOpenSubtask          SAT
- *   S10_SubtaskMovedOut              SAT
- *   S11_MergedButIssueLeftOpen       SAT
- *   S12_TwoCampaignsOneRepo          SAT
- *   S13_ReopenAfterMerge             UNSAT the finding: no reopen after a PR
- *   S13a_ControlCompletes            SAT
- *   S13b_ReopenAnyClosed             SAT
- *   S13c_ReopenWithPR                UNSAT the actual blocker
- *   S14_FollowUpAfterClose           SAT
- *   S16a_ContainerMemberUnderNarrowReading  UNSAT the narrow reading forbade it
- *   S18_PlainContainerIssue          SAT   the tracker's third kind exists
- *   S18a_PlainContainerIssueUnderClosedWorld  UNSAT control: the clause bites
- *   Cov_*                            SAT   every own event fires in some trace
  */
 module ledger
 
@@ -508,36 +495,48 @@ pred Cov_WriteBody    { eventually Now.ev = WriteBody }
 
 /* ---------------- commands ---------------- */
 
-check ClosedImpliesComplete      for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps
-check IndexExact                 for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps
-check Reconstitution             for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps
-check TerminationUnderFairness     for 3 Issue, 2 PR, 1 Campaign, 2 Repo, 10 steps
-check TerminationDisciplined       for 3 Issue, 2 PR, 1 Campaign, 2 Repo, 10 steps
-check TerminationUnderSettlement   for 3 Issue, 2 PR, 1 Campaign, 2 Repo, 10 steps
+-- closed is not completed
+check ClosedImpliesComplete      for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps expect 1
+-- the index is exactly the membership
+check IndexExact                 for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps expect 0
+-- the anchor alone recovers the campaign
+check Reconstitution             for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps expect 0
+-- closed-and-merged cannot say "dropped"
+check TerminationUnderFairness     for 3 Issue, 2 PR, 1 Campaign, 2 Repo, 10 steps expect 1
+check TerminationDisciplined       for 3 Issue, 2 PR, 1 Campaign, 2 Repo, 10 steps expect 0
+-- the reading AGENTS.md adopted
+check TerminationUnderSettlement   for 3 Issue, 2 PR, 1 Campaign, 2 Repo, 10 steps expect 0
 
-run SettledWithoutMerge  for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps
+-- control: settlement is weaker
+run SettledWithoutMerge  for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps expect 1
 
-run S1_HappyPath                for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps
-run S2_SubtaskDropped           for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps
-run S5_FollowUpAfterSettled     for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 2 Repo, 14 steps
-run S6_RepoJoinsMidFlight       for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 14 steps
-run S8_CloseWithOpenSubtask     for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps
-run S10_SubtaskMovedOut         for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps
-run S11_MergedButIssueLeftOpen  for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 8 steps
-run S12_TwoCampaignsOneRepo     for exactly 4 Issue, 2 PR, exactly 2 Campaign, exactly 2 Repo, 14 steps
-run S13_ReopenAfterMerge        for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps
-run S13a_ControlCompletes       for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps
-run S13b_ReopenAnyClosed        for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps
-run S13c_ReopenWithPR           for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps
-run S14_FollowUpAfterClose      for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 2 Repo, 14 steps
-run S16a_ContainerMemberUnderNarrowReading for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 6 steps
-run S18_PlainContainerIssue              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps
-run S18a_PlainContainerIssueUnderClosedWorld for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps
+run S1_HappyPath                for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S2_SubtaskDropped           for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S5_FollowUpAfterSettled     for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 2 Repo, 14 steps expect 1
+run S6_RepoJoinsMidFlight       for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 14 steps expect 1
+run S8_CloseWithOpenSubtask     for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S10_SubtaskMovedOut         for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S11_MergedButIssueLeftOpen  for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 1
+run S12_TwoCampaignsOneRepo     for exactly 4 Issue, 2 PR, exactly 2 Campaign, exactly 2 Repo, 14 steps expect 1
+-- the finding: no reopen after a PR
+run S13_ReopenAfterMerge        for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 0
+run S13a_ControlCompletes       for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 1
+run S13b_ReopenAnyClosed        for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 1
+-- the actual blocker
+run S13c_ReopenWithPR           for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 0
+run S14_FollowUpAfterClose      for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 2 Repo, 14 steps expect 1
+-- the narrow reading forbade it
+run S16a_ContainerMemberUnderNarrowReading for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
+-- the tracker's third kind exists
+run S18_PlainContainerIssue              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 1
+-- control: the clause bites
+run S18a_PlainContainerIssueUnderClosedWorld for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 0
 
-run Cov_FileAnchor   for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps
-run Cov_AddMember    for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps
-run Cov_RemoveMember for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps
-run Cov_OpenPR       for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps
-run Cov_MergePR      for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps
-run Cov_CloseIssue   for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps
-run Cov_WriteBody    for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps
+-- every own event fires in some trace
+run Cov_FileAnchor   for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1
+run Cov_AddMember    for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1
+run Cov_RemoveMember for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1
+run Cov_OpenPR       for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1
+run Cov_MergePR      for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1
+run Cov_CloseIssue   for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1
+run Cov_WriteBody    for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1

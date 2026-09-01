@@ -2,17 +2,6 @@
  * A member repository, as one machine sees it and as its remote holds it.
  * ledger.als is spec/'s entry point: the layer table and the composition idiom
  * are there.
- *
- * VERDICTS
- *   MachineIndependence               pass  a local delete changes no shared fact
- *   S7_TwoMachinesOneDeletes          SAT
- *   S15_NoLocalDirectory              SAT
- *   S16b_ContainerBehindAfterMerge    SAT
- *   S16c_BehindForever                SAT
- *   S16d_CloneFromUnpushedContainer   SAT
- *   S17b_OldCloneRuleInsufficient     SAT   the superseded rule does not stop it
- *   S17c_PullBeforeLaunchAdmitsLaunch SAT   control: the adopted rule is not vacuous
- *   Cov_*                             SAT   every own event fires in some trace
  */
 module repos
 
@@ -328,22 +317,26 @@ pred Cov_Launch        { eventually Now.ev = Launch }
 
 /* ---------------- commands ---------------- */
 
-check MachineIndependence for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 6 steps
+-- a local delete changes no shared fact
+check MachineIndependence for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 6 steps expect 0
 
-run S7_TwoMachinesOneDeletes    for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 10 steps
-run S15_NoLocalDirectory        for exactly 3 Issue, 2 PR, exactly 1 Campaign, 1 Machine, exactly 3 Repo, 1 Topic, 1 Tree, 12 steps
-run S16b_ContainerBehindAfterMerge  for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 12 steps
-run S16c_BehindForever              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 10 steps
-run S16d_CloneFromUnpushedContainer for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 10 steps
-run S17b_OldCloneRuleInsufficient   for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Topic, 1 Tree, 12 steps
-run S17c_PullBeforeLaunchAdmitsLaunch for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Topic, 1 Tree, 14 steps
+run S7_TwoMachinesOneDeletes    for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run S15_NoLocalDirectory        for exactly 3 Issue, 2 PR, exactly 1 Campaign, 1 Machine, exactly 3 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+run S16b_ContainerBehindAfterMerge  for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 12 steps expect 1
+run S16c_BehindForever              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run S16d_CloneFromUnpushedContainer for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+-- the superseded rule does not stop it
+run S17b_OldCloneRuleInsufficient   for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+-- control: the adopted rule is not vacuous
+run S17c_PullBeforeLaunchAdmitsLaunch for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Topic, 1 Tree, 14 steps expect 1
 
-run Cov_CreateDir     for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps
-run Cov_DeleteDir     for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps
-run Cov_Acquire       for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps
-run Cov_Claim         for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps
-run Cov_Release       for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps
-run Cov_PullContainer for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps
-run Cov_PullClone     for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps
-run Cov_CommitLocal   for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps
-run Cov_Launch        for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps
+-- every own event fires in some trace
+run Cov_CreateDir     for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps expect 1
+run Cov_DeleteDir     for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps expect 1
+run Cov_Acquire       for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps expect 1
+run Cov_Claim         for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps expect 1
+run Cov_Release       for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps expect 1
+run Cov_PullContainer for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps expect 1
+run Cov_PullClone     for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps expect 1
+run Cov_CommitLocal   for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps expect 1
+run Cov_Launch        for 3 Issue, 2 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 8 steps expect 1

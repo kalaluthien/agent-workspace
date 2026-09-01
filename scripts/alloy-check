@@ -1,31 +1,49 @@
 #!/usr/bin/env python3
-"""Run one spec/alloy module against its verdict table, and digest its traces.
+"""Run one spec/alloy module, hold its command list, and digest its traces.
 
     scripts/alloy-check <file.als> [-o <dir>]
+    scripts/alloy-check --commands <dir> [--write]
     scripts/alloy-check --digest <solution-0.txt> [...]
 
-Each module's header carries a VERDICTS table: one command per row, its
-measured verdict beside it. The table is the spec's claim about the model, and
-it goes stale the moment a predicate changes; this is the one reader that
-makes a stale row visible, so every round that touches a predicate ends with
-this command and not with a re-derived incantation.
+Every command in spec/alloy/*.als carries its own verdict, in the `expect`
+clause the solver enforces: `expect 0` where the solver says UNSAT -- a check
+with no counterexample, a run with no instance -- and `expect 1` where it says
+SAT. Alloy exits non-zero and names each command that came out other than its
+clause says, so the verdict is checked by the tool that computed it, and this
+script neither restates nor re-reads it. There is no verdict table anywhere,
+and reintroducing one would be a second reader of what the solver already
+decided.
 
-What it does:
-  1. runs `alloy exec -f -t text -c '*'` on the file, into <dir> (a fresh
-     temporary directory unless -o names one) -- the same run a person makes,
-     so the traces are there to read afterwards with `--digest`;
-  2. parses the header table -- `pass`/`X` for a check, `SAT`/`UNSAT` for a run,
-     and one `Cov_*` row standing for every coverage command;
-  3. prints one line per command: `ok`, `MISMATCH`, `UNLISTED` (ran but has no
-     row), or `MISSING` (row but no command), then the command count against
-     ledger.als's per-file count table.
+That leaves one hole and two jobs.
 
-Exit 0 when every command matches and both tables are complete, 1 otherwise;
-the Alloy run's own failure is exit 2 with its output.
+RUNNING (the default mode) is `alloy exec -f -t text -c '*'` into <dir>, a
+fresh temporary directory unless -o names one, so the traces outlive the run
+and `--digest` has something to read. It passes alloy's own output and exit
+status through; a run that printed no command result at all -- a parse error, a
+missing solver -- is reported as that and never as a pass, because looking and
+finding nothing is not the same as being unable to look.
 
-Vocabulary, as the headers use it: a check that passes reads UNSAT from the
-solver and `pass` in the table; a check with a counterexample reads SAT and `X`.
-A run reads what the solver says.
+THE HOLE is deletion. `expect` is checked per command, so a command someone
+removed misses no expectation: it simply is not there. Nothing generated *from*
+the models can see it either -- regenerate an inventory after the deletion and
+the command is absent from the claim exactly as it is from the model, so every
+property over "the commands that exist" still holds, over a smaller set. Only a
+second statement that does NOT regenerate can catch it.
+
+--commands is that statement. It extracts every `check`/`run` declaration from
+the .als files in <dir> and compares them to <dir>/commands.lock.json, naming
+each command that appeared or went. `--write` regenerates the lockfile, which
+is how a deliberate change is recorded. The lockfile holds the module, the kind
+and the name, and deliberately NOT the scope, which is tuned often, nor the
+`expect` value, which would put a verdict back in a file for a script to read.
+
+Its ceiling, stated rather than hidden: it does not stop a commit that deletes a
+command and regenerates in one go, any more than a hand-kept count stops one
+that also edits the number. It catches the careless deletion. A floor, not a
+fence -- and unlike a count, what it prints is the command's name.
+
+Exit 0 when the mode's checks pass, 1 when they fail, and 2 when a run produced
+no command result to check at all.
 
 `--digest` condenses the traces the run above just wrote. The raw `-t text` dump
 repeats every static signature in every state, which buries the handful of
@@ -45,91 +63,90 @@ import sys
 import tempfile
 
 ALLOY = os.path.expanduser("~/.local/bin/alloy")
-VERDICT = r"(pass|X|SAT|UNSAT)"
-# ` *   Name   verdict  note` and the wrapped form: ` *   Name` alone, then
-# ` *                      verdict  note` on the next line.
-ROW = re.compile(r"^ \*   (\S+)(?:\s+" + VERDICT + r"\b.*)?$")
-WRAPPED = re.compile(r"^ \*\s{4,}" + VERDICT + r"\b")
-BLANK = re.compile(r"^ \*\s*$")
-# `00. check Name   0   UNSAT` / `01. run   Name   0   1/1   SAT`
-RESULT = re.compile(r"^\d+\.\s+(check|run)\s+(\S+)\s+\d+\s+(?:\d+/\d+\s+)?(SAT|UNSAT)\s*$")
-# ledger.als's orientation table: `*   repos.als   ...   18`
-COUNT_ROW = re.compile(r"^ \*   (\w+)\.als\s.*?\s(\d+)\s*$")
+# `00. check Name   0   UNSAT` / `01. run   Name   0   1/1   SAT`, and the same
+# line with ` expects=N` appended when the command missed its `expect` clause.
+RESULT = re.compile(r"^\d+\.\s+(check|run)\s+(\S+)\s+\d+\s+(?:\d+/\d+\s+)?(SAT|UNSAT)\b")
+# A command declaration, which always opens its line: `check Name for ...`.
+DECL = re.compile(r"^(check|run)\s+(\w+)\b")
+LOCK = "commands.lock.json"
 
 
-def header_table(path):
-    """{command: verdict} from the VERDICTS table, plus the Cov_* wildcard."""
-    lines = open(path).read().splitlines()
-    try:
-        start = next(i for i, l in enumerate(lines) if l.strip() == "* VERDICTS")
-    except StopIteration:
-        raise SystemExit(f"{path}: no VERDICTS heading in the header")
-    # The table is the first run of ` *   Name` rows after the heading; it ends
-    # at the first blank comment line once it has begun.
-    table, pending, begun = {}, None, False
-    for line in lines[start + 1:]:
-        if line.startswith("*/") or line.strip() == "*/":
-            break
-        m = ROW.match(line)
-        if m:
-            begun = True
-            if pending:
-                raise SystemExit(f"{path}: row {pending} has no verdict")
-            name, verdict = m.group(1), m.group(2)
-            if verdict:
-                table[name] = verdict
-            else:
-                pending = name
-            continue
-        w = WRAPPED.match(line) if pending else None
-        if w:
-            table[pending] = w.group(1)
-            pending = None
-            continue
-        if begun and BLANK.match(line):
-            break
-    if pending:
-        raise SystemExit(f"{path}: row {pending} has no verdict")
-    return table
+def inventory(directory):
+    """[[module, kind, name]] over every .als in <directory>, sorted."""
+    als = sorted(f for f in os.listdir(directory) if f.endswith(".als"))
+    if not als:
+        raise SystemExit(f"alloy-check --commands: no .als files in {directory}")
+    found = []
+    for name in als:
+        with open(os.path.join(directory, name)) as fh:
+            for line in fh:
+                m = DECL.match(line)
+                if m:
+                    found.append([name, m.group(1), m.group(2)])
+    return sorted(found)
 
 
-def expected_count(path):
-    ledger = os.path.join(os.path.dirname(os.path.abspath(path)), "ledger.als")
-    stem = os.path.basename(path)[:-len(".als")]
-    if not os.path.exists(ledger):
-        return None
-    for line in open(ledger):
-        m = COUNT_ROW.match(line)
-        if m and m.group(1) == stem:
-            return int(m.group(2))
-    return None
+def commands_mode(directory, write):
+    """Compare the models' declarations to the committed lockfile beside them."""
+    directory = os.path.abspath(directory)
+    lock = os.path.join(directory, LOCK)
+    found = inventory(directory)
+    # Hand-rolled rather than json.dumps(indent=...), which puts every element
+    # of a triple on its own line: one command per line is the whole point, so
+    # that a deletion is one removed line naming the command that went.
+    head = {
+        "generated_by": "scripts/alloy-check --commands <dir> --write",
+        "why": "A deleted command misses no `expect` clause, and an inventory "
+               "regenerated from the models cannot see the deletion either. "
+               "This copy is committed so the diff is the reader.",
+    }
+    rows = ",\n".join("    " + json.dumps(c) for c in found)
+    text = ("{\n"
+            + "".join(f"  {json.dumps(k)}: {json.dumps(v)},\n"
+                      for k, v in head.items())
+            + '  "commands": [\n' + rows + "\n  ]\n}\n")
+    if write:
+        open(lock, "w").write(text)
+        print(f"wrote     {lock}  ({len(found)} commands)")
+        return 0
+
+    print(f"models    {directory}  ({len(found)} commands declared)")
+    if not os.path.exists(lock):
+        print(f"lockfile  ABSENT  {lock}")
+        print("RESULT    could not compare: write it with --write")
+        return 1
+    print(f"lockfile  {lock}")
+    was = [list(c) for c in json.load(open(lock))["commands"]]
+    gone = [c for c in was if c not in found]
+    new = [c for c in found if c not in was]
+    for mod, kind, name in gone:
+        print(f"GONE      {mod:<12} {kind:<6} {name}")
+    for mod, kind, name in new:
+        print(f"NEW       {mod:<12} {kind:<6} {name}")
+    if gone or new:
+        print(f"RESULT    {len(gone)} gone, {len(new)} new; if deliberate, "
+              f"rerun with --write and commit {LOCK}")
+        return 1
+    print(f"RESULT    the lockfile names exactly the {len(found)} declared commands")
+    return 0
 
 
 def run_alloy(path, outdir):
+    """(alloy's exit status, how many commands ran -- None if none could be read)."""
     cmd = [ALLOY, "exec", "-f", "-o", outdir, "-t", "text", "-c", "*", path]
     proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        sys.stderr.write(proc.stdout + proc.stderr)
-        raise SystemExit(2)
-    results = {}
-    # The result lines go to stderr and a run's line carries backspaces from a
-    # progress counter (Alloy 6.2.0): read both, strip them.
-    for line in (proc.stdout + proc.stderr).replace("\b", "").splitlines():
-        m = RESULT.match(line)
-        if m:
-            results[m.group(2)] = (m.group(1), m.group(3))
-    if not results:
-        sys.stderr.write(proc.stdout + proc.stderr)
-        raise SystemExit(f"{path}: alloy printed no command results")
+    # Alloy prints its per-command lines and its expectation errors to stderr,
+    # and a run's line carries backspaces from a progress counter (6.2.0).
+    output = (proc.stdout + proc.stderr).replace("\b", "")
+    sys.stdout.write(output)
+    sys.stdout.flush()
+    names = {m.group(2) for m in map(RESULT.match, output.splitlines()) if m}
+    if not names:
+        return proc.returncode, None
     receipt = os.path.join(outdir, "receipt.json")
-    count = len(json.load(open(receipt))["commands"]) if os.path.exists(receipt) else len(results)
-    return results, count
-
-
-def as_header(kind, solver):
-    if kind == "check":
-        return "pass" if solver == "UNSAT" else "X"
-    return solver
+    if os.path.exists(receipt):
+        return proc.returncode, len(json.load(open(receipt))["commands"])
+    return proc.returncode, len(names)
 
 
 # ------------------------------------------------------------- the trace digest
@@ -256,6 +273,7 @@ def render(path):
     return "\n".join(out) + "\n"
 
 
+
 # ------------------------------------------------------------------------ main
 
 
@@ -271,48 +289,32 @@ def main(argv):
         for arg in argv[1:]:
             print(render(arg))
         return 0
+    if argv[0] == "--commands":
+        rest = [a for a in argv[1:] if a != "--write"]
+        if len(rest) != 1:
+            print("alloy-check --commands: name exactly one directory",
+                  file=sys.stderr)
+            return 1
+        return commands_mode(rest[0], "--write" in argv[1:])
+
     path, outdir = argv[0], None
     if len(argv) >= 3 and argv[1] == "-o":
         outdir = argv[2]
     if outdir is None:
         outdir = tempfile.mkdtemp(prefix="alloy-" + os.path.basename(path)[:-4] + "-")
-    table = header_table(path)
-    results, count = run_alloy(path, outdir)
 
-    bad = 0
-    width = max(len(n) for n in list(results) + list(table))
-    for name in sorted(results):
-        kind, solver = results[name]
-        got = as_header(kind, solver)
-        row = table.get(name)
-        if row is None and name.startswith("Cov_") and "Cov_*" in table:
-            row = table["Cov_*"]
-        if row is None:
-            bad += 1
-            print(f"UNLISTED  {name:<{width}}  {got}")
-        elif row == got:
-            print(f"ok        {name:<{width}}  {got}")
-        else:
-            bad += 1
-            print(f"MISMATCH  {name:<{width}}  header {row}, measured {got}")
-    for name in sorted(table):
-        if name == "Cov_*" and any(n.startswith("Cov_") for n in results):
-            continue
-        if name not in results:
-            bad += 1
-            print(f"MISSING   {name:<{width}}  header {table[name]}, no such command")
-
-    want = expected_count(path)
-    if want is None:
-        print(f"commands  {count}  (no row for this file in ledger.als's count table)")
-    elif want == count:
-        print(f"commands  {count}  matches ledger.als")
-    else:
-        bad += 1
-        print(f"commands  {count}  ledger.als says {want}")
+    status, ran = run_alloy(path, outdir)
+    print(f"model     {os.path.abspath(path)}")
     print(f"traces    {outdir}")
-    print("RESULT    " + ("all verdicts match" if bad == 0 else f"{bad} discrepancies"))
-    return 0 if bad == 0 else 1
+    if ran is None:
+        print("commands  NONE READ  alloy printed no command result, so nothing "
+              "about this model was checked")
+        print(f"RESULT    could not read the model (alloy exit {status})")
+        return 2
+    print(f"commands  {ran} ran; each one's verdict was checked by its own "
+          f"`expect` clause")
+    print(f"RESULT    alloy exit {status}")
+    return 0 if status == 0 else 1
 
 
 if __name__ == "__main__":

@@ -110,7 +110,13 @@ jobs:
           chmod +x ~/.local/bin/alloy
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Every model matches its own verdict table
+      # Seconds, and it needs no solver, so it runs before the slow step: a
+      # deleted command is the one thing the `expect` clauses below cannot
+      # catch, having no clause left to miss.
+      - name: The command lockfile still names every declared command
+        run: scripts/alloy-check --commands spec/alloy
+
+      - name: Every command comes out as its `expect` clause says
         run: |
           for m in spec/alloy/*.als; do
             echo "== $m"

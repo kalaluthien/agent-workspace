@@ -11,69 +11,6 @@
  * merge conditions -- the NON-AUTHOR one, because nothing here records who set
  * `Reviewed`, and CONTAINS-CURRENT-MAIN, because this model has one pull
  * request per issue and no shared branch moving under another (#95).
- *
- * VERDICTS
- *   NoLostWork                       pass  a death or a delete never un-completes
- *   NoOrphan                         X     nothing enforces the retirement rule
- *   NoOrphanIfGuarded                pass  it does hold once enforced
- *   OneStepShutdownSuffices          X     the defect the design records
- *   TwoStepShutdownSuffices          X     two steps run from the wrong machine
- *   TwoStepCoLocatedSuffices         pass  the contract as AGENTS.md states it
- *   SilenceResolutionStaysSafe       pass  rule 3's repair reopens nothing
- *   Sanity                           SAT   the whole retirement procedure runs
- *   ReportIsNotEvidence              SAT   a REPORT changes nothing durable
- *   BlockedAgentDoesNotProceed       SAT   BLOCKED stops the executor
- *   SilentAgentIsRetirableUnderWait  UNSAT wait-for-the-answer strands a pane
- *   SilentAgentStillRetired          SAT   rule 3's repair still retires it
- *   S3_DelegateDiesAfterPushing      SAT
- *   S4_ReportWithoutPush             SAT
- *   S9_OrphanedByLocalDelete         SAT
- *   R3b_CloseFromAnotherMachine      SAT   a close over a delegate on M1
- *   R3c_GlobalCloseRuleBlocks        UNSAT the global rule would block it
- *   R4c_CheckoutSwitchedUnderAgent   SAT   an acquire moves a live agent's HEAD
- *   R4e_NumberedBranchStillShared    SAT   what the numbered branch leaves
- *   R4f_ClaimClosesSameSubtask       UNSAT the claim closes it
- *   R4g_ClaimWithoutAtomicityStillShared SAT control: the 422 is load-bearing
- *   R5b_VisibleNotPushed             SAT   the gap TwoStepShutdownSuffices rests on
- *   R5c_NonLauncherSameMachineIsFine SAT   co-location, not ownership, is the axis
- *   R6_ReleaseUnderRemoteAgent       SAT   a local release under a remote executor
- *   R6b_ReclaimAfterDeath            SAT   a dangling claim is reclaimable
- *   A1_UnrecordedExecutorAtTheClose  UNSAT closed BY CONSTRUCTION: the claimant
- *                                          writes its own record, so no live
- *                                          claim is unattributable
- *   A3_RecordedExecutorRunsTheWholeProtocol
- *                                    SAT   control: the whole run still happens
- *   A4_ExecutorMergesItsOwnPR        SAT   the live collision: a self-merge with
- *                                          NO review
- *   A5_ReviewRuleBlocksTheCollision  UNSAT still caught, by what was missing
- *   A6_UnreviewedMerge               SAT   the same merge from the other chair
- *   A7_ReviewRuleBlocksUnreviewed    UNSAT nobody merges unread
- *   A8_ReviewRuleAdmitsTheLanding    SAT   control: two-session landing runs
- *   A9_RecordDiesWithTheDirectory    SAT   the record has the tree's lifetime
- *   A10_DeleteUnderRecordedExecutor  SAT   session.als's R3, reached from here
- *   A11_ReadableGateBlocksTheDelete  UNSAT and closed by reading the record
- *   A12_ReadableGateAdmitsTheDelete  SAT   control
- *   A13_PushAfterReviewUnReviews     SAT   a push retires a review
- *   A14_UnaddressedExecutorIsRetirable
- *                                    SAT   a record dead with its directory
- *                                          still ends in a lawful retire
- *   A14b_UnaddressedExecutorCannotBeStoodDown
- *                                    UNSAT and never a stand-down: that one
- *                                          carries a message, so it stays gated
- *   A15_UnaddressedExecutorPRLands   SAT   and its pull request still lands
- *   A16_AuthorLandsOwnReviewedWork   SAT   the one-session landing
- *   A16b_AuthorCannotMergeOnStaleReview
- *                                    UNSAT and a push retires that permission
- *   A17_PaneSeesWhatTheRecordLost    SAT   attribution, not liveness, is the
- *                                          split's subject
- *   A18_AgentLessLandingIsAdmitted   SAT   hands-on work, reviewed and merged by
- *                                          one session, at `0 Agent`
- *   A18b_AgentLessUnreviewedMergeIsBlocked
- *                                    UNSAT and unreviewed it does not land. The
- *                                          pair matters because the confirm
- *                                          conjunct is VACUOUS at `0 Agent`, so
- *                                          the review half holds the rule up alone
- *   Cov_*                            SAT   every own event fires in some trace
  */
 module agent
 
@@ -954,77 +891,120 @@ pred A17_PaneSeesWhatTheRecordLost {
 
 /* ---------------- commands ---------------- */
 
-check NoLostWork        for 3 Issue, 2 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps
-check NoOrphan          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps
-check NoOrphanIfGuarded for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps
+-- a death or a delete never un-completes
+check NoLostWork        for 3 Issue, 2 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps expect 0
+-- nothing enforces the retirement rule
+check NoOrphan          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+-- it does hold once enforced
+check NoOrphanIfGuarded for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps expect 0
 
-check OneStepShutdownSuffices    for 2 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps
-check TwoStepShutdownSuffices    for 2 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps
-check TwoStepCoLocatedSuffices   for 2 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps
-check SilenceResolutionStaysSafe for 2 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps
+-- the defect the design records
+check OneStepShutdownSuffices    for 2 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+-- two steps run from the wrong machine
+check TwoStepShutdownSuffices    for 2 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+-- the contract as AGENTS.md states it
+check TwoStepCoLocatedSuffices   for 2 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps expect 0
+-- rule 3's repair reopens nothing
+check SilenceResolutionStaysSafe for 2 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Topic, 2 Tree, 10 steps expect 0
 
-run Sanity                          for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps
-run ReportIsNotEvidence             for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 10 steps
-run BlockedAgentDoesNotProceed      for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 10 steps
-run SilentAgentIsRetirableUnderWait for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps
-run SilentAgentStillRetired         for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps
+-- the whole retirement procedure runs
+run Sanity                          for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps expect 1
+-- a REPORT changes nothing durable
+run ReportIsNotEvidence             for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 10 steps expect 1
+-- BLOCKED stops the executor
+run BlockedAgentDoesNotProceed      for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 10 steps expect 1
+-- wait-for-the-answer strands a pane
+run SilentAgentIsRetirableUnderWait for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps expect 0
+-- rule 3's repair still retires it
+run SilentAgentStillRetired         for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps expect 1
 
-run S3_DelegateDiesAfterPushing for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps
-run S4_ReportWithoutPush        for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps
-run S9_OrphanedByLocalDelete    for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps
+run S3_DelegateDiesAfterPushing for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps expect 1
+run S4_ReportWithoutPush        for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps expect 1
+run S9_OrphanedByLocalDelete    for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Topic, 1 Tree, 12 steps expect 1
 
-run R3b_CloseFromAnotherMachine  for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
-run R3c_GlobalCloseRuleBlocks    for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
+-- a close over a delegate on M1
+run R3b_CloseFromAnotherMachine  for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps expect 1
+-- the global rule would block it
+run R3c_GlobalCloseRuleBlocks    for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps expect 0
 
-run R4c_CheckoutSwitchedUnderAgent for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Topic, 1 Tree, 12 steps
-run R4e_NumberedBranchStillShared for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
-run R4f_ClaimClosesSameSubtask    for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
-run R4g_ClaimWithoutAtomicityStillShared for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
+-- an acquire moves a live agent's HEAD
+run R4c_CheckoutSwitchedUnderAgent for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Topic, 1 Tree, 12 steps expect 1
+-- what the numbered branch leaves
+run R4e_NumberedBranchStillShared for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+-- the claim closes it
+run R4f_ClaimClosesSameSubtask    for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps expect 0
+-- control: the 422 is load-bearing
+run R4g_ClaimWithoutAtomicityStillShared for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps expect 1
 
-run R5b_VisibleNotPushed         for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
-run R5c_NonLauncherSameMachineIsFine for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps
-run R6_ReleaseUnderRemoteAgent   for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
-run R6b_ReclaimAfterDeath        for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 14 steps
+-- the gap TwoStepShutdownSuffices rests on
+run R5b_VisibleNotPushed         for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps expect 1
+-- co-location, not ownership, is the axis
+run R5c_NonLauncherSameMachineIsFine for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+-- a local release under a remote executor
+run R6_ReleaseUnderRemoteAgent   for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps expect 1
+-- a dangling claim is reclaimable
+run R6b_ReclaimAfterDeath        for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 14 steps expect 1
 
 /* A1 and A3 run at two agents, where the gap they measure was widest. A9-A12
    need a Tree to delete; A14-A15 need one to delete mid-trace. A16, A16b, A18
    and A18b run at exactly ONE Session, because the absence of a second merger
    is their subject. */
-run A1_UnrecordedExecutorAtTheClose          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
-run A3_RecordedExecutorRunsTheWholeProtocol  for 3 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
+-- closed BY CONSTRUCTION: the claimant writes its own record, so no live claim is unattributable
+run A1_UnrecordedExecutorAtTheClose          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 0
+-- control: the whole run still happens
+run A3_RecordedExecutorRunsTheWholeProtocol  for 3 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps expect 1
 
-run A4_ExecutorMergesItsOwnPR                for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
-run A5_ReviewRuleBlocksTheCollision          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
-run A6_UnreviewedMerge                       for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
-run A7_ReviewRuleBlocksUnreviewed            for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
-run A8_ReviewRuleAdmitsTheLanding            for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
+-- the live collision: a self-merge with NO review
+run A4_ExecutorMergesItsOwnPR                for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps expect 1
+-- still caught, by what was missing
+run A5_ReviewRuleBlocksTheCollision          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps expect 0
+-- the same merge from the other chair
+run A6_UnreviewedMerge                       for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+-- nobody merges unread
+run A7_ReviewRuleBlocksUnreviewed            for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 0
+-- control: two-session landing runs
+run A8_ReviewRuleAdmitsTheLanding            for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps expect 1
 
-run A9_RecordDiesWithTheDirectory            for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
-run A10_DeleteUnderRecordedExecutor          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
-run A11_ReadableGateBlocksTheDelete          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
-run A12_ReadableGateAdmitsTheDelete          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
-run A13_PushAfterReviewUnReviews             for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
-run A14_UnaddressedExecutorIsRetirable       for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
-run A14b_UnaddressedExecutorCannotBeStoodDown for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
-run A15_UnaddressedExecutorPRLands           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 16 steps
-run A16_AuthorLandsOwnReviewedWork           for 3 Issue, 1 PR, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
-run A16b_AuthorCannotMergeOnStaleReview      for 3 Issue, 1 PR, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps
-run A17_PaneSeesWhatTheRecordLost            for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
-run A18_AgentLessLandingIsAdmitted           for 3 Issue, 1 PR, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
-run A18b_AgentLessUnreviewedMergeIsBlocked   for 3 Issue, 1 PR, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
+-- the record has the tree's lifetime
+run A9_RecordDiesWithTheDirectory            for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+-- session.als's R3, reached from here
+run A10_DeleteUnderRecordedExecutor          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+-- and closed by reading the record
+run A11_ReadableGateBlocksTheDelete          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 0
+-- control
+run A12_ReadableGateAdmitsTheDelete          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+-- a push retires a review
+run A13_PushAfterReviewUnReviews             for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps expect 1
+-- a record dead with its directory still ends in a lawful retire
+run A14_UnaddressedExecutorIsRetirable       for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps expect 1
+-- and never a stand-down: that one carries a message, so it stays gated
+run A14b_UnaddressedExecutorCannotBeStoodDown for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps expect 0
+-- and its pull request still lands
+run A15_UnaddressedExecutorPRLands           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 16 steps expect 1
+-- the one-session landing
+run A16_AuthorLandsOwnReviewedWork           for 3 Issue, 1 PR, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps expect 1
+-- and a push retires that permission
+run A16b_AuthorCannotMergeOnStaleReview      for 3 Issue, 1 PR, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps expect 0
+-- attribution, not liveness, is the split's subject
+run A17_PaneSeesWhatTheRecordLost            for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+-- hands-on work, reviewed and merged by one session, at `0 Agent`
+run A18_AgentLessLandingIsAdmitted           for 3 Issue, 1 PR, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+-- and unreviewed it does not land. The pair matters because the confirm conjunct is VACUOUS at `0 Agent`, so the review half holds the rule up alone
+run A18b_AgentLessUnreviewedMergeIsBlocked   for 3 Issue, 1 PR, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 0
 
-run Cov_LaunchAgent      for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_Work             for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_Push             for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_Status           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_Answer           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_Report           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_Blocked          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_Decide           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_Confirm          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_ConfirmElsewhere for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_Review           for 3 Issue, 2 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
-run Cov_StandDown        for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_Retire           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_AgentDie         for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
-run Cov_GuardedRelease   for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps
+-- every own event fires in some trace
+run Cov_LaunchAgent      for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_Work             for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_Push             for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_Status           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_Answer           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_Report           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_Blocked          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_Decide           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_Confirm          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_ConfirmElsewhere for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_Review           for 3 Issue, 2 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps expect 1
+run Cov_StandDown        for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_Retire           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_AgentDie         for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_GuardedRelease   for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
