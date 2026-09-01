@@ -102,7 +102,7 @@ def run_alloy(path, outdir):
         raise SystemExit(2)
     results = {}
     # The result lines go to stderr and a run's line carries backspaces from a
-    # progress counter (probed 2026-08-29, Alloy 6.2.0): read both, strip them.
+    # progress counter (Alloy 6.2.0): read both, strip them.
     for line in (proc.stdout + proc.stderr).replace("\b", "").splitlines():
         m = RESULT.match(line)
         if m:

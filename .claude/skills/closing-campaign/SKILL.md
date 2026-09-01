@@ -6,73 +6,51 @@ description: Closes a campaign — binds the campaign directory, refuses when th
 # Closing a campaign
 
 Delete a campaign directory only after everything in it also exists somewhere
-else. The directory is a scratch assembly of things versioned elsewhere, so
-closing is a checked demolition, not a decision.
+else.
 
-Finished when the two facts no step owns hold — `gh issue view <N> -R
-kalaluthien/agent-workspace --json state` reports `CLOSED`, and `$CAMPAIGN_DIR`
-does not exist — and every step's `Holds when` line held when that step ran.
-Those lines are the rest of the predicate, one per step and in order, and
-`grep '^Holds when' SKILL.md` is the whole of them: the list is read off the
-procedure rather than kept beside it, so a step that changes cannot leave a
-predicate behind saying what it used to do.
-
-A campaign bound here with no directory is scaffolded first — `opening-campaign`
-steps 2 and 4, nothing to acquire — because the claim records have no other home
-(§ Who is a campaign session, under **Directory**). One path,
-then.
+Finished when `gh issue view <N> -R kalaluthien/agent-workspace --json state`
+reports `CLOSED`, `$CAMPAIGN_DIR` does not exist, and every step's `Holds when`
+line held when that step ran — `grep '^Holds when' SKILL.md` is the whole list.
 
 ## Procedure
 
-The order is load-bearing: each gate is cheaper than the one after it, and step 5
-is irreversible. Run 0–4 without asking, except that an open subtask's
-disposition in step 3 is the person's choice. Run 5 only on explicit
-confirmation. Why each guard is shaped the way it is: `references/rationale.md`.
+The order is load-bearing: each gate is cheaper than the next, and step 5 is
+irreversible. Run 0–4 without asking, except step 3's disposition, which is the
+person's choice; run 5 only on explicit confirmation. Why each guard is shaped
+the way it is: `references/rationale.md`.
 
 ### 0. Bind the campaign, once
 
-**The ID first**: every step from 3 on reads `$N`, and the README *is* the anchor
-body so nothing in the directory carries it. Take it from the person, or match it
-among the open anchors and say which.
+**The ID first**: every step from 3 on reads `$N`. Take it from the person, or
+match it among the open anchors and say which.
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
 "$CONTAINER"/scripts/campaign-anchors
 ```
 
-**Then the binding, before any other gate**, because closing is the most
-destructive thing a session can do to a campaign it does not hold (§ Who is a
-campaign session in the container's `AGENTS.md`).
+**Then the binding, before any other gate.**
 
 ```sh
 "$CONTAINER"/scripts/campaign-bound "$N"     # here | elsewhere <machine> | unbound
 ```
 
 `here` — carry on. Anything else, including a failed read, refuses the close.
-
 Another machine — refuse, naming both machines, and say nothing was closed. No
 output means unbound, which is not consent either: let the person bind it here,
 or close it from the machine that has been working it.
 
-**Then the directory.** A campaign bound here may have none yet — not taken on
-this machine (§ Who is a campaign session, Directory). Take it first, through
-`opening-campaign`'s "No directory at all" arrival: **steps 2 and 4**, because
-step 4 needs a slug and a kind and step 2 is where they are chosen — neither is
-recoverable from GitHub. That scaffolds the tree from the anchor body. The gates
-below read records that live only there, and step 1 says what they can and
-cannot see on this path.
-
-Bind `$CAMPAIGN_DIR` here, absolute, and never rebuild it later — steps 1 and 5
-both fail silently on a relative value. If you created it in this step, set
-`TOOK_IT_HERE=1`: the gates in steps 1 and 2 then have nothing they *can* find,
-and they must report that rather than a pass (`references/rationale.md`).
+**Then the directory** — none yet is normal; take it first through
+`opening-campaign`'s "No directory at all" arrival, **steps 2 and 4**. Bind
+`$CAMPAIGN_DIR` here, absolute, and never rebuild it — steps 1 and 5 fail
+silently on a relative value. If you created it in this step, set
+`TOOK_IT_HERE=1`: steps 1 and 2 then report not-applicable rather than a pass
+(`references/rationale.md`).
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
 CAMPAIGN_DIR=$(cd "$CONTAINER/$SLUG" && pwd -P)
 ```
-
-Then assert both facts `AGENTS.md` already pins.
 
 ```sh
 [ "$(dirname "$CAMPAIGN_DIR")" = "$CONTAINER" ] || echo "REFUSE: not a direct child of $CONTAINER"
@@ -82,8 +60,7 @@ case "${CAMPAIGN_DIR##*/}" in
 esac
 ```
 
-Stop on either. They are what stop `..`, a nested path, and the container's own
-`docs/` from reaching step 5.
+Stop on either.
 
 Holds when: the anchor's latest `BOUND` comment names this machine, and
 `$CAMPAIGN_DIR` is absolute, a direct child of the container, and named
@@ -91,28 +68,14 @@ Holds when: the anchor's latest `BOUND` comment names this machine, and
 
 ### 1. Refuse while an agent is live under the tree
 
-**No session holds a campaign, so there is no holder to ask** — the holding
-session is retired (`AGENTS.md` § Who is a campaign session), and what gates
-this close is the work under the tree rather than who owns it. Whoever the
-person asked runs this skill, on the gates in steps 0 to 4.
+Whoever the person asked runs this skill, on the gates in steps 0 to 4. **If
+`TOOK_IT_HERE` is set, this step and step 2 are not applicable — report that,
+not a pass.** Run them anyway; they cost two commands (`references/rationale.md`).
 
-**If `TOOK_IT_HERE` is set, this step and step 2 are not applicable, and that
-is what to report.** Step 0 created the tree seconds ago, so no herdr `cwd` can
-be under it, `runtime/claims/` is empty because it was just copied, and there
-is nothing uncommitted in it: the gates cannot fail, and a gate that cannot fail
-has not passed. Run them anyway — they cost two commands — and report "not
-applicable: this session created the directory in step 0". Why that is sound,
-and the one residue it leaves, is `references/rationale.md`.
-
-**The agents, both records, split by question rather than by kind** —
-`herdr agent list` gives liveness for every executor, delegate or not, because
-it lists every session on this machine (measured 2026-08-30: three rows, none of
-them a delegate). What it does not give is attribution at all: under § Naming a session
-no name carries a subtask, so no row says which claim it holds. `runtime/claims/`
-is the only answer, and every claimant writes one — a delegate included. One
-alone is no reading at all (§ Completion and liveness). Presence is the signal,
-not `agent_status`; compare whole path segments, and never test a name against
-the branch.
+`herdr agent list` gives liveness, not attribution — no row says which claim it
+holds. `runtime/claims/` is the only source for that; every claimant writes
+one, delegates included. Presence is the signal, not `agent_status`; compare
+whole path segments, and never test a name against the branch.
 
 ```sh
 herdr agent list | jq -r --arg tree "$CAMPAIGN_DIR" \
@@ -140,9 +103,10 @@ fi
 claim was taken here, an absent one says nothing at all.
 
 Any row from either: print the rows, name the agent, stop. The person retires
-it; this skill never kills an agent. No rows still leaves two cases for step 2 — an agent herdr has forgotten, and a
-claim record whose `pid` reads `dead` because a harness restart changed it while
-the session lives on (#76) — both leaving work in a checkout.
+it; this skill never kills an agent. No rows still leaves two cases — an agent
+herdr has forgotten, and a claim record whose `pid` reads `dead` because a
+harness restart changed it while the session lives on — both leaving work in a
+checkout.
 
 Holds when: `runtime/claims/` existed, every record in it read `dead`, and no
 herdr agent's `cwd` was under `$CAMPAIGN_DIR` — or `TOOK_IT_HERE` is set and this
@@ -151,12 +115,9 @@ step reported both as not applicable rather than as passed.
 ### 2. Refuse while work exists only on this machine
 
 Deleting the directory destroys these and nothing recovers them. One reader
-answers the whole question — `scripts/campaign-local-work`, which reads this
-campaign's own `campaign-$N/` branches and the worktrees on them in the
-container, the container's single working tree, and every checkout under
-`repos/` one at a time, with the briefs in `runtime/handover/` named beside
-them. Do not re-derive any of that here; a second reader of one question is what
-drifts (§ Completion and liveness).
+answers the whole question: `scripts/campaign-local-work`, over this campaign's
+branches and worktrees, the container's working tree, and every checkout under
+`repos/`. Do not re-derive any of that here.
 
 ```sh
 "$CONTAINER/scripts/campaign-local-work" "$N" "$CAMPAIGN_DIR" >| /tmp/local-work-$N
@@ -167,25 +128,16 @@ cat /tmp/local-work-$N
 line it ends on, stop, and conclude nothing. On exit 0 the last line is the
 verdict and the rows above it are the report.
 
-- An unmarked row is counted, and one counted row refuses the close. The refusal
-  is the script's own output, then: *Nothing was deleted. Clear every counted
-  row, or say to discard it, then re-run.*
+- An unmarked row is counted, and one counted row refuses the close: *Nothing
+  was deleted. Clear every counted row, or say to discard it, then re-run.*
 - A `~` row is named and not counted — pushed, landed over a squash merge, or a
-  clean worktree, which is the one the closer is usually standing in.
-- **A `-- REPORT:` line is one of two things, and the verdict says which.** A
-  place the script *could not read* — a directory under `repos/` that is not a
-  checkout, a repository whose default branch will not resolve — is a check that
-  did not run, so it is counted apart and refuses the close on its own: the
-  summary reads `… and <n> place(s) went unread; NOT clear`. Read each such
-  place by hand, then re-run. Everything else a `REPORT:` line carries is for
-  the person and blocks nothing — an unattributed edit in the container's one
-  working tree, a handover brief nobody has accounted for.
-- So **zero counted rows is not by itself a pass**. Read the last word.
-- `0 item(s) … clear` is the pass.
-
-Each row carries its `<kind>`, the `found by` checks that overlap on it and what
-`clears` it, so two refusals written on different days read side by side without
-the shape being retyped here.
+  clean worktree.
+- **A `-- REPORT:` line is one of two things.** A place the script *could not
+  read* is a check that did not run — counted apart, refusing the close on its
+  own (`… and <n> place(s) went unread; NOT clear`). Read it by hand, then
+  re-run. Everything else it carries is for the person and blocks nothing.
+- **Zero counted rows is not by itself a pass.** Read the last word:
+  `0 item(s) … clear` is the pass.
 
 Holds when: `campaign-local-work` exited 0 over this campaign and this directory,
 and its last line read clear — either on the first run, or on a re-run after
@@ -197,8 +149,8 @@ the verdict.
 
 ### 3. Settle or dispose of every open subtask
 
-**First, confirm `$N` is an anchor**, because the tracker holds subtasks under
-the same number sequence and step 5 would otherwise close somebody's subtask.
+**First, confirm `$N` is an anchor**, so step 5 does not close somebody's
+subtask.
 
 ```sh
 gh issue view "$N" -R kalaluthien/agent-workspace --json labels,parent \
@@ -206,24 +158,18 @@ gh issue view "$N" -R kalaluthien/agent-workspace --json labels,parent \
 ```
 
 Want `campaign` among the labels and `-` for the parent. Anything else, stop and
-say which issue `$N` actually is (§ When the container is a member of its own
-campaign in the container's `AGENTS.md`).
-
-Then one reader, and it is the container's script — never a second copy of the
-settlement rule written out here as `gh` commands.
+say which issue `$N` actually is.
 
 ```sh
 "$CONTAINER/scripts/campaign-settlement" "$N" >| /tmp/settlement-$N
 cat /tmp/settlement-$N
 ```
 
-It prints one row per subtask over the whole paginated index, then whether the
-campaign is closable. Keep it in a file: the rest of this step is read off it by
-machine. Read the note beside a `dropped` row before repeating the word.
+It prints one row per subtask, then whether the campaign is closable. Read the
+note beside a `dropped` row before repeating the word.
 
-**Then every `open` row gets a disposition, and this step refuses without one.** A
-campaign may close over unfinished work, never over *unexamined* work, and step 5
-closes the only thing that indexes it. One of three per row, the person's choice:
+**Every `open` row gets a disposition, and this step refuses without one** —
+never over *unexamined* work. One of three per row, the person's choice:
 
 | disposition | the act | what the row becomes |
 | --- | --- | --- |
@@ -231,10 +177,8 @@ closes the only thing that indexes it. One of three per row, the person's choice
 | `not-planned` | `gh issue close <issue> -R <repo> --reason "not planned" --comment "<why>"` | `dropped` |
 | `reparent` | `gh issue edit <issue> -R <repo> --parent <URL of the inheriting anchor>` | gone from this index — the sub-issue link is prunable |
 
-All three end with the row off this campaign's open list, which makes the gate
-below a check rather than a promise. Write one line per open row —
-`<owner/repo>#<issue>  <verb>  <reason or target>` — then validate it against the
-settlement output by machine, because a close is where an eye skips a line.
+Write one line per open row — `<owner/repo>#<issue>  <verb>  <reason or
+target>` — then validate it against the settlement output by machine.
 
 ```sh
 DISPOSITIONS=/tmp/dispositions-$N        # write it here, one line per open row
@@ -245,9 +189,8 @@ awk 'NF && $2 !~ /^(finish|not-planned|reparent)$/ { print "REFUSE: unknown disp
 awk 'NF && $2 != "finish" && NF < 3 { print "REFUSE: no reason or target: " $0 }' "$DISPOSITIONS"
 ```
 
-A `<` line is an open subtask nobody disposed of and it stops the close; a `>`
-line names one that is not open, so the list was written against a stale reading
-and the script must be re-run.
+A `<` line is an open subtask with no disposition; a `>` line is stale — re-run
+the script.
 
 ```text
 REFUSE: <count> open subtask(s) under #<N> have no disposition.
@@ -258,11 +201,7 @@ Nothing was closed. Give each one finish, not-planned with a reason, or
 reparent with the anchor that inherits it, then re-run.
 ```
 
-The durable record of a disposition is the act itself, never the scratch file and
-never the anchor body: progress is derived from the index, and the body is a
-charter.
-
-**Carry them out, then read the same script again**, because the dispositions are
+**Carry them out, then read the same script again** — the dispositions are
 claims until GitHub shows them.
 
 ```sh
@@ -273,13 +212,10 @@ grep -q '; closable$' /tmp/settlement-after-$N ||
   echo "REFUSE: open subtasks remain after the dispositions were carried out"
 ```
 
-`; closable$` and not `closable`, because the failing line ends `NOT closable:
-open subtasks remain`. The empty-index line is the second accepted reading, for a
-campaign with no subtasks at all.
-
-A `-- REPORT:` line about nested sub-issues is not covered by this gate: a
-subtask that is itself an anchor hides its own members, so run the script on it
-and dispose of those rows too.
+`; closable$`, not `closable` — the failing line ends `NOT closable: open
+subtasks remain`. The empty-index line is the other accepted reading. A
+`-- REPORT:` line about nested sub-issues isn't covered here: a subtask that is
+itself an anchor hides its own members — run the script on it too.
 
 Holds when: `campaign-settlement` reads every subtask in the anchor's index as
 settled or moved to another anchor, each open one having been given a named
@@ -289,8 +225,7 @@ disposition and had that act carried out first.
 
 The README and the anchor body are the same template filled in
 (`.claude/skills/opening-campaign/assets/README.md`), so the sync is an
-overwrite, which leaves the README the only thing between a malformed heading and
-the loss of the repository index step 5 deletes. Validate first.
+overwrite. Validate first.
 
 ```sh
 README="$CAMPAIGN_DIR/README.md"
@@ -301,19 +236,17 @@ rm -f /tmp/repos-before /tmp/repos-after
     echo "REFUSE: the ## Repos list did not read; nothing was written"; }
 ```
 
-`scripts/campaign-repos` is the one reader of that list (its own header enumerates its refusals). Stop on a non-zero exit, do not re-derive the list
-with `sed` here, and read empty output as a repo-less campaign rather than a
-failure. Keep the `.tmp`-then-`mv` and the leading `rm -f`, or a failed read
-leaves what a legitimate `- none` leaves.
+`scripts/campaign-repos` is the one reader of that list. Stop on a non-zero
+exit; read empty output as a repo-less campaign, not a failure. Keep the
+`.tmp`-then-`mv` and the leading `rm -f`, or a failed read leaves what a
+legitimate `- none` leaves.
 
-This step also runs mid-campaign, whenever a repository is added to the
-`## Repos` list — `opening-campaign`'s "Filing a subtask issue" sends you here.
-Those are the only two moments the body is written at (§ Running a campaign), so
+This step also runs mid-campaign, when a repository is added to `## Repos`;
 nothing in step 3 edits the body.
 
-**Then compare before you write.** `runtime/anchor-body-derived.md` is the body
-as it read when this README was derived from it, kept by `opening-campaign` step
-4; re-read the body now and require the two to match.
+**Then compare before you write** — `runtime/anchor-body-derived.md` is the
+body as it read when this README was derived; re-read the body now and require
+the two to match.
 
 ```sh
 DERIVED="$CAMPAIGN_DIR/runtime/anchor-body-derived.md"
@@ -333,30 +266,19 @@ Nothing was written. Fold those changes into <CAMPAIGN_DIR>/README.md, refresh
 runtime/anchor-body-derived.md from /tmp/body-now, then re-run.
 ```
 
-**Name the cause in the same breath, because the repairs differ and the diff
-alone does not say which happened** (`AGENTS.md` § Running a campaign has the
-three-cause table, now in this skill's `references/rationale.md`). Step 0 has
-already read the binding, so the case where *you*
-are out of position is settled: `elsewhere` never reaches this step. What is
-left is one question and one residue.
+**Name the cause before you repair it** — step 0 already read the binding, so
+`elsewhere` never reaches this step. Ask the peers (`ListAgents`, then
+`SendMessage` to each) whether one wrote it; if none claims it, ask the
+person — this machine cannot otherwise tell their edit from one made on an
+unbound machine. The full three-cause table and what each wants:
+`references/rationale.md`.
 
-Ask the peers — `ListAgents`, then `SendMessage` to each — whether one of them
-wrote it. A peer that did is the everyday cause, and it is legitimate: moving a
-subtask between campaigns writes two anchors, and one of them is never the
-writer's own campaign. Ask what it meant, then fold.
+Refuse the same way when the derived copy is missing — without it "has the body
+moved?" has no answer. Read the body and the README side by side, write
+`/tmp/body-now` to the derived path, and re-run.
 
-No peer claims the write, and the cause is a person editing the charter on
-GitHub or a session on a machine the anchor is not `BOUND` to — **and this
-machine cannot tell those two apart**, because one `gh` account signs both. Say
-so, and ask the person. The fold is the same either way; only what you say
-afterwards differs.
-
-Refuse the same way when the derived copy is missing, because without it "has the
-body moved?" has no answer. Say so, read the body and the README side by side
-yourself, then write `/tmp/body-now` to the derived path and re-run.
-
-Only then overwrite, reading the index back out of what GitHub actually stored
-and refreshing the derived copy so the next write compares against this one.
+Only then overwrite, then refresh the derived copy so the next write compares
+against this one.
 
 ```sh
 gh issue edit "$N" -R kalaluthien/agent-workspace --body-file "$README"
@@ -379,10 +301,9 @@ written and read back through `campaign-repos` after.
 
 Only after the person confirms.
 
-**Say it on the anchor issue first, and read who answers**, because the anchor is
-the one place a machine working this campaign against its `BOUND` could answer.
-**Say in the same comment what the delete will destroy**, one comment, posted
-where it outlives the tree.
+**Say it on the anchor issue first, and read who answers** — the anchor is the
+one place a machine working this campaign against its `BOUND` could answer. Say
+what the delete will destroy in the same comment.
 
 ```sh
 HOST=$(hostname -s)
@@ -400,32 +321,21 @@ gh issue comment "$N" -R kalaluthien/agent-workspace --body "$BODY"
 gh issue view "$N" -R kalaluthien/agent-workspace --comments
 ```
 
-**A directory and the file inside it both appear, and that is correct.** The
-scaffold ships `scripts/` holding a `.gitkeep`, so the listing carries both
-`scripts` and `scripts/.gitkeep`. The listing must carry files, directories and
-symlinks alike, because `rm -rf` destroys all of them and a filter that guessed
-would drop the one entry somebody wanted — so do not narrow the `find` to
-`-type f`. A reader meeting the pair is meant to see the container and its
-contents, not a duplicate.
+**A directory and the file inside it both appear, and that is correct** —
+`scripts/` ships a `.gitkeep`. Do not narrow the `find` to `-type f`: `rm -rf`
+destroys files, directories and symlinks alike, and a guessed filter would drop
+the wanted entry.
 
-**Unset or empty is step 0 not having run**, and it refuses; since #52 a
-campaign bound here has a directory by the time this step runs. The value must
-hold `runtime/`, the cheap test that it is not the container root. Keep `-prune`
-on the two exact paths and `-print` without `-type f`, so the listing names
-everything `rm -rf` destroys.
+**Unset or empty is step 0 not having run**, and it refuses. The value must
+hold `runtime/`, the cheap test that it is not the container root.
 
-**Read the listing knowing what is on it.** `AGENTS.md`, `CLAUDE.md`, `README.md`
-and `scripts/` are the scaffold copied at open and are the rows to skip; nothing
-filters them, because telling a template copy from this campaign's one real file
-is a reader's job. It is a record, not a to-do: anything a person wants out of
-the tree is saved before they say close. Another session's note saying it is
-working or closing: stop, name it, let the person resolve it, and say it should
-not have been there, because the campaign is bound here.
+**Read the listing knowing what is on it.** `AGENTS.md`, `CLAUDE.md`,
+`README.md`, `scripts/` are the scaffold — skip those rows. It is a record, not
+a to-do: anything wanted out of the tree is saved before close. A peer's note
+that it is working or closing: stop and name it.
 
-**Release the campaign's own claim refs on the container**, because a subtask
-that landed no commits leaves its branch at `origin/main` outliving the campaign.
-Step 3 is what makes the sweep sighted: every subtask is settled by now, so no
-claim ref here can be a live workspace.
+**Release the campaign's own claim refs on the container** — an unlanded
+subtask leaves its branch outliving the campaign; step 3 makes this sighted.
 
 ```sh
 gh api "repos/kalaluthien/agent-workspace/git/matching-refs/heads/campaign-$N/" \
@@ -440,34 +350,28 @@ while IFS="$(printf '\t')" read -r REF SHA; do
 done
 ```
 
-**No `--paginate`, on purpose**: `git/matching-refs` returns every matching ref
-in one response, and is documented with no pagination parameters — both measured,
-in `references/gotchas.md`. Adding the flag here would tell the next reader the
-endpoint pages, which it does not.
+**No `--paginate`** — `git/matching-refs` returns every ref in one response
+(`references/gotchas.md`); the flag would claim otherwise.
 
-**Ancestry, not equality**: a claim ref is created at the `main` of claim time and
-`main` moves on, so `ahead_by` answers what a sha comparison gets wrong. Print a
-row that holds commits and never delete it — the one row here that stops and
-asks. Member repositories' refs are released by their pull request merge.
+**Ancestry, not equality** — `main` moves after the claim, so `ahead_by` catches
+what a sha comparison would miss. Print a row that holds commits and never
+delete it. Member repositories' refs are released by their pull request merge.
 
-Then close, in this order — the issue first, because a failed close leaves the
-directory to retry from, while the reverse leaves nothing.
+Then close, in this order — the issue first.
 
 ```sh
 gh issue close "$N" -R kalaluthien/agent-workspace --comment "Campaign closed."
 ```
 
-**Check nobody else on this machine is in the directory**, because two sessions
-given the same slug on the same day build the same path and step 1 would not have
-caught it.
+**Check nobody else on this machine is in the directory.**
 
 ```sh
 lsof +D "$CAMPAIGN_DIR" 2>/dev/null | tail -n +2
 ```
 
-Any rows: name the processes and stop. `lsof` sees an open file, not a session
-idle between turns, so an empty result is weak evidence and is paired with the
-announcement above rather than trusted alone.
+Any rows: name the processes and stop. `lsof` sees an open file, not an idle
+session, so an empty result is weak evidence, paired with the announcement
+above rather than trusted alone.
 
 List the directory and confirm it holds only the campaign, then remove the bound
 path itself — not a path retyped here, not its parent, not a wildcard.
@@ -477,8 +381,7 @@ ls -A "$CAMPAIGN_DIR"
 rm -rf -- "$CAMPAIGN_DIR"
 ```
 
-`runtime/` goes with it — every `claims/<issue>` record, every handover brief —
-by design, since nothing off this machine reads them. Say so.
+`runtime/` goes with it — nothing off this machine reads it. Say so.
 
 Holds when: the closing comment carries the listing taken immediately before the
 delete — every entry under the directory outside `runtime/` and `repos/`, files
@@ -490,24 +393,19 @@ that holds commits reported and not deleted.
 
 The probes and the failures behind these: `references/gotchas.md`.
 
-- The failures step 2 used to have to get right — a squash merge making a
-  landed branch read unmerged forever, `git status --porcelain` never listing
-  an ignored file, an unreadable `repos/` reading as a repo-less campaign, and
-  a checkout whose `.git` is a file leaving the verdict — belong to
-  `scripts/campaign-local-work` now, and its docstring is where they are stated.
-  The one that stayed here is the unmatched `repos/*/` glob, because the script
-  does not glob and that failure is any shell line's, not the script's.
+- The failures step 2 used to have to get right belong to
+  `scripts/campaign-local-work` now. The one that stayed here is the unmatched
+  `repos/*/` glob, because the script does not glob.
 - `dropped` covers four closes and its note says which; only `not planned` is
   abandonment, so quote the note, not the word.
 - `state_reason` is lowercase from `gh api` and uppercase from `gh issue list
   --json stateReason`, and the wrong one reads every subtask as unsettled.
-- `set -- $var` does not word-split in zsh, so a gate built on it tests nothing;
-  split with `${spec%%:*}` and `${spec##*:}` instead.
-- `diff` is shadowed in a Claude Code shell on this machine, and a gate that
-  errors out is a gate that tested nothing. Write `command diff`.
+- `set -- $var` does not word-split in zsh; split with `${spec%%:*}` and
+  `${spec##*:}` instead.
+- `diff` is shadowed in a Claude Code shell on this machine. Write `command diff`.
 - Every session of a campaign shares its one directory, so this delete may hit a
-  peer's live workspace. `runtime/claims/` catches that in step 1 and
-  `campaign-local-work` in step 2; the herdr `cwd` gate alone cannot, because a
-  session working the tree from the container root has the container as its
-  `cwd`. A machine the campaign left at a migration may still hold a stale
-  directory of its own — `references/rationale.md`, step 5.
+  peer's live workspace — `runtime/claims/` catches that in step 1,
+  `campaign-local-work` in step 2; the herdr `cwd` gate alone cannot, since a
+  session working from the container root has the container as its `cwd`. A
+  machine left at a migration may still hold a stale directory of its own
+  (`references/rationale.md`, step 5).

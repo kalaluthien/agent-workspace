@@ -10,8 +10,7 @@
  * THIS LAYER
  *
  * How a campaign session and the executors under its campaign talk to each
- * other. Normative. AGENTS.md carries the short form -- four messages and the
- * two-step shutdown; this file is the whole contract, and the parts of it that
+ * other. Normative: this file is the whole contract, and the parts of it that
  * can be checked are checked below rather than asserted in prose.
  *
  *   event             performed by
@@ -36,23 +35,10 @@
  *   Release (guard)   what may be released: this layer's half of repos.als's event
  *   AgentDie          the process dies on its own
  *
- * The fifth message, CLAIMED, and its `Announce` event were retired by #59; the
- * self-written claim record replaced them, and the stub where `announce` stood
- * says how.
- *
- * `Agent` here is an EXECUTOR of a subtask. It comes in two kinds and the
- * difference is one field, `peer`:
- *
- *   a herdr DELEGATE, launched into a clone by a campaign session, `--name`d
- *   campaign-<N>-executor-<n> -- a delegate is an executor and gets no role
- *   word of its own -- so its address was chosen by its launcher and is known
- *   before the process exists; and
- *
- *   a CAMPAIGN SESSION WORKING A CLAIM WITH ITS OWN HANDS -- under one role
- *   (#59) any session whose machine the campaign is BOUND to may take a
- *   subtask and claim its branch. `peer` is that session, `launcher` is
- *   itself, and its address is `runtime/claims/<issue>`, the record it wrote
- *   for itself at the claim -- which is what `Addressed` carries.
+ * `Agent` here is an EXECUTOR of a subtask. It comes in one of two kinds,
+ * distinguished by one field, `peer` -- a herdr DELEGATE, `--name`d at
+ * launch, or a CAMPAIGN SESSION WORKING ITS OWN CLAIM, whose `peer` is
+ * itself. The `Agent` sig below carries the field-level detail of each.
  *
  * Everything else is shared. Both answer STATUS, send REPORT and BLOCKED, stop
  * on STAND DOWN, never write the anchor, and land nothing that lacks a current
@@ -83,52 +69,38 @@
  *
  * TRANSPORT
  *
- * The harness's own peer messaging. ListAgents resolves the address; herdr's
- * pane label is not one. Where the address comes from is the difference between
- * the two kinds of executor: a delegate's was chosen at launch (claude --name,
- * campaign-<N>-executor-<n>), and a
- * session's own claim carries the address the session wrote for itself into
- * `runtime/claims/<issue>` at the claim -- its ListAgents name and its pid.
- * Before #59 that address travelled as a message, CLAIMED, whose absence was
- * invisible: an executor that never sent it looked like no executor at all,
- * and A1 below was that gap SAT. The record's write moved to the claimant and
- * the gap is UNSAT by construction -- A1 is the same scenario re-measured.
+
+ * The harness's own peer messaging. ListAgents resolves the address, not
+ * herdr's pane label. A delegate's address was chosen at launch
+ * (claude --name); a session's own claim carries the address it wrote for
+ * itself into `runtime/claims/<issue>` at the claim -- its ListAgents name
+ * and its pid.
  *
- * A running session CAN be renamed -- by a person typing `/rename` into its
- * pane, or by another session driving that pane, which is the same act, its own
- * pane included. This supersedes the 2026-08-28 reading that only a person
- * could, which is dead. Whether a particular call is ALLOWED is a per-session
- * permission decision rather than a property of the tool: on 2026-08-30 one
- * session's self-rename was refused and the same call accepted later, while a
- * peer's was accepted throughout. Every session carries
- * campaign-<N>-<role>-<n>, AGENTS.md's one naming rule, so a name says what a
- * session does; the record stays the mechanism for tying that name to a claim,
- * because a name can be changed and the record is what a later reader has.
+ * A running session CAN be renamed, by itself or by a peer driving its pane;
+ * whether a call is ALLOWED is a per-session permission decision, not a
+ * property of the tool. So a name can change, and the record -- not the name
+ * -- is what a later reader relies on to tie a name to a claim.
  *
- * Two properties make it the right transport and both are load-bearing:
- *   - It is not the terminal screen. Reading a pane gives whatever happens to
- *     be rendered, capped by the emulator's buffer; a message is delivered and
- *     queued.
- *   - It carries no state. Every exchange is a fresh question and a fresh
- *     answer, so a campaign session that died and restarted talks to its
- *     executors with no handover, and a second machine's session can do the
- *     same.
+ * It is the right transport for two load-bearing reasons: it is not the
+ * terminal screen (a pane shows only what is rendered, capped by the
+ * emulator's buffer, where a message is delivered and queued), and it carries
+ * no state (every exchange is a fresh question and answer, so a restarted or
+ * second-machine session needs no handover to talk to an executor).
  *
  *
  * RETIREMENT, AND WHY THE PROTOCOL EXISTS AT ALL
  *
- * An executor does not close itself. It finishes by pushing its branch and
- * opening or updating a pull request, then goes quiet. The campaign session
- * retires it once its work has landed. What retirement does not wait for is the
- * campaign's CLOSE, not the merge: a claim-holding executor is the session that
- * merges, so retiring it at pull-request open would remove the one thing that
- * can. A long fix round may go to a fresh session instead, briefed from the
- * pull request and the review.
+ * An executor does not close itself: it pushes, opens or updates a pull
+ * request, then goes quiet, and the campaign session retires it once the work
+ * has landed -- at the merge, never at the campaign's CLOSE, since a
+ * long-lived campaign finishes subtasks continuously while it stays open.
+ * Retirement does not wait for pull-request open either: a claim-holding
+ * executor is the session that merges, so retiring it there would remove the
+ * one thing that can; a long fix round goes to a fresh session instead,
+ * briefed from the pull request and the review.
  *
- * In a long-lived campaign subtasks finish continuously while the campaign
- * stays open, so retirement cannot wait for the close. The procedure is five
- * steps, and `twoStepShutdown` plus `coLocatedShutdown` below are steps 2 and 4
- * written as disciplines the model can check:
+ * The procedure is five steps, and `twoStepShutdown` plus `coLocatedShutdown`
+ * below are steps 2 and 4 written as disciplines the model can check:
  *
  *   1. STATUS every executor under the campaign tree, by its address -- a
  *      delegate's `--name`, a session claim's `runtime/claims/<issue>` record.
@@ -137,44 +109,35 @@
  *   3. Review the pull request, and land it or send it back. NOTHING LANDS
  *      WITHOUT A CURRENT REVIEW -- not a delegate's work, not a session's own.
  *      The executor pushes, REPORTs the URL and its sha once per round, and
- *      waits. The session that wants the merge launches a reviewer on the pull
- *      request -- an in-process subagent, always, the only mode; a person may
- *      trigger an `ultra` review and no session may -- reads the findings,
- *      and then either merges -- and
- *      tells the executor the work is durable, which is what lets the executor
- *      drop its worktree -- or briefs a fresh executor from the pull request
- *      and the review and runs the loop again. The author may be the merger,
- *      provided the review is current at the revision merged.
- *      `mergedOnCurrentReview` below is this step checked; A4 is the live
- *      collision it was re-derived from.
+ *      waits; the session that wants the merge launches a reviewer -- an
+ *      in-process subagent, always, the only mode, except an `ultra` review,
+ *      which a person triggers and no session may -- reads the findings, and
+ *      either merges (telling the executor the work is durable, which is what
+ *      lets it drop its worktree) or briefs a fresh executor from the pull
+ *      request and review and runs the loop again. The author may be the
+ *      merger, provided the review is current at the revision merged. This
+ *      step fixes WHO acts, not WHEN retirement may happen; a review that
+ *      will not finish in one sitting is handed to a fresh session rather
+ *      than held open. `mergedOnCurrentReview` below is this step checked;
+ *      A4 is the live collision it was re-derived from.
  *   4. STAND DOWN the confirmed ones. Leave the rest, and say why.
  *   5. Retire the workspace once the executor has acknowledged.
  *
- * Step 3 does not make retirement wait for the campaign's close. What the step
- * fixes is WHO acts. A review that will not finish in one sitting is handed on
- * as a fix round to a fresh session rather than held open.
- *
- * Self-termination is refused for one reason: the only thing that can verify an
- * executor's work is something other than that executor. Self-merging and
- * self-reviewing are refused for exactly the same reason, one step later.
+ * Self-termination, self-merging and self-reviewing are all refused for one
+ * reason: the only thing that can verify an executor's work is something
+ * other than that executor.
  *
  *
  * ONE ENCODING OF "ONLY ON THIS MACHINE"
  *
- * `Local` is it, and it is the whole of it. The predecessors had four -- an
- * issue with no pull request while an agent was live, `Visible`, `Pushed`, and
- * `Local` -- and a widening had to be applied in two files at once because of
- * it. `Visible` is kept because it is a genuinely different fact, readable from
- * a different place: the branch is on the remote. The two are independent and
- * their gap is the finding R5b names -- an executor whose branch is on the
- * remote may still hold work that is not.
+ * `Local` is it, and it is the whole of it. `Visible` is kept as a separate
+ * bit because it is a genuinely different fact, readable from a different
+ * place: the branch is on the remote. The two are independent and their gap
+ * is the finding R5b names -- an executor whose branch is on the remote may
+ * still hold work that is not.
  *
- * `Idle` is gone. Its one claim -- "the agent went idle" is not completion --
- * is carried by ReportIsNotEvidence below, which says the same thing about the
- * stronger signal: not even an explicit REPORT moves a GitHub fact.
- *
- * `Addressed` and `Reviewed` are the two bits #37 added, and each is a fact
- * about a DIFFERENT object than `Local` is. `Addressed` is about a campaign
+ * `Addressed` and `Reviewed` are each a fact about a DIFFERENT object than
+ * `Local` is. `Addressed` is about a campaign
  * session's reach -- can anyone ask this executor anything at all -- and it is
  * why liveness and attribution are two predicates below rather than one.
  * `Reviewed` is about the pull request, so it outlives the executor exactly as
@@ -184,83 +147,63 @@
  *
  * UNMODELLED, STATED FOR THE RECORD
  *
- * Three rules of the contract have no construct here, because each is a fact
- * about the message medium rather than about reachable states:
- *   - The executor answers about itself only. It does not report on siblings,
- *     the campaign, or whether an issue should close.
+ * Five rules of the contract have no construct here, each a fact about the
+ * message medium rather than about reachable states:
+ *   - The executor answers about itself only, never siblings, the campaign,
+ *     or whether an issue should close.
  *   - NO STATE BEYOND WHAT `runtime/` HOLDS ON THE BOUND MACHINE, which dies
- *     with the campaign directory. The clause used to read "no file, no log and
- *     no registry", and the claim record contradicts it: the claiming session
- *     writes `<campaign>/runtime/claims/<issue>` for itself at the claim,
- *     because whoever runs a close or a sweep later -- any campaign session,
- *     possibly one that did not exist yet -- must be able to read it back. The
- *     amended clause is the rule that was actually meant -- no second copy of a
- *     GitHub fact, and nothing that outlives the cache it describes. Every
- *     exchange still stands alone; what the record carries is an ADDRESS,
- *     which is a fact about this machine and exists nowhere else.
- *   - STAND DOWN is a request, not an order. Whoever types into the executor's
- *     pane is its user; the campaign session reaches it as a peer, and a peer
- *     cannot command. An executor with a contradicting instruction from its own
- *     pane is right to refuse. Treat a refusal as information about a conflict,
- *     not as disobedience, and resolve the conflict at the pane.
- *
- * Two more, added with the review step:
+ *     with the campaign directory -- no second copy of a GitHub fact, and
+ *     nothing that outlives the cache it describes. The one exception is the
+ *     claim record, written by the claiming session for itself at the claim,
+ *     because a later close or sweep -- by any campaign session, possibly one
+ *     that did not exist yet -- must be able to read it back. What it carries
+ *     is an ADDRESS, a fact about this machine that exists nowhere else.
+ *   - STAND DOWN is a request, not an order: the campaign session reaches the
+ *     executor as a peer, and a peer cannot command. A refusal from its own
+ *     pane's user is information about a conflict, not disobedience, and is
+ *     resolved at the pane.
  *   - The reviewer is a process, and this layer models processes only where
- *     their state matters. The reviewer's does not: it leaves exactly one
- *     durable mark and that mark is `Reviewed`, so `review` names the issue
- *     whose pull request is read rather than any process at all.
- *   - Adequacy is still unmodelled, and the review does not change that. What
- *     `Reviewed` records is that somebody looked, never what they concluded;
- *     ledger.als's header says the same thing about a merged pull request.
+ *     their state matters; the reviewer's does not, it leaves one durable
+ *     mark, `Reviewed`, so `review` names the issue rather than any process.
+ *   - Adequacy is still unmodelled. `Reviewed` records that somebody looked,
+ *     never what they concluded; ledger.als's header says the same of a
+ *     merged pull request.
  *
- * Deliberately absent from the protocol itself:
- *   - No self-termination, for the reason above.
- *   - No heartbeat. Liveness is already a herdr fact; a heartbeat would be a
- *     second, worse copy of it that also stops when the executor is merely busy.
- *   - No task assignment message. The handover brief is a file, because the
- *     launch line has a 1024-byte ceiling and a brief must be readable
- *     afterwards.
+ * Deliberately absent from the protocol itself: no self-termination, for the
+ * reason above; no heartbeat (liveness is already a herdr fact, and a
+ * heartbeat would be a second, worse copy that also stops when the executor
+ * is merely busy); and no task assignment message (the handover brief is a
+ * file, because the launch line has a 1024-byte ceiling and a brief must be
+ * readable afterwards).
  *
  * WHO DOES THE WORK, AND WHY IT IS NOT MODELLED
  *
  * The three execution modes a campaign session chooses between -- its own
  * hands, an in-process subagent on a worktree, a herdr delegate in a clone --
- * are one `Launch` here on purpose. No construct below distinguishes them,
- * because nothing a model can say about reachable states differs between them:
- * the branch is the same claim, the completion is the same GitHub fact, and
- * the only differences are turn cost and whether a process boundary is
- * crossed.
+ * are one `Launch` here on purpose: the branch is the same claim, the
+ * completion is the same GitHub fact, and the only differences are turn cost
+ * and whether a process boundary is crossed, none of which is a reachable
+ * state. The choice between them turns on an operator's constraints -- which
+ * process loads which skills, a fact about the harness a check could only
+ * restate and pass by construction -- so it is not modelled, for the same
+ * reason ledger.als states the delegation mechanics rather than modelling it.
  *
- * The rule that chooses between them is not about reachable states either, and
- * it is not restated here: AGENTS.md § Running a campaign carries it, in one
- * copy, because it is an instruction to an operator rather than a property. What
- * belongs here is WHY it is absent from the model.
+ * One consequence does reach this layer: a session that draws a
+ * member-repository subtask becomes the LAUNCHER of a delegate rather than
+ * its executor, and the delegate has no `peer` -- its address is the
+ * `--name` its launcher chose. So `peer` marks the executor that ends up
+ * holding the claim, not the session that took the subtask, and `aDeleteDir`
+ * strips addresses by it for exactly that reason: only a session claim's
+ * address is a file.
  *
- * The rule turns on which process loads which skills. That is a fact about the
- * harness -- a subagent and an interactive session load the skills of where they
- * were started, and a `disable-model-invocation: true` skill is unusable by any
- * agent in any mode -- and no construct over reachable states can express it. A
- * check written from it would restate the guard it came from and pass by
- * construction. It is stated rather than modelled for the same reason ledger.als
- * states the delegation mechanics: it is a fact about a tool.
- *
- * One consequence does reach this layer, and it is why the rule is worth naming
- * at all: a session that draws a member-repository subtask becomes the
- * LAUNCHER of a delegate rather than the executor of it, and the delegate it
- * launches has no `peer` -- its address is the `--name` its launcher chose. So
- * `peer` is a property of the executor that ends up holding the claim, not of
- * the session that took the subtask, and `aDeleteDir` strips addresses by it
- * for exactly that reason: only a session claim's address is a file.
- *
- * And one open risk, named rather than solved: retiring at "pull request open"
- * means nobody is watching the review. Until a board exists, the person is the
- * one who notices.
+ * One open risk, named rather than solved: retiring at "pull request open"
+ * means nobody is watching the review. Until a board exists, the person is
+ * the one who notices.
  *
  *
  * VERDICTS
  *
- * Measured 2026-08-30 against this file. X is a counterexample; a check that
- * passes reads UNSAT.
+ * X is a counterexample; a check that passes reads UNSAT.
  *
  *   NoLostWork                       pass  a death or a delete never un-completes
  *   NoOrphan                         X     nothing enforces the retirement rule
@@ -346,182 +289,6 @@
  *                                          rule and not the bounds.
  *   Cov_*                            SAT   every own event fires in some trace
  *
- * Every green was proved able to fail, re-run 2026-08-28 against the pre-#59
- * model and unchanged by #59's edits: letting `work` keep an earlier
- * confirmation instead of clearing it reddens TwoStepCoLocatedSuffices and
- * SilenceResolutionStaysSafe; narrowing `coLocatedShutdown` to the stand-down
- * alone reddens TwoStepCoLocatedSuffices; dropping the RemoveMember clause
- * reddens NoOrphanIfGuarded; and dropping `ledgerFrame` from ledger.als's
- * fall-through branch reddens NoLostWork -- which is the point of the
- * layering, since nothing written in THIS file holds a GitHub fact still while
- * an executor dies.
- *
- * The greens #59 added or re-derived were each proved able to fail by a named
- * mutation, run 2026-08-30 against this model on a copy and undone with it:
- *
- *   A1        restoring the conditional write at launch -- `no a.peer implies
- *             Addressed' = Addressed + a else keepAddress`, the pre-#59 rule
- *             where only a delegate is born addressed. SAT: the gap returns,
- *             which locates the whole repair in who writes the record.
- *   A5, A7    dropping the `Now.issue.pr in Reviewed` conjunct from
- *             `mergedOnCurrentReview`, leaving the confirmation in place. Both
- *             SAT: the rule's whole content is the review, so removing it
- *             readmits the collision from both chairs.
- *   A11       keying `noDeleteUnderReadableExecutor` on `no a.peer` instead of
- *             `reachable[a]`, so the gate reads delegates and ignores session
- *             claims. SAT: the delete lands under the recorded executor again,
- *             the blind spot the record exists to close.
- *   A14, A15  restoring the `reachable[a]` guard on `confirm`. Both UNSAT:
- *             the post-delete confirm becomes impossible, so the record-less
- *             executor is unretirable and its pull request unlandable -- the
- *             consequence that keeps the guard off.
- *   A14b      dropping the `reachable[a]` guard from `standDown`. SAT: the
- *             unaddressed stand-down fires, which is what the guard forbids.
- *   A16b      letting `push` keep `Reviewed` -- A13's own mutation, re-run
- *             under the new rule. SAT: the stale review carries the merge,
- *             so the currency half of the rule is `push`'s clearing line.
- *
- * WHAT #59 RETIRED, AND ITS FINAL MEASUREMENTS
- *
- * The holder role, the executor-session role, the CLAIMED message, and the
- * rules keyed to them. All measurements below were verified on the pre-#59
- * model, 2026-08-28/29.
- *
- *   A1_UnannouncedExecutorIsInvisible  SAT    THE FINDING #37 WAS FILED FOR:
- *          liveness was never the missing half, attribution was. Re-derived as
- *          A1 above, UNSAT: the state is unreachable once the claimant writes
- *          its own record.
- *   A2_AnnounceMakesEveryHolderActReachable  UNSAT   CLAIMED-at-the-claim, as
- *          a discipline, closed the gap -- for executors that obeyed it, which
- *          A1 measured as exactly the loophole. Folded into A1, and the fold
- *          answers "stronger, weaker, or the same": STRONGER. The property
- *          held conditionally on `announceAtClaim`; it now holds with no
- *          discipline conjoined, at the same bounds, over the same trace
- *          space. What bounds it instead is the record's lifetime -- a
- *          directory delete still unaddresses (A9), which is why the delete is
- *          gated (A10-A12) and what A14/A15 measure.
- *   A3_AnnounceAdmitsExecutorSession  SAT    its control; A3 above is the same
- *          control re-derived without the message.
- *   `mergedByHolder`  the separation of duties keyed to the holder role:
- *          A4 (reviewed, confirmed self-merge, blocked only by the merger's
- *          identity) SAT; A5 = rule + A4 UNSAT; A7 UNSAT; A8 SAT. Replaced by
- *          `mergedOnCurrentReview`, and the boundary was re-measured before
- *          the change with three probes kept here because the new rule's
- *          derivation rests on them:
- *            P1  holder merges its own hands-on subtask -- no Agent anywhere,
- *                which is how this file said hands-on work is represented --
- *                under mergedByHolder: UNSAT, but by ACCIDENT. `review` was
- *                keyed to an Agent, so agent-less work could never become
- *                Reviewed and the review conjunct could never be satisfied.
- *                The old rule blocked the case issue #59 says it missed --
- *                by making the work unreviewable, not by any rule about
- *                merging. (P1b, the same merge unguarded: SAT.)
- *            P2  a review commissioned by the author-session, `Review` with
- *                `By.actor = a.peer`: UNSAT. The old guard made the case
- *                inexpressible outright -- including the legal one-session
- *                landing, which is the reason the guard is gone.
- *            P3  the peer-agent form, review commissioned by ANOTHER session,
- *                holder merges its own work under mergedByHolder: SAT. The
- *                one form in which the old rule truly missed the self-merge.
- *          So "today's rule does not block the holder's hands-on self-merge"
- *          is REFUTED as stated and confirmed in the P3 form only; A16/A16b
- *          above are the boundary as the new rule draws it -- admitted when
- *          the review is current, blocked when it is stale or absent.
- *
- * WHAT THE FIRST DRAFT OF THIS FILE GOT WRONG
- *
- * Five things, found by review, each kept visible because each is a standing
- * hazard rather than a typo.
- *
- *   `Reviewed` was framed by `push` and omitted from `agentInit`. Framed, the
- *   loop the design documents -- brief a fresh executor from a bad review --
- *   landed unreviewed commits under the old review's bit; omitted from `init`,
- *   the bit could simply arrive, which weakened every green that reads it. A13
- *   is the first fixed, `agentInit` the second.
- *
- *   `mergedByHolder`'s confirm conjunct was existential, wrong in both
- *   directions at once. See the predicate.
- *
- *   Addressability guarded STATUS alone, so four other session-to-executor
- *   events fired against executors nobody could reach. `reachable` is one
- *   predicate now, over the three events that CARRY A MESSAGE -- status,
- *   decide, standDown -- which is what the retired A2 was renamed to certify
- *   before #59 folded it into A1. `confirm` and `review` read a working tree
- *   and a pull request instead of the executor, so they are not gated on it;
- *   A14 and A15 are what that costs when they are.
- *
- *   `announceAtClaim` was written over the step rather than per agent, which
- *   made it unsatisfiable for two unaddressed executors at once -- an artefact
- *   of `lone Target.agent`, invisible because every command using it ran at one
- *   Agent. A1-A3 run at two.
- *
- *   A4 left two things wrong at once, so A5's UNSAT had two independent causes
- *   and survived deleting its own headline conjunct. It is built the way A6 is
- *   built now: everything right except the one thing under test.
- *
- *   `mergedByHolder` was keyed to `campaignOf[Now.issue]`, a MUTABLE relation, so
- *   a reparent mid-review emptied the antecedent and permitted a self-merge. It
- *   reads `By.actor.holds` now. The `RemoveMember` pin A4 carried to work around
- *   it is gone, which means the rule is measured on every path rather than on the
- *   one where its hole is shut.
- *
- *   `aDeleteDir` stripped every executor on the machine, delegates included, so a
- *   live delegate went permanently unaddressable when a directory its `--name`
- *   never depended on was deleted. It strips executor sessions only.
- *
- *
- * TWO FINDINGS THE COMPOSITION PRODUCED
- *
- * Both are cases that were in no previous file, because each needs two things
- * the old split kept apart. They are stated here rather than filed away because
- * each changed a construct.
- *
- *   Several sessions x the protocol. `coLocatedShutdown` used to constrain the
- *   stand-down and the retire; with one session that is the whole of it, and
- *   with several it is not. A session on another machine runs the confirmation,
- *   a session on the executor's machine acts on it, and the retire destroys
- *   work: TwoStepCoLocatedSuffices measured X. The discipline now covers the
- *   confirmation too, which is what steps 2 and 3 of the retirement procedure
- *   already meant, and the verdict is back to pass. See `coLocatedShutdown`.
- *
- *   A subtask moved out of a campaign under a live executor. `liveUnder` reads
- *   membership OR co-location, so removing the subtask and deleting the tree
- *   turns the global close rule permissive again. The several-sessions model had
- *   no remove event and could not state it. R3c is scoped to traces without one
- *   and reproduces its UNSAT; the evasion is named beside it.
- *
- * WHAT MOVED, AND WHAT CHANGED WITH IT
- *
- *   R5_RemoteStandDownLosesWork is gone as a separate run: it is
- *   TwoStepShutdownSuffices' counterexample stated twice. Its write-up is beside
- *   that assertion, and its two controls (R5b, R5c) are kept because they pin
- *   the axis.
- *
- *   IdleImpliesComplete is gone as a separate check, merged into
- *   ReportIsNotEvidence -- see ONE ENCODING above.
- *
- * WHAT #37 ADDED, AND WHAT IT COST A LOWER LAYER
- *
- *   `status` gained one guard, `a in Addressed`. Every pre-existing verdict is
- *   unchanged under it, and that is not luck: a delegate is addressed at launch
- *   from its own `--name`, so the guard is satisfied by construction for every
- *   executor the old commands could build.
- *
- *   `MergePR` moved out of session.als's `unattended` set and gained an actor
- *   there, because a rule about who may merge needs a whose to talk about. This
- *   layer adds no disjunct for it -- only the discipline -- so the merge still
- *   falls through `agentStep` and frames every bit above.
- *
- *   The merge discipline had a silent-reparent history: first keyed to the
- *   issue's mutable membership, where a reparent emptied its antecedent, then
- *   to the merger's own campaign. `mergedOnCurrentReview` closes the file on
- *   it -- its conjuncts read the issue and its executors, which no reparent
- *   moves, so no scoping antecedent exists to empty.
- *
- *   Every command here carries a Session, because an executor is launched by
- *   one. The predecessors that had no session had no launcher either, and gave
- *   their agents to `init`. The bounds below pay for it in atoms rather than in
- *   steps: a session may already hold a campaign at time zero.
  */
 module agent
 
@@ -536,18 +303,13 @@ sig Agent {
   host:     one Machine,        -- the machine whose checkout it runs in
   launcher: one Session,        -- the session that put it there
   topic:    one Topic,          -- the <topic> half of its branch
-  /* AN EXECUTOR MAY BE A SESSION. When it is, `peer` is that session and the
-     executor put itself there: a campaign session took a subtask, claimed its
-     branch, and works it with its own hands. Everything else about it is an
-     executor's -- it answers STATUS, sends REPORT and BLOCKED, stops on STAND
-     DOWN, and never writes the anchor.
-
-     The field is what makes the address question askable. A herdr delegate is
-     `--name`d its branch at launch, so the launching session knows how to
-     reach it by construction; a session's own claim is named by nothing
-     anybody else chose, so the session writes its ListAgents name and pid into
-     `runtime/claims/<issue>` at the claim -- which is what `Addressed` below
-     records. */
+  /* AN EXECUTOR MAY BE A SESSION: `peer` is that session, which claimed its
+     own branch and works it with its own hands, but otherwise acts as any
+     executor does. The field is what makes the address question askable: a
+     herdr delegate is `--name`d at launch, reachable by construction, while a
+     session's own claim is named by nothing anybody else chose, so it writes
+     its ListAgents name and pid into `runtime/claims/<issue>` at the claim --
+     what `Addressed` below records. */
   peer:     lone Session
 }
 
@@ -611,28 +373,16 @@ pred liveUnderLocally[c: Campaign, m: Machine] {
    questions, and this is the second one. */
 pred reachable[a: Agent] { a in Addressed }
 
-/* And what a close gate can read AND ATTRIBUTE, which is a strictly smaller
-   set than what it can see. `liveUnderLocally` is the seeing; this narrows it
-   to the executors the machine's `runtime/claims/` can name.
-
-   THE SPLIT'S SUBJECT IS ATTRIBUTION, NOT LIVENESS, and saying so matters
-   because the liveness half was misstated in prose. A herdr delegate is listed
-   by `herdr agent list` with its `cwd` under the campaign tree -- name and
-   subtask both readable. A campaign session working its own claim holds a pane
-   and is listed too (observed 2026-08-30: three live sessions of campaign #1,
-   all in `herdr agent list`), so AGENTS.md's stated reason for splitting the
-   liveness readings -- "an executor session runs no herdr pane at all" -- is
-   FALSE, and the observation is a counterexample to that reason, not to the
-   split. What the pane cannot say is WHICH subtask the session works: a pane
-   gives a name, and a campaign session's cwd is the container root like every
-   other's, so only `runtime/claims/<issue>` ties the name to the claim.
-   LIVENESS IS READABLE FOR BOTH KINDS WITHOUT ANY RECORD; ATTRIBUTION IS NOT,
-   and the close gate needs attribution. This model has encoded exactly that
-   since #37: `liveUnderLocally` reads peer agents with no record clause, and
-   the pre-#59 A1 witness held `liveUnderLocally` TRUE at the close it slipped
-   through -- the executor was visibly alive and unattributable. A17 below is
-   the residual gap measured on this model: after a directory delete, the pane
-   still shows a live executor the record can no longer attribute. */
+/* What a close gate can read AND ATTRIBUTE, a strictly smaller set than what
+   it can see (`liveUnderLocally`). THE SPLIT'S SUBJECT IS ATTRIBUTION, NOT
+   LIVENESS: a herdr delegate is listed with its subtask readable from `cwd`,
+   but a campaign session's pane cannot say WHICH subtask it works -- its cwd
+   is the container root like every other's, so only `runtime/claims/<issue>`
+   ties the name to the claim. Liveness is readable for both kinds without
+   any record; attribution is not, so a live-and-unattributable executor can
+   pass `liveUnderLocally`. A17 below measures the residual gap: after a
+   directory delete, the pane still shows a live executor the record can no
+   longer attribute. */
 pred liveAndReadable[c: Campaign, m: Machine] {
   some a: Agent | a in Live and a.host = m
     and (a.task in c.members or m in dirsOf[c])
@@ -645,25 +395,19 @@ pred closableLocally[s: Session, c: Campaign] { closable[c] and not liveUnderLoc
 pred closableAsRead[s: Session, c: Campaign]  { closable[c] and not liveAndReadable[c, s.smach] }
 
 /* The branch an executor works, in the form the design carried when R4 below
-   was found: campaign-<N>/<topic>. Two executors share it when the campaign and
-   the topic match -- true by definition of the name, not by proof. */
-/* BRANCH NAMES CANNOT COLLIDE ACROSS CAMPAIGNS, even though the container
-   shares one number sequence between its anchors and its subtasks.
-   campaign-<N>/<issue>-<topic> collides only on an equal <N> and <issue> pair.
-   An issue has at most one parent, so a subtask maps to exactly one campaign
-   number; two subtasks of one campaign have different numbers; and sharing a
-   sequence with the anchor HELPS, because it makes <issue> and <N> distinct
-   integers rather than allowing them to coincide. The collision case cannot be
-   constructed -- which is why what R4 finds below is intra-campaign, and only
-   that. */
+   was found: campaign-<N>/<topic>. Two executors share it when the campaign
+   and the topic match -- true by definition, not by proof. BRANCH NAMES
+   CANNOT COLLIDE ACROSS CAMPAIGNS: an issue has at most one parent, so a
+   subtask maps to exactly one campaign number, and sharing a number sequence
+   with the anchor keeps <issue> and <N> distinct rather than letting them
+   coincide -- which is why what R4 finds below is intra-campaign only. */
 pred sameBranchByTopic[a1, a2: Agent] {
   campaignOf[a1.task] = campaignOf[a2.task] and a1.topic = a2.topic
 }
 
-/* The form AGENTS.md adopted in answer to R4: campaign-<N>/<issue>-<topic>. The
-   subtask's issue number joins the campaign number, so two executors share a
-   branch only when campaign, subtask and topic all match. That it separates two
-   subtasks is definitional and is not run; what R4e asks is what it leaves. */
+/* The adopted form, campaign-<N>/<issue>-<topic>: two executors share a
+   branch only when campaign, subtask and topic all match. What R4e asks is
+   what this still leaves standing. */
 pred sameBranch[a1, a2: Agent] {
   campaignOf[a1.task] = campaignOf[a2.task]
   and a1.task = a2.task
@@ -698,11 +442,11 @@ pred keepShutdown { StoodDown' = StoodDown and Retired' = Retired }
 pred keepBorn     { Launched' = Launched }
 pred agentFrame   { keepLife and keepReview and keepMsgs and keepAddress and keepShutdown and keepBorn }
 
-/* The executor's half of a launch. It needs the claim -- the branch exists on
-   the remote, created by create-ref before any executor started -- and the
-   checkout, on the topic that is its branch. That its launcher is the session
-   that made the claim is `claimBeforeLaunch` below, a discipline rather than a
-   guard, because a launch that skips claiming is exactly what R4e is about. */
+/* The executor's half of a launch: the claim (a branch already on the
+   remote, created by create-ref) and the checkout, on the topic that is its
+   branch. That the launcher made the claim is `claimBeforeLaunch` below, a
+   discipline rather than a guard -- a launch that skips claiming is what R4e
+   is about. */
 pred launch[a: Agent] {
   Now.ev = Launch
   a not in Launched
@@ -713,47 +457,32 @@ pred launch[a: Agent] {
   treeAt[By.actor.holds, a.host].co[a.task.home] = a.topic
   Launched' = Launched + a
   Live'     = Live + a
-  /* Every executor is addressable the moment it exists (#59). A delegate is,
-     because the launching session chose its `--name`; a session working the
-     claim itself is, because THE CLAIMING SESSION WROTE ITS OWN RECORD,
-     `runtime/claims/<issue>`, at the claim -- which precedes every launch
-     (`claimBeforeLaunch`), so by the time the executor exists its address
-     does. No message, no relay hop, and no unaddressed state to fall into:
-     A1 below is the old gap measured closed. */
+  /* Every executor is addressable the moment it exists: a delegate from its
+     `--name`, a session's own claim from the record it wrote at the claim,
+     which precedes every launch (`claimBeforeLaunch`). No message, no relay
+     hop, no unaddressed state to fall into. */
   Addressed' = Addressed + a
   Local' = Local and Visible' = Visible and Confirmed' = Confirmed
   keepReview and keepMsgs and keepShutdown
   Target.agent = a
 }
 
-/* CLAIMED, and the `announce` event that carried it, stood here and are
-   retired by #59: with the record written by the claiming session itself at
-   the claim, there is no holder to announce to and nothing left for a message
-   to carry. The record keeps everything the message used to establish -- the
-   branch, the address, the pid that makes its liveness a local `kill -0` --
-   and gains what the message never had: it is complete, because the session
-   that takes a claim is the one thing that always knows the claim was taken.
-   The header carries the retired protocol's final measurements (A1-A3). */
-
 /* The campaign directory is deleted, and the claim records under `runtime/`
-   go with it. Every other bit this layer holds is about a process or a pull
-   request and outlives the tree; `Addressed` is the one that does not, because
-   for a session working its own claim it IS a file in the tree,
-   `runtime/claims/<issue>`.
+   go with it. Every other bit this layer holds outlives the tree; `Addressed`
+   is the one that does not, because for a session working its own claim it
+   IS a file in the tree.
 
-   ONLY FOR SUCH A SESSION, and the `some a.peer` guard is the whole of it.
-   A delegate's address is the `--name` its launcher chose, which lives in the
-   launch and in `herdr agent list`, not in `runtime/claims/` -- so a delegate
-   is addressable for as long as it runs, whatever happens to the tree. Stripping
-   it here would have made a live delegate permanently unreachable the moment a
-   directory it does not depend on was deleted, and `retire` -- the one campaign
-   act deliberately left unguarded -- would then be the only thing left that
-   could touch it.
+   ONLY FOR SUCH A SESSION, and `some a.peer` is the whole of the guard: a
+   delegate's address is the `--name` its launcher chose, living in the
+   launch and in `herdr agent list`, not in `runtime/claims/` -- so stripping
+   it here would make a live delegate permanently unreachable the moment an
+   unrelated directory was deleted, with `retire` -- deliberately left
+   unguarded -- the only thing left that could touch it.
 
-   Scoped to the deleted tree's own campaign and machine besides: `Present -
-   Present'` is the tree that just went, so two campaigns sharing a machine do
-   not clear each other's records. That scoping is repos.als's
-   MachineIndependence claim applied to a bit this layer owns. */
+   Scoped to the deleted tree's own campaign and machine: `Present - Present'`
+   is the tree that just went, so two campaigns sharing a machine do not
+   clear each other's records (repos.als's MachineIndependence claim, applied
+   here). */
 pred aDeleteDir {
   Now.ev = DeleteDir
   Addressed' = Addressed
@@ -778,17 +507,16 @@ pred work[a: Agent] {
 }
 
 /* The one rule that makes a tree deleted under a live executor survivable: it
-   pushes as soon as it has one commit, so what a lost workspace costs is
-   uncommitted work and nothing more. Pushing puts the branch on the remote and
-   clears the local-only work -- two different facts, and only the first is
-   readable from another machine. It does not set Confirmed: the session has not
-   looked yet, and nothing here lets it believe without looking.
+   pushes as soon as it has one commit, so a lost workspace costs only
+   uncommitted work. Pushing puts the branch on the remote and clears the
+   local-only work -- two different facts, and only the first is readable
+   from elsewhere; it does not set Confirmed, since nothing here lets the
+   session believe without looking.
 
-   It clears `Reviewed` for the same reason `work` clears `Confirmed`, and the
-   omission was a real hole: a fresh executor briefed from a bad review pushes
-   new commits onto the same pull request, and under the old frame the old
-   review bit still stood, so `mergedByHolder` was satisfied by a reading of
-   commits nobody had read. A review is of a pull request AT A REVISION. */
+   It clears `Reviewed` for the same reason `work` clears `Confirmed`: a
+   fresh executor briefed from a bad review pushes new commits onto the same
+   pull request, and a review is of a pull request AT A REVISION, not of
+   whatever commits happen to sit under an old review bit. */
 pred push[a: Agent] {
   a in Live and a in Local
   Local'    = Local - a
@@ -839,23 +567,18 @@ pred answer[a: Agent] {
 
 /* REPORT -- executor to campaign, unsolicited.
 
-   Sent once per round, when it has pushed a branch and opened or updated a pull
-   request. It names the pull request URL and the sha that URL sits at, and
-   stops; a fix round adds the URL of the comment carrying its disposition
-   table. The sha is what makes a verdict and a later push survive crossing.
+   Sent once per round, when it has pushed a branch and opened or updated a
+   pull request. It names the pull request URL and the sha that URL sits at
+   (a fix round adds the comment carrying its disposition table), which is
+   what makes a verdict and a later push survive crossing.
 
-   A report is a prompt to verify, never the verification. The campaign session
-   reads GitHub before believing it. An executor asserting it is finished is the
-   delegate verifying its own work, which is the one thing the design refuses --
-   so this event writes NOTHING but the claim itself. Everything a command below
-   cares about is untouched by it, and that is the model's statement of rule 1.
-
-   A REPORT names a URL and the sha it sits at, which makes fabrication cheap to
-   disprove -- a false one was caught in about two seconds by four independent
-   checks -- and makes a verdict crossing a later push harmless, because each
-   names the revision it is about (#52). But the rule
-   catches fabrication, not inadequacy: a real pushed branch with a real pull
-   request that does not do what was asked passes every check. Verifying that the
+   A report is a prompt to verify, never the verification: an executor
+   asserting it is finished is the delegate verifying its own work, the one
+   thing the design refuses, so this event writes NOTHING but the claim
+   itself -- the campaign session reads GitHub before believing it.
+   Fabrication is cheap to disprove this way, but the rule catches
+   fabrication, not inadequacy: a real pushed branch with a real pull request
+   that does not do what was asked passes every check. Verifying that the
    work exists is not reviewing it. */
 pred report[a: Agent] {
   a in Live
@@ -891,23 +614,17 @@ pred decide[a: Agent] {
   Now.ev = Decide and Now.issue = a.task and Target.agent = a
 }
 
-/* The campaign session reads the executor's working tree ITSELF.
+/* The campaign session reads the executor's working tree ITSELF: no
+   uncommitted changes, no unpushed commits, no branch absent from the remote.
+   Stated as an absence because "the branch is pushed and the pull request is
+   open" has no passing form for an executor that correctly produced nothing
+   durable -- what is always checkable is the inverse, `a not in Local`.
 
-   State the check as an absence: no uncommitted changes, no unpushed commits,
-   no branch absent from the remote. "Confirm the branch is pushed and the pull
-   request is open" has no passing form for an executor that correctly produced
-   nothing durable, and a campaign session following it literally is stuck with
-   nothing to verify. What is always checkable is the inverse, and that is the
-   `a not in Local` guard here.
-
-   NO `reachable` GUARD, deliberately: this event reads a working tree on the
-   session's own machine and sends the executor nothing, so an address at the far
-   end is not what it needs. Gating it made an executor without a record --
-   then one that never announced, now one whose record died with its directory
-   -- impossible to CONFIRM, and every discipline that wants a confirmation
-   before the retire then made it impossible to retire and its pull request
-   impossible to land -- A14 and A15, both UNSAT with the guard in place and
-   SAT without it (the header's mutation table). */
+   NO `reachable` GUARD, deliberately: this reads a working tree on the
+   session's own machine and sends the executor nothing, so an address at the
+   far end is not needed. Gating it made a record-less executor impossible to
+   CONFIRM and so impossible to retire or land -- A14 and A15 measure exactly
+   that. */
 pred confirm[a: Agent] {
   coLocated[By.actor, a]
   a.task in By.actor.holds.members
@@ -918,17 +635,13 @@ pred confirm[a: Agent] {
   Now.ev = Confirm and Now.issue = a.task and Target.agent = a
 }
 
-/* The same check run from another machine. It reads the SESSION's working tree,
-   not the executor's, so it comes back clean whatever the executor holds --
-   there is no `a not in Local` guard here because there is nothing on this
-   machine that could fail it. That is not a modelling shortcut; it is the
-   defect, and TwoStepShutdownSuffices below is where it surfaces.
-
-   It shares `confirm`'s absence of a `reachable` guard, but not for `confirm`'s
-   reason, and the guard would not have saved it either: `runtime/claims/` is
-   on the bound machine, so a session elsewhere cannot read it and does not know
-   there is anything it cannot address. What is wrong here is the tree it reads,
-   and no addressability rule reaches that. */
+/* The same check run from another machine: it reads the SESSION's working
+   tree, not the executor's, so it comes back clean whatever the executor
+   holds -- no `a not in Local` guard because nothing on this machine could
+   fail it. Not a modelling shortcut; it is the defect, surfacing at
+   TwoStepShutdownSuffices below. A `reachable` guard would not have saved
+   it either: what is wrong is the tree it reads, and no addressability rule
+   reaches that. */
 pred confirmElsewhere[a: Agent] {
   not coLocated[By.actor, a]
   a.task in By.actor.holds.members
@@ -940,47 +653,30 @@ pred confirmElsewhere[a: Agent] {
 
 /* REVIEW -- `/code-review <PR#>` run against a subtask's pull request.
 
-   The owner's rule: a pull request is reviewed before it is merged, and the
-   review is A REVIEWER THE SESSION THAT WANTS THE MERGE LAUNCHES. ONE MODE,
-   NOT A DEFAULT: an IN-PROCESS SUBAGENT running `/code-review <PR#>`, because a
-   review changes no repository working tree and so needs none of what a process
-   boundary is paid for -- no handover file, no canary, no pane, no sweep. A
-   HERDR SESSION IS NOT A MODE. The one exception is an `ultra` review, which a
-   person triggers and no session may. Which model and level that subagent runs
-   at is an instruction to an operator rather than a property of this relation,
-   so it lives in AGENTS.md and not here.
+   A pull request is reviewed before it is merged, by A REVIEWER THE SESSION
+   THAT WANTS THE MERGE LAUNCHES. ONE MODE, NOT A DEFAULT: an IN-PROCESS
+   SUBAGENT, because a review changes no repository working tree and needs
+   none of what a process boundary is paid for. The one exception is an
+   `ultra` review, which a person triggers and no session may.
 
-   KEYED ON THE ISSUE, NOT ON AN AGENT (#59), because the review is of the pull
-   request: `/code-review <PR#>` reads GitHub, and neither the executor's
-   process nor its address is anywhere in that read. The old signature,
-   `review[a: Agent]`, made a hands-on subtask -- one worked by a session with
-   no Agent anywhere -- unreviewable, and `mergedByHolder` then blocked its
-   merge as a side effect of the same blindness (measured on the pre-#59 model,
-   2026-08-29: P1 in the header). A review is about work, and work does not
-   need a process attached to be read.
+   KEYED ON THE ISSUE, NOT ON AN AGENT, because the review is of the pull
+   request -- `/code-review <PR#>` reads GitHub, and neither the executor's
+   process nor its address is in that read.
 
-   THE REVIEWER IS A SEPARATE AGENT WHOEVER LAUNCHES IT, and that is why the
-   old guard `By.actor != a.peer` is gone rather than translated. What the
-   property needs is INDEPENDENCE OF JUDGEMENT, NOT INDEPENDENCE OF TASKING:
-   the reviewer that reads the diff is never the process that wrote it, and
-   that holds when the author-session launches it exactly as it holds when any
-   other session does -- the one-session campaign, the common case, has no
-   other session to launch it. The named limit, stated rather than modelled: the
-   launcher writes the reviewer's brief, so an author can scope a brief to what
-   it already believes and get a clean review of the wrong thing. That shape is
-   identical to a session briefing a reviewer of a delegate's work, nobody
-   wants to ban that, and no machinery here would tell them apart. (The old
-   guard also made the case issue #59 names -- a review the author commissioned
-   -- inexpressible outright: P2 in the header, UNSAT on the pre-#59 model.)
+   THE REVIEWER IS A SEPARATE AGENT WHOEVER LAUNCHES IT. The property needs
+   INDEPENDENCE OF JUDGEMENT, NOT INDEPENDENCE OF TASKING: the reviewer that
+   reads the diff is never the process that wrote it, which holds when the
+   author-session launches it exactly as when any other session does -- the
+   one-session campaign, the common case, has no other session to launch it.
+   The named limit: the launcher writes the reviewer's brief, so an author can
+   scope a brief to what it already believes and get a clean review of the
+   wrong thing -- the same shape as briefing a reviewer of a delegate's work,
+   which nobody wants to ban and no machinery here would tell apart.
 
-   The reviewer is a process, and this layer models processes only where their
-   state matters; the reviewer's does not -- it leaves one durable mark, and
-   that mark is `Reviewed`. `no Target.agent` for the same reason: the event is
-   about no executor.
-
-   No `reachable` guard either, for `confirm`'s reason: an executor whose
-   record died with the directory is unaddressable, not unlandable, and no
-   prose ever said otherwise. */
+   The reviewer is a process modelled only where its state matters, and it
+   does not: it leaves one durable mark, `Reviewed`, so `no Target.agent`
+   here too. No `reachable` guard either, for `confirm`'s reason: a record-
+   less executor is unaddressable, not unlandable. */
 pred review[i: Issue] {
   Now.ev = Review
   Now.issue = i
@@ -991,17 +687,15 @@ pred review[i: Issue] {
   no Target.agent
 }
 
-/* STAND DOWN -- campaign to executor.
+/* STAND DOWN -- campaign to executor. Asks it to finish its current turn and
+   stop; it does not destroy its own workspace, only acknowledges and goes
+   quiet, which is why standing down and retiring are two events with the
+   executor still Live between them.
 
-   Asks it to finish its current turn and stop. It does not destroy its own
-   workspace: it acknowledges and goes quiet, and the campaign session retires it
-   afterwards. That is why standing down and retiring are two events, and why the
-   executor is still Live between them.
-
-   Nothing guards this predicate beyond holding the campaign and being able to
-   reach the executor. The rest are the discipline predicates below, applied per
-   command, so that the unguarded protocol and each candidate repair can be
-   measured against the same trace space. */
+   Nothing guards this predicate beyond holding the campaign and reaching the
+   executor -- the discipline predicates below apply per command, so the
+   unguarded protocol and each candidate repair are measured against the same
+   trace space. */
 pred standDown[a: Agent] {
   reachable[a]
   a in Live and a not in StoodDown
@@ -1013,24 +707,19 @@ pred standDown[a: Agent] {
 }
 
 /* The workspace is destroyed. Anything still in Local at this instant is gone
-   and GitHub never knew about it.
+   and GitHub never knew about it. The second disjunct is not a convenience:
+   an executor that already died is retired without any stand-down, since
+   nobody is left to ask -- that path skips every message in the protocol,
+   which is why the disciplines below guard the retire and not only the
+   stand-down.
 
-   The second disjunct is not a convenience: an executor that already died is
-   retired without any stand-down, because there is nobody left to ask. That path
-   skips every message in the protocol, which is exactly why the disciplines
-   below guard the retire and not only the stand-down.
-
-   No `reachable` guard, and it is the act that most obviously must not have
-   one: an executor whose record went with a deleted directory still has a
-   workspace somebody has to be able to destroy. Retiring needs no answer from
-   the far end.
-
-   An unguarded `retire` was never the whole of that claim, though, and A14 is it
-   measured: a discipline that wants a CONFIRMATION first kept such an executor
-   alive forever while this predicate stood open, so `confirm` carries no guard
-   for the same reason. `twoStepShutdown` strands it anyway, because its other
-   conjunct is an ANSWER and an answer needs an address; `resolveSilenceExternally`,
-   the rule the design adopted, asks for the confirmation alone and lets it go. */
+   No `reachable` guard: an executor whose record went with a deleted
+   directory still has a workspace somebody must be able to destroy, and
+   retiring needs no answer from the far end. A14 measures what an unguarded
+   `retire` is worth: a discipline that wants a CONFIRMATION first would keep
+   such an executor alive forever if `confirm` were gated too, and
+   `twoStepShutdown` strands it anyway on an ANSWER that needs an address --
+   `resolveSilenceExternally` asks for the confirmation alone and lets it go. */
 pred retire[a: Agent] {
   (a in StoodDown or a not in Live) and a in Launched and a not in Retired
   a.task in By.actor.holds.members
@@ -1053,12 +742,12 @@ pred agentDie[a: Agent] {
   Now.ev = AgentDie and Now.issue = a.task and Target.agent = a and no By.actor
 }
 
-/* This layer's half of repos.als's `release`: what may be released. The guard is
-   what a session can actually read -- the remote branch holds nothing beyond
-   main, and no executor on ITS OWN machine works the task. Liveness on another
-   machine is not readable, so a live remote executor with no pushed work can
-   still lose its claim under a rule correctly followed: R6 below is that
-   residue, stated rather than implied away. */
+/* This layer's half of repos.als's `release`: what may be released, guarded
+   by what a session can actually read -- nothing beyond main on the remote
+   branch, no executor on ITS OWN machine working the task. Liveness
+   elsewhere is not readable, so a live remote executor with no pushed work
+   can still lose its claim under a rule correctly followed: R6 below is that
+   residue. */
 pred aRelease {
   Now.ev = Release
   no a: Agent | a.task = Now.issue and a in Visible
@@ -1117,30 +806,23 @@ pred twoStepShutdown {
             (Target.agent in Answered and Target.agent in Confirmed))
 }
 
-/* Stand down only an executor on your own machine -- AND confirm it from there
-   too. The verification in step 2 is read against a working tree, and a session
-   on another machine reads its own.
-
-   THE CONFIRM HALF IS NOT DECORATION, and the several-sessions world is what
-   showed it. Written over the stand-down and the retire alone -- which is how
-   the one-session model stated it, where it could not fail because there was
-   only one session and it could not be in two places -- the contract is X here:
-   a remote session runs the confirmation the local one then acts on, and the
-   retire destroys work. Steps 2 and 3 of the retirement procedure are one
-   session's steps, and this is that sentence made checkable. Narrowing this
-   predicate back to `StandDown + Retire` reddens TwoStepCoLocatedSuffices, which
-   is the mutation that proves the half is load-bearing. */
+/* Stand down only an executor on your own machine -- AND confirm it from
+   there too, since step 2's verification is read against a working tree, and
+   a session elsewhere reads its own. THE CONFIRM HALF IS NOT DECORATION: a
+   remote session running the confirmation for a local one to act on still
+   lets the retire destroy work, so it covers Confirm and ConfirmElsewhere as
+   well as StandDown and Retire -- narrowing it back to the latter two reddens
+   TwoStepCoLocatedSuffices, proving the half load-bearing. */
 pred coLocatedShutdown {
   always (Now.ev in Confirm + ConfirmElsewhere + StandDown + Retire
             implies coLocated[By.actor, Target.agent])
 }
 
 /* Rule 3, as a discipline: silence is a liveness question, not a protocol
-   answer. An unanswered STATUS is asked once more and then resolved through
-   herdr and GitHub -- so an executor that is gone may be stood down on the
-   confirmation alone, and only on the confirmation. A quiet executor is not a
-   finished one, and waiting forever for a reply that cannot come is the failure
-   mode this rule exists to stop. */
+   answer. An unanswered STATUS is asked once more and resolved through herdr
+   and GitHub, so a gone executor may be stood down on the confirmation
+   alone -- a quiet executor is not a finished one, and waiting forever for a
+   reply that cannot come is the failure this rule stops. */
 pred resolveSilenceExternally {
   always (Now.ev in StandDown + Retire implies
             (Target.agent in Confirmed
@@ -1158,13 +840,11 @@ pred remoteCheckedShutdown { always (Now.ev = StandDown implies Target.agent in 
 /* What only a session on the executor's own machine can check. */
 pred localCheckedShutdown  { always (Now.ev = StandDown implies Target.agent not in Local) }
 
-/* The claim discipline, in two named halves. An executor is launched only onto
-   a claim its launcher created; and a claim is created only where no ref exists,
-   which is what create-ref's 422 enforces server-side. Together they close R4e
-   (R4f UNSAT); the control R4g drops atomicity alone and the collision returns,
-   so the refusal -- not the ritual -- is the load-bearing half. A session that
-   launches without claiming bypasses the first, which is why the discipline
-   lives in the launch procedure and R4e itself stays SAT. */
+/* The claim discipline, in two halves: launch only onto a claim your
+   launcher created, and create only where no ref exists (create-ref's 422,
+   server-side). Together they close R4e (R4f UNSAT); R4g drops atomicity
+   alone and the collision returns, so the refusal -- not the ritual -- is
+   load-bearing. */
 pred claimBeforeLaunch { always (Now.ev = Launch implies Now.issue in By.actor.claims) }
 pred claimAtomic       { always (Now.ev = Claim  implies Now.issue not in Claimed) }
 
@@ -1181,23 +861,12 @@ pred closeDisciplineAsRead[c: Campaign] {
   always ((Now.ev = CloseIssue and Now.issue = c.anchor) implies closableAsRead[By.actor, c])
 }
 
-/* `announceAtClaim` stood here -- CLAIMED at the claim, as a discipline an
-   executor session had to obey -- and is retired by #59 with the message it
-   disciplined. What it bought is now structural: `launch` writes `Addressed`
-   unconditionally, because the claim record was written by the claiming
-   session before any executor existed. A discipline binds only the obedient,
-   and A1 was exactly the disobedient case; a construction has no disobedient
-   case, which is the whole trade. The header carries the final measurements. */
-
-/* THE DELETE GATE, and it is where session.als's R3 finding is answered.
-
-   session.als can say that a directory must not be deleted while another
-   session is working the campaign, and cannot say how anyone would know: a
-   working peer is a fact no file carried. `runtime/claims/` is that file now,
-   one record per claim written by the claiming session itself, so the gate
-   belongs here, keyed on the record rather than on the peer -- and since #59
-   the record is complete, because no claim exists without a session having
-   written its own record at the claim. */
+/* THE DELETE GATE, answering session.als's R3: a directory must not be
+   deleted while another session works the campaign, and session.als cannot
+   say how anyone would know, since a working peer was a fact no file
+   carried. `runtime/claims/` is that file now, so the gate is keyed on the
+   record rather than on the peer, and the record is complete -- no claim
+   exists without a session having written its own at the claim. */
 pred noDeleteUnderReadableExecutor {
   always (Now.ev = DeleteDir implies
             no a: Agent | a in Live and a.host = Site.mach and reachable[a]
@@ -1210,86 +879,50 @@ fun executorsOf[i: Issue]: set Agent { task.i }
 
 /* NO SESSION LANDS ITS OWN WORK UNREVIEWED -- and nobody lands anyone's.
 
-   Written after a live collision on 2026-08-28: the executor session for #36
-   squash-merged its own pull request in the same minute the holding session
-   sent "do not merge". The rule of that day, `mergedByHolder`, answered it by
-   making the merge the holder's act; #59 retired the holder, and this
-   predicate is the separation of duties re-derived WITH NO ROLE IN IT. What
-   the collision actually lacked was not a different merger -- it was a review:
-   the pull request went in with nobody having read it. So the property is
-   about the work, not the identity. A MERGE REQUIRES A CURRENT REVIEW, and
-   the author may then merge exactly as anyone else may.
+   The property is about the work, not the identity: what a bad merge lacks
+   is not a different merger but a review, so no conjunct here names who may
+   merge -- the author may merge exactly as anyone else may, once the review
+   is current. The identity phrasing, "merged by a session that did not push
+   it", was weighed and rejected: in the one-session campaign, the common
+   case, no second session exists to merge, so that rule makes the normal
+   landing unreachable and calls it safety. A16 is the sanctioned author-merge
+   measured SAT; A16b is the same author stopped by a stale review; A4/A5 are
+   the collision, still caught.
 
-   The identity phrasing -- "merged by a session that did not push it" -- was
-   weighed and rejected before this was written: in the one-session campaign,
-   the common case, no second session exists to merge, so that rule makes the
-   normal landing unreachable and calls it safety. A16 below is the sanctioned
-   author-merge measured SAT; A16b is the same author stopped by a stale
-   review; A4/A5 are the collision, re-derived, still caught.
+   CURRENT means current for the revision being merged: `Reviewed` is cleared
+   by `push` (A13), so the bit reads "read at the pull request's head as it
+   stands now". A squash merge produces a commit that did not exist when the
+   review ran, so pinning the review to the MERGED COMMIT would call every
+   squash merge unreviewed; pinning it to the head instead means a reviewed
+   head squash-merges as reviewed, and only a new push un-reviews it.
 
-   CURRENT means current for the revision being merged, and the encoding is
-   `Reviewed` cleared by `push` (A13): the bit reads "the review was read at
-   the pull request's head as it stands now". Two neighbouring traps, one on
-   each side of the merge. A push after the review retires the review -- A13,
-   with A16b as it doing its work under this rule. And a squash merge produces
-   a commit that did not exist when the review ran, so a reading that pinned
-   the review to the MERGED COMMIT would call every squash merge unreviewed.
-   The encoding pins the revision THE REVIEW WAS READ AT instead -- the pull
-   request's head -- which the model states naturally because the squash
-   artifact is no revision it carries: a reviewed head squash-merges as
-   reviewed, and only a new push un-reviews.
+   The second conjunct is claim-is-not-evidence: every executor of the
+   subtask has been CONFIRMED, by a session on its own machine, before the
+   merge -- universal, not existential, so vacuously true when there are
+   none, which is the hands-on case. Confirmation and review answer different
+   questions: confirmation asks whether anything exists only on this machine,
+   an absence, checkable; review asks whether the work is any good, which
+   nothing else in this model asks (ledger.als's header calls adequacy
+   unmodelled).
 
-   The second conjunct is claim-is-not-evidence, unchanged from the old rule:
-   every executor of the subtask has been CONFIRMED, by a session on its own
-   machine, before the merge -- `Target.agent in Reported` would put the
-   executor's own account under the merge. UNIVERSAL, not existential: every
-   executor of that subtask, and vacuously true when there are none, which is
-   the hands-on case.
+   No conjunct names the merger or a campaign: `Reviewed` and `Confirmed` are
+   keyed to the issue and its executors, which no reparent can move, so no
+   silent-reparent hole can arise.
 
-   Confirmation and review answer different questions and neither substitutes
-   for the other. Confirmation asks whether anything exists only on this
-   machine -- an absence, checkable, and what the two-step shutdown is for.
-   Review asks whether the work is any good, which nothing else in this model
-   asks at all; ledger.als's header says adequacy is unmodelled, and this is
-   the one place the design puts a reader in front of it.
-
-   No conjunct names the merger, and none names a campaign: the predecessor's
-   `isHolder` conjunct went with the role, and its membership scoping went with
-   it -- `Reviewed` and `Confirmed` are keyed to the issue and its executors,
-   which no reparent can move, so the silent-reparent hole the old rule had to
-   argue itself out of does not arise.
-
-   TWO OF AGENTS.md's THREE MERGE CONDITIONS ARE UNMODELLED HERE, and both are
-   named rather than left to be discovered.
-
-   The NON-AUTHOR condition -- the review is written by an agent that did not
-   write the commits -- is axiomatized by `review`'s shape and by P2 in the
-   header, and there is no conjunct enforcing it. `Reviewed` is a bit on a pull
-   request; nothing in this model records WHO set it, so the condition cannot be
-   stated at all without a reviewer identity this layer does not carry. It is
-   therefore a discipline with no reader here and none on GitHub either, where
-   one account signs every session's comments. AGENTS.md says so at the rule.
-
-   The CONTAINS-CURRENT-MAIN condition is not expressible for a different
-   reason: this model has one pull request per issue and no notion of a shared
-   branch moving under another, so "two reviewed branches, both merged, combined
-   state read by nobody" -- the trace that condition exists to forbid -- cannot
-   be built. Extending the model to see it means giving `main` a state and
-   branches a base, which is a layer's worth of work and its own subtask (#95).
-   The condition is unmodelled here, but it is no longer unenforced: #97 landed
-   a required status check on 2026-08-30, which is what `strict` had nothing to
-   modify before. Measured the same day -- a branch with a green check and
-   `behind=1` reads `BEHIND` and an admin merge is refused `HTTP 405`; with the
-   base merged in it reads CLEAN and merges. So what is missing here is the
-   model's ability to express the trace, not a refuser in the world.
-
-   Two earlier drafts of this comment were wrong in opposite directions, which
-   is why the history is kept: the first claimed GitHub's behind-count enforced
-   it while `main` was unprotected; the second claimed protection alone did,
-   with `strict: true` and `contexts` empty -- measured then at `behind=1`,
-   `mergeStateStatus: CLEAN`, mergeable, because "require branches to be up to
-   date" modifies required status checks and there were none to modify.
-   A16/A16b measure only the sha half. */
+   TWO OF AGENTS.md's THREE MERGE CONDITIONS ARE UNMODELLED HERE. The
+   NON-AUTHOR condition -- the review is written by an agent that did not
+   write the commits -- is axiomatized by `review`'s shape but has no
+   conjunct enforcing it: `Reviewed` records that somebody looked, not who,
+   so the condition needs a reviewer identity this layer does not carry, and
+   has no reader on GitHub either, where one account signs every comment. The
+   CONTAINS-CURRENT-MAIN condition is unexpressible for a different reason:
+   this model has one pull request per issue, no notion of a shared branch
+   moving under another, so the trace it forbids -- two reviewed branches,
+   both merged, combined state read by nobody -- cannot be built without
+   giving `main` a state and branches a base. It is unmodelled but not
+   unenforced: a required status check on `main` refuses a merge whose
+   branch is behind, even under an admin token, and accepts once the base is
+   merged in. A16/A16b measure only the sha half. */
 pred mergedOnCurrentReview {
   always (Now.ev = MergePR implies
             (Now.issue.pr in Reviewed
@@ -1300,35 +933,26 @@ pred mergedOnCurrentReview {
 /* ---------------- properties ---------------- */
 
 /* PASS. No lost work: an executor dying and a directory being deleted never
-   un-complete a subtask.
-
-   Nothing written in THIS file carries it. Completion is ledger's, and ledger
-   frames its own state whenever an event it does not own fires -- so what this
-   check tests is the composition idiom, and dropping `ledgerFrame` from ledger's
-   fall-through branch is what reddens it. */
+   un-complete a subtask. Nothing written in THIS file carries it -- completion
+   is ledger's, so what this check tests is the composition idiom: dropping
+   `ledgerFrame` from ledger's fall-through branch is what reddens it. */
 assert NoLostWork {
   always all i: Issue |
     (complete[i] and Now.ev in AgentDie + DeleteDir) implies after complete[i]
 }
 
 /* X. No orphan: no executor is live on a checkout whose campaign directory is
-   gone. Nothing enforces "no campaign closes while an executor is live under its
-   tree".
-
-   The counterexample, and it is the reason the rule is stated as a local check
-   with its blind spot named: two machines hold campaign #N; an executor is live
-   on machine 0; the operator on machine 1 deletes its tree. "No campaign closes
-   while an executor is live under its tree" is a local check blind to the other
-   machine. Enforcing it, plus refusing to drop a member an executor is working,
-   makes NoOrphanIfGuarded pass -- nothing enforces either today. */
+   gone. Nothing enforces "no campaign closes while an executor is live under
+   its tree" -- named as a local check with its blind spot: two machines hold
+   campaign #N, an executor is live on machine 0, and the operator on machine
+   1 deletes its tree, which no local check can see. */
 pred noOrphanNow {
   all a: Agent | a in Live implies (some c: Campaign | a.task in c.members and a.host in dirsOf[c])
 }
 
 assert NoOrphan { always noOrphanNow }
 
-// PASS. Same, assuming the design's stated retirement rule is actually
-// enforced.
+// PASS, once the retirement rule the design states is actually enforced.
 assert NoOrphanIfGuarded {
   ((always (Now.ev = DeleteDir implies (no a: Agent | a in Live and a.host = Site.mach)))
    and (always (Now.ev = RemoveMember implies (no a: Agent | a in Live and a.task = Now.issue))))
@@ -1336,41 +960,32 @@ assert NoOrphanIfGuarded {
 }
 
 /* X. Unguarded: work is destroyed. The baseline the disciplines are measured
-   against. Counterexample: an executor works, is stood down, is retired. */
+   against -- an executor works, is stood down, is retired. */
 assert UnguardedShutdownIsUnsafe { noWorkDestroyed }
 
-/* X. THE ONE-STEP DEFECT. A REPORT is a claim about a pull request; it says
-   nothing about a second, uncommitted change made after it. Counterexample:
-   the executor reports, then works again, then is stood down on the strength of
-   the report and retired with the new work still only on its disk. This is the
-   assertion that makes "shutdown is two steps, never one" a checked statement
-   rather than an instruction. */
+/* X. THE ONE-STEP DEFECT: a REPORT says nothing about a second, uncommitted
+   change made after it. Counterexample: the executor reports, works again, is
+   stood down on the strength of the report, and is retired with the new work
+   still only on its disk. */
 assert OneStepShutdownSuffices { oneStepShutdown implies noWorkDestroyed }
 
-/* X. THE REMOTE HOLE, and it is not a modelling artefact. Two steps are not
-   enough when step 2 is run from the wrong machine: an executor launched
-   elsewhere passes every check a remote session can make while its uncommitted
-   work sits on a disk that session cannot see. Counterexample: confirmElsewhere
-   fires, the executor still holds Local, and the retire destroys it. Ask the
-   session that launched it, or leave it.
-
-   THIS IS ALSO THE WHOLE OF "a remote stand-down destroys work", which the
-   several-sessions model stated separately as a run: a session on another
-   machine stands the executor down, the check it can actually run -- the branch
-   is on the remote -- passes, and work that exists only on the executor's
-   machine dies with the workspace. The two are one finding and one
-   counterexample; R5b and R5c below are the controls that pin its axis. */
+/* X. THE REMOTE HOLE, not a modelling artefact: two steps are not enough
+   when step 2 runs from the wrong machine. Counterexample: confirmElsewhere
+   fires, the executor still holds Local, and the retire destroys it -- a
+   remote session's check passes because the branch is on the remote, while
+   uncommitted work on the executor's disk dies with the workspace. R5b and
+   R5c below are the controls that pin its axis. */
 assert TwoStepShutdownSuffices { twoStepShutdown implies noWorkDestroyed }
 
-/* PASS. The contract as AGENTS.md states it: two steps, on your own machine.
-   Confirmed is cleared by any later `work`, which is what makes the green
-   survive an executor that keeps working after being confirmed. */
+/* PASS: two steps, on your own machine. Confirmed is cleared by any later
+   `work`, so the green survives an executor that keeps working after being
+   confirmed. */
 assert TwoStepCoLocatedSuffices {
   (twoStepShutdown and coLocatedShutdown) implies noWorkDestroyed
 }
 
-/* PASS. Rule 3's repair does not reopen the hole: dropping the requirement for
-   an ANSWER, for an executor that can no longer give one, is safe as long as the
+/* PASS: rule 3's repair does not reopen the hole. Dropping the requirement
+   for an ANSWER an executor can no longer give is safe as long as the
    session's own confirmation is kept and read on the right machine. */
 assert SilenceResolutionStaysSafe {
   (resolveSilenceExternally and coLocatedShutdown) implies noWorkDestroyed
@@ -1378,9 +993,8 @@ assert SilenceResolutionStaysSafe {
 
 /* ---------------- witnesses ---------------- */
 
-/* The whole retirement procedure, reachable: the executor works and pushes, the
-   session asks STATUS and gets an answer, confirms against the tree, stands it
-   down and retires the workspace. SAT means the disciplines above forbid a
+/* The whole retirement procedure, reachable: works, pushes, STATUS answered,
+   confirmed, stood down, retired. SAT means the disciplines above forbid a
    counterexample rather than forbidding the protocol. */
 pred Sanity {
   coLocatedShutdown and twoStepShutdown
@@ -1390,27 +1004,26 @@ pred Sanity {
 }
 
 /* Rule 1 as a witness, and the whole of "the agent went idle is not
-   completion": the executor claims it is finished while still holding work only
-   its machine has, and the claim leaves that fact exactly as it was -- and leaves
-   the GitHub fact exactly as it was too, which is the stronger half. A signal
-   weaker than an explicit REPORT, such as a pane falling quiet, says even less. */
+   completion": the executor claims it is finished while still holding work
+   only its machine has, and the claim leaves both that fact and the GitHub
+   fact exactly as they were. A weaker signal, such as a pane falling quiet,
+   says even less. */
 pred ReportIsNotEvidence {
   some a: Agent | eventually (Now.ev = Report and Target.agent = a
     and a in Local and a in Local'
     and not complete[a.task] and after always not complete[a.task])
 }
 
-/* BLOCKED stops the executor rather than letting it guess: it is waiting, and
-   no Work event fires while it does. */
+/* BLOCKED stops the executor rather than letting it guess: waiting, with no
+   Work event firing while it does. */
 pred BlockedAgentDoesNotProceed {
   some a: Agent | eventually (a in Waiting and always (a in Waiting and Now.ev != Work))
 }
 
-/* THE FAILURE RULE 3 FORBIDS. Under wait-for-the-answer, an executor asked for
-   STATUS that then dies without replying can never be retired at all: the
-   premise the discipline waits on is one the world can no longer supply.
-   UNSAT is the finding -- there is no such trace, so the workspace stays open
-   forever and the session waits for a reply that cannot come. */
+/* THE FAILURE RULE 3 FORBIDS: under wait-for-the-answer, an executor asked
+   for STATUS that dies without replying can never be retired -- the premise
+   the discipline waits on is one the world can no longer supply. UNSAT: no
+   such trace, so the session waits forever for a reply that cannot come. */
 pred SilentAgentIsRetirableUnderWait {
   waitForAnswer
   and (some a: Agent |
@@ -1419,15 +1032,14 @@ pred SilentAgentIsRetirableUnderWait {
 }
 
 /* Rule 3's repair, and the control that it is a repair rather than a
-   prohibition: under resolveSilenceExternally the same never-answering executor
-   is still retired. */
+   prohibition: the same never-answering executor is still retired. */
 pred SilentAgentStillRetired {
   resolveSilenceExternally and coLocatedShutdown
   and (some a: Agent | eventually a in Retired and always a not in Answered)
 }
 
-/* The delegate dies after pushing. Completion is a GitHub fact, so it survives
-   the death and never comes undone. */
+/* The delegate dies after pushing: completion is a GitHub fact, so it
+   survives the death and never comes undone. */
 /* FOR REAL -- real. Launch a delegate on a subtask. Wait until it has pushed
    and opened a pull request (`gh pr list -R <repo> --head
    campaign-$ANCHOR/<n>-<topic>` returns a row). Kill the pane -- `herdr agent
@@ -1446,9 +1058,8 @@ pred S3_DelegateDiesAfterPushing {
   }
 }
 
-/* The delegate reports done while nothing is pushed. The campaign session must
-   not believe it, and the trace shows why: the claim never becomes a GitHub fact
-   on its own. */
+/* The delegate reports done while nothing is pushed: the claim never becomes
+   a GitHub fact on its own, and the campaign session must not believe it. */
 /* FOR REAL -- real. Launch a delegate; when it sends REPORT, do not believe it.
    Run `scripts/campaign-settlement $ANCHOR` first.
    PASS: the row is `open` -- the claim was not evidence. Then confirm the
@@ -1472,9 +1083,8 @@ pred S4_ReportWithoutPush {
   }
 }
 
-/* The delete lands on the machine the live executor runs on. This is NoOrphan's
-   counterexample, requested as a witness so a run can be written that reproduces
-   it on purpose. */
+/* The delete lands on the machine the live executor runs on: NoOrphan's
+   counterexample, as a witness a run can reproduce on purpose. */
 /* FOR REAL -- fixture. Launch a delegate, let it commit but NOT push, then
    delete `<campaign>/` from a second session.
    PASS is a demonstration of loss: the commits are unrecoverable and GitHub
@@ -1493,13 +1103,11 @@ pred S9_OrphanedByLocalDelete {
 
 /* =================== a close during another session's work =================== */
 
-/* R3b. The cross-machine form: session 2 closes the anchor from another machine
-   while session 1's delegate is live on machine 1. The local gate reads
-   closable; the campaign is not. */
-/* WITNESS. S0 closes the anchor from M0 while S1's delegate is live on M1; the
-   local gate reads closable because it is reading M0. R3c UNSAT below restates
-   the close rule globally, so R3b reads as that rule being unreadable from one
-   machine, not as the rule failing. */
+/* R3b. The cross-machine form: session 2 closes the anchor from M0 while
+   session 1's delegate is live on M1. The local gate reads closable because
+   it reads only M0; the campaign is not. R3c below restates the close rule
+   globally and blocks it, so this is the rule unreadable from one machine,
+   not the rule failing. */
 pred R3b_CloseFromAnotherMachine {
   some c: Campaign, disj s1, s2: Session, a: Agent {
     s1.smach != s2.smach
@@ -1511,15 +1119,11 @@ pred R3b_CloseFromAnotherMachine {
 }
 
 /* R3c. Control for R3b: the global rule, if it could be read, blocks it.
-
-   Scoped to traces with no RemoveMember, and the scope is a finding rather than
-   a convenience. `liveUnder` reads an executor as under a campaign when its
-   subtask is a member OR its machine holds the tree; move the subtask out and
-   delete the tree and both go false while the executor is still running, so the
-   global rule permits the close after all. The model this came from had no
-   remove event and could not state it. Nothing in the design guards it, and it
-   is the same shape as the residual risk ledger.als names: a reparent is silent
-   and leaves no trace. */
+   Scoped to traces with no RemoveMember, a finding rather than a convenience:
+   `liveUnder` reads an executor as under a campaign when its subtask is a
+   member OR its machine holds the tree, and moving the subtask out while
+   deleting the tree turns both false, permitting the close after all -- the
+   same silent-reparent risk ledger.als names. */
 pred R3c_GlobalCloseRuleBlocks {
   some c: Campaign, disj s1, s2: Session, a: Agent {
     s1.smach != s2.smach
@@ -1532,12 +1136,11 @@ pred R3c_GlobalCloseRuleBlocks {
 
 /* =================== two sessions, one repository =================== */
 
-/* R4. Two sessions on the same campaign launch delegates into the same
-   repository and pick the same topic. campaign-<N> keeps campaigns apart;
-   nothing keeps two sessions of one campaign apart. */
-/* WITNESS, against campaign-<N>/<topic> -- the branch form this was found on.
-   Two subtasks in R0, two sessions, the same <topic>: one branch, two delegates,
-   one checkout. R4d is the same with a single subtask. */
+/* R4. Two sessions of one campaign launch delegates into the same repository
+   on the same topic: campaign-<N> keeps campaigns apart, nothing keeps two
+   sessions of one campaign apart. Against campaign-<N>/<topic>, the branch
+   form this was found on -- two subtasks, two delegates, one checkout; R4d
+   is the same with a single subtask. */
 pred R4_SameBranchTwice {
   some disj a1, a2: Agent, r: Repo {
     r != Container
@@ -1550,10 +1153,9 @@ pred R4_SameBranchTwice {
   }
 }
 
-/* R4b. Positive control for R4: two executors of DIFFERENT campaigns, live in
-   the same repository at the same time, with the same <topic> deliberately
-   chosen. They do not share a branch. That is what the campaign-<N> prefix buys,
-   and it isolates R4's collision as an intra-campaign one. */
+/* R4b. Positive control for R4: two executors of DIFFERENT campaigns, same
+   repository, same <topic> deliberately chosen, do not share a branch --
+   what campaign-<N> buys, isolating R4's collision as intra-campaign. */
 pred R4b_CrossCampaignCoexists {
   some disj a1, a2: Agent, r: Repo {
     r != Container
@@ -1565,11 +1167,10 @@ pred R4b_CrossCampaignCoexists {
   }
 }
 
-/* R4c. The acquire race. One machine, one campaign directory, one checkout of
-   the repository. Session 2 acquires it on another branch while session 1's
-   delegate is live in it with work that is not on the remote. */
-/* WITNESS. S0's acquire-repo switches the shared checkout off the branch S1's
-   live delegate is working. */
+/* R4c. The acquire race: one machine, one checkout of the repository, and
+   session 2 acquires it onto another branch while session 1's delegate is
+   live in it with work not on the remote -- the shared checkout switches off
+   the branch S1's delegate is working. */
 pred R4c_CheckoutSwitchedUnderAgent {
   some c: Campaign, disj s1, s2: Session, a: Agent, r: Repo {
     r != Container
@@ -1584,9 +1185,8 @@ pred R4c_CheckoutSwitchedUnderAgent {
   }
 }
 
-/* R4d. The sharper form the solver reached first when R4 left the tasks free:
-   two sessions delegate the SAME subtask issue. Nothing in the design says a
-   subtask has at most one executor. */
+/* R4d. The sharper form: two sessions delegate the SAME subtask issue.
+   Nothing in the design caps a subtask at one executor. */
 pred R4d_SameSubtaskTwice {
   some disj a1, a2: Agent {
     a1.launcher != a2.launcher
@@ -1595,11 +1195,9 @@ pred R4d_SameSubtaskTwice {
   }
 }
 
-/* R4e. The adopted form, and what it does not fix. Two sessions that delegate
-   the SAME subtask still land on one branch: the issue number separates two
-   subtasks, and there is only ever one of it per subtask. AGENTS.md names the
-   branch rule as answering the two-subtask collision only, and this is the
-   residual it leaves standing. */
+/* R4e. The adopted branch form, and what it does not fix: two sessions
+   delegating the SAME subtask still land on one branch, since AGENTS.md's
+   rule only answers the two-subtask collision. */
 pred R4e_NumberedBranchStillShared {
   some disj a1, a2: Agent {
     a1.launcher != a2.launcher
@@ -1608,19 +1206,17 @@ pred R4e_NumberedBranchStillShared {
   }
 }
 
-/* R4f. The claim discipline closes R4e. Launch only a claim you created, and
-   create-ref refuses an existing ref: the second session's claim fails before a
-   second executor exists, so two live executors on one subtask from two
-   launchers become unreachable. UNSAT at R4e's own bounds. */
+/* R4f. The claim discipline closes R4e: launch only a claim you created, and
+   create-ref refuses an existing ref, so the second session's claim fails
+   before a second executor exists. UNSAT at R4e's own bounds. */
 pred R4f_ClaimClosesSameSubtask {
   claimBeforeLaunch and claimAtomic
   R4e_NumberedBranchStillShared
 }
 
-/* R4g. CONTROL: the ritual without the refusal. Both sessions claim -- nothing
-   refuses the second create -- and both launch onto claims they hold. SAT: the
-   collision returns, so the load-bearing half is the server's 422, not the
-   procedure. */
+/* R4g. CONTROL: the ritual without the refusal -- both sessions claim,
+   nothing refuses the second create, both launch. SAT: the server's 422 is
+   the load-bearing half, not the procedure. */
 pred R4g_ClaimWithoutAtomicityStillShared {
   claimBeforeLaunch
   some disj s1, s2: Session, i: Issue |
@@ -1630,14 +1226,13 @@ pred R4g_ClaimWithoutAtomicityStillShared {
 
 /* =================== retiring another session's delegate =================== */
 
-/* R5b. Control for TwoStepShutdownSuffices: the gap that finding rests on is
-   reachable at all. An executor whose branch is on the remote may still hold
-   work that is not. Without this, the remote hole could be an artefact of a
-   state the model never enters. */
+/* R5b. Control for TwoStepShutdownSuffices: an executor whose branch is on
+   the remote may still hold work that is not -- the gap that finding rests
+   on is reachable at all. */
 pred R5b_VisibleNotPushed { some a: Agent | eventually (a in Visible and a in Local) }
 
-/* R5c. Ownership is not the axis. Under the local check, a session that did not
-   launch the executor may still retire it safely, provided it shares its
+/* R5c. Ownership is not the axis: under the local check, a session that did
+   not launch the executor may still retire it safely, provided it shares its
    machine. */
 pred R5c_NonLauncherSameMachineIsFine {
   localCheckedShutdown
@@ -1647,11 +1242,11 @@ pred R5c_NonLauncherSameMachineIsFine {
   }
 }
 
-/* R6. What release cannot read. The guard on release is local -- nothing on the
-   remote branch, no LIVE executor on this machine -- because liveness elsewhere
-   is not readable. A live executor on another machine that has not pushed loses
-   its claim under a rule correctly followed. Same shape as the remote hole, same
-   mitigation: push as soon as one commit exists. */
+/* R6. What release cannot read: the guard is local -- nothing on the remote
+   branch, no live executor on THIS machine -- because liveness elsewhere is
+   not readable, so a live remote executor with unpushed work loses its claim
+   under a rule correctly followed. Same mitigation as the remote hole: push
+   as soon as one commit exists. */
 pred R6_ReleaseUnderRemoteAgent {
   some s: Session, a: Agent {
     a.host != s.smach
@@ -1660,8 +1255,8 @@ pred R6_ReleaseUnderRemoteAgent {
   }
 }
 
-/* R6b. Recovery: a dead delegate's dangling claim is released and the subtask
-   claimed again by a survivor. The claim does not outlive its usefulness. */
+/* R6b. Recovery: a dead delegate's dangling claim is released and reclaimed
+   by a survivor. The claim does not outlive its usefulness. */
 pred R6b_ReclaimAfterDeath {
   some disj s1, s2: Session, a: Agent {
     a.launcher = s1
@@ -1673,29 +1268,12 @@ pred R6b_ReclaimAfterDeath {
 
 /* =================== the claim record =================== */
 
-/* A1. THE GAP #37 FOUND, MEASURED CLOSED BY CONSTRUCTION. On the pre-#59 model
-   this was SAT and THE FINDING: a session working a claim that never sent
-   CLAIMED was live, held its subtask's claim, and could not be attributed --
-   ListAgents shows a peer's NAME and not the subtask it works -- so the local
-   close gate read straight past it and the campaign closed over a running
-   executor that had broken no rule it could have read. Liveness was never the
-   missing half; attribution was.
-
-   #59 moves the record's write from the recipient of a message to the taker of
-   the claim: `runtime/claims/<issue>` is written by the claiming session, at
-   the claim, before any executor exists, so `launch` sets `Addressed`
-   unconditionally and the unrecorded live executor is not a state this model
-   has. UNSAT -- the same scenario, no discipline conjoined, nothing left to
-   disobey. What remains outside it is the post-delete window: a record dies
-   with the directory (A9), which is why the delete is gated (A10-A12) and why
-   A14/A15 measure what an executor without a record is still owed.
-
-   The old repair pair is folded in here, and the fold is the answer to
-   "stronger, weaker, or the same": A2 was this scenario plus `announceAtClaim`
-   -- UNSAT only for executors that OBEYED the discipline, and A1 was exactly
-   the disobedient case. The self-written record needs no discipline conjunct,
-   so the property that was conditional is now unconditional: strictly
-   stronger, at the same bounds, with the same trace space. */
+/* A1. Whether an executor whose claim record was never written is still
+   attributable at a close. UNSAT: the claiming session writes
+   `runtime/claims/<issue>` before any executor exists, so `launch` sets
+   `Addressed` unconditionally. What remains is the post-delete window -- a
+   record dies with the directory (A9), gated at A10-A12, and what A14/A15
+   measure. */
 pred A1_UnrecordedExecutorAtTheClose {
   some c: Campaign, disj s1, s2: Session, a: Agent {
     a.peer = s2 and a.task in c.members
@@ -1707,12 +1285,10 @@ pred A1_UnrecordedExecutorAtTheClose {
   }
 }
 
-/* A3. Control for A1: the whole run still happens. A session's own executor
-   launches -- addressed from birth, its claim record written at the claim --
-   works, pushes, is asked for STATUS by another campaign session and answers,
-   is confirmed on its own machine, stands down and is retired: the whole
-   retirement procedure, under the full shutdown disciplines. An UNSAT here
-   would mean A1 went green by forbidding the executor's life altogether. */
+/* A3. Control for A1: the whole retirement procedure still runs for a
+   session's own executor -- launched addressed from birth, working, pushing,
+   answering STATUS, confirmed, stood down, retired. An UNSAT here would mean
+   A1 went green by forbidding the executor's life altogether. */
 pred A3_RecordedExecutorRunsTheWholeProtocol {
   coLocatedShutdown and twoStepShutdown
   some c: Campaign, disj s1, s2: Session, a: Agent {
@@ -1723,17 +1299,11 @@ pred A3_RecordedExecutorRunsTheWholeProtocol {
   }
 }
 
-/* A13. A PUSH UN-REVIEWS THE PULL REQUEST, which is `push` mirroring what `work`
-   does to a confirmation, and the witness that the hole is shut. A review lands;
-   the executor pushes again; the pull request is no longer reviewed, so
-   `mergedOnCurrentReview` no longer holds over it.
-
-   The hole it closes was real and quiet. `review` is guarded `pr not in
-   Reviewed` and the first draft's `push` framed the bit, so the loop the design
-   documents -- brief a fresh executor from the review, it pushes again -- landed
-   new commits under the old review's bit and merged legally. A review is of a
-   pull request AT A REVISION, and nothing else in this model had a reason to
-   know that. SAT. */
+/* A13. A PUSH UN-REVIEWS THE PULL REQUEST, mirroring what `work` does to a
+   confirmation: a review lands, the executor pushes again, and the pull
+   request is no longer reviewed, so `mergedOnCurrentReview` no longer holds
+   over it. A review is of a pull request AT A REVISION, so new commits under
+   an old review's bit must not merge legally. SAT. */
 pred A13_PushAfterReviewUnReviews {
   some a: Agent |
     eventually (Now.ev = Review and Now.issue = a.task
@@ -1743,28 +1313,13 @@ pred A13_PushAfterReviewUnReviews {
 
 /* =================== who merges, and who reviews =================== */
 
-/* A4. THE LIVE COLLISION, 2026-08-28. The executor session for #36 squash-merged
-   its own pull request in the same minute the holding session sent a hold.
-   Nothing forbade it: the protocol ended at REPORT and no rule anywhere named
-   who lands a subtask. SAT is the defect, reproduced. */
-/* FOR REAL -- it already happened. Pull request #42 on this repository, merged
-   by the executor session that opened it. */
-/* BUILT SO THAT ONLY ONE THING IS WRONG, and #59 changed which thing that is.
-   The old rule made the merger's identity the wrong thing, so the old A4
-   pinned the review IN -- reviewed, confirmed, everything right except who
-   merged. Under `mergedOnCurrentReview` the identity is free and THE REVIEW is
-   the wrong thing, so this scenario pins it OUT: the session that worked the
-   subtask merges it confirmed but with nobody having read it, which is what
-   PR #42 actually was -- the review step did not exist yet, so no review had
-   run when the merge landed. Everything else holds: the executor is confirmed,
-   a REPORT preceded the merge. A5 turns on the review conjunct alone and the
-   mutation that drops it reddens A5.
-
-   The old encoding's trace -- the reviewed, current self-merge -- did not
-   disappear: it is the sanctioned landing now, and A16 measures it admitted.
-   The role pins (`isHolder[s1,c]`, `not isHolder[s2,c]`) went with the roles;
-   `always s2.holds = c` stays, so the merger is a campaign session and the
-   trace is the collision rather than an outsider's write. */
+/* A4. THE LIVE COLLISION: an executor session squash-merged its own pull
+   request in the same minute a holding session sent a hold, with the
+   protocol ending at REPORT and no rule naming who lands a subtask. SAT: the
+   executor is confirmed, a REPORT preceded the merge, and nobody had
+   reviewed it. A5 turns on the review conjunct alone. The reviewed, current
+   self-merge did not disappear: it is the sanctioned landing now, and A16
+   measures it admitted. */
 pred A4_ExecutorMergesItsOwnPR {
   some c: Campaign, s2: Session, a: Agent {
     a.peer = s2 and a.task in c.members
@@ -1775,26 +1330,20 @@ pred A4_ExecutorMergesItsOwnPR {
   }
 }
 
-/* A5. The rule: no session lands its own work unreviewed. UNSAT at A4's own
-   bounds -- the merge fires with `no a.task.pr & Reviewed`, and the rule
-   requires the review, so the collision as it happened cannot be built.
-   Coordinator's measurement 1 for #59: the re-derived rule still catches the
-   live collision, by the conjunct that names what was actually missing. */
+/* A5. The rule catches it: UNSAT at A4's own bounds, since the merge fires
+   with `no a.task.pr & Reviewed` and the rule requires the review, so the
+   collision as it happened cannot be built. */
 pred A5_ReviewRuleBlocksTheCollision {
   mergedOnCurrentReview and A4_ExecutorMergesItsOwnPR
 }
 
 /* =================== the record, and what it is worth =================== */
 
-/* A9. `Addressed` HAS THE DIRECTORY'S LIFETIME, exercised rather than asserted.
-   A session's claim record is written at the claim, the directory is deleted,
-   and the record goes with it. SAT.
-
-   That lifetime is the whole reason the record is a file under `runtime/` and
-   not a second copy of a GitHub fact: it answers a question only the bound
-   machine has, it dies when that machine's cache of the campaign dies, and
-   nothing off the machine ever reads it. Its cost is A10 -- after the delete
-   the executor is unreachable again, which is why the delete is gated. */
+/* A9. `Addressed` HAS THE DIRECTORY'S LIFETIME: the claim record is written
+   at the claim, the directory is deleted, and the record goes with it. SAT.
+   That is why it is a file under `runtime/` and not a second copy of a
+   GitHub fact -- it answers a question only the bound machine has. Its cost
+   is A10. */
 pred A9_RecordDiesWithTheDirectory {
   some a: Agent {
     some a.peer                        -- a delegate's address is its --name, not a file
@@ -1803,10 +1352,10 @@ pred A9_RecordDiesWithTheDirectory {
   }
 }
 
-/* A10. THE DELETE, UNGATED, under an executor the deleting session CAN see.
-   This is session.als's R3 with the missing half supplied: the claim record
-   names the working session, and the directory is deleted under it anyway
-   because nothing reads the record. SAT. */
+/* A10. THE DELETE, UNGATED, under an executor the deleting session CAN see:
+   session.als's R3 with the missing half supplied -- the claim record names
+   the working session, and the directory is deleted under it anyway because
+   nothing reads the record. SAT. */
 pred A10_DeleteUnderRecordedExecutor {
   some c: Campaign, a: Agent {
     some a.peer                        -- a session working its own claim: R3's victim
@@ -1834,11 +1383,9 @@ pred A12_ReadableGateAdmitsTheDelete {
 }
 
 /* A6. The same wrong merge from the other chair: a session that did NOT work
-   the subtask merges it with nothing having reviewed the pull request, its
-   executor confirmed. SAT -- a confirmation is a check that the work EXISTS,
-   never that it is right, and with A4 this pair says the rule's subject is the
-   review, not the merger: both chairs reach the same illegal merge and A5/A7
-   block both with the one conjunct. */
+   the subtask merges it, confirmed but unreviewed. SAT -- with A4 this pair
+   says the rule's subject is the review, not the merger: both chairs reach
+   the same illegal merge, and A5/A7 block both with the one conjunct. */
 pred A6_UnreviewedMerge {
   some c: Campaign, s: Session, a: Agent {
     a.task in c.members
@@ -1852,11 +1399,10 @@ pred A6_UnreviewedMerge {
 /* A7. The rule against it: UNSAT at A6's own bounds. */
 pred A7_ReviewRuleBlocksUnreviewed { mergedOnCurrentReview and A6_UnreviewedMerge }
 
-/* A8. Control for A5 and A7 together: the whole two-session landing path still
-   runs. The executor pushes and REPORTs, another campaign session confirms it
-   on their shared machine, a review lands on the pull request, and that
-   session merges. SAT, so neither UNSAT above is green by forbidding merges.
-   The one-session landing is A16's subject. */
+/* A8. Control for A5 and A7 together: the whole two-session landing still
+   runs -- pushed, REPORTed, confirmed by another session sharing its
+   machine, reviewed, merged. SAT, so neither UNSAT above is green by
+   forbidding merges. The one-session landing is A16's subject. */
 pred A8_ReviewRuleAdmitsTheLanding {
   mergedOnCurrentReview
   some c: Campaign, disj s1, s2: Session, a: Agent {
@@ -1887,24 +1433,16 @@ pred Cov_Retire           { eventually Now.ev = Retire }
 pred Cov_AgentDie         { eventually Now.ev = AgentDie }
 pred Cov_GuardedRelease   { eventually Now.ev = Release }
 
-/* A14. AN EXECUTOR WHOSE RECORD DIED IS STILL RETIRABLE, which is what
-   `retire`'s comment claims and could not make good while `confirm` was gated
-   on `reachable`. Before #59 the unaddressed state had two doors, an executor
-   that skipped CLAIMED and a record deleted with the tree; the self-written
-   record closed the first (A1), so the delete is the one door left and this
-   witness walks through it: the record goes with the directory, and under the
-   rule the design adopted -- silence resolved externally, the stand-down
-   carried by the confirmation alone -- a session walks up to what remains,
-   reads it clean, and retires it, having no way left to address it. SAT, and
-   UNSAT with the `reachable` guard restored on `confirm`: that pair is the
-   finding these commands keep re-runnable.
-
-   READ THE WITNESS FOR WHAT IT IS, and A14b is why it needs reading: nothing
-   can ASK this executor to stop -- `standDown` carries `reachable` -- so its
-   ending is a stand-down taken while the record still stood, or `retire`'s
-   second disjunct, the one that needs no answer from the far end. Dropping the
-   guard on `confirm` buys the ability to destroy its workspace lawfully, not
-   the ability to be polite about it. */
+/* A14. AN EXECUTOR WHOSE RECORD DIED IS STILL RETIRABLE, which `retire`'s
+   comment claims and could not make good while `confirm` was gated on
+   `reachable`. The record goes with the directory, and under the design's
+   rule -- silence resolved externally, stand-down carried by the
+   confirmation alone -- a session reads what remains clean and retires it
+   with no way left to address it. SAT, and UNSAT with the `reachable` guard
+   restored on `confirm`. Read it for what it is, not more: nothing can ASK
+   this executor to stop (`standDown` still carries `reachable`, A14b), so
+   dropping the guard on `confirm` buys a lawful destruction, not a polite
+   one. */
 pred A14_UnaddressedExecutorIsRetirable {
   resolveSilenceExternally and coLocatedShutdown
   some a: Agent {
@@ -1914,12 +1452,9 @@ pred A14_UnaddressedExecutorIsRetirable {
   }
 }
 
-/* A14b. AND IT CANNOT BE STOOD DOWN ONCE THE RECORD IS GONE, which is the half
-   of A14 that reads like a defect until it is stated. UNSAT at A14's own
-   bounds: `standDown` is one of the three acts that carry a message, this
-   executor has no address to carry one to, and nothing re-creates an address
-   after the delete. The command exists so the sentence above is re-runnable
-   rather than remembered. */
+/* A14b. AND IT CANNOT BE STOOD DOWN ONCE THE RECORD IS GONE. UNSAT at A14's
+   own bounds: `standDown` carries a message, this executor has no address to
+   carry one to, and nothing re-creates an address after the delete. */
 pred A14b_UnaddressedExecutorCannotBeStoodDown {
   A14_UnaddressedExecutorIsRetirable
   some a: Agent {
@@ -1928,11 +1463,10 @@ pred A14b_UnaddressedExecutorCannotBeStoodDown {
   }
 }
 
-/* A15. And its pull request still lands. `mergedOnCurrentReview` wants every
-   executor of the issue confirmed, so gating `confirm` on `reachable` made a
-   record-less executor's work permanently unmergeable -- a consequence no
-   prose stated and `gh pr merge` does not have, since it needs only the
-   number. SAT; UNSAT with the guard restored. */
+/* A15. And its pull request still lands. Gating `confirm` on `reachable`
+   would have made a record-less executor's work permanently unmergeable, a
+   consequence no prose stated and `gh pr merge` does not carry. SAT; UNSAT
+   with the guard restored. */
 pred A15_UnaddressedExecutorPRLands {
   mergedOnCurrentReview
   some a: Agent {
@@ -1942,17 +1476,11 @@ pred A15_UnaddressedExecutorPRLands {
   }
 }
 
-/* A16. THE ONE-SESSION LANDING, and the control #59 was corrected to demand:
-   one session, its own hands-on work, a review by a separate agent it launched
-   itself, current at the merged revision -- and the merge is ADMITTED. SAT.
-
-   This is the trace the identity-based rule would have forbidden -- no second
-   session exists here to merge for the author -- and the trace the pre-#59
-   model could not even express, in either representation it offered: with no
-   Agent the work was unreviewable (P1, header), and with this one the review's
-   old `By.actor != a.peer` guard refused the author's launch (P2). Run at
-   exactly one Session so the absence of a second merger is the scope, not an
-   accident of the witness. */
+/* A16. THE ONE-SESSION LANDING: one session, its own hands-on work, a review
+   by a separate agent it launched itself, current at the merged revision --
+   ADMITTED. SAT. The trace the identity-based rule would have forbidden, no
+   second session existing to merge for the author; run at exactly one
+   Session so that absence is the scope, not an accident of the witness. */
 pred A16_AuthorLandsOwnReviewedWork {
   mergedOnCurrentReview
   some s: Session, a: Agent {
@@ -1964,14 +1492,10 @@ pred A16_AuthorLandsOwnReviewedWork {
   }
 }
 
-/* A16b. AND A STALE REVIEW DOES NOT CARRY IT: the same author, a review, then
-   a push, then no review ever again -- and no merge of that subtask can
-   happen. UNSAT. This is A13 composed with the rule: the push retired the
-   review, so the merge that follows is an unreviewed merge whoever performs
-   it, and the author gets no special door. The case issue #59 filed against
-   the old rule -- a session merging its own work on a review it commissioned
-   -- is legal exactly as long as the review is current, and this command is
-   the boundary measured from the far side. */
+/* A16b. AND A STALE REVIEW DOES NOT CARRY IT: the same author, a review,
+   then a push, then no review ever again -- no merge of that subtask can
+   happen. UNSAT: A13 composed with the rule, since the push retired the
+   review and the author gets no special door on an unreviewed merge. */
 pred A16b_AuthorCannotMergeOnStaleReview {
   mergedOnCurrentReview
   some s: Session, a: Agent {
@@ -1984,18 +1508,12 @@ pred A16b_AuthorCannotMergeOnStaleReview {
   }
 }
 
-/* A18. THE AGENT-LESS LANDING, which nothing pinned. #73's review probed it by
-   hand -- `0 Agent` behaves correctly in both directions -- and left no command
-   behind, so a later edit could lose it in silence. This is the representation
-   of hands-on work this file has used since P1 in the header: a session working
-   its own subtask launches no Agent at all, which is how every container
-   subtask of campaign #1 was actually done.
-
-   It matters because `mergedOnCurrentReview`'s confirm conjunct is universally
-   quantified over `executorsOf[Now.issue]`, and with no Agent that set is
-   empty, so the conjunct is VACUOUSLY true. Everything holding the rule up in
-   this case is the review half alone. A16 cannot see that: it has an Agent, so
-   its confirm conjunct has something to range over. SAT. */
+/* A18. THE AGENT-LESS LANDING: a session working its own subtask launches no
+   Agent at all, how this file represents hands-on work throughout. It
+   matters because `mergedOnCurrentReview`'s confirm conjunct, universally
+   quantified over `executorsOf[Now.issue]`, is VACUOUSLY true when that set
+   is empty -- the review half alone holds the rule up here, which A16 cannot
+   see since it has an Agent to range over. SAT. */
 pred A18_AgentLessLandingIsAdmitted {
   mergedOnCurrentReview
   no Agent
@@ -2005,12 +1523,11 @@ pred A18_AgentLessLandingIsAdmitted {
   }
 }
 
-/* A18b. AND THE OTHER DIRECTION, which is the half a vacuous conjunct could
-   have swallowed: no Agent, no Review anywhere in the trace, and a merge. If
-   the review half were ever weakened the way the confirm half is vacated here,
-   this would go SAT and hands-on work would land unreviewed with every rule
-   obeyed -- the 2026-08-28 collision, reachable again through the one shape the
-   model represents campaign #1's own subtasks with. UNSAT. */
+/* A18b. AND THE OTHER DIRECTION, the half a vacuous conjunct could have
+   swallowed: no Agent, no Review anywhere, and a merge. If the review half
+   were ever weakened the way the confirm half is vacated here, this would go
+   SAT and hands-on work would land unreviewed -- the same collision A4
+   reproduces. UNSAT. */
 pred A18b_AgentLessUnreviewedMergeIsBlocked {
   mergedOnCurrentReview
   no Agent
@@ -2018,17 +1535,13 @@ pred A18b_AgentLessUnreviewedMergeIsBlocked {
   some i: Issue | eventually (Now.ev = MergePR and Now.issue = i)
 }
 
-/* A17. SEEN LIVE, NO LONGER ATTRIBUTABLE -- the residual gap between the two
-   liveness readings, measured where `liveAndReadable`'s comment locates it. A
-   session's own executor is live and in the pane listing (`liveUnderLocally`),
-   its directory is deleted so its record is gone, and `liveAndReadable` no
-   longer names it. SAT.
-
-   This is what is left of pre-#59 A1 -- there, never-announced was the whole
-   window; here the only door to the unattributed state is the delete, which
-   A10-A12 gate. The command exists so the split's real justification stays
-   measured rather than asserted: the pane proves the executor ALIVE and cannot
-   say WHOSE CLAIM it is, which no liveness listing can. */
+/* A17. SEEN LIVE, NO LONGER ATTRIBUTABLE: a session's own executor is live
+   and in the pane listing (`liveUnderLocally`), its directory is deleted so
+   its record is gone, and `liveAndReadable` no longer names it -- the
+   residual gap `liveAndReadable`'s comment locates. SAT. The only door to
+   the unattributed state is the delete, gated at A10-A12: the pane proves
+   the executor ALIVE and cannot say WHOSE CLAIM it is, which no liveness
+   listing can. */
 pred A17_PaneSeesWhatTheRecordLost {
   some c: Campaign, a: Agent {
     some a.peer
@@ -2076,11 +1589,10 @@ run R5c_NonLauncherSameMachineIsFine for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1
 run R6_ReleaseUnderRemoteAgent   for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps
 run R6b_ReclaimAfterDeath        for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 14 steps
 
-/* A1 and A3 keep the two-agent bounds the retired `announceAtClaim` demanded
-   -- its per-agent artefact is history, and the UNSAT is held at the bounds
-   where the old gap was widest. A4-A12 need one executor each and say so;
-   A9-A12 need a Tree to delete; A14-A15 need one to delete mid-trace. A16 and
-   A16b run at exactly ONE Session, because the absence of a second merger is
+/* A1 and A3 keep the two-agent bounds needed to hold the UNSAT at the bounds
+   where the gap was widest. A4-A12 need one executor each and say so; A9-A12
+   need a Tree to delete; A14-A15 need one to delete mid-trace. A16 and A16b
+   run at exactly ONE Session, because the absence of a second merger is
    their subject. */
 run A1_UnrecordedExecutorAtTheClose          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps
 run A3_RecordedExecutorRunsTheWholeProtocol  for 3 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 14 steps

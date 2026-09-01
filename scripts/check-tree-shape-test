@@ -45,8 +45,7 @@ CASES = [
      {"AGENTS.md": "t\n\n<!-- unguarded: history -- the retired form, quoted -->\n```sh\ncat runtime/holder\n```\n"}, None),
 
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
-    # R3 Alloy -- where the prose lives inside the comment, which is the case
-    # that broke the first draft: every line of a .als read as code.
+    # R3 Alloy -- where the prose lives inside the comment.
     ("R3 als: a retired name in a signature",
      {"spec/a.als": "sig S { holder: runtime/holder }\n"}, "R3"),
     ("R3 als: the same name inside a block comment",
@@ -98,8 +97,6 @@ CASES = [
     # cannot read, and an unread file must not come back as a clean tree.
     ("R0 an unknown suffix is reported, not skipped",
      {"scripts/x.rb": 'puts "runtime/holder"\n'}, "R0"),
-    # The rule that broke the first draft: R0 used to raise, so a tree with
-    # both an unread file and a real finding reported only the crash.
     ("R0 an unread file does not hide what the other rules found",
      {"scratch/x.txt": "hi\n"}, "R2"),
 
@@ -109,10 +106,8 @@ CASES = [
     ("R3 json: a language with no comments is all code",
      {"scripts/x.json": '{"path": "runtime/holder"}\n'}, "R3"),
 
-    # A file with no text in it at all. The first draft opened every file
-    # before deciding its kind, so this died in the decode -- a traceback
-    # naming no rule, on a guard whose whole point is naming which reading it
-    # could not make.
+    # A file with no text in it at all -- a guard whose whole point is naming
+    # which reading it could not make must not itself die in the decode.
     ("R0 a file that is not text is reported, not a traceback",
      {"docs/x.png": "\x89PNG\r\n\x1a\n\x00\x01\x02\x03"}, "R0"),
 
@@ -121,8 +116,8 @@ CASES = [
     ("R0 a known suffix that will not decode is reported too",
      {"scripts/x.py": b"x = 1\n\xff\xfe not utf-8\n"}, "R0"),
 
-    # The other two retired names. One case per pattern, or deleting either
-    # leaves the suite green -- which it did.
+    # The other two retired names. One case per pattern: without one, deleting
+    # that pattern from RETIRED would leave the suite green.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 the runtime/executors path is retired too",
      {"scripts/x.py": 'open("runtime/executors/62")\n'}, "R3"),
@@ -131,9 +126,8 @@ CASES = [
     ("R3 ...but the word in prose is a mention",
      {"AGENTS.md": "t\n\nThe `CLAIMED` message was retired by #59.\n"}, None),
 
-    # The forms the first CLAIMED pattern missed -- it required a quote right
-    # after the word, so three of the five shapes the retired protocol used
-    # went straight through. One case each.
+    # The forms a quote-immediately-after-the-word pattern would miss. One
+    # case each.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 CLAIMED followed by a colon", {"scripts/x.py": 'x = "CLAIMED: 7"\n'}, "R3"),
     ("R3 CLAIMED passed bare to a call", {"scripts/x.py": "send(CLAIMED)\n"}, "R3"),
@@ -146,9 +140,8 @@ CASES = [
      {"scripts/x.py": "#!/usr/bin/env python3\n" + chr(39) * 3
       + "about runtime/holder" + chr(39) * 3 + "\nx = 1\n"}, None),
 
-    # R2 could not read its input. The first draft raised here, discarding R1's
-    # findings and never running R3 or R4 -- the defect R0 exists for, in the
-    # rule two lines above it.
+    # R2 could not read its input: reported, not raised, so R1's findings are
+    # not discarded and R3, R4 still run.
     ("R0 a missing .gitignore is reported rather than raised",
      {"spec/x.md": "hi\n", ".gitignore": None}, "R0"),
     ("...and the rules that already ran still print what they found",
@@ -221,11 +214,10 @@ STAGED_CASES = [
 def committed_then_staged():
     """A violation already committed, and something clean staged on top.
 
-    The review named two mutations for `--staged`; only one was pinned, because
-    every fixture staged everything it created, so the index and the file list
-    always agreed. `tracked()` ignoring its `staged` argument scans the whole
-    checkout, which here means scanning a violation that is not part of this
-    commit at all."""
+    Every other fixture stages everything it creates, so the index and the
+    file list always agree and never pin `tracked()` honouring its `staged`
+    argument. This one leaves a prior violation unstaged, so a `tracked()`
+    that ignored `staged` would scan it anyway."""
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         (root / ".gitignore").write_text(IGNORE)

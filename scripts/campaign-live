@@ -13,10 +13,10 @@ questions and neither substitutes for the other:
 
 THE JOIN, AND WHY IT IS BY SESSION ID
 
-Measured 2026-08-31: `herdr agent list` carries `agent_session.value`, which is
-the harness session id -- the same value a claim record's `session` field holds,
-and the only field on either side that survives both a harness restart and a
-rename. So the two readings link exactly, on the one durable key.
+`herdr agent list` carries `agent_session.value`, which is the harness session
+id -- the same value a claim record's `session` field holds, and the only field
+on either side that survives both a harness restart and a rename. So the two
+readings link exactly, on the one durable key.
 
 Never on the name: a name is not a branch, it can be changed while the claim it
 belongs to cannot, and one peer answered to three names in an hour. Never on the
@@ -97,9 +97,7 @@ def claim_records(claims):
     a close gate reads must not shrink because something was skipped.
 
     `unread` is a check that did not happen, so it denies the clean verdict the
-    way a failed herdr read does. The first draft filed it beside a cosmetic
-    note and still printed "both readings were made", which is this script's
-    whole contract inverted."""
+    way a failed herdr read does."""
     recs, odd = {}, []
     for p in sorted(claims.iterdir()):
         if not p.is_file():

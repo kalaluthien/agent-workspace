@@ -296,12 +296,9 @@ def read_checkouts(campaign_dir, rep):
         refuse(f"{repos} exists and did not enumerate ({e.strerror}); "
                "nothing was checked")
     for repo in found:
-        # Ask git, never stat `.git`. A checkout made with --separate-git-dir,
-        # and every linked worktree, has `.git` as a *file* holding a gitdir:
-        # pointer -- so an isdir() test calls it "not a checkout" and its
-        # uncommitted edits leave the verdict entirely. That is the false clean
-        # this script exists to end, and it read `0 item(s) ... clear` over a
-        # tree the close was about to delete.
+        # Ask git, never stat `.git`: --separate-git-dir and every linked
+        # worktree make `.git` a *file* holding a gitdir: pointer, so an
+        # isdir() test would drop the whole checkout from the verdict.
         if not git(repo, "rev-parse", "--git-dir", check=False):
             rep.unread(f"REPORT: {repo} is not a checkout; read it by hand")
             continue
@@ -352,9 +349,9 @@ def main():
     # from inside the directory it just entered: a relative path doubles, the
     # command fails, and `check=False` turns that into "not a checkout". Every
     # member checkout then goes unread while the run still ends `clear`.
-    # A documented precondition nothing enforces is the drift this container
-    # has removed twice already; resolving is the half that does not depend on
-    # the caller having read the docstring.
+    # A documented precondition nothing enforces is a drift waiting to happen;
+    # resolving here is the half that does not depend on the caller having
+    # read the docstring.
     if campaign_dir:
         campaign_dir = os.path.realpath(campaign_dir)
 

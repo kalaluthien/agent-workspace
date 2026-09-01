@@ -120,11 +120,9 @@ editing from here can silently revert work that landed: pull, then read zero
 again before editing.
 
 **The clone must not be behind *at launch*, which is a different check.** "Do not
-clone while the container is ahead" is the wrong invariant and a live run
-disproved it: the outer check read `0	0` immediately before both clones, three
-commits landed on `origin/main` between the clone and the launch, and the
-delegate came up three behind. On a campaign of any length the remote moving in
-between is normal.
+clone while the container is ahead" is not sufficient: the remote can move
+between the clone and the launch, on a campaign of any length, leaving the
+delegate behind with nothing reporting it.
 
 ```sh
 git -C <campaign>/repos/<repo> fetch origin -q

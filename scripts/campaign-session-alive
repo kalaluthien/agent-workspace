@@ -44,12 +44,11 @@ surviving session holding a new pid, so a record written before one reads
 `dead`. AGENTS.md carries that caveat for the callers who act on it.
 
 Why the name is read from `ucomm` and not `comm`. `ps -o comm=` reports how a
-process was invoked, so one build answers `claude` through a wrapper and its full
-path when exec'd by path -- measured 2026-08-29 on three live sessions of one
-campaign, two through a wrapper and one by path. Comparing that against the
-literal `claude` called a live executor dead, which is the direction that deletes
-a working tree. `ucomm` is invariant across *how* a process was started, which is
-what fixes that bug.
+process was invoked, so one build can answer `claude` through a wrapper and its
+full path when exec'd by path. Comparing that against the literal `claude` calls
+a live executor dead, which is the direction that deletes a working tree.
+`ucomm` is invariant across *how* a process was started, which is what fixes
+that.
 
 `ucomm` is NOT identity. It is the basename of the exec'd file, symlinks
 resolved, truncated to MAXCOMLEN -- probed by copying a binary to a new name and

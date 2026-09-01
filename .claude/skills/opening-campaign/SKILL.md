@@ -40,9 +40,8 @@ that needs the ID can run before step 3. Why each guard is shaped the way it is:
 You arrive having already been told what the request is, by `AGENTS.md` § Not
 every request is a campaign: either no open campaign covers it and you are
 opening one — go straight to step 2 — or one does, and this machine has no
-directory for it yet. **That survey lives there and only there.** Two prose
-copies of it would drift, and the copy this skill kept was the one a session
-reached last.
+directory for it yet. **That survey lives there and only there** — two prose
+copies of it would drift.
 
 **Read the binding before anything else about this campaign**, because joining
 one bound elsewhere is the mistake this read exists to stop (§ Who is a campaign

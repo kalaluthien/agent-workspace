@@ -13,11 +13,8 @@ relative value matches nothing and the refusal passes having found nothing; step
 It is always bound to a real directory. A campaign bound here with no directory
 is scaffolded first — `opening-campaign` steps 2 and 4, step 2 being where the
 slug and kind step 4 needs are chosen — because `runtime/claims/` has no other
-home (#52, "The claim records need a directory"). The
-empty-string path that once stood here, with steps 1, 2 and 4 skipped, is
-retired: it skipped exactly the gates that protect the delete. Unset or empty now
-means step 0 never ran, which is the wrong-cwd hazard the guard in step 5 exists
-for.
+home. Unset or empty means step 0 never ran, which is the wrong-cwd hazard the
+guard in step 5 exists for.
 
 **What the gates are worth on that path, which is not what "restored" would
 claim.** When step 0 creates the tree, step 1 and step 2 then read a directory

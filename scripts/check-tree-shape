@@ -63,9 +63,8 @@ from pathlib import Path
 RETIRED = [
     (re.compile(r"\bruntime/holder\b"), "#100 -- the holding session is retired"),
     (re.compile(r"\bruntime/executors\b"), "#59 -- renamed to runtime/claims/"),
-    # The bare word. The first form required a quote immediately after it, so
-    # `CLAIMED:`, `send(CLAIMED)` and `CLAIMED <issue>` all passed -- three of
-    # the five shapes the retired protocol actually used. R3 only ever reads
+    # The bare word, not quoted: a quote immediately after it would miss
+    # `CLAIMED:`, `send(CLAIMED)`, and `CLAIMED <issue>`. R3 only ever reads
     # code, so prose may still name the message.
     (re.compile(r"\bCLAIMED\b"), "#59 -- the claim is a record, not an announcement"),
 ]
@@ -211,9 +210,8 @@ def main():
     ignore = Path(".gitignore")
     tops = sorted({p.split("/")[0] for p in paths})
     if not ignore.exists():
-        # Reported, not raised. Raising here discarded R1's findings and never
-        # ran R3 or R4 -- the same defect R0 was written for, in the rule two
-        # lines above it.
+        # Reported, not raised: raising here would discard R1's findings and
+        # skip R3 and R4 too.
         note("R0", ".gitignore", "absent, so the allowlist could not be read "
                                  "and R2 did not run")
         allowed = None
@@ -230,10 +228,9 @@ def main():
     # R3
     scanned = 0
     for p in paths:
-        # The kind is decided before the file is opened. The first draft read
-        # first, so a file with no text at all -- the first PNG committed here
-        # -- died in the decode with a traceback naming no rule, and R0, the
-        # branch written for exactly that case, was unreachable.
+        # The kind is decided before the file is opened, so a binary file with
+        # no prose rule for its suffix is reported as R0 rather than crashing
+        # the decode.
         spec = None if p.endswith(".md") else PROSE.get(Path(p).suffix)
         if not p.endswith(".md") and spec is None:
             # A file this sweep cannot read. Counted apart from what it found,

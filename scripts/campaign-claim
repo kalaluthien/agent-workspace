@@ -3,10 +3,8 @@
 
 A claim is two things that must agree: a branch on the remote, which is what
 actually stops two executors working one subtask, and a record on this machine
-saying which session holds it. AGENTS.md writes both as copy-pasteable blocks
-and says the record's shape is written in exactly one place. It was written in
-three, and no delegate-side file carried it at all, so a launched delegate was
-told to write a record whose shape it could not read (#100's review).
+saying which session holds it. AGENTS.md says the record's shape is written in
+exactly one place; this is that place.
 
 One script owns both halves, so there is nothing to copy. A delegate runs
 `take`; a close or a sweep runs `list` and `status`.
@@ -152,13 +150,7 @@ def alive(pid):
 def session_names():
     """What a claude session's exec'd file is called on this install -- read out
     of campaign-session-alive, which owns that fact and says in its own header
-    that it is a fact about the install rather than about claude.
-
-    Written out again here it was wrong immediately: this install answers
-    `claude.exe`, a hardcoded `claude` matched nothing, and the restart check
-    returned "no restart" instead of "I could not look". That is the exact
-    failure this repository has a guard against, committed by the script meant
-    to prevent it."""
+    that it is a fact about the install rather than about claude."""
     spec = importlib.util.spec_from_loader(
         "session_alive",
         importlib.machinery.SourceFileLoader(
@@ -171,10 +163,8 @@ def session_names():
 def count_newer(ps_text, names, mtime):
     """How many claude sessions in a recorded `ps` listing started after mtime.
 
-    Pure, and split out because the cases that matter -- a record older than
-    every session, and one newer than all of them -- were passing only because
-    a claude happened to be running on the machine the suite ran on. A test that
-    reads whatever is live tests the machine, not the code.
+    Pure, and split out so a test of it does not depend on whether a claude
+    happens to be running on the machine the suite runs on.
 
     Returns (count, why_unreadable); a `why` means the count is unknown, which
     is not the same as zero and must never be printed as one."""
@@ -310,11 +300,9 @@ def compare_path(repo, branch):
 
 def delete_path(repo, branch):
     """Where the ref is deleted. Same repo argument as compare_path, and that
-    is the whole point: the first draft asked local git -- in whatever directory
-    the process was in, off possibly unfetched refs -- and deleted on the named
-    remote. A claim branch has the same name in every member repository, so a
-    container ref sitting at main licensed deleting a member repository's ref
-    holding a delegate's commits."""
+    is the whole point: a claim branch has the same name in every member
+    repository, so asking local git instead of the named remote could delete a
+    different repository's ref holding a delegate's commits."""
     return f"repos/{repo}/git/refs/heads/{branch}"
 
 
@@ -329,8 +317,7 @@ def release_gate(rec, branch_arg, confirmed, liveness):
     Both branches need a confirmed absence. A record can at least be tested; no
     record is the *weaker* evidence, not the stronger, because it may be a
     session that claimed and died before writing, or a delegate on a machine
-    this tree knows nothing about. The first draft gated only the recorded path,
-    so the easiest claim to delete was the one nobody could account for."""
+    this tree knows nothing about."""
     if rec:
         if liveness != "dead":
             return None, (f"the record reads {liveness}. Only a confirmed "

@@ -5,7 +5,7 @@ The announcement is what makes deleting a rule from the prose safe, so the way
 it fails matters more than the way it succeeds. Two directions, not equally bad:
 over-calling makes a reader look for a guard that is not there, while reporting
 a deleted guard as installed makes a reader believe the tree is guarded when
-nothing guards it. Three earlier classifiers failed in that second direction.
+nothing guards it.
 
 Usage: scripts/campaign-primitives-test
 """
@@ -114,9 +114,9 @@ def main():
     check("it separates what runs unasked from what a flow calls",
           "run by a git hook, unasked" in out and "a flow calls these" in out)
 
-    # core.hooksPath: git looks there and nowhere else. Resolving the hooks
-    # directory by hand instead of asking git meant the inventory went on
-    # reporting two installed hooks while git ran none.
+    # core.hooksPath: git looks there and nowhere else, so resolving the hooks
+    # directory by hand instead of asking git could report hooks as installed
+    # that git never runs.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
@@ -132,9 +132,7 @@ def main():
         check("core.hooksPath sends git elsewhere, and the listing follows it",
               "NO git hook is installed" in r.stdout)
 
-    # The exit status, which is the SessionStart contract. A non-zero exit
-    # there drops stdout, suppressing the whole announcement in exactly the
-    # case the warning block is written for.
+    # The unclassifiable-script case the warning block above exists for.
     with tempfile.TemporaryDirectory() as d:
         q = Path(d) / "mystery"
         q.write_text("#!/bin/sh\nset -e\necho hi\n")

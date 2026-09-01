@@ -34,13 +34,10 @@ NOT_EMPTY = "An index that did not read is not an empty campaign."
 def parse_index(text):
     """Returns (items, why_unreadable).
 
-    `gh api --paginate` behaves by the response's own shape, measured both ways
-    2026-08-31: an endpoint returning a JSON **array** has its pages merged into
-    one array, while an object endpoint has its page objects concatenated and
-    needs a streaming decode. This endpoint returns an array — 44 items over two
-    pages parsed clean — so a plain decode is right, and the earlier loop here
-    was justified by a claim about this endpoint that I had reasoned from a note
-    about `--slurp` rather than run."""
+    `gh api --paginate` behaves by the response's own shape: an endpoint
+    returning a JSON **array** has its pages merged into one array, while an
+    object endpoint has its page objects concatenated and needs a streaming
+    decode. This endpoint returns an array, so a plain decode is right."""
     text = text.strip()
     if not text:
         return [], None

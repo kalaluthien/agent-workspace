@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 """Refuse a hand-rolled copy of a rule that one of this repository's scripts owns.
 
-AGENTS.md and four script docstrings each declare that some reading -- the
+AGENTS.md and several script docstrings each declare that some reading -- the
 liveness comparison, the `## Repos` parse, the settlement verdict, the
 local-only-work reading -- lives in exactly one script, and that a second reader
-written by hand somewhere else is what drifts. Nothing enforced that. The four
-prose copies of the liveness test that #65 removed are what the drift looks like
-once it has happened: four copies of one comparison, all wrong together.
-
-This is the authoring-side second reader ~/.claude/CLAUDE.md asks for. It is one
-check over every rule rather than one guard per script, because the rules share
-a single failure mode and a single fix.
+written by hand somewhere else is what drifts. This is the authoring-side second
+reader that enforces it: one check over every rule rather than one guard per
+script, because the rules share a single failure mode and a single fix.
 
 WHAT IT DOES NOT CATCH
 
@@ -22,9 +18,8 @@ have and should not pretend to. So the guard is a floor, not a fence: it stops
 the copy somebody makes by pasting, which is how second readers actually get
 written, and it does not stop one somebody sets out to write.
 
-Stated here rather than fixed, because widening the forms until they match a
-paraphrase is how a guard starts firing on prose -- already met once, when
-matching "not planned" fired on closing-campaign's own disposition table.
+Stated here rather than fixed: widening the forms to match a paraphrase is how
+a guard starts firing on prose instead of code.
 
 WHAT IT READS
 
@@ -46,8 +41,7 @@ by an HTML comment on the line above it:
 Invisible in rendered markdown, greppable, and it names the owner it is
 exempting so a reader can check the claim. The exemption is per block, not per
 file, so it does not widen as the file grows, and it is spent on the *next*
-block whichever shape that block has -- an exemption that reached only fences
-told an author under an indent to write the line they had just written.
+block whichever shape that block has.
 
 EXIT
 
@@ -85,9 +79,7 @@ FORMS = [
     (
         "campaign-anchors",
         # The open-anchor survey: a `gh issue list` on this tracker asking for
-        # the fields the classification reads. Both scripts this campaign added
-        # own a rule that was prose the day before, and neither had a form here
-        # -- so the exact survey #112 deleted could be pasted back tomorrow.
+        # the fields the classification reads.
         re.compile(r"\bgh\b[^|;&]*\bissue\s+list\b[^|;&]*"
                    r"(-l\s+[\"']?campaign|--label\s+[\"']?campaign|--json[^|;&]*parent)"),
         "the open-anchor survey",
@@ -107,10 +99,9 @@ FORMS = [
     ),
     (
         "campaign-settlement",
-        # The API field names only. The words "not planned" and "not-planned"
-        # appear as a disposition a person writes and as prose in an error
-        # message; neither computes a verdict, and matching them made the
-        # guard fire on `closing-campaign`'s own tables.
+        # The API field names only, not the words "not planned" / "not-planned"
+        # a disposition table writes as prose: matching those false-fires on
+        # prose that merely mentions a verdict rather than computing one.
         re.compile(r"\b(mergedAt|merged_at|stateReason|state_reason)\b"),
         "the settlement verdict",
     ),
@@ -148,8 +139,7 @@ EXEMPT_LOOSE = re.compile(r"<!--\s*unguarded:\s*(?P<owner>.*?)\s*(?:--\s|-->)")
 
 # A line indented four or more spaces renders as code too, so it carries the
 # same copy-paste hazard as a fence. Only lines that match a FORM are reported,
-# and no FORM matches prose, so scanning these costs no false positives on a
-# tree of documents -- measured before it was turned on.
+# and no FORM matches prose, so scanning these costs no false positives.
 INDENTED = re.compile(r"^(\t| {4,})\S")
 
 
@@ -241,9 +231,6 @@ def findings(text):
             # mirror of `an exemption inside an open fence exempts nothing`.
             if pending is not None:
                 # An exemption is spent on the next code block of either shape.
-                # Reaching only fences left an author who needs the form under
-                # an indent with no move the guard accepts, while the refusal
-                # advised the exemption they had already written.
                 exempted, pending = pending, None
             code = True
         else:
@@ -273,10 +260,8 @@ def findings(text):
             yield from scan(carry_n, carry, exempted) if carry else ()
             carry, carry_n = "", None
             continue
-        # A shell continuation is one command, so it is matched as one. Scanning
-        # line-at-a-time let the exact survey this repository deleted pass by
-        # putting `--json …parent` after a backslash -- the form was right and
-        # the reading was one line too short.
+        # A shell continuation is one command, so it is matched as one; scanning
+        # line-at-a-time would miss a form split across a trailing backslash.
         joined = (carry + " " + line.strip()) if carry else line
         start = carry_n or n
         if line.rstrip().endswith("\\"):

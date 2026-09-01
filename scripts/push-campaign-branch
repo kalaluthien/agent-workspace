@@ -1,16 +1,8 @@
 #!/usr/bin/env sh
 # Push a campaign branch the moment it has a commit, and say what happened.
 #
-# The post-commit hook's whole body, moved out of the heredoc for two reasons.
-# It is a mechanism that acts unasked and writes to a remote, so it has to
-# appear in the inventory a session is shown at start-up -- and that inventory
-# is derived from the scripts the installed hooks call, which an inline hook
-# body cannot be. And a hook body inside a heredoc is the one file nobody can
-# lint, test, or read on its own.
-#
-# A hook that pushes in silence is one a reader stops believing in; a hook that
-# fails in silence is worse, because the commit it was meant to make durable is
-# sitting on one disk and nothing said so.
+# Moved out of the post-commit hook's heredoc so it can be linted, tested, and
+# listed in the scripts inventory a session is shown at start-up.
 set -u
 
 branch=$(git symbolic-ref --quiet --short HEAD) || exit 0

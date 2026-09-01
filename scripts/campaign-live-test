@@ -27,10 +27,8 @@ def load():
     return m
 
 
-# A stand-in herdr. Two cases run the shipped script end to end, and they
-# passed here and failed on a runner for the same reason the campaign-claim
-# cases did: they read what happens to be installed. A suite that needs a
-# command present must supply it.
+# A stand-in herdr, so a case that runs the shipped script end to end does not
+# depend on what happens to be installed.
 HERDR_SHIM = """#!/bin/sh
 echo '{"result":{"agents":[]}}'
 """
@@ -63,9 +61,8 @@ def main():
     ran = []
 
     def check(name, cond):
-        # Counted as it runs. `total` was a constant, so deleting a case still
-        # printed the same "13/13 pass" -- a suite that cannot report its own
-        # shrinkage.
+        # Counted as it runs, never a constant -- a hardcoded total is a suite
+        # that cannot report its own shrinkage.
         ran.append(name)
         if not cond:
             fails.append(name)
@@ -77,15 +74,14 @@ def main():
     got, why = m.parse_agents(listing(agent("S1")))
     check("a session with no name is still listed", why is None and got["S1"]["name"] == "<unnamed>")
 
-    # The row the first draft dropped. A session herdr cannot identify still
-    # occupies a pane, and dropping it shrinks the count a close gate reads.
+    # A session herdr cannot identify still occupies a pane, and dropping it
+    # shrinks the count a close gate reads.
     got, why = m.parse_agents(listing(agent(None, pane="w1:p9")))
     key = next(iter(got)) if got else ""
     check("a session herdr cannot identify is counted under a key naming its pane",
           why is None and len(got) == 1 and isinstance(key, str) and "w1:p9" in key)
 
-    # The join, which is the whole point and which no case reached until a
-    # mutation run showed that swapping the key for the name failed nothing.
+    # The join, which is the whole point.
     sessions, _ = m.parse_agents(listing(agent("S1", "campaign-1-executor-1")))
     same = {"7": {"session": "S1", "name": "campaign-1-executor-1", "branch": "b"}}
     a, o, i = m.classify(same, sessions)
@@ -106,7 +102,7 @@ def main():
           not a and len(o) == 1)
     check("...and that live session is then reported as holding no claim", len(i) == 1)
 
-    # The anchor argument, which used to be declared and never read.
+    # The anchor argument: pins that it is actually read, not merely declared.
     mine = {"7": {"session": "S1", "branch": "campaign-1/7-x"}}
     theirs = {"9": {"session": "S2", "branch": "campaign-2/9-y"}}
     check("a record naming this campaign's branch is not stray",
@@ -158,10 +154,8 @@ def main():
     check("...even when the herdr reading could not be made",
           "did not happen" in out and r.returncode == 1)
 
-    # A record that will not decode. It is a check that did not happen, so it
-    # must deny the clean verdict the way a failed herdr read does -- the first
-    # fix for this filed it as a cosmetic note and still printed "both readings
-    # were made", which is this script's contract inverted.
+    # A record that will not decode is a check that did not happen, so it must
+    # deny the clean verdict the way a failed herdr read does.
     with tempfile.TemporaryDirectory() as d:
         claims = Path(d) / "runtime" / "claims"
         claims.mkdir(parents=True)

@@ -21,33 +21,26 @@ def fence(body, lang="sh"):
 
 # One per FORM, in the shape a competent person actually writes it -- the flag
 # order the owning script itself uses, and the sibling command that answers the
-# same question. Every one of these slipped past the first version of the
-# regexes; three of the five forms had no case at all.
+# same question.
 FORM_CASES = [
     ("session-alive: the script's own flag order", fence('ps -p "$PID" -o ucomm='), 1),
     ("session-alive: comm instead of ucomm", fence("ps -o comm= -p 1"), 1),
     ("session-alive: pgrep answers the same question", fence("pgrep -x claude"), 1),
     ("session-alive: no `=` on the selector", fence("ps -o comm -p 1"), 1),
-    # Round 3: the widening that answered round 2 was pinned by nothing --
-    # every part of it could be reverted and all 35 cases passed. One case per
-    # alternation, so a revert fails here instead of shipping quietly.
+    # One case per alternation of the regex, so a revert of any one
+    # alternation fails here instead of shipping quietly.
     ("session-alive: the selector combined with other flags", fence("ps -axo ucomm="), 1),
     ("session-alive: a quoted selector", fence('ps -o "ucomm" -p 1'), 1),
     # Synthetic, and deliberately so: `\B` is what stops `-o` matching when a
-    # word character precedes the dash, and no realistic line exercises it. A
-    # narrowing nothing pins is a claim nothing holds, which is what this guard
-    # exists to refuse -- so the boundary gets a fixture even where the shape
-    # does not occur. Drop `\B` and this fires. It must hold no `|`, `;` or `&`:
-    # the form cannot cross one, so a piped fixture is quiet either way and
-    # would pin nothing -- which is how the first draft of this row passed.
+    # word character precedes the dash, and no realistic line exercises it.
+    # Drop `\B` and this fires. It must hold no `|`, `;` or `&`, since the form
+    # cannot cross one and a piped fixture would pin nothing.
     ("session-alive: a dash inside a word is not the selector flag",
      fence("ps -p 1 --color-o ucomm="), 0),
     # Each of the next two is matched by exactly one alternation: the list-pair
     # spelling carries no `=`, so only the list form sees it, and the bare
-    # selector names no `ps`, so only the quoted-constant form does. The
-    # obvious fixture -- a Python list holding `"ucomm="` -- is caught by both
-    # and therefore pins neither, which is how the first draft of these rows
-    # passed while both alternations could be deleted.
+    # selector names no `ps`, so only the quoted-constant form does. A fixture
+    # matched by both would pin neither.
     ("session-alive: a Python copy passing the selector as a list element",
      fence('subprocess.run(["ps", "-o", "comm", "-p", pid])'), 1),
     ("session-alive: the selector held in a constant",
@@ -55,15 +48,12 @@ FORM_CASES = [
     # ...and the boundary the narrowed claim now names, so widening the form
     # later has to move this row rather than pass silently.
     ("session-alive: another field first is outside the claim", fence("ps -o pid,ucomm -p 1"), 0),
-    # The two forms #112's scripts own. Each was prose the day before, and a
-    # guard with no form for them lets the deleted survey be pasted straight
-    # back.
+    # Two spellings of the open-anchor survey campaign-anchors owns.
     ("anchors: the open-anchor survey by label",
      fence("gh issue list -R o/r --label campaign --state open --limit 200"), 1),
     ("anchors: the same survey by the parent field",
      fence("gh issue list -R o/r --state open --json number,title,parent"), 1),
-    # The wrapped form: the survey this repository deleted put `--json …parent`
-    # on a continuation line, and a line-at-a-time scan read past it.
+    # The wrapped form: a continuation line a line-at-a-time scan would read past.
     ("anchors: the survey wrapped across a backslash continuation",
      fence("gh issue list -R o/r --state open \\\n  --json number,title,parent"), 1),
     ("anchors: the short flag spelling", fence("gh issue list -l campaign -R o/r"), 1),
@@ -104,11 +94,9 @@ FORM_CASES = [
 # How far the pinning goes, stated because a reader would otherwise infer more:
 # every *form* is pinned by at least one case, and within `campaign-session-alive`
 # every alternation is pinned individually. Alternations of the other four forms
-# are not: an exhaustive per-alternation sweep found roughly fourteen deletable
-# with the suite green, including `mergedAt` -- the first spelling
-# campaign-settlement's own claim names -- and the `## Repos` half of
-# campaign-repos'. That is scope, and it is larger than the deferred-scope
-# comment on PR #91 first said, so do not read that comment as the list.
+# are not -- an exhaustive per-alternation sweep found roughly fourteen deletable
+# with the suite green, including `mergedAt` and the `## Repos` half of
+# campaign-repos'. That is known scope, not full coverage.
 
 # The parser decides what counts as code. Each of these was an unsafe silence:
 # the guard exited 0 on a violation that renders as code.
@@ -118,8 +106,8 @@ PARSER_CASES = [
     ("a tab-indented code block", "# t\n\nLike so:\n\n\tps -o comm= -p 1\n", 1),
     # The violation sits *after* the impostor closer and before the real one,
     # so a parser that ends the block early stops scanning and reports clean.
-    # With the violation in a later fence both parsers catch it, and the case
-    # proves nothing -- which is how the first version of these two passed.
+    # With the violation in a later fence both parsers catch it and the case
+    # proves nothing.
     ("a ``` run does not close a ```` fence",
      "# t\n\n````sh\n```\nps -o comm= -p 1\n````\n", 1),
     ("a ~~~ run does not close a ``` fence",
@@ -168,8 +156,7 @@ EXEMPTION_CASES = [
     ("an exemption inside an indented block exempts nothing",
      "# t\n\n    <!-- unguarded: campaign-session-alive -- x -->\n    ps -o comm= -p 1\n", 1),
     # No prose between the fence and the indent: a prose line resets the
-    # exemption too, which masked the fence-close reset and let its case pass
-    # with that reset deleted -- while still carrying the name of the leak.
+    # exemption too, so this alone would not expose a missing fence-close reset.
     ("an exemption does not survive a closed fence into an indented block",
      "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n```sh\nps -o comm= -p 1\n```\n\n"
      "    ps -o comm= -p 1\n", 1),
@@ -183,10 +170,8 @@ CASES = FORM_CASES + PARSER_CASES + EXEMPTION_CASES
 def staged_case():
     """The index branch has no other reader: exercise it through a real repo.
 
-    Deleting `content()`'s staged branch survived all 34 file-path cases,
-    because none of them passed --staged. This is the only case that fails when
-    the guard goes back to reading the working tree -- which is the whole point
-    of the hook running --staged.
+    No fixture above passes --staged, so this is the only case that fails if
+    the guard falls back to reading the working tree instead of the index.
     """
     with tempfile.TemporaryDirectory() as d:
         run_git = lambda *a: subprocess.run(

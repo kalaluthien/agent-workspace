@@ -7,9 +7,8 @@ GitHub, and a fixture that mocked them would be testing the mock. What is here
 is the half that decides whether a claim gets deleted, which is the half whose
 failure destroys somebody's work.
 
-No case may reach the network. The first draft had one that did, and it created
-a branch on the real remote every time the suite ran -- a test that writes to
-production, hidden inside a green line of output.
+No case may reach the network: a case that does writes to production, hidden
+inside a green line of output.
 
 Usage: scripts/campaign-claim-test
 """
@@ -33,11 +32,8 @@ DEAD_REC = f"session s1\nname n1\npid {DEAD}\nbranch campaign-1/7-x\n"
 DIR = object()   # a fixture that is a directory rather than a file
 
 
-# A stand-in process table. The three cases that turn on `stale?` used to read
-# the live one, so they passed on a machine with a claude running and failed on
-# a runner with none -- which is how the CI step added in #112 went red on its
-# first run. `campaign-claim` splits `count_newer` pure for exactly this reason
-# and these cases were left going round it.
+# A stand-in process table, so the cases that turn on `stale?` do not depend
+# on whether a claude happens to be running on the machine the suite runs on.
 PS_SHIM = """#!/bin/sh
 for a in "$@"; do
   case "$a" in
@@ -114,18 +110,15 @@ case("release names the restart evidence when it refuses",
 case("a missing claims directory refuses rather than reading empty",
      ["list"], want=None, code=None)
 
-# `take` is covered only up to the point where it would reach GitHub. The first
-# draft of this case ran the whole command and created campaign-1/7-x on the
-# real remote, which is the shape of test that quietly does damage: a suite is
-# run over and over, and every run of that one was a live write.
+# `take` is covered only up to the point where it would reach GitHub.
 # pid 1 exists on every machine this runs on and is not a claude, so
-# campaign-session-alive calls it `other` -- a liveness that is neither dead nor
-# alive, and the one the release gate must refuse by name. Hardcoding the wire
-# to "dead" changes this refusal's wording, which is what makes it a case.
-# A record whose bytes are not text. Three call sites used to hand this
-# straight to a traceback.
-# The trace and its notes on one stream, in order. Split across two they
-# reordered under a pipe, and the order is part of the evidence.
+# campaign-session-alive calls it `other` -- a liveness that is neither dead
+# nor alive, and the one the release gate must refuse by name. Hardcoding the
+# wire to "dead" would flip this refusal's reason, which is what makes it a
+# case.
+# A record whose bytes are not text must read as unreadable, not crash.
+# The trace and its notes on one stream, in order -- split across stdout and
+# stderr, a pipe could reorder them relative to each other.
 case("the restart note is on stdout with the rest of the trace",
      ["release", "7"], {"7": DEAD_REC}, OLD, want="note:", code=1)
 # A non-file entry under claims/ is counted apart, never dropped.
@@ -150,11 +143,10 @@ AFTER_ALL = 1790000000.0     # 2026-09, after both
 
 
 def pure_cases(m):
-    """The restart evidence, against a recorded process table. These two used to
-    pass only because a claude was running on this machine."""
+    """The restart evidence, against a recorded process table."""
     # Counted as they run, never a constant. A hardcoded total is a suite that
     # cannot report its own shrinkage -- deleting a case still prints the same
-    # "N/N pass". This file had one, twice.
+    # "N/N pass".
     ran, out = [], []
 
     def c(name, cond):
@@ -176,9 +168,8 @@ def pure_cases(m):
     c("an empty process table is zero, not a why", why is None and n == 0)
 
     # The destructive path's decision, now that it is a calculation and the
-    # suite can reach it. The two blockers this pull request's review found both
-    # live here, and neither had a case: the effects around them touch GitHub,
-    # and the suite may not.
+    # suite can reach it: the effects around it touch GitHub, and the suite
+    # may not.
     rec = {"session": "S1", "branch": "campaign-1/7-x"}
     c("a live record is never releasable",
       m.release_gate(rec, None, "asked the peer", "alive")[0] is None)
@@ -235,9 +226,7 @@ def pure_cases(m):
     c("a missing command is a failed run, not an exception",
       r.returncode != 0 and "FileNotFoundError" in r.stderr)
 
-    # The install's process names, read from the script that owns them. Loading
-    # this file as a module is what broke when importlib.machinery was
-    # referenced without being imported.
+    # The install's process names, read from the script that owns them.
     c("the session names come from the owning script",
       isinstance(m.session_names(), frozenset) and m.session_names())
 

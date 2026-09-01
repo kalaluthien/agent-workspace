@@ -22,10 +22,8 @@ treats anything else, exit 2 included, as a refusal. Only `here` licenses a
 write, and `unbound` licenses asking the person, never binding on your own.
 
 This exists because the reading was three copies of one jq pipeline in fenced
-code blocks -- `AGENTS.md`, and both campaign skills -- with nothing owning it.
-That is the shape #65 removed for the liveness test, where four prose copies of
-one comparison were wrong together. Found by campaign-1-executor-1 while
-sweeping for #75.
+code blocks -- `AGENTS.md`, and both campaign skills -- with nothing owning it,
+and a copy left to drift is exactly the failure a second reader exists to catch.
 
 Four things the pipeline had to get right, and each is a way to be wrong:
 
@@ -37,7 +35,7 @@ Four things the pipeline had to get right, and each is a way to be wrong:
     which is the migration bug in the other direction.
   * The first line only. A binding may be annotated -- a migration says there
     why -- so `tail -1` over whole bodies takes the last line of the prose
-    rather than the binding (probed 2026-08-29).
+    rather than the binding.
   * `\r`. A body stored with CRLF leaves a trailing carriage return on the
     machine name, and a name compared with one attached matches nothing.
 

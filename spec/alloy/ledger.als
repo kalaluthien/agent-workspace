@@ -60,37 +60,14 @@
  * so no layer declares a field over a signature it does not own.
  *
  *
- * STATUS
- *
- * First design, 2026-08-28; restructured into layers the same day. Campaign #1
- * is exercising it as it is written -- a smoke test, a protocol test and an e2e
- * drill have each contradicted a rule here, and each correction is folded into
- * the model rather than kept as an erratum.
- *
- *
  * IDENTITY
  *
  * A campaign is opened by filing one anchor issue in agent-workspace, and that
- * issue number is the campaign's ID. What each name is for, since AGENTS.md
- * states the forms and not the reasons:
- *
- *   ID            #N, the anchor issue number. Short to type, already unique,
- *                 already resolvable from any machine and from a phone.
- *   Slug          a meaningful kebab-case phrase, chosen when the campaign
- *                 opens.
- *   Directory     <slug>-<YYMMDD>/ at the container root, and optional. The
- *                 date disambiguates a slug reused months later and sorts
- *                 usefully in a listing.
- *   Branch        campaign-<N>/<issue>-<topic>. The campaign number stops two
- *                 campaigns working one repository from colliding on the
- *                 remote, and it tells a reviewer which campaign a branch came
- *                 from; the subtask's issue number separates subtasks within a
- *                 campaign, which only matters once several sessions hold it at
- *                 once.
- *   Display name  the anchor issue's title, in the person's own words.
- *
- * The directory name is a local convenience; the ID is the identity.
- * repos.als's MachineIndependence is that claim checked.
+ * issue number -- `Campaign.anchor` below -- is the campaign's ID: the only
+ * name this file models. AGENTS.md names the rest (Slug, Directory, Branch,
+ * Display name); the ID is the one that is already unique and resolvable from
+ * any machine, which is why it is the identity and a directory name is only a
+ * local convenience. repos.als's MachineIndependence is that claim checked.
  *
  *
  * THIS LAYER
@@ -110,36 +87,25 @@
  *   CloseIssue    gh issue close <n>, or the merge that closes it
  *   WriteBody     gh issue edit <N> --body-file (closing-campaign step 4)
  *
- * The reader is scripts/campaign-settlement <N>, which is the one
- * implementation of `settled` below: it prints one line per subtask --
- * complete, dropped, or open -- then whether the campaign is closable.
+ * The reader is scripts/campaign-settlement <N>, the one implementation of
+ * `settled` below: it prints one line per subtask -- complete, dropped, or
+ * open -- then whether the campaign is closable.
  *
- * Issues live on the repository whose code changes -- that is where a reviewer
- * expects them, and it is what a pull request can close. A campaign spans
- * repositories, so its issues are scattered by construction, and the whole
- * index question below is what to do about that.
- *
- * Index mechanism: GitHub's native sub-issue link. The anchor issue is the
- * parent; every member issue is a sub-issue of it.
- *
- * Modelled consequences: the link is one first-class relation the platform
- * maintains in both directions, so the parent's sub-issue list is exact by
- * construction, it is created with the child, and it can be pruned.
- *
- * Probed live 2026-08-28 on this machine, so the atomic-creation assumption is
- * not a guess: the GraphQL schema exposes addSubIssue / removeSubIssue, and
- * gh 2.96.0 has `gh issue create --parent <number|url>` plus
- * `gh issue edit --add-sub-issue / --remove-sub-issue`. The link is therefore
- * made by the same command that creates the member issue. The one open
- * question -- whether a sub-issue may live in another repository, and a private
- * one, under a public parent -- was probed the same day and holds.
+ * Issues live on the repository whose code changes, so a campaign's issues
+ * are scattered across repositories by construction; the index below is what
+ * to do about that. Mechanism: GitHub's native sub-issue link, the anchor as
+ * parent and every member as a sub-issue -- one relation the platform
+ * maintains in both directions, exact by construction, created with the
+ * child, and prunable. `gh issue create --parent` links the child at
+ * creation, and a sub-issue may live in another (private) repository under a
+ * public parent.
  *
  *
  * VERDICTS
  *
  * X is a counterexample; a check that passes reads UNSAT, and a run that finds
  * a witness reads SAT. Each row is restated beside its own command below; this
- * is the inventory, not the explanation. Measured 2026-08-29 against this file.
+ * is the inventory, not the explanation.
  *
  *   ClosedImpliesComplete            X     closed is not completed
  *   IndexCoversMembers               pass  no member is missing from the index
@@ -170,117 +136,49 @@
  *   S18a_PlainContainerIssueUnderClosedWorld  UNSAT control: the clause bites
  *   Cov_*                            SAT   every own event fires in some trace
  *
- * Every pass was proved able to fail by mutation, re-run 2026-08-29 against
- * this model as it now stands -- all four mutations, all seven checks red:
- * dropping `addMember`'s sub-issue write reddens all four index and
- * reconstitution checks; removing `TerminationDisciplined`'s close-discipline
- * clause reddens it; dropping `weakFairness` reddens TerminationUnderSettlement.
- * `ledgerFrame` in the fall-through branch of `ledgerStep` is proved
- * load-bearing from above -- dropping it reddens repos.als's
- * MachineIndependence and agent.als's NoLostWork, which is the composition
- * idiom itself under test.
- *
- * The date is part of the claim. This file changed after the 2026-08-28 run --
- * the container clause left `WellFormed`, and S18/S18a arrived -- so the proof
- * was carried out again rather than inherited: a mutation score is about the
- * model in front of you, and an older one silently claims something about a
- * model that no longer exists.
- *
- * WHAT MOVED, AND WHAT CHANGED WITH IT
- *
- * The four termination assertions carry a premise their predecessors did not
- * need: `some Campaign.members`. The old `init` asserted it as a fact, because
- * that model started with a campaign already in flight. This layer's `init` also
- * admits the empty world an unfiled campaign starts from -- session.als needs it
- * to file an anchor at all -- and in that world "all members are complete" is
- * vacuously true at time zero, which would turn the two counterexamples into
- * passes. The premise restores exactly the old hypothesis. All four verdicts
- * reproduce.
- *
- *
- * THE THREE ALTERNATIVES THAT LOST
- *
- * Four index schemes were modelled side by side before one was chosen. The
- * losers are deleted rather than kept as full models, since each was a ~90%
- * copy of the winner differing only in its index. What each was, and what
- * killed it:
- *
- *   A -- a `Campaign: <owner/repo>#N` line in the member issue body, read back
- *   from the anchor's cross-reference timeline. The timeline is append-only and
- *   records any issue that names the anchor, so a subtask moved out stays
- *   indexed forever and the anchor reconstitutes a growing superset: IndexExact,
- *   IndexExactStableMembership and Reconstitution all red.
- *
- *   B -- a checklist of member issues in the anchor body. The index entry is a
- *   second write to a different object and may simply not happen, which loses
- *   the issue with nothing anywhere to contradict it. The only scheme where
- *   IndexCoversMembers was red, and the only silent total loss of the four.
- *
- *   C -- a `campaign-<N>` label on every member issue. Correct on totality and
- *   on staleness, but the label object must be created per repository before an
- *   issue there can carry it, and removing a subtask leaves the label behind as
- *   a stale mark: IndexExact red.
- *
- * The `Campaign:` body line survives as prose for a human reading the raw
- * issue. Nothing queries it.
+ * Three other index schemes were modelled and rejected: a cross-reference line
+ * in the member issue body (unprunable), an anchor-body checklist (a second
+ * write that can silently not happen), and a per-repository label (stale on
+ * removal). The sub-issue link has none of the three failure modes; the
+ * `Campaign:` body line survives as prose for a human, and nothing queries it.
  *
  *
  * DELIBERATELY ABSENT
  *
- *   No ticket system. Campaigns are triggered by a person, and GitHub issues
- *   carry the subtasks. A board over campaigns will be built later, as a
- *   campaign run in this container.
- *
- *   No campaign-level git. See the three planes in AGENTS.md.
- *
- *   No status file, no lock file, no local database. Every one of them would be
- *   a second copy of a GitHub fact, and the copy is what goes stale.
- *
- *   No virtual environment until something needs one. `.venv` appears the first
- *   time a campaign script is run, not at scaffold time.
+ *   No ticket system: GitHub issues carry the subtasks.
+ *   No campaign-level git: see the three planes in AGENTS.md.
+ *   No status file, lock file, or local database: each would be a second copy
+ *   of a GitHub fact, and the copy is what goes stale.
+ *   No virtual environment until a campaign script first needs one.
  *
  *
  * UNMODELLED, STATED FOR THE RECORD
  *
- * No construct in any of the four layers exercises these. Modelling them was
- * weighed and is not worth it -- each is a fact about text, a platform's timing,
- * or another tool's internals rather than a property of the lifecycle.
- *
- * Text well-formedness, `gh` latency and search-index consistency, herdr's
- * liveness derivation, issues in repositories the reader's token cannot see, the
- * delegation mechanics (--append-system-prompt-file, the canary, the 1024-byte
- * launch line, all of which live in agent.als's header), and whether a merged
- * pull request does what was asked.
- *
- * Adequacy in general. A merged pull request that does not do what was asked
- * reads complete in every row. Verifying that the work exists is not reviewing
- * it.
+ * No construct in any of the four layers exercises these, each a fact about
+ * text, a platform's timing, or another tool's internals rather than a
+ * property of the lifecycle: text well-formedness, `gh` latency and
+ * search-index consistency, herdr's liveness derivation, issues the reader's
+ * token cannot see, the delegation mechanics (agent.als's header), and
+ * whether a merged pull request does what was asked -- adequacy in general.
+ * A merged pull request that does not do what was asked reads complete in
+ * every row; verifying that the work exists is not reviewing it.
  *
  * Four residual risks of the self-hosted arrangement, none of them modelled:
  *
- *   The `campaign` label is the only thing that marks an anchor, and nothing
- *   enforces it. An anchor filed without it is invisible to every later survey,
- *   so the next session opens a second campaign over the same scope and nothing
- *   reports it. Two cheap readers narrow this -- opening-campaign reads the
- *   label back after filing, and `parent == null` finds an anchor the label
- *   missed -- but a session that runs neither still files the duplicate.
+ *   An anchor filed without the (hand-applied) `campaign` label is invisible
+ *   to every later survey, so a second campaign can be opened over the same
+ *   scope.
  *
- *   A campaign may be filed under another campaign. GitHub allows it and
- *   sub_issues is not recursive, so the outer settlement shows the nested
- *   anchor as one ordinary row and never sees its members: the outer campaign
- *   reads closable while the inner one is still running.
- *   scripts/campaign-settlement reports a subtask that has sub-issues of its
- *   own; nothing prevents the shape.
+ *   A campaign filed under another one is admitted by GitHub (`sub_issues` is
+ *   not recursive), so the outer settlement never sees the inner campaign's
+ *   members and reads closable while it is still running.
  *
- *   A reparent is silent and leaves no trace. `gh issue edit <other>
- *   --add-sub-issue <n>` moves a subtask out of its campaign's index with no
- *   warning, and the old parent's listing simply gets shorter. The sanctioned
- *   flow only ever passes --parent at create, so this needs a hand-run command
- *   with a mistyped number -- but there is no undo signal if one happens.
+ *   A reparent (`gh issue edit <other> --add-sub-issue <n>`) is silent: it
+ *   moves a subtask out of its campaign's index with no warning and no undo
+ *   signal.
  *
- *   A bare issue number says nothing about its kind. #4 and #1 are an anchor
- *   and a subtask by nothing a reader can see. Prose that names a number should
- *   name the kind with it, and a tool should resolve it rather than assume.
+ *   A bare issue number says nothing about its kind -- anchor or subtask --
+ *   by itself.
  *
  *
  * OPEN RISKS
@@ -326,17 +224,11 @@ fact WellFormed {
   always all p: PR | p in Merged implies some pr.p
 }
 
-/* Completion is a GitHub fact and mentions no agent.
-
-   The old workspace asked a delegate to print `DONE <name>` and grepped for it.
-   That conflates completion with liveness and is fragile in both: a pane can
-   show the word and have finished nothing, and a delegate can finish and have
-   its line scrolled away. Splitting them is the point -- completion is read
-   from GitHub, survives the delegate's death, the pane's death and the
-   machine's reboot, and reads the same from a phone; liveness is a herdr fact
-   and appears nowhere in this layer. ClosedImpliesComplete below is the cheaper
-   reading, refuted; the cheapest -- "the agent said so" -- is refuted in
-   agent.als, which is the only layer that has an agent to say it. */
+/* Completion is a GitHub fact and mentions no agent: read from GitHub, it
+   survives a delegate's death, a pane's death and a machine's reboot, and
+   reads the same from a phone. Liveness is a herdr fact, modelled nowhere in
+   this layer. ClosedImpliesComplete below is the cheaper reading, refuted;
+   "the agent said so" is refuted in agent.als, the only layer with an agent. */
 pred complete[i: Issue] { i not in Open and some i.pr and i.pr in Merged }
 
 /* Settlement, the reading AGENTS.md adopted after TerminationUnderFairness
@@ -367,31 +259,13 @@ pred mergeClosed[s: set Issue] {
                      implies (some i.pr and i.pr in Merged))
 }
 
-/* THE CLAUSE THAT WAS A FACT TWICE, and is a scenario predicate now.
-
-   It says: an issue homed on the container belongs to some campaign, as an
-   anchor or as a member. As a global fact it sprang the same trap twice.
-
-   First it read `implies i in Campaign.anchor` -- every container-homed issue
-   must BE an anchor -- which forbade the container being a member of its own
-   campaign while still permitting the odd case of one campaign's anchor being
-   another's member, so a coarse probe read SAT and hid it. Widened 2026-08-28.
-
-   Then, widened, it still carried no `always`, so it was read at the initial
-   state and demanded that a container-homed subtask ALREADY be a member --
-   which `addMember` refuses. That made a container-homed subtask unfilable in
-   any trace that also files its campaign, and that is exactly the campaign with
-   no member repository: the container tracker is the only place its subtasks
-   can go. session.als's R4 is UNSAT against that form and SAT without it.
-
-   Both were the model contradicting the design, and the third reading is not
-   worth guessing at: AGENTS.md says the container's tracker holds THREE kinds
-   of issue -- anchors, subtasks, and a person's request or somebody else's bug
-   that no campaign flow touches. A global fact cannot admit the third kind and
-   still say anything, so this stops being one. It is stated here, conjoined by
-   the scenarios that actually depend on a closed world of campaign issues, and
-   `containerIsAnchorOnly` below keeps the original narrow reading runnable
-   beside it. */
+/* Whether an issue homed on the container belongs to some campaign, as an
+   anchor or as a member. Kept as a scenario predicate rather than a global
+   `WellFormed` fact: AGENTS.md says the container's tracker holds a third
+   kind of issue that no campaign flow touches, and a global fact cannot admit
+   that kind and still say anything. Conjoined only by the scenarios that
+   assume a closed world of campaign issues; `containerIsAnchorOnly` below
+   keeps the original narrower reading runnable beside it. */
 pred containerIssuesAreCampaignIssues {
   all i: Issue | i.home = Container implies (i in Campaign.anchor or eventually i in Campaign.members)
 }
@@ -404,40 +278,12 @@ fun anchorOf[i: Issue]: lone Campaign { anchor.i }
 
 /* ---------------- the index ---------------- */
 
-/* One relation, maintained by the platform in both directions: it is written by
-   the same command that creates the member issue, and it prunes.
-
-   WHAT THE PLATFORM ACTUALLY DOES. agent-workspace is a member of its own
-   campaigns, so its tracker holds anchors and subtasks side by side, drawn from
-   one number sequence, and every reader of issues could conflate them. The
-   following was probed against GitHub on 2026-08-28, on throwaway issues since
-   deleted -- not read out of documentation. It is what this relation's
-   modelling rests on, which is why it is recorded here rather than anywhere
-   else.
-
-     does closing a parent close its sub-issues?    no; the children stay open
-     does closing every sub-issue close the parent? no
-     does a closed sub-issue stay in sub_issues?    yes, with state: closed
-     may a sub-issue itself be a parent?            yes, to any depth
-     is sub_issues recursive?                       no -- direct children only
-     may an issue have two parents?                 no; a second
-                                                    --add-sub-issue MOVES it
-     may an issue be its own parent?                no; the API refuses it
-     does an unlabelled anchor appear under
-       --label campaign?                            no
-
-   Two readers come out clean because of it, and neither is modelled here:
-
-   Closing cannot reach another campaign. Every enumeration in
-   closing-campaign is scoped to issues/<N>/sub_issues, the only issue it closes
-   is <N> itself, and GitHub does not cascade a close in either direction. A
-   campaign closed here leaves a neighbouring campaign's subtasks untouched even
-   though they sit in the same tracker.
-
-   The settlement stays correct. Each row's repository comes from the
-   sub-issue's own repository_url, which resolves to the anchor's repository in
-   the self-hosted case and to a different one otherwise; nothing in
-   scripts/campaign-settlement assumes the two differ. */
+/* One relation, maintained by the platform in both directions: it is written
+   by the same command that creates the member issue, and it prunes. Closing
+   a parent does not close its children and closing every child does not
+   close the parent, so a campaign closed here never reaches into a
+   neighbouring one -- GitHub does not cascade a close either way, and
+   sub_issues is not recursive. */
 fun idx[c: Campaign]: set Issue { c.sub }
 
 /* ---------------- observable events ---------------- */
@@ -636,10 +482,9 @@ assert TerminationDisciplined {
   implies (eventually all c: Campaign, i: c.members | complete[i])
 }
 
-// PASS. Termination under the settlement the design actually adopted.
-// TerminationUnderFairness fails because a subtask closed as not planned never
-// reads complete; read both ways, the same traces terminate. This is the repair
-// AGENTS.md states, checked.
+// PASS. The settlement reading AGENTS.md adopted: the same traces that fail
+// TerminationUnderFairness terminate once judged by `settled` instead of
+// `complete`.
 assert TerminationUnderSettlement {
   (hasWork
    and (eventually always Now.ev != AddMember)
@@ -657,51 +502,28 @@ pred SettledWithoutMerge { eventually (some i: Campaign.members | settled[i] and
 
 pred Sanity { eventually (some Merged and some i: Issue | complete[i]) }
 
-/* Each scenario below is a witness request: read the trace as a script. Every
-   one is judged by one observable, and it is always GitHub:
+/* Each scenario below is a witness request: read the trace as a script,
+   judged by one observable, always GitHub:
  *
  *     scripts/campaign-settlement <anchor-number> [owner/repo]
  *
- * Nothing on a terminal screen counts, which is the rule these scenarios exist
- * to exercise. Each write-up names where it can run:
- *   real      safe against repositories you care about; it writes nothing you
- *             would not write anyway
- *   fixture   needs the throwaway repositories below; it merges, mangles a
- *             close, or destroys a workspace
+ * Nothing on a terminal screen counts. Each write-up names where it can run:
+ *   real      safe against repositories you care about
+ *   fixture   needs throwaway repositories; it merges, mangles a close, or
+ *             destroys a workspace
  *   blocked   cannot be run as written -- see the scenario
  *
- *
- * THE FIXTURE
- *
- * The anchor goes in the real container repository, because the campaign ID IS
- * a container issue number and a drill with a fake ID exercises nothing. The
- * member repositories are throwaway, because most scenarios end in a merged
- * pull request or a deliberately mangled close.
- *
- *   gh repo create <you>/e2e-fixture-a --private --add-readme
- *   gh repo create <you>/e2e-fixture-b --private --add-readme
- *   TITLE="Drill: e2e scenarios"
- *   gh issue create -R kalaluthien/agent-workspace --title "$TITLE" \
- *     --body "Drill anchor. Close when done."
- *   ANCHOR=$(gh issue list -R kalaluthien/agent-workspace \
- *     --search "$TITLE in:title" --limit 1 --json number --jq '.[0].number')
- *
- * Every subtask is created as a sub-issue in one command -- the whole index:
- *
- *   gh issue create -R <you>/e2e-fixture-a \
- *     --parent https://github.com/kalaluthien/agent-workspace/issues/$ANCHOR \
- *     --title "..." --body "Campaign: kalaluthien/agent-workspace#$ANCHOR"
- *
- * Tear down with `gh issue close $ANCHOR -R kalaluthien/agent-workspace` and
- * `gh repo delete <you>/e2e-fixture-{a,b}`.
+ * THE FIXTURE, when one is needed: the anchor goes in the real container
+ * repository -- the campaign ID IS a container issue number, and a drill with
+ * a fake one exercises nothing -- with throwaway member repositories, created
+ * and subtasked the way AGENTS.md already states (`--parent` at issue
+ * creation).
  */
 
 /* The plain path: two repositories, two subtasks, both settled by merge, then
    the campaign closes. */
-/* FOR REAL -- fixture. Create two subtasks, one per fixture repo. In each:
-   branch campaign-$ANCHOR/<n>-<topic> for subtask <n>, one commit, `git push -u
-   origin`, `gh pr create --body "Closes #<n>"`, `gh pr merge --squash
-   --delete-branch`. Then `scripts/campaign-settlement $ANCHOR`.
+/* FOR REAL -- fixture. Merge both subtasks the ordinary way, then run
+   `scripts/campaign-settlement $ANCHOR`.
    PASS: both rows read `complete` and the listing says `closable`. Close the
    anchor only after that line -- that ordering IS the design's close rule. */
 pred S1_HappyPath {
@@ -718,11 +540,10 @@ pred S1_HappyPath {
 
 /* One subtask dropped -- closed as not planned, no pull request ever -- and the
    campaign still reaches closable. */
-/* FOR REAL -- fixture. As S1 for the first subtask. For the second, open no pull
-   request at all and run `gh issue close <n> -R <repo> --reason "not planned"`.
-   PASS: one row `complete`, one `dropped`, and `closable` still reached. This
-   is the case TerminationUnderFairness says closed-and-merged alone cannot
-   express. */
+/* FOR REAL -- fixture. As S1 for the first subtask; close the second with
+   `gh issue close <n> --reason "not planned"` and no pull request at all.
+   PASS: one row `complete`, one `dropped`, `closable` still reached -- the
+   case TerminationUnderFairness says closed-and-merged alone cannot express. */
 pred S2_SubtaskDropped {
   one c: Campaign {
     #c.members = 2
@@ -786,12 +607,11 @@ pred S6_RepoJoinsMidFlight {
 
 /* The campaign is closed with a subtask still open. The model allows it --
    nothing guards the anchor's close -- so a real run must report it. */
-/* FOR REAL -- fixture. Settle one subtask, leave the other open, then
-   `gh issue close $ANCHOR -R kalaluthien/agent-workspace`.
+/* FOR REAL -- fixture (an anchor closed over live work is a mess to explain
+   on a real campaign). Settle one subtask, leave the other open, then close
+   the anchor directly.
    PASS: the script prints `REPORT: the anchor is closed with subtasks still
-   open`. Nothing prevents the close -- the point is that the report exists, not
-   that the close is blocked. Fixture only: an anchor closed over live work is a
-   mess to explain on a real campaign. */
+   open`. Nothing prevents the close -- the point is that the report exists. */
 pred S8_CloseWithOpenSubtask {
   one c: Campaign {
     #c.members = 2
@@ -850,11 +670,10 @@ pred S11_MergedButIssueLeftOpen {
 
 /* Two campaigns work the same repository at once. Both settle; neither touches
    the other's members. This is what the campaign-<N>/ branch rule buys. */
-/* FOR REAL -- real. Open two anchors, each with one subtask in the same fixture
+/* FOR REAL -- real. Open two anchors, each with one subtask in the same
    repository, on branches campaign-<N1>/... and campaign-<N2>/... . Merge both.
-   PASS: each anchor's listing shows only its own subtask, and the two branches
-   never collided on the remote. Real-safe, and the reason the branch naming
-   rule carries the campaign number. */
+   PASS: each anchor's listing shows only its own subtask, and the branches
+   never collided -- the reason the naming rule carries the campaign number. */
 pred S12_TwoCampaignsOneRepo {
   #Campaign = 2
   all c: Campaign | #c.members = 1

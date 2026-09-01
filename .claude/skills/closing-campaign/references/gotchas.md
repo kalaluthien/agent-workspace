@@ -59,9 +59,8 @@ input file, not a shadowed name. Write `command diff`; `cmp`, `sed`, `grep` and
 
 Step 5 reads every `campaign-<N>/` ref with a bare `gh api`. That looks like the
 truncation hazard this container guards everywhere else — a paged endpoint read
-without `--paginate`, where a truncated list reads exactly like a complete one —
-and it was filed as one (#74). It is not. Measured 2026-08-30 against a
-repository with 241 matching refs:
+without `--paginate`, where a truncated list reads exactly like a complete one.
+It is not. Measured against a repository with 241 matching refs:
 
 ```
 gh api "repos/cli/cli/git/matching-refs/heads/" --jq 'length'                 -> 241
@@ -99,15 +98,9 @@ curl -s https://docs.github.com/en/rest/git/refs          | grep -c per_page -> 
 curl -s https://docs.github.com/en/rest/branches/branches | grep -c per_page -> 2
 ```
 
-An earlier draft of this section claimed the opposite — that the docs listed
-pagination parameters and were lagging the API. Nobody had probed it. It is
-recorded here rather than quietly deleted because of where it sat: inside a
-section whose own moral is that a documented behaviour is a hypothesis, the one
-hypothesis nobody tested was the claim about the documentation.
-
-**It is the opposite decision from #77's, and both are the same rule.** #77 added
-`--limit 200` to a survey that *does* page; this declines `--paginate` on a call
-that does not. The rule is not "always paginate" — it is *measure, then decide*.
+**The rule is not "always paginate" — it is measure, then decide.** Adding
+`--limit` fits a call that pages; declining `--paginate` fits one that does
+not.
 
 Every `gh api` call in the tree, checked in the same pass, continuation lines
 joined:

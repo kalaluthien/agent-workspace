@@ -7,11 +7,9 @@
 # for a repository, at a path, on a branch; how it got there is not its
 # business.
 #
-# Bash rather than Python: every step of this job already is a `git` or `gh`
-# invocation, so a shell function *is* a strategy, with nothing between the
-# code and the command a person would type by hand. Python would spend most of
-# its lines wrapping subprocess calls, which buries the seam instead of showing
-# it.
+# Bash, not Python: every step is already a `git` or `gh` invocation, so a
+# shell function *is* a strategy with nothing between it and the command a
+# person would type by hand.
 
 set -euo pipefail
 
@@ -70,40 +68,29 @@ command -v git >/dev/null 2>&1 || die "git is not installed"
 # ------------------------------------------------------------------- the seam
 #
 # `select_strategy` names the strategy; `strategy_<name>` builds a checkout that
-# does not exist yet. Those two are the replaceable pair.
+# does not exist yet. `acquire()` owns everything that is the same whatever
+# built the checkout: the already-acquired test, the wrong-repository refusal,
+# convergence on a re-run, and installing the commit guard -- a strategy only
+# ever runs against a destination that is absent or empty, and never
+# implements idempotency itself.
 #
-# `acquire()` owns everything that is the same whatever built the checkout: the
-# already-acquired test, the wrong-repository refusal, convergence on a re-run,
-# and installing the commit guard. A strategy therefore only ever runs against a
-# destination that is absent or empty, and never implements idempotency itself.
+# Only `clone` exists, since it is the only strategy that needs nothing on
+# disk beforehand. Adding one (a shared local mirror, a worktree cut from
+# another campaign's checkout, a shallow clone, adopting a checkout already on
+# disk) costs one new `strategy_<name>()` function plus one new branch in
+# `select_strategy()` returning its name and any extra parameters it needs;
+# `acquire()` passes them through untouched and everything else is unaffected.
 #
-# Only `clone` exists. It is the documented default because it is the only
-# strategy that needs nothing to be on disk beforehand.
-#
-# Adding a strategy — a shared local mirror, a worktree cut from another
-# campaign's checkout, a shallow clone, or adopting a checkout already on disk —
-# costs, honestly:
-#
-#   1. one new `strategy_<name>()` function;
-#   2. one new branch in `select_strategy()` returning its name, plus whatever
-#      parameters it needs as extra fields on that same line (a mirror path, a
-#      source checkout); `acquire()` passes them through untouched.
-#
-# It leaves untouched: the usage text, the argument parsing, `acquire()`,
-# `remote_slug()`, `install_commit_guard()`, every other strategy, and every
-# caller.
-#
-# Two helpers are shared but *not* universal, and a new strategy has to face
-# them rather than assume them:
-#
-#   - `checkout_branch()` selects a branch with `git switch`, which fails inside
-#     a linked worktree when that branch is checked out elsewhere. A worktree
-#     strategy picks its branch at `git worktree add` time and must not call it.
-#   - `install_commit_guard()` resolves the hooks directory, which for a linked
-#     worktree is the *common* directory back in the source checkout. It refuses
-#     when that path falls outside the destination rather than silently guard
-#     another campaign's tree, so a worktree strategy has to solve hooks
-#     deliberately.
+# `checkout_branch()` and `install_commit_guard()` are shared but *not*
+# universal, and a new strategy has to face them rather than assume them:
+# `checkout_branch()` selects a branch with `git switch`, which fails inside a
+# linked worktree when that branch is checked out elsewhere; a worktree
+# strategy picks its branch at `git worktree add` time and must not call it.
+# `install_commit_guard()` resolves the hooks directory, which for a linked
+# worktree is the *common* directory back in the source checkout, and refuses
+# when that path falls outside the destination rather than silently guard
+# another campaign's tree; a worktree strategy has to solve hooks
+# deliberately.
 
 select_strategy() {
 	# Prints the strategy name, optionally followed by parameters for it. The

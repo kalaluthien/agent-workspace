@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Print what this repository can decide by machine, so a session knows it exists.
 
-#105 moves rules out of AGENTS.md and into hooks and scripts. That trade only
-works if a session can still find them: a rule deleted from the prose and buried
-in a script nobody knows about is not mechanised, it is lost. This is the
-announcement, and a SessionStart hook runs it.
+Moving a rule out of AGENTS.md and into a hook or script only works if a session
+can still find it: a rule deleted from the prose and buried in a script nobody
+knows about is not mechanised, it is lost. This is the announcement, and a
+SessionStart hook runs it.
 
 It is derived, never a hand-kept list -- a second copy of the inventory would
 drift exactly the way the prose copies this campaign is deleting drifted. Two
@@ -32,11 +32,10 @@ MARKERS = ('"""', "'''", "#", "//", "--")
 def summary(path):
     """The line under the shebang, however the language spells a comment.
 
-    It must *be* a comment or a docstring. The first draft took the first line
-    that was not a shebang or an obvious keyword, so a script with no summary at
-    all was announced with a line of its own code -- `echo hi` presented to a
-    reader as what the script answers. A wrong description is worse than a
-    missing one, because the missing one is reported.
+    It must *be* a comment or a docstring: a script with no summary must not be
+    announced by a line of its own code -- `echo hi` presented to a reader as
+    what the script answers. A wrong description is worse than a missing one,
+    because the missing one is reported.
 
     None when there is nothing to read, and an `<unreadable: ...>` marker when
     the file could not be opened. Both are reported by the caller; neither is
@@ -60,10 +59,10 @@ def hooks_dir():
     """Where git actually looks for hooks in this checkout. Returns
     (path, why_unreadable)."""
     # --git-path hooks, not --git-common-dir + "/hooks": the former is what git
-    # itself resolves, so it honours core.hooksPath. The latter names a
-    # directory git may not be looking at -- set core.hooksPath after installing
-    # and the inventory went on reporting two installed hooks while git ran
-    # none, which is the announcement lying in the direction that matters.
+    # itself resolves, so it honours core.hooksPath. The latter can name a
+    # directory git is not actually looking at, which would have the inventory
+    # report hooks as installed while git runs none -- the announcement lying
+    # in the direction that matters.
     r = subprocess.run(["git", "rev-parse", "--path-format=absolute",
                         "--git-path", "hooks"], capture_output=True, text=True)
     if r.returncode != 0:
@@ -72,15 +71,9 @@ def hooks_dir():
 
 
 def installed_hooks(hdir):
-    """The hook files git will run, with their text. Reality, not intent.
-
-    Reading install-hooks instead was wrong twice over. Keyed on its guard loop,
-    an ordinary shell refactor reclassified both guards; keyed on a script's
-    name appearing anywhere in it, the header prose naming both guards made the
-    inventory report them as installed *after the entire loop was deleted* --
-    the failure that matters, because it tells a reader the tree is guarded when
-    nothing guards it. What git will run is a fact about this checkout, and it
-    is the question a session is actually asking.
+    """The hook files git will run, with their text. Reality, not intent: what
+    install-hooks writes can drift from what git actually executes, and what
+    git will run is the question a session is actually asking.
     """
     out = {}
     if hdir is None or not hdir.is_dir():
@@ -102,13 +95,8 @@ def hook_run(hook_texts, names):
 
     Read from each hook's own `# runs:` line, which is also the list the hook
     loops over -- one list, two readers, and no parsing of shell on this side.
-    Three earlier attempts failed on the same axis: scraping the loop broke
-    under an ordinary refactor, and matching a script's name anywhere in
-    install-hooks matched its header prose, so the inventory reported both
-    guards as installed after the whole loop had been deleted. That is the
-    failure that matters -- it tells a reader the tree is guarded when nothing
-    guards it. A declaration the hook itself consumes cannot say something the
-    hook does not do.
+    A declaration the hook itself consumes cannot say something the hook does
+    not do.
 
     Returns (found, problems). A hook with no `# runs:` line is named, not
     passed over: a hook this cannot read is not a hook that runs nothing.
