@@ -33,21 +33,20 @@ is what covers it. Step 1 reports "not applicable" on this path rather than
 
 ## Step 1 — the agents
 
-There is no holder to read. The holding session is retired (`AGENTS.md` § Who is
-a campaign session), so this step asks only what is live under the tree, and it
-asks it of both records because either alone is blind to half the executors.
+There is no holder to read. The holding session is retired (`AGENTS.md`
+§ The binding), so this step asks only what is live under the tree, and it asks
+it of both records because either alone is blind to half the executors.
 
 A live PID that is some other `claude` reads as held. That is the safe direction
 to be wrong in here: leaving a claim standing costs a question, deleting a live
 session's tree costs its work.
 
 **Do not match `ListAgents` names against the branch.** A name and a branch are
-two strings on purpose (`AGENTS.md` § Naming a session): a session is named
-`campaign-<anchor>-<role>-<n>`, which carries no subtask at all, and it can be
-changed while the claim cannot. So a test built on the
-branch string finds whatever happens to match and misses what
-`runtime/claims/` exists to catch. `AGENTS.md` § Who is a campaign session states the rule; this is
-where it bites.
+two strings on purpose (`AGENTS.md` § The session name, which states the rule): a
+session is named `campaign-<anchor>-<role>-<n>`, which carries no subtask at all,
+and it can be changed while the claim cannot. So a test built on the branch
+string finds whatever happens to match and misses what `runtime/claims/` exists
+to catch. This is where that bites.
 
 ## Step 2 — work only on this machine
 
@@ -76,11 +75,11 @@ survived" over a body nobody managed to read. Absent files make `cmp -s` exit 2,
 and the pre-emptive `rm -f` stops a leftover from an earlier run standing in for
 either of them.
 
-**Why the compare is the everyday guard under one campaign, one machine** — the
-three causes of a silent overwrite it catches, and why the loss is worse than
-it looks — is
-`AGENTS.md` § Compare then write the anchor issue body, which states it in full
-and is the copy to correct.
+**Why the compare is the everyday guard under one campaign, one machine.** Two
+sessions on the one bound machine are both sessions of the campaign, so the
+binding never serialized the body and this comparison is what does. The three
+causes of a silent overwrite it catches are the table below; when the body may be
+written at all is `AGENTS.md` § The anchor body.
 
 ## Step 5 — announce, close, delete
 

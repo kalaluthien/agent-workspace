@@ -99,20 +99,6 @@ curl -s https://docs.github.com/en/rest/branches/branches | grep -c per_page -> 
 ```
 
 **The rule is not "always paginate" — it is measure, then decide.** Adding
-`--limit` fits a call that pages; declining `--paginate` fits one that does
-not.
-
-Every `gh api` call in the tree, checked in the same pass, continuation lines
-joined:
-
-| call | site | verdict |
-|---|---|---|
-| `issues/<N>/comments` | `AGENTS.md`, both skills | `--paginate` |
-| `issues/<N>/sub_issues` | `AGENTS.md`, `opening-campaign`, `docs/` | `--paginate` |
-| `issues/<N>/sub_issues` | `scripts/campaign-tracker` | `--paginate --slurp` |
-| `git/matching-refs/heads/campaign-<N>/` | step 5 above | does not page |
-| `commits/main` | `AGENTS.md`, `opening-campaign` | single object |
-| `compare/main...<sha>` | step 5 above | single object |
-| `git/refs` POST, `git/<ref>` DELETE | claim and release | not a list |
-
-No list-shaped read is left unpaginated.
+`--limit` fits a call that pages; declining `--paginate` fits one that does not.
+Measure a new `gh api` call the same way rather than reading a list of the ones
+already judged, which goes stale the next time a call site moves.

@@ -1,6 +1,6 @@
 # Commissioning a review, in full
 
-The procedure behind `AGENTS.md` § Completion and liveness, which keeps the
+The procedure behind `AGENTS.md` § Review, which keeps the
 rules. A review is the only thing standing between a branch and `main`, and the
 two ways it goes wrong are running it in the wrong mode and running it at a
 level nobody chose.

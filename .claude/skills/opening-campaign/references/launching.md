@@ -1,6 +1,6 @@
 # Launching a delegate, in full
 
-The procedure behind `AGENTS.md` § Delegating to a repository agent, which keeps
+The procedure behind `AGENTS.md` § Delegate launch, which keeps
 only the invariants. Everything here is a probed fact about herdr 0.8.2 and the
 Claude CLI on this machine, and every item is a failure that raises no error.
 
@@ -18,7 +18,7 @@ Launch in `<campaign>/repos/<repo>/` with `--append-system-prompt-file
   swallow a trailing prompt as one of their own values, and the run dies on
   "Input must be provided".
 - Choose the session UUID in advance (`--session-id`) so the transcript path is
-  known before the agent starts, and `--name` it per § Naming a session. `--name`
+  known before the agent starts, and `--name` it per § The session name. `--name`
   sets the harness name only; set the herdr pane name too, because the two do not
   propagate. `scripts/campaign-name-session` does both.
 - Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to the container's pool. A memory pool

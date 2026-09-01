@@ -1,121 +1,72 @@
 ---
 name: opening-campaign
-description: Opens a campaign in the agent-workspace container, or joins one that already exists — files the anchor issue and binds it to this machine, scaffolds its directory, and acquires the member repositories. Use once AGENTS.md § Not every request is a campaign has decided the request opens a campaign, or joins one this machine has no directory for. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for the second and later subtasks of a campaign already scaffolded in this directory.
+description: Opens a campaign in the agent-workspace container, or joins one already open. Use when a person says to open, start, kick off, set up, or join a campaign, or when a request will outlive the session it arrived in — files the anchor issue, binds it to this machine, scaffolds its directory, acquires the member repositories, and files the first subtasks. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for a later subtask of a campaign already scaffolded here.
 ---
 
 # Opening a campaign
-
-Turn one person's unstructured request into a campaign: an anchor issue that is
-its identity, a directory that is its workspace, and member repositories ready
-to work in.
 
 Finished when all of these hold:
 
 - An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
   no parent, and the sections of the anchor template `assets/README.md`, with a
-  `## Repos` list that `scripts/campaign-repos` reads and exits 0 on — never a
-  bare `grep '<'` over the whole file, which reports hits on a clean README.
+  `## Repos` list that `scripts/campaign-repos` reads and exits 0 on.
 - The anchor's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
-  `CLAUDE.md`, `README.md`, `runtime/handover/`, `runtime/claims/`,
-  `runtime/repos`, and `scripts/`.
-- The campaign's `README.md` is the anchor issue body, and
-  `runtime/anchor-body-derived.md` holds that body byte for byte.
+  `CLAUDE.md`, `scripts/`, `runtime/handover/`, `runtime/claims/`,
+  `runtime/repos`, and a `README.md` and `runtime/anchor-body-derived.md` that
+  each hold the anchor issue body byte for byte.
 - Every line `scripts/campaign-repos` prints resolves to a checkout at
-  `<campaign>/repos/<name>/` — vacuous under `- none`, where it prints nothing,
-  step 5 does nothing, and `repos/` is never created.
-- At least one subtask is filed as a sub-issue of the anchor. That index is the
-  campaign's decomposition, and the body carries none.
-- The reply names the campaign ID, the directory, the anchor issue URL, and the
-  subtasks filed.
+  `<campaign>/repos/<name>/` — vacuous under `- none`, where it prints nothing.
+- At least one subtask is filed as a sub-issue of the anchor, and the reply names
+  it along with the campaign ID, the directory and the anchor issue URL.
 
 ## Procedure
 
-The steps are ordered. The anchor issue number is the campaign ID, so nothing
-that needs the ID can run before step 3. Why each guard is shaped the way it is:
-`references/rationale.md`.
+Ordered: the anchor issue number is the campaign ID, so nothing that needs the ID
+runs before step 3. Why each guard is shaped this way: `references/rationale.md`.
 
 ### 1. Read the binding, then find the directory
 
-You arrive having already been told what the request is, by `AGENTS.md` § Not
-every request is a campaign: either no open campaign covers it and you are
-opening one — go straight to step 2 — or one does, and this machine has no
-directory for it yet. **That survey lives there and only there** — two prose
-copies of it would drift.
-
-**Read the binding before anything else about this campaign**, because joining
-one bound elsewhere is the mistake this read exists to stop (§ Who is a campaign
-session in the container's `AGENTS.md`).
-
-```sh
-"$CONTAINER"/scripts/campaign-tracker bound <N>    # here | elsewhere <machine> | unbound
-```
-
-`here` — carry on. Anything else, including a failed read, stops you.
-
-Another machine — stop: file nothing, scaffold nothing, launch nothing, and say
-which machine holds it and that only the person can move it. No output — the
-campaign is unbound, so ask before binding it here; having its directory here is
-not what binds it.
-
-**That one read is the whole membership question.** There is no second read
-asking whose campaign this is. The holding session is retired, so `here` makes
-you a session of this campaign exactly like every other session of it on this
-machine, and what you may do is decided per write by the guards in `AGENTS.md`
-§ Running a campaign — never by which session arrived first.
-
-Then find out whether this machine has a directory for it. "Already scaffolded"
-is a fact about a directory, not about the campaign:
+A campaign that does not exist yet goes straight to step 2. Otherwise read the
+binding before anything else about it, because joining one bound elsewhere is the
+mistake this read exists to stop.
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-ls -d "$CONTAINER"/*-[0-9][0-9][0-9][0-9][0-9][0-9]/ 2>/dev/null
+"$CONTAINER"/scripts/campaign-tracker bound <N>    # here | elsewhere <machine> | unbound
 ```
 
-**A directory whose `README.md` names this campaign** — bind `CAMPAIGN` to it and
-work in it. Peers may be working in it too; that is the normal state and there is
-nothing to resolve.
+`here` — carry on, and that one read is the whole membership question. Anything
+else, a failed read included, stops you: file nothing, scaffold nothing, launch
+nothing. Name the machine that holds it; on `unbound`, ask before binding it
+here, since having its directory here is not what binds it.
+
+Then find out whether this machine has a directory. "Already scaffolded" is a
+fact about a directory, not about the campaign.
 
 ```sh
+ls -d "$CONTAINER"/*-[0-9][0-9][0-9][0-9][0-9][0-9]/ 2>/dev/null
 CAMPAIGN=$(cd "$CONTAINER/<the directory that matched>" && pwd -P)
 mkdir -p "$CAMPAIGN/runtime/claims"
 ```
 
-`mkdir -p` because a campaign scaffolded before that directory existed has none,
-and every session that claims a subtask here writes its own record into it — a
-missing directory makes the close gate unable to enumerate at all. You write your
-own record and nobody else's; you read theirs.
+A directory whose `README.md` names this campaign is the one to work in, peers
+working in it too being the normal state. `mkdir -p` because a campaign
+scaffolded before that directory existed has none, and a missing one leaves the
+close gate unable to enumerate at all.
 
-Then file the subtask or take the one you were handed, and decide the mode
-**before you claim anything**, because the mode names the branch and the process
-holding it: a container or campaign-directory subtask is yours to work, so you
-write your own claim record to `$CAMPAIGN/runtime/claims/<issue>` at the claim
-(§ Talking to a repository agent names the fields; `scripts/campaign-claim`
-writes them); a
-member-repository subtask makes you the *launcher* of a delegate, which writes
-its own record exactly as you would write yours, and makes step 5 yours
-(§ Delegating to a repository agent). A launcher writes no record, because it
-holds no claim.
-
-**No directory at all** — the campaign is on GitHub but not here, so run steps 2,
-4 and 5 with its ID and body from the anchor issue, and skip step 3, which exists
-only to mint an ID it already has. Do this before launching or receiving
-anything: the directory is the only home `runtime/claims/` has, so until it
-exists a claim record has nowhere to be written (§ Who is a campaign session,
-under **Directory**). Step 2 still runs because neither the slug
-nor the kind is recoverable from GitHub; say which kind you picked.
+**No directory at all** — run steps 2, 4 and 5 with the ID and body from the
+anchor issue, and skip step 3, which exists only to mint an ID it already has.
+Do it before launching or receiving anything: until the directory exists a claim
+record has nowhere to be written (`AGENTS.md` § ID, directory, branch). Step 2
+still runs, because neither the slug nor the kind is recoverable from GitHub; say
+which kind you picked.
 
 ### 2. Name it and pick its kind
 
-Three things fix the campaign:
-
-- **Slug** — kebab-case, meaningful, no date; the date is appended in step 4.
+- **Slug** — kebab-case, meaningful, no date; step 4 appends the date.
 - **Title** — the display name, in the requester's own words, not yours.
 - **Kind** — which `assets/agents/*.md` becomes the campaign's `AGENTS.md`.
-
-With a person in the conversation, propose all three in one message and wait.
-From a handover brief with nobody waiting, read all three from the brief and
-carry on, then state them in the reply so each costs one line to veto.
 
 | the campaign exists to | kind |
 | --- | --- |
@@ -124,15 +75,18 @@ carry on, then state them in the reply so each costs one line to veto.
 | find out whether an approach can work at all | `prototyping` |
 | move a working system from one form to another | `migration` |
 
-Never leave the kind unstated. It is a one-line correction for the requester and
-a wrong set of principles for every delegate if it goes by unseen.
+With a person in the conversation, propose all three in one message and wait;
+from a handover brief with nobody waiting, read all three from the brief. Either
+way state them in the reply, so each costs one line to veto — an unstated kind is
+a wrong set of principles for every delegate.
 
 ### 3. File the anchor issue
 
-Before scaffolding anything, because its number is the campaign ID.
-
-**Survey again, in the same breath as the create**, because the gate's survey is
-minutes old and two sessions that each checked before either filed both file.
+**Survey again, in the same breath as the create.** The routing gate's survey is
+minutes old, and two sessions that each surveyed before either filed both file,
+so one scope gets two campaigns. Nothing closes that window, because a campaign
+that does not exist yet is bound to nobody: if two anchors appear anyway, close
+one as `not planned` and say which survived.
 
 ```sh
 "$CONTAINER"/scripts/campaign-tracker anchors
@@ -140,10 +94,10 @@ gh issue create -R kalaluthien/agent-workspace \
   --label campaign --title "<title>" --body-file <path>
 ```
 
-Read the listing before the create; anything new that could cover the request
-sends you back to the gate's table. This narrows the window and does not close
-it: if two anchors appear anyway, close one as `not planned` and say which
-survived.
+**Fill the anchor template** for the body, `assets/README.md` in this skill — its
+sections, each placeholder replaced, and no others. Write Scope to be matched
+against a request by the routing gate. The body carries no decomposition
+(`AGENTS.md` § The anchor body); step 6 files the first subtasks instead.
 
 **Read the label back before scaffolding anything**, because an anchor filed
 without it is invisible to every later survey and the next session opens a second
@@ -156,45 +110,23 @@ gh issue view <N> -R kalaluthien/agent-workspace --json labels,parent
 Want `campaign` among `labels` and `parent` null. A non-null `parent` means you
 filed a subtask, not an anchor — `gh issue edit <N> --remove-parent` first.
 
-**Then bind the campaign to this machine**, in the same step, because everything
-after it is a write or a launch and both are gated on the binding:
+**Then bind it to this machine, in the same step** — everything after is a write
+or a launch, both gated on the binding. One of the two occasions a session posts
+`BOUND`, read back as `AGENTS.md` § The binding says.
 
 ```sh
 gh issue comment <N> -R kalaluthien/agent-workspace --body "BOUND $(hostname -s)"
 ```
 
-One of only two occasions a session posts `BOUND` (§ Who is a campaign session).
-Read it back the way step 1 does: if the latest is not yours, the campaign was
-migrated in the seconds since, so stop and say so.
-
-**Write the body by filling the anchor template**, `assets/README.md` in this
-skill — its sections, each placeholder replaced, and no others. Write Scope to
-be matched against a request by the gate. The body is a charter and carries no
-decomposition (§ Running a campaign); step 6 files the first subtasks instead,
-and the sub-issue index is the decomposition from there on.
-
 ### 4. Scaffold the directory
 
-Resolve the container root once, from the container root, and address every path
-below through it — a later step runs with a different working directory. Not
-`git rev-parse --show-toplevel`, which in a linked worktree returns the worktree
-and scaffolds the campaign where the closing skill will never look for it.
-
-```sh
-CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-```
-
-Reject a slug that is not plain kebab-case before it reaches a path, because a
-slug comes from a person and lands in a `cp` destination, so one containing `../`
-writes outside the container:
+Address every path below through `$CONTAINER` from step 1: a later step runs with
+a different working directory. Reject a slug that is not plain kebab-case before
+it reaches a path — a slug comes from a person and lands in a `cp` destination,
+so one containing `../` writes outside the container.
 
 ```sh
 printf '%s' "<slug>" | grep -Eq '^[a-z0-9]+(-[a-z0-9]+)*$'
-```
-
-Then build the directory:
-
-```sh
 CAMPAIGN="$CONTAINER/<slug>-$(date +%y%m%d)"
 if mkdir "$CAMPAIGN" 2>/dev/null; then
   cp -R <skill>/assets/. "$CAMPAIGN"/
@@ -203,40 +135,24 @@ else
 fi
 ```
 
-**The `mkdir` is the gate, and it is the only atomic one available here.**
-Without `-p` it refuses a name that already exists, so two sessions arriving
-with the same slug on the same day cannot both create the tree — one wins and
-the other is told. A plain `[ -e ]` test before the copy is not the same thing:
-it is a read and a write with a gap in between, and `cp -R` over a live campaign
-exits 0 while replacing a filled-in `README.md` with placeholders.
+**The `mkdir` without `-p` is the gate**, and the only atomic one here: two
+sessions arriving with the same slug on the same day cannot both create the tree.
+A `[ -e ]` test before the copy is a read and a write with a gap between, and
+`cp -R` over a live campaign exits 0 while replacing a filled-in `README.md`
+with placeholders.
 
-Being told is not an error. Read `$CAMPAIGN/README.md` to decide: the same
-campaign — another session got here first — work in that directory and skip to
-step 5, which is safe to re-run; a different campaign, or unreadable — stop and
-ask.
+Being told is not an error. Read `$CAMPAIGN/README.md`: the same campaign — work
+in that directory and skip to step 5, which is safe to re-run; a different
+campaign, or unreadable — stop and ask.
 
 Then finish it:
 
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
-- Delete `subtask.md` and `handover.md`. Both are filled from the skill's own
-  copy — `AGENTS.md` names `assets/subtask.md` for a subtask and
-  `assets/handover.md` for a brief (named by
-  `references/launching.md`), and a brief is written to
-  `runtime/handover/<issue>.md`, never to `handover.md` — so neither top-level
-  copy has a reader, and a copy in a git-ignored directory can be filled long
-  after it has gone stale.
-
-  What separates these two from `README.md`, which is filled rather than
-  deleted: a campaign has one `README.md` and something reads it, so the copy
-  is the artifact. A subtask template and a brief template are instantiated
-  once *per subtask*, so a single copy at the campaign root is not an unfilled
-  artifact — there is nothing it could be filled with. Count the instances
-  before deciding whether a templated copy is filled or deleted.
-- Everything else the copy brought stays, and that is all of it: `CLAUDE.md`,
-  one line of `@AGENTS.md`; `README.md`, overwritten below; `runtime/handover/`
-  and `runtime/claims/`, a `.gitkeep` each — confirm `runtime/claims/`
-  arrived, because `closing-campaign` refuses a close when it is missing; and
-  `scripts/`, which arrives holding a `.gitkeep` and nothing else.
+- Delete `subtask.md` and `handover.md`. Both are filled once *per subtask* from
+  the skill's own copy, so neither top-level copy has a reader and a stale one
+  could be filled long after.
+- Everything else the copy brought stays. Confirm `runtime/claims/` arrived,
+  because `closing-campaign` refuses a close when it is missing.
 - Overwrite `README.md` with the anchor issue body, which replaces every
   placeholder at once — the close-time sync run backwards:
 
@@ -251,25 +167,19 @@ Then finish it:
       echo "REFUSE: the ## Repos list did not read; runtime/repos was not written"; }
   ```
 
-  A non-zero exit is a body never filled in, or a `## Repos` list the reader
-  refuses; its one line on stderr says which, so stop and fix the body. Keep the
-  `.tmp`-then-`mv`, and keep step 5 reading that file rather than a pipe: both
-  exist so a failed read cannot look like a deliberate `- none`. `>|`, not `>`.
-- **Keep `runtime/anchor-body-derived.md`** — the only thing that can later
-  answer "has the body moved?", and `closing-campaign` step 4 refuses without it.
-  Refresh it whenever you re-derive the README, and after every successful sync.
-- The `README.md` and `runtime/anchor-body-derived.md` are this machine's
-  working copies of the anchor body. A session syncs them only at one of the two
-  moments the body is written at (`AGENTS.md` § Running a campaign); a session
-  working a subtask meets neither, so it touches neither copy.
-- The directory is git-ignored. Nothing durable may live only there.
+  A non-zero exit is a body never filled in, or a list the reader refuses; stop
+  and fix the body. Keep the `.tmp`-then-`mv`, and keep step 5 reading that file
+  rather than a pipe, so a failed read cannot look like a deliberate `- none`.
+  `>|`, not `>`.
+- **Keep `runtime/anchor-body-derived.md`**, refreshed after every re-derivation
+  and every sync — the only thing that can later answer "has the body moved?",
+  and `closing-campaign` step 4 refuses without it.
 
 ### 5. Acquire the member repositories
 
-For each line `scripts/campaign-repos` printed in step 4, by absolute path —
-step 4 has just created an empty `$CAMPAIGN/scripts/`, so a relative
-path resolves there and fails. The script lives under this skill, being called
-from nowhere else:
+Yours whenever you launch a delegate. For each line `scripts/campaign-repos`
+printed in step 4, by absolute path — step 4 has just created an empty
+`$CAMPAIGN/scripts/`, so a relative path resolves there and fails.
 
 ```sh
 ACQUIRE="$CONTAINER/.claude/skills/opening-campaign/scripts/acquire-repo"
@@ -278,152 +188,62 @@ while read -r REPO; do
 done < "$CAMPAIGN/runtime/repos"
 ```
 
-`- none` needs no special case here and gets none: the loop runs zero times and
-`repos/` is never created. Say in the reply that no repository was acquired, so a
-campaign that was *meant* to have some is one line to correct.
+`- none` gets no special case: the loop runs zero times and `repos/` is never
+created. Say in the reply that no repository was acquired, so a campaign that was
+*meant* to have some is one line to correct.
 
-`${REPO##*/}` is safe only because step 4 already ran the reader, which refuses
-two entries whose checkout directory would collide. Safe to re-run; do not clone
-by hand, and do not read the script — its interface is the contract.
-
-**No `--branch` here**, because no subtask issue exists yet to name one, and
-because a re-run without it is a fetch that touches no branch where a re-run with
-one would switch a shared checkout under a delegate already working in it.
+Safe to re-run; do not clone by hand, and do not read the script — its interface
+is the contract. **No `--branch` here**: a re-run with one would switch a shared
+checkout under a delegate already working in it.
 
 ### 6. File the first subtasks, then report
 
-The decomposition lives in the sub-issue index and nowhere else, so file the
-subtasks the opening already implies before reporting — "Filing a subtask issue"
-below is the shape, and a campaign whose scope is one subtask files one.
-
-Report the campaign ID, the directory path, the anchor issue URL, and the
-subtasks filed, saying of the first whether you are doing it here or handing it
-to a repository agent.
+File the subtasks the opening already implies, a campaign whose scope is one
+subtask filing one. Then report the campaign ID, the directory path, the anchor
+issue URL, and the subtasks filed, saying of the first whether you are doing it
+here or handing it to a repository agent.
 
 ### Filing a subtask issue
 
-A follow-up the gate sent here to join, and every subtask after step 6, file the
-same shape. `--parent` is what puts the issue in the campaign, so an issue filed
-without it belongs to no campaign and appears in no listing:
+Step 6's subtasks and one the routing gate sent here to join are filed and
+claimed the same way. File it as `AGENTS.md` § Subtasks says. **The issue number
+is half the branch name, and the branch is the claim**, so the claim cannot be
+cut until the issue exists and this is the step that mints it.
 
 ```sh
-gh issue create -R <owner/repo> \
-  --parent https://github.com/kalaluthien/agent-workspace/issues/<N> \
-  --title "<title>" --body-file <path>
+"$CONTAINER/scripts/campaign-claim" take <N> <issue> <topic> \
+  --dir "$CAMPAIGN" --repo <owner/repo> --name "<this session's ListAgents name>"
 ```
 
-`--body-file` takes the subtask template filled in — `assets/subtask.md` in this
-skill: the `Campaign:` line, the work, and a `Done when` close. Nothing queries
-that line; the shape is what makes the issue readable as a subtask.
-
-**The issue number is half the branch name, and the branch is the claim**, so the
-branch cannot be named until the issue exists and this is the step that mints it.
-Create it on the remote before launching anyone onto it, and read a refusal as
-the subtask being already taken. One block claims every subtask, in a member
-repository or on the container: **the sha comes from the remote**, which is what
-the claim is cut from, never from a checkout whose `origin/main` may be stale,
-absent or unfetched — and a repo-less subtask has no checkout to ask.
+One call cuts the branch from the named remote and writes the claim record. Exit
+3 is the ref already existing, which is the subtask being taken: read who holds
+it, and do not push past it. A repo-less campaign claims on the container all the
+same — `--repo` defaults there. Give the branch a local checkout only where the
+subtask has one, then put the branch name in the handover brief:
 
 ```sh
-BRANCH=campaign-<N>/<issue>-<topic>
-CO="$CAMPAIGN/repos/<name>"        # leave it unset when the subtask has no checkout
-SHA=$(gh api repos/<owner>/<repo>/commits/main --jq .sha) || exit 1
-gh api repos/<owner>/<repo>/git/refs -f ref="refs/heads/$BRANCH" -f sha="$SHA"
-if [ -d "${CO:-}" ]; then
-  git -C "$CO" fetch origin "$BRANCH" &&
-    git -C "$CO" switch -c "$BRANCH" --track "origin/$BRANCH"
-fi
+B=campaign-<N>/<issue>-<topic>
+git -C "$CAMPAIGN/repos/<name>" fetch origin "$B" &&
+  git -C "$CAMPAIGN/repos/<name>" switch -c "$B" --track "origin/$B"
 ```
 
-The read goes into a variable and is checked, because a failed one that still
-prints goes up as the sha and comes back as the `422` this skill teaches means
-"already claimed" — so the subtask reads as taken and is abandoned. What the
-checkout form did and why the API retires it: `references/gotchas.md`. Put the
-branch name in the handover brief.
-
-**A repo-less campaign files on the container tracker and claims there**, even
-when no container code will change: `<owner>/<repo>` is
-`kalaluthien/agent-workspace` and there is no `$CO` for the checkout side, which
-is why that side is an `if` rather than a `&&` chain — the chain's last command
-exits non-zero when there is no checkout, and the claim it just made would read
-as a failure to a `set -e` shell.
-Such a subtask runs by your own hands or in an in-process subagent rooted at the
-campaign directory; the delegate-in-a-clone mode needs a checkout. It closes as
-completed with no pull request, which `campaign-tracker settlement` prints as
-`dropped [completed, no merged pull request]` — the designed reading.
-
-Read the campaign's subtasks back from the anchor, in one call, across every
-repository:
-
-```sh
-"$CONTAINER"/scripts/campaign-tracker index <N>
-```
-
-That script owns `--paginate`, which is not optional: the endpoint pages at
-thirty, and a truncated index
-reads exactly like a complete one.
-
-If the target repository is not in the anchor's `## Repos` list, add it to the
-campaign `README.md`, sync that to the anchor body, and acquire it as in step 5.
-**Adding the first repository replaces `- none`; it never joins it** (§ Running a
-campaign). Run the reader over the README before you sync, as step 4 does:
-
-```sh
-"$CONTAINER/scripts/campaign-repos" "$CAMPAIGN/README.md" \
-  >| "$CAMPAIGN/runtime/repos.tmp" &&
-  mv "$CAMPAIGN/runtime/repos.tmp" "$CAMPAIGN/runtime/repos" ||
-  { rm -f "$CAMPAIGN/runtime/repos.tmp"
-    echo "REFUSE: the ## Repos list did not read; nothing was synced"; }
-```
-
-The campaign stops being repo-less at that moment, and everything vacuous for it
-— step 5, the close's sweep over `repos/*/` — starts having work to do.
-
-**Sync it now, and compare before you write**, because adding a repository is a
-scope change, one of the two moments the anchor body is written at, and one left
-local until the close hides the repository from every other session. Use
-`closing-campaign` step 4's compare-then-write in full, including the refresh of
-`runtime/anchor-body-derived.md`; it is the only sanctioned way to write the
-body.
-
-## Example
-
-A request that reads "the auth token refresh is broken across api and web",
-opened as campaign #7:
-
-```
-auth-refactor-260828/
-  AGENTS.md      copied from assets/agents/migration.md
-  CLAUDE.md      @AGENTS.md
-  README.md      issue #7's body, section for section
-  runtime/handover/ runtime/claims/ scripts/
-  runtime/anchor-body-derived.md  issue #7's body as the README was derived from
-  repos/api/     on the default branch; #31 is worked on campaign-7/31-token-refresh
-  repos/web/     on the default branch; #12 is worked on campaign-7/12-token-refresh
-```
+**A repository the anchor's `## Repos` list does not name** is a scope change, so
+it syncs at that moment rather than at the close: edit the campaign `README.md`,
+re-run the reader over it as step 4 does, sync with `closing-campaign` step 4's
+compare-then-write in full, then acquire it as in step 5. The first repository
+**replaces** `- none`, and `campaign-repos` refuses a list mixing the two.
 
 ## Gotchas
 
 The probes and the failures behind these: `references/gotchas.md`.
 
-- A request that sounds new is usually a follow-up, and skipping the gate's
-  survey produces two anchor issues that both look right with nothing erroring.
-- **You may not be this campaign's session**, and the binding read in step 1
-  decides it — before anything else, because a campaign bound elsewhere is not
-  yours to scaffold, sync or launch into.
-- Filing the anchor issue after scaffolding gives the directory a slug with no ID
-  behind it and branches named for a number you have not got yet.
 - A delegate does not pick up the campaign `AGENTS.md` from its parent
-  directories; it arrives only through `--append-system-prompt-file`, and without
-  that flag nothing reports the omission.
-- Where it does arrive it sits beside the repository's own conventions: adding a
-  principle is free, contradicting one hands the delegate a conflict it resolves
-  without telling you.
+  directories; it arrives only through `--append-system-prompt-file`, without
+  which nothing reports the omission. Where it does arrive it sits beside the
+  repository's own conventions: adding a principle is free, contradicting one
+  hands the delegate a conflict it resolves without telling you.
 - `gh issue create` without `--parent` succeeds, returning a live issue in no
   campaign; only a later listing coming back short shows anything is wrong.
 - This machine's zsh sets `noclobber` and leaves `APPEND_CREATE` unset, so plain
-  `>` onto an existing file and plain `>>` onto a missing one both fail without
+  `>` onto an existing file and plain `>>` onto a missing one fail without
   stopping the steps around them. Write `>|` and `>>|`.
-- `git status` in the container root will never show the campaign directory; that
-  is the allowlist working.
-- Never run one git command across `repos/*`. Each has its own remote.

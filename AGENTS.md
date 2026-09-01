@@ -117,12 +117,7 @@ naming somebody else means the campaign was migrated out from under you.
 
 **Every session of a campaign is an executor**, and **no role licenses a write,
 nor does asking**: a session that cannot satisfy a guard does not make the write.
-Two more rules, each written from a witnessed breakage:
-
-- **Survey again at the moment you file.** Two sessions that each surveyed before
-  either filed will both file, and one scope gets two campaigns; nothing closes
-  that window, because a campaign that does not exist yet is bound to nobody.
-- **Claim the branch before you launch onto it**, with `campaign-claim take`.
+**Claim the branch before you launch onto it**, with `campaign-claim take`.
 
 ## The session name
 
@@ -156,8 +151,7 @@ resolves the harness name a claim record holds. `herdr agent list` shows the pan
 
 **Open** — load `opening-campaign` when the request opens a campaign, or joins one
 this machine has no directory for. **Close** — load `closing-campaign`; only a
-person decides a close, and the skill refuses while any open subtask lacks a
-disposition, because a campaign may close over unfinished but not unexamined work.
+person decides a close.
 
 ## Subtasks
 
@@ -227,16 +221,9 @@ and **when a request reads both ways**, ask with `AskUserQuestion` first. Adding
 repository **is** a scope change, so it syncs when it happens; held back until the
 close it is invisible to every other session.
 
-**Compare then write the anchor issue body.** Re-read it immediately before
-`gh issue edit` and refuse if it has moved since your `README.md` was derived from
-it. The two carry **the same sections in the same shapes** — the anchor template
-`.claude/skills/opening-campaign/assets/README.md` is the one copy — so the sync
-is an overwrite with nothing to merge, and a compose step drops the repo index.
-
-**Read the binding first, then name the cause.** `campaign-tracker bound` saying anything
-but `here` means *you* are out of position, and the write stops there whatever
-the diff says. With it bound here, a moved body has three causes that
-`.claude/skills/closing-campaign/references/rationale.md` tells apart.
+`closing-campaign` step 4 is the only sanctioned write, at either moment: it
+compares the body against the copy the campaign `README.md` was derived from and
+refuses when it has moved, so one write cannot silently discard another.
 
 ## Delegate launch
 
