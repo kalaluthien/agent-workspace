@@ -65,6 +65,14 @@ It may hold exactly the rule this guard looks for, so folding it into either the
 examined files or the harmless empty ones is the silent downgrade this guard
 exists to stop. Exit is 1 whenever any file was unreadable, found or not.
 
+That is a working-tree read, and it is the ad-hoc run it protects. Under
+`--staged` -- the installed invocation -- content comes from the index by
+`git show :<path>`, which never touches disk, so a permission bit or a directory
+swapped in cannot make the read fail: the index copy is read and scanned like
+any other. Nothing goes unexamined there; `broken` simply cannot arise. Said
+here because a reader meeting the paragraph above would otherwise take the hook
+to be the thing it guards.
+
 Usage: scripts/check-rule-readers.py [<path> ...]      (default: every tracked file)
 """
 import re
