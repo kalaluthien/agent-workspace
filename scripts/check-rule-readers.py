@@ -46,11 +46,18 @@ and it is spent on the *next* block whichever shape that block has.
 
 EXIT
 
-0 with nothing printed when clean. 1 with one line per finding: the file, the
-line, the script to call, the token to exempt, and the source line. The status
-is about the verdict,
-not about the reading -- an unreadable file is a crash, deliberately, because a
-guard that skips what it cannot read reports nothing and reads as a pass.
+Every run opens by saying how many files it read, from where, and whether it read
+the working tree or the index -- because a clean tree and a tree nobody looked at
+print the same nothing otherwise, and the second is what a wrong checkout or an
+empty file list gives.
+
+0 when nothing was found. 1 with one line per finding: the file, the line, the
+script to call, the token to exempt, and the source line.
+
+A path that is tracked but has no content to judge -- being deleted, or unmerged
+in the index -- is *counted apart and named*, never folded into the files that
+were examined. The count printed is what was read, not what was globbed, so a
+run whose whole file list went unread cannot read as a clean one.
 
 Usage: scripts/check-rule-readers.py [<path> ...]      (default: every tracked file)
 """
@@ -341,11 +348,28 @@ def main(argv):
         p for p in paths
         if p.endswith((".md", ".markdown")) and not p.startswith("scripts/")
     ]
-    found = 0
+    # Said before any verdict and on every run, as the sibling guards do.
+    where = "the index" if (staged and not given) else "the working tree"
+
+    # Read every file first, so the announcement precedes any finding: a
+    # finding above the count reads as the whole of what the run did.
+    texts, unread = [], []
     for p in sorted(paths):
         text = content(root, p, staged and not given)
         if text is None:
-            continue
+            # Tracked, but nothing to judge: staged for deletion, or unmerged.
+            # Not a violation, and not an examined file either.
+            unread.append(p)
+        else:
+            texts.append((p, text))
+
+    print(f"check-rule-readers: {len(texts)} markdown file(s) under {root}, "
+          f"read from {where}")
+    for p in unread:
+        print(f"  unread: {p} (no content in {where})")
+
+    found = 0
+    for p, text in texts:
         for n, token, path, what, src in findings(text):
             found += 1
             if what == "an exemption naming no script":
