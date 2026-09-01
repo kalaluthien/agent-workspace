@@ -1,73 +1,67 @@
 /*
- * A member repository, as one machine sees it and its remote holds it --
- * everything a machine holds about a campaign, plus the one remote fact: the
- * branch that is the subtask's claim. Knows nothing of who is at the keyboard
- * (session.als) or a delegate (agent.als); ledger.als is spec/'s entry point.
- *
- *   event          performed by
- *   CreateDir      opening-campaign: mkdir <slug>-<YYMMDD>/ and scaffold it
- *   DeleteDir      closing-campaign step 5: rm -rf the campaign directory
- *   Acquire        scripts/acquire-repo: leave <repo> checked out on <topic>
- *   Claim          gh api repos/<o>/<r>/git/refs -f ref=refs/heads/campaign-<N>/<issue>-<topic>
- *   Release        gh api -X DELETE repos/<o>/<r>/git/refs/heads/campaign-<N>/...
- *   PullContainer  git -C "$CONTAINER" pull --ff-only
- *   PullClone      git -C <campaign>/repos/<repo> pull --ff-only
- *   CommitLocal    git -C "$CONTAINER" commit
- *   Launch         the freshness read taken in the shell that starts the delegate
- *
- * `Launch` is the cross-layer event this file starts (WHEN the clone's
- * distance is read; agent.als adds the agent-state half, session.als the
- * actor). `Claimed` is a REMOTE fact -- one set of issues, not per-machine.
+ * A member repository, as one machine sees it and as its remote holds it.
+ * ledger.als is spec/'s entry point: the layer table and the composition idiom
+ * are there.
  *
  * VERDICTS
- *
- *   MachineIndependence              pass  a local delete changes no shared fact
- *   S7_TwoMachinesOneDeletes         SAT
- *   S15_NoLocalDirectory             SAT
- *   S16b_ContainerBehindAfterMerge   SAT
- *   S16c_BehindForever               SAT
- *   S16d_CloneFromUnpushedContainer  SAT
- *   S17a_CloneBehindAtLaunch         SAT   the live run's finding
- *   S17b_OldCloneRuleInsufficient    SAT   the superseded rule does not stop it
- *   S17c_PullBeforeLaunchAdmitsLaunch SAT  control: the adopted rule is not vacuous
- *   Cov_*                            SAT   every own event fires in some trace
+ *   MachineIndependence               pass  a local delete changes no shared fact
+ *   S7_TwoMachinesOneDeletes          SAT
+ *   S15_NoLocalDirectory              SAT
+ *   S16b_ContainerBehindAfterMerge    SAT
+ *   S16c_BehindForever                SAT
+ *   S16d_CloneFromUnpushedContainer   SAT
+ *   S17b_OldCloneRuleInsufficient     SAT   the superseded rule does not stop it
+ *   S17c_PullBeforeLaunchAdmitsLaunch SAT   control: the adopted rule is not vacuous
+ *   Cov_*                             SAT   every own event fires in some trace
  */
 module repos
 
 open ledger
 
+/* ==================== SYSTEM ==================== */
+
 sig Machine {}
-sig Topic {}                    -- the <topic> half of a campaign-<N>/<issue>-<topic> branch
+sig Topic {}
 
--- <slug>-<YYMMDD>/: keyed by an atom, not a pair of columns -- Kodkod cannot represent the five-ary relation past ~70 atoms
+/* One campaign's directory on one machine. Keyed by an atom rather than
+   carried as two columns on a holder: Kodkod cannot represent the five-ary var
+   relation those columns would make once the composed universe passes about
+   seventy atoms. */
 sig Tree {
-  camp:   one Campaign,
-  mach:   one Machine,
-  var co: Repo -> Topic         -- branch checked out in <campaign>/repos/<repo>
+  camp:         one Campaign,
+  mach:         one Machine,
+  var checkout: Repo -> Topic
 }
-var sig Present in Tree {}      -- the directory exists on that machine
+var sig Present in Tree {}
 
-fun treesOf[c: Campaign]: set Tree     { camp.c }
+fun treesOf[c: Campaign]: set Tree             { camp.c }
 fun treeAt[c: Campaign, m: Machine]: lone Tree { camp.c & mach.m }
-fun dirsOf[c: Campaign]: set Machine   { (Present & camp.c).mach }
+fun dirsOf[c: Campaign]: set Machine           { (Present & camp.c).mach }
 
--- THE CLAIM: created by create-ref, which refuses an existing ref server-side, so the claim is atomic where a survey-then-file is not
+/* A REMOTE fact, so one set over Issue rather than one set per machine: a
+   claim made on one machine is visible from every other, which is the whole
+   reason the branch is the claim. */
 var sig Claimed in Issue {}
 
-var sig Behind   in Machine {}  -- the OUTER checkout (session runs here) is behind origin/main
-var sig Unpushed in Machine {}  -- the outer checkout holds commits origin lacks
-var sig CloneBehind in Machine {} -- the INNER clone's own distance (a delegate runs here), cleared by a fresh cut
+/* The OUTER container checkout a campaign session runs from. */
+var sig Behind   in Machine {}
+var sig Unpushed in Machine {}
+/* The INNER clone under <campaign>/repos/agent-workspace/. A separate bit
+   because the two are cleared by different acts: a clone is cut fresh from
+   origin/main, which says nothing about the outer checkout it sits inside. */
+var sig CloneBehind in Machine {}
 
-one sig Site {                  -- this layer's observer: which machine, which repository
+one sig Site {
   var mach: lone Machine,
   var repo: lone Repo
 }
 
 fact ReposWellFormed {
-  -- a tree is identified by its campaign and its machine
   all disj x, y: Tree | x.camp != y.camp or x.mach != y.mach
-  always all t: Tree, r: Repo | lone t.co[r]
+  always all t: Tree, r: Repo | lone t.checkout[r]
 }
+
+/* ---------------- observable events ---------------- */
 
 one sig CreateDir, DeleteDir, Acquire, Claim, Release,
         PullContainer, PullClone, CommitLocal, Launch extends Event {}
@@ -77,44 +71,55 @@ fun reposEvents: set Event {
   + PullContainer + PullClone + CommitLocal + Launch
 }
 
--- Behind, Unpushed, CloneBehind are NOT in this frame: CheckoutFrame and CloneFrame govern them, moved mainly by MergePR, an event this layer does not own
-pred reposFrame { Present' = Present and co' = co and Claimed' = Claimed }
+/* Behind, Unpushed and CloneBehind are outside this frame on purpose: they are
+   governed end to end by CheckoutFrame and CloneFrame, because the act that
+   moves them most is a MergePR, an event this layer does not own. */
+pred reposFrame { Present' = Present and checkout' = checkout and Claimed' = Claimed }
 
 pred createDir[t: Tree] {
   t not in Present
   Present' = Present + t
-  co' = co and Claimed' = Claimed
+  checkout' = checkout and Claimed' = Claimed
   Now.ev = CreateDir and no Now.issue and Site.mach = t.mach and no Site.repo
 }
 
-pred deleteDir[t: Tree] {  -- a discipline, not a guard: this layer has no agent to check it against
+/* Unguarded: this layer has no agent, so "no campaign closes while an agent is
+   live under its tree" cannot be stated here. agent.als's NoOrphanIfGuarded is
+   that rule assumed and checked. */
+pred deleteDir[t: Tree] {
   t in Present
-  Present' = Present - t
-  co'      = co - t->Repo->Topic
-  Claimed' = Claimed
+  Present'  = Present - t
+  checkout' = checkout - t->Repo->Topic
+  Claimed'  = Claimed
   Now.ev = DeleteDir and no Now.issue and Site.mach = t.mach and no Site.repo
 }
 
--- only clone is implemented; this predicate is the seam -- what acquire DOES to the checkout, not how
+/* scripts/acquire-repo. On a re-run over an existing checkout it switches the
+   branch, which is what agent.als's R4c catches it doing under a live agent. */
 pred acquire[t: Tree, r: Repo, b: Topic] {
   t in Present
-  t.co[r] != b
-  co' = co - t->r->Topic + t->r->b
+  t.checkout[r] != b
+  checkout' = checkout - t->r->Topic + t->r->b
   Present' = Present and Claimed' = Claimed
   Now.ev = Acquire and no Now.issue and Site.mach = t.mach and Site.repo = r
 }
 
-pred claim[i: Issue] {  -- deliberately LOOSE: atomicity is a named discipline below, not required here
+/* Deliberately LOOSE -- it does not require the ref to be absent -- so that
+   create-ref's refusal is a named discipline above (agent.als's `claimAtomic`)
+   with its absence runnable as a control. */
+pred claim[i: Issue] {
   i in Campaign.members and i in Open
   Claimed' = Claimed + i
-  Present' = Present and co' = co
+  Present' = Present and checkout' = checkout
   Now.ev = Claim and Now.issue = i and no Site.mach and no Site.repo
 }
 
-pred release[i: Issue] {  -- delete the branch of an executor that never pushed; guarded in agent.als
+/* What may be released is guarded above, in agent.als, for the reason
+   `deleteDir` is unguarded here: the condition is about an executor. */
+pred release[i: Issue] {
   i in Claimed
   Claimed' = Claimed - i
-  Present' = Present and co' = co
+  Present' = Present and checkout' = checkout
   Now.ev = Release and Now.issue = i and no Site.mach and no Site.repo
 }
 
@@ -139,14 +144,20 @@ pred commitLocal[m: Machine] {
   Now.ev = CommitLocal and no Now.issue and Site.mach = m and no Site.repo
 }
 
-pred launch[m: Machine] {  -- moves nothing; this layer only asks WHEN the freshness check happens
+/* Here a launch is only a freshness question: WHEN the clone's distance from
+   origin/main is read. The agent-state half is agent.als's disjunct on the
+   same event atom, and the actor is session.als's. */
+pred launch[m: Machine] {
   m in Present.mach
   Now.issue in Campaign.members
   reposFrame
   Now.ev = Launch and Site.mach = m and no Site.repo
 }
 
--- no event here writes the outer checkout from inside the clone -- hazard 3 below is safe by construction, not proof
+/* No event writes the outer checkout from inside the clone. The model
+   therefore agrees that editing .claude/skills/ in the clone cannot change the
+   running campaign -- but it agrees BY CONSTRUCTION, so read it as a
+   restatement of the assumption and not as evidence. */
 fact CheckoutFrame {
   always ((Now.ev not in PullContainer + CommitLocal) implies
     (Unpushed' = Unpushed and
@@ -165,8 +176,7 @@ fact CloneFrame {
 pred reposInit {
   no Claimed
   no Behind and no Unpushed and no CloneBehind
-  -- a checkout only exists where a directory does
-  all t: Tree | some t.co implies t in Present
+  all t: Tree | some t.checkout implies t in Present
 }
 
 pred reposStep {
@@ -175,15 +185,25 @@ pred reposStep {
   or (some t: Tree, r: Repo, b: Topic | acquire[t,r,b])
   or (some i: Issue | claim[i] or release[i])
   or (some m: Machine | pullContainer[m] or pullClone[m] or commitLocal[m] or launch[m])
-  -- the last two arms are events this layer does not own -- ledger's, or a layer above's -- standing still and carrying no machine
   or (Now.ev in ledgerEvents and reposFrame and no Site.mach and no Site.repo)
+  /* an event declared in a layer above. It carries no machine: an executor's
+     and a session's machine are each a static field, so nothing above needs to
+     observe one here. */
   or (Now.ev not in Stutter + ledgerEvents + reposEvents
       and reposFrame and no Site.mach and no Site.repo)
 }
 
 fact ReposTrace { reposInit and always reposStep }
 
--- PASS: deleting a local directory changes no fact another machine reads, so the directory is optional (ledgerFrame tests the composition idiom itself)
+/* ==================== SCENARIOS ==================== */
+
+/* Deleting a local directory changes no fact another machine reads. This is
+   what lets the directory be optional and lets two machines hold one campaign
+   under directory names differing only in date.
+
+   The `ledgerFrame` conjunct is inherited rather than proved here, and that
+   makes this check the test of the composition idiom itself: dropping the
+   fall-through branch of `ledgerStep` reddens it. */
 assert MachineIndependence {
   always (Now.ev = DeleteDir implies (
     ledgerFrame
@@ -192,7 +212,8 @@ assert MachineIndependence {
     and (all t: Tree | t.mach != Site.mach implies (t in Present iff t in Present'))))
 }
 
--- one of two machines deletes its own tree while work continues and completes; herdr liveness across machines is agent.als's S9
+/* Two machines hold the campaign; one deletes its own tree while work
+   continues, and the subtask still completes. */
 pred S7_TwoMachinesOneDeletes {
   one c: Campaign | some i: c.members {
     #dirsOf[c] = 2
@@ -202,7 +223,8 @@ pred S7_TwoMachinesOneDeletes {
   }
 }
 
--- the reconstitution claim, exercised: the campaign plane lives in GitHub, not a directory
+/* The reconstitution claim exercised rather than asserted: a whole campaign
+   runs with no local directory on any machine. */
 pred S15_NoLocalDirectory {
   one c: Campaign {
     always no dirsOf[c]
@@ -215,19 +237,23 @@ pred S15_NoLocalDirectory {
   }
 }
 
--- THE CONTAINER AS ITS OWN CAMPAIGN'S MEMBER, three hazards: (1) an outer checkout left behind after a merge; (2) a clone gone stale before launch (S17 below); (3) an edit inside the clone that cannot reach the running campaign
+/* --- The container as a member of its own campaign --- */
+
+/* Hazard 1, and its remedy: a merged container pull request leaves every outer
+   checkout behind origin/main, and only a pull clears it. */
 pred S16b_ContainerBehindAfterMerge {
   one c: Campaign | some i: c.members {
     i.home = Container
     always Now.ev not in AddMember + RemoveMember
     mergeClosed[c.members]
     eventually (Now.ev = MergePR and Now.issue = i)
-    eventually Machine in Behind            -- every outer checkout, not just one
+    eventually Machine in Behind
     eventually Now.ev = PullContainer
     eventually (no Behind and complete[i])
   }
 }
 
+/* Hazard 1 left alone: nobody pulls, and nothing says so. */
 pred S16c_BehindForever {
   one c: Campaign | some i: c.members {
     i.home = Container
@@ -237,22 +263,28 @@ pred S16c_BehindForever {
   }
 }
 
+/* Hazard 2: the clone is cut while the outer container holds unpushed commits,
+   so the delegate reads instructions the campaign session has superseded. */
 pred S16d_CloneFromUnpushedContainer {
   one c: Campaign | some m: Machine {
-    m not in dirsOf[c]                      -- not yet cloned here
+    m not in dirsOf[c]
     eventually (Now.ev = CommitLocal and Site.mach = m)
     eventually (m in Unpushed and Now.ev = CreateDir and Site.mach = m)
     eventually (m in dirsOf[c] and m in Unpushed)
   }
 }
 
--- THE CLONE STALE AT LAUNCH: cut, origin moves, then launch reads it, unreported. Old rule: never clone while the outer container holds commits origin lacks
+/* --- The clone that was current when cut and stale when launched --- */
+
+/* The superseded rule: never clone while the outer container holds commits
+   origin lacks. */
 pred pushBeforeClone { always (Now.ev = CreateDir implies no Unpushed) }
 
--- adopted rule: fetch and compare inside the clone, at launch
+/* The adopted rule: fetch and compare inside the clone, at launch. */
 pred pullCloneAtLaunch { always (Now.ev = Launch implies Site.mach not in CloneBehind) }
 
--- cut, merge, launch, in explicit order -- unordered `eventually`s would also admit a clone cut after the merge
+/* Ordered explicitly: written as three unordered `eventually`s this also reads
+   SAT on a clone cut after the merge, which is not the finding. */
 pred cloneThenMergeThenLaunch[c: Campaign, i: Issue, m: Machine] {
   i in c.members and i.home = Container
   eventually (Now.ev = CreateDir and Site.mach = m
@@ -261,18 +293,16 @@ pred cloneThenMergeThenLaunch[c: Campaign, i: Issue, m: Machine] {
                             and m in CloneBehind)))
 }
 
--- reachable at all: a delegate can launch into a stale clone, unreported
-pred S17a_CloneBehindAtLaunch {
-  one c: Campaign | some i: Issue, m: Machine | cloneThenMergeThenLaunch[c, i, m]
-}
-
--- the old rule, enforced for the whole trace, does not stop it: checked in the wrong place, not wrong
+/* The superseded rule, enforced for the whole trace, does not stop it: the
+   container read clean immediately before the clone, and the remote moved
+   between the clone and the launch. The rule is checked in the wrong place. */
 pred S17b_OldCloneRuleInsufficient {
   pushBeforeClone
   one c: Campaign | some i: Issue, m: Machine | cloneThenMergeThenLaunch[c, i, m]
 }
 
--- control: the adopted rule is not vacuous
+/* Control: the adopted rule is not vacuous. A container pull request still
+   merges mid-flight and a delegate still launches, once the clone is pulled. */
 pred S17c_PullBeforeLaunchAdmitsLaunch {
   pullCloneAtLaunch
   one c: Campaign | some i: Issue, m: Machine {
@@ -296,6 +326,8 @@ pred Cov_PullClone     { eventually Now.ev = PullClone }
 pred Cov_CommitLocal   { eventually Now.ev = CommitLocal }
 pred Cov_Launch        { eventually Now.ev = Launch }
 
+/* ---------------- commands ---------------- */
+
 check MachineIndependence for 4 Issue, 3 PR, 2 Campaign, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 6 steps
 
 run S7_TwoMachinesOneDeletes    for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 10 steps
@@ -303,7 +335,6 @@ run S15_NoLocalDirectory        for exactly 3 Issue, 2 PR, exactly 1 Campaign, 1
 run S16b_ContainerBehindAfterMerge  for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 12 steps
 run S16c_BehindForever              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 10 steps
 run S16d_CloneFromUnpushedContainer for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Topic, 2 Tree, 10 steps
-run S17a_CloneBehindAtLaunch        for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Topic, 1 Tree, 12 steps
 run S17b_OldCloneRuleInsufficient   for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Topic, 1 Tree, 12 steps
 run S17c_PullBeforeLaunchAdmitsLaunch for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Topic, 1 Tree, 14 steps
 
