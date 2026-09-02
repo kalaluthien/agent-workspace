@@ -4,7 +4,7 @@
     campaign-tracker.py anchors [--repo owner/repo] [--limit N]
     campaign-tracker.py bound <N> [owner/repo]
     campaign-tracker.py index <N> [owner/repo]
-    campaign-tracker.py settlement <N> [owner/repo]
+    campaign-tracker.py settlement <N> [owner/repo] [--dir CAMPAIGN]
 
 Four readings of one plane -- GitHub issues, plus `hostname -s` for `bound`.
 They were four scripts, and every one of them carried the same lesson in its own
@@ -49,6 +49,15 @@ settlement  The observable spec/alloy/ scenarios are judged by. Verdicts match
             `open`. Settled is "the issue is closed", both verdicts alike; the
             merged pull request only says which kind.
 
+            Each OPEN row also carries who holds its claim, read from
+            `<campaign>/runtime/claims/` through campaign-claim's own reader:
+            `claimed by <name> [<liveness>]`, or `unclaimed`. That column is
+            what an open subtask nobody had started was missing -- it read
+            exactly like one somebody was three hours into. Without a campaign
+            directory the column is EMPTY and a note says which reading did not
+            happen, because printing `unclaimed` for a directory nobody read is
+            the absence dressed as a reading that this exists to end.
+
 `settlement` reads the index through `index`'s own reader rather than issuing its
 own request. Moving only the parse behind a script once left `--paginate`
 hand-written in the settlement path, where deleting it turned a live campaign's
@@ -66,9 +75,13 @@ anchors, index, settlement  0 when the reading was made, 1 when it was not.
 bound                       0 for any verdict, 2 when the reading itself failed.
 """
 import argparse
+import importlib.machinery
+import importlib.util
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 DEFAULT_REPO = "kalaluthien/agent-workspace"
 CAMPAIGN_LABEL = "campaign"
@@ -346,6 +359,61 @@ def verdict(repo, number):
     return "dropped", note, title
 
 
+def claim_reader():
+    """campaign-claim's own record reading, imported rather than rewritten.
+
+    Returns (module, why_unreadable). The record's shape is written in exactly
+    one place, and a settlement that parsed `session`/`name`/`released` itself
+    would be the second reader AGENTS.md forbids -- and the one that drifts,
+    since nothing re-runs it against a record campaign-claim just wrote."""
+    path = Path(__file__).resolve().parent / "campaign-claim.py"
+    try:
+        spec = importlib.util.spec_from_loader(
+            "campaign_claim",
+            importlib.machinery.SourceFileLoader("campaign_claim", str(path)))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception as e:                      # noqa: BLE001 -- any of them
+        return None, f"{path}: {e.__class__.__name__}: {e}"
+    return module, None
+
+
+def claim_column(directory):
+    """(a function issue -> claim word, a note saying what was read).
+
+    The note is not decoration. Without a campaign directory there is nothing
+    to read, and printing `unclaimed` for every row would be an absence dressed
+    as a reading -- exactly the failure this column was added to end."""
+    if not directory:
+        return (lambda n: ""), ("no --dir and no $CAMPAIGN, so no claim was "
+                                "read; the rows below say nothing about who "
+                                "holds what")
+    claims = Path(directory).expanduser().resolve() / "runtime" / "claims"
+    if not claims.is_dir():
+        return (lambda n: ""), (f"{claims} does not exist, so claims could not "
+                                f"be enumerated. A missing directory says "
+                                f"nothing; an empty one says no claim was taken")
+    module, why = claim_reader()
+    if why:
+        return (lambda n: ""), f"the claim reader would not load -- {why}"
+    recs, odd = module.claim_records(claims)
+    note = f"read {claims} -- {len(recs)} claim(s), {len(odd)} unread"
+    for o in odd:
+        note += f"\n     !! {o}"
+
+    def word(number):
+        rec = recs.get(str(number))
+        if not rec:
+            return "unclaimed"
+        if module.is_released(rec):
+            return "unclaimed (a released record stands as attribution)"
+        # `liveness_of` and not a fresh pid test: it is the wire the release
+        # gate hangs off, and two readings of one pid may not disagree.
+        return (f"claimed by {rec.get('name', '<no name>')} "
+                f"[{module.liveness_of(rec)}]")
+    return word, note
+
+
 def anchor_reports(head):
     """What says the number handed in is not an anchor. Costs no extra call.
 
@@ -380,13 +448,21 @@ def cmd_settlement(args):
         print("  (no sub-issues: the index is empty)")
         return 0
 
+    claim_word, claim_note = claim_column(args.dir or os.environ.get("CAMPAIGN"))
+    print(f"  -- claims: {claim_note}")
+
     rows_out, settled, unread, nested = [], 0, 0, []
     for s in subs:
         repo = "/".join(s["repository_url"].split("/")[-2:])
         v, note, title = verdict(repo, s["number"])
         settled += v in ("complete", "dropped")
         unread += v == "unread"
-        rows_out.append((f"{repo}#{s['number']}", v, title[:44], note))
+        # Only an open row: a settled subtask's claim answers nothing a reader
+        # is about to act on, and printing one invites a release that is not
+        # needed.
+        held = claim_word(s["number"]) if v == "open" else ""
+        rows_out.append((f"{repo}#{s['number']}", v, title[:44],
+                         "; ".join(x for x in (note, held) if x)))
         # sub_issues is not recursive (probed), so a subtask that is itself an
         # anchor hides its own members from this table.
         if s["sub_issues_summary"]["total"]:
@@ -452,6 +528,13 @@ def main():
         p = sub.add_parser(name, help=help_text)
         p.add_argument("anchor")
         p.add_argument("repo", nargs="?", default=DEFAULT_REPO)
+        # Only settlement reads it, and only settlement is given it: a flag the
+        # other two accept and ignore reads as though naming a directory
+        # changed what they answer.
+        if name == "settlement":
+            p.add_argument("--dir", help="the campaign directory whose "
+                                         "runtime/claims/ names the holders "
+                                         "(or set $CAMPAIGN)")
         p.set_defaults(fn=fn)
 
     args = ap.parse_args()
