@@ -190,9 +190,14 @@ path = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
 # itself decides which Bash calls count, so widening the matcher costs a process
 # and never a false refusal.
 MATCHER = "Edit|Write|NotebookEdit|Bash"
+# Through the interpreter, never as a bare path. A bare path that has gone
+# missing exits 127 from the shell, which the harness reads as a hook that did
+# not block -- so a moved checkout turns the guard into a silent pass. python3
+# on a missing file exits 2, the one code that refuses, so the same absence
+# refuses every guarded call and says which file it could not read.
 WANT = {
-    "PreToolUse": [f'"{guard}"'],
-    "PostToolUse": [f'"{guard}" --released'],
+    "PreToolUse": [f'python3 "{guard}"'],
+    "PostToolUse": [f'python3 "{guard}" --released'],
 }
 
 try:

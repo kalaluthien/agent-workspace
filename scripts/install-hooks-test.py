@@ -318,6 +318,24 @@ def main():
               str(commands("PostToolUse"))[:200])
         check("...and the installer says where it wrote them",
               "settings.json PreToolUse" in out.stdout, out.stdout[:200])
+        # The registered command must fail CLOSED when its script is gone. Run
+        # each one the way the harness does -- through a shell -- after
+        # deleting the guard: a bare path exits 127, which the harness reads as
+        # not-a-refusal, so a moved checkout would silently un-enforce the
+        # rule. Exit 2 is the one code that refuses. Asserted on the exit the
+        # harness reads, not on the text of the command.
+        (r.root / "scripts" / "check-campaign-claim.py").unlink()
+        for event in ("PreToolUse", "PostToolUse"):
+            for cmd in commands(event):
+                if "check-campaign-claim.py" not in cmd:
+                    continue
+                run = subprocess.run(["sh", "-c", cmd], input="{}",
+                                     capture_output=True, text=True)
+                check(f"{event}: a missing guard refuses (exit 2) instead of "
+                      f"failing open",
+                      run.returncode == 2,
+                      f"exit {run.returncode} from `{cmd}`; "
+                      f"{run.stderr.strip()[:120]}")
 
         # Idempotent: a second clone must not leave the guard running twice.
         installer(r.root)
