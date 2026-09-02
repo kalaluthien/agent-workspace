@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Take, read and release a subtask's claim, and say who is alive holding one.
 
-    campaign-claim.py take <N> <issue> <topic> [--repo owner/repo] [--name NAME]
+    campaign-claim.py take <N> <issue> <topic> [--local] [--repo owner/repo]
+                           [--name NAME] [--session SID]
     campaign-claim.py status <issue>
     campaign-claim.py list
     campaign-claim.py release <issue> [--branch B] [--confirmed-absent WHO]
+                              [--session SID]
     campaign-claim.py live <N> [--dir CAMPAIGN]
     campaign-claim.py alive <pid>
 
@@ -14,6 +16,42 @@ saying which session holds it. AGENTS.md says the record's shape is written in
 exactly one place; this is that place. One script owns both halves, so there is
 nothing to copy: a delegate runs `take`, a close or a sweep runs `list`,
 `status` and `live`.
+
+`--local`: THE RECORD ALONE, AND WHY IT IS STILL ATOMIC
+
+Work that lands nothing in any repository -- a scaffold under `<campaign>/`, a
+sweep, a decision written into the anchor -- has no commits for a branch to
+carry, and cutting one costs a create-ref, a compare and a delete for a ref that
+only ever held `main`. `take --local` writes the record and cuts nothing.
+
+That moves the atomicity from create-ref's server-side refusal onto `O_EXCL`,
+which is the same shape one filesystem down: the second taker's `open` fails and
+it is told who holds the claim, exit 3. The record still names the branch the
+work *would* have used, so `live`'s stray-branch reading keeps working, and
+carries `local yes` so `release` knows there is no ref to delete.
+
+The narrower guarantee is stated rather than hidden: `O_EXCL` serialises the two
+takers on ONE machine, where create-ref serialises them across all of them. That
+is the same ceiling the binding already sets -- one campaign, one machine -- so
+`--local` gives up nothing a repo-less campaign had.
+
+RELEASED IS A MARK, NOT A DELETION
+
+A local claim is released by marking the record `released <timestamp>`, not by
+removing it: the record is the only thing that ever attributed the subtask to a
+session, and a close reads it afterwards. A released record licenses no write
+and does not block a re-take -- an idempotency key naming what was asked for
+rather than which attempt is the shape that refuses a repeat of work that has
+returned to its starting state.
+
+`--session` IS THE HOLDER'S OWN PROOF
+
+`--confirmed-absent` exists because a THIRD party cannot tell a dead session
+from a restarted one. The holder itself has no such problem: a caller whose
+session id equals the record's `session` is the claimant, and its release needs
+no absence established by anyone. `--session` is that proof, and it is also how
+scripts/check-campaign-claim.py releases a claim on the holder's behalf, since a
+hook is handed the `session_id` and has no environment to read it from.
 
 The campaign directory comes from --dir or $CAMPAIGN. There is no default and no
 search: guessing which directory is this campaign's is how a record lands in
@@ -238,8 +276,36 @@ def record_path(claims, issue):
     return claims / str(issue)
 
 
-def write_record(path, name, branch):
-    session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+RELEASED = "released"
+
+
+def is_released(rec):
+    """True when this record has been marked released. A released record is
+    attribution kept on purpose, never a claim: it licenses no write."""
+    return bool(rec) and bool(rec.get(RELEASED, "").strip())
+
+
+def holder_line(path, rec):
+    """What a second taker is told. It names the session, because the only
+    useful next move is to go and ask it."""
+    return (f"already claimed: {path} exists and is not released.\n"
+            f"  session {rec.get('session', '<absent>')}  "
+            f"name {rec.get('name', '<absent>')}  "
+            f"pid {rec.get('pid', '<absent>')}\n"
+            f"  branch {rec.get('branch', '<absent>')}\n"
+            f"  Read who holds it before doing anything else:\n"
+            f"    {sys.argv[0]} status {path.name} --dir <campaign>")
+
+
+def write_record(path, name, branch, local=False, session_arg=None,
+                 replacing=False):
+    """Create the record, and refuse to overwrite a live one.
+
+    `O_EXCL` and not `path.exists()`: the check-then-write it replaces has a
+    window between the two in which a peer's take lands, and the window is
+    exactly the collision the claim exists to stop. Returns (body, refusal);
+    a refusal means nothing was written."""
+    session = session_arg or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     pid = os.environ.get("CLAUDE_PID", "")
     missing = [k for k, v in (("CLAUDE_CODE_SESSION_ID", session),
                               ("CLAUDE_PID", pid)) if not v]
@@ -254,9 +320,30 @@ def write_record(path, name, branch):
     body = (f"session {session or 'unknown'}\n"
             f"name {name or 'unknown'}\n"
             f"pid {pid or 'unknown'}\n"
-            f"branch {branch}\n")
-    path.write_text(body)
-    return body
+            f"branch {branch}\n"
+            + ("local yes\n" if local else ""))
+    if replacing:
+        # The caller has already read this record and found it released, so
+        # there is nothing here O_EXCL would be protecting.
+        path.write_text(body)
+        return body, None
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        return None, "exists"
+    except OSError as e:
+        return None, f"could not write {path}: {e.__class__.__name__}: {e}"
+    with os.fdopen(fd, "w") as handle:
+        handle.write(body)
+    return body, None
+
+
+def mark_released(path, rec, by):
+    """Append the release mark, keeping every field the record already had."""
+    body = "".join(f"{k} {v}\n" for k, v in rec.items() if k != RELEASED)
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    path.write_text(body + f"{RELEASED} {stamp} by {by}\n")
+    return stamp
 
 
 def liveness_of(rec):
@@ -381,8 +468,12 @@ def cmd_list(args):
     for p in files:
         rec = read_record(p) or {}
         v = liveness_of(rec) or "unreadable (empty record)"
+        # Printed beside the liveness rather than instead of it: they answer
+        # different questions, and a released record whose session is still
+        # alive is an ordinary state, not a contradiction.
+        mark = "  RELEASED" if is_released(rec) else ""
         print(f"  {p.name:8} {v:12} {rec.get('branch', '<no branch>'):40} "
-              f"{rec.get('name', '<no name>')}")
+              f"{rec.get('name', '<no name>')}{mark}")
     return 0
 
 
@@ -390,10 +481,38 @@ def cmd_take(args):
     _, claims = campaign_dir(args.dir)
     branch = f"campaign-{args.anchor}/{args.issue}-{args.topic}"
     path = record_path(claims, args.issue)
-    if path.exists():
-        print(f"!! {path} already exists; run `status {args.issue}` before "
-              f"taking it.", file=sys.stderr)
+    existing = read_record(path)
+    if existing and "unreadable" in existing:
+        print(f"refusing: {path} is there and will not decode "
+              f"({existing['unreadable']}). That is a reading that failed, not "
+              f"a free subtask.", file=sys.stderr)
         return 1
+    replacing = False
+    if existing:
+        if not is_released(existing):
+            print(holder_line(path, existing), file=sys.stderr)
+            return 3
+        print(f"{path} is marked released ({existing[RELEASED]}), so it is "
+              f"free to re-take.")
+        replacing = True
+
+    if args.local:
+        print(f"--local: no ref is cut for {branch}; the record is the whole "
+              f"claim.")
+        body, refusal = write_record(path, args.name, branch, local=True,
+                                     session_arg=args.session,
+                                     replacing=replacing)
+        if refusal == "exists":
+            # Between the read above and this open, a peer took it. That window
+            # is what O_EXCL closes, and this is the branch that says so.
+            print(holder_line(path, read_record(path) or {}), file=sys.stderr)
+            return 3
+        if refusal:
+            print(f"refusing: {refusal}", file=sys.stderr)
+            return 1
+        print(f"wrote {path}")
+        print("".join(f"  {l}\n" for l in body.splitlines()))
+        return 0
 
     # Resolved and checked before the create, never written inline: a read that
     # fails and still prints goes up as the sha and comes back as the 422 that
@@ -420,7 +539,15 @@ def cmd_take(args):
               file=sys.stderr)
         return 1
     print(f"claimed {branch}")
-    body = write_record(path, args.name, branch)
+    body, refusal = write_record(path, args.name, branch,
+                                 session_arg=args.session, replacing=replacing)
+    if refusal == "exists":
+        print(holder_line(path, read_record(path) or {}), file=sys.stderr)
+        return 3
+    if refusal:
+        print(f"refusing: {refusal}\n  The ref {branch} WAS cut and is not "
+              f"released by this failure.", file=sys.stderr)
+        return 1
     print(f"wrote {path}")
     print("".join(f"  {l}\n" for l in body.splitlines()))
     return 0
@@ -439,7 +566,28 @@ def delete_path(repo, branch):
     return f"repos/{repo}/git/refs/heads/{branch}"
 
 
-def release_gate(rec, branch_arg, confirmed, liveness_word):
+def holder_proof(rec, session_arg):
+    """Is the caller the claimant itself? Returns (yes, why_not).
+
+    Pure, and split out because it is the one thing that makes a release safe
+    without an absence: a session releasing ITS OWN claim needs nobody to
+    establish that anyone is gone. The comparison is on the session id and on
+    nothing else -- the field that survives a restart and a rename, and the same
+    join `live` makes."""
+    if not session_arg:
+        return False, "no --session was passed"
+    if not rec:
+        return False, "there is no record here to match a session against"
+    held = rec.get("session", "")
+    if not held or held == "unknown":
+        return False, "the record carries no session id to match"
+    if held != session_arg:
+        return False, (f"the record is held by session {held}, not by "
+                       f"{session_arg}")
+    return True, None
+
+
+def release_gate(rec, branch_arg, confirmed, liveness_word, mine=False):
     """Decide whether a release may proceed, and say no with a reason.
 
     Pure, because this is the destructive path and the effects around it reach
@@ -450,8 +598,15 @@ def release_gate(rec, branch_arg, confirmed, liveness_word):
     Both branches need a confirmed absence. A record can at least be tested; no
     record is the *weaker* evidence, not the stronger, because it may be a
     session that claimed and died before writing, or a delegate on a machine
-    this tree knows nothing about."""
+    this tree knows nothing about.
+
+    `mine` is the one way PAST the liveness test rather than through it: the
+    test asks whether the holder is gone, and a holder releasing its own claim
+    has made the question moot. Nothing else may skip it, which is why it is a
+    parameter of this calculation and not a condition at the call site."""
     if rec:
+        if mine:
+            return rec.get("branch", ""), None
         if liveness_word != "dead":
             return None, (f"the record reads {liveness_word}. Only a confirmed "
                           f"absence is safe to act on.")
@@ -489,6 +644,34 @@ def cmd_release(args):
     path = record_path(claims, args.issue)
     rec = read_record(path)
     liveness_word = liveness_of(rec)
+    mine, why_not_mine = holder_proof(rec, getattr(args, "session", None))
+    if rec and "unreadable" not in rec:
+        if is_released(rec):
+            # Idempotent on purpose: the PostToolUse half fires on every close,
+            # and a second one must not read as a failure.
+            print(f"{path} is already marked released ({rec[RELEASED]}). "
+                  f"Nothing to do.")
+            return 0
+        if mine:
+            print(f"{path} names session {rec.get('session')}, which is the "
+                  f"caller. The holder's own release needs no absence.")
+        elif getattr(args, "session", None):
+            print(f"note: --session did not prove the claim is the caller's "
+                  f"({why_not_mine}).")
+        if rec.get("local", "") == "yes":
+            if not (mine or args.confirmed_absent):
+                print(f"refusing: {path} is a local claim held by session "
+                      f"{rec.get('session', '<absent>')}. Pass --session with "
+                      f"that id, or --confirmed-absent WHO.\n"
+                      f"  Deleting a claim costs the one thing keeping two "
+                      f"executors off the subtask.", file=sys.stderr)
+                return 1
+            by = args.session if mine else args.confirmed_absent
+            stamp = mark_released(path, rec, by)
+            print(f"local claim: no ref was ever cut, so there is none to "
+                  f"delete.")
+            print(f"marked {path} released {stamp} by {by}")
+            return 0
     if rec:
         print(f"{path} reads {liveness_word}")
         if liveness_word == "dead":
@@ -509,14 +692,19 @@ def cmd_release(args):
         print(f"no record at {path}; nothing on this machine attributes a "
               f"claim to a session.")
 
-    branch, refusal = release_gate(rec, args.branch, args.confirmed_absent,
-                                   liveness_word)
+    # A holder releasing its own claim satisfies the gate the way a confirmed
+    # absence does, and for a stronger reason: it is not evidence about where
+    # the session went, it IS the session.
+    proof = args.session if mine else args.confirmed_absent
+    branch, refusal = release_gate(rec, args.branch, proof, liveness_word,
+                                   mine=mine)
     if refusal:
         sys.stdout.flush()
         print(f"refusing: {refusal}\n  Deleting a claim costs the one thing "
               f"keeping two executors off the subtask.", file=sys.stderr)
         return 1
-    print(f"absence confirmed by: {args.confirmed_absent}")
+    print("released by its own holder, session " + proof if mine
+          else f"absence confirmed by: {proof}")
 
     r = run("gh", "api", compare_path(args.repo, branch), "--jq", ".ahead_by")
     ok, refusal = ahead_verdict(r.returncode, r.stdout, r.stderr, args.repo,
@@ -723,6 +911,13 @@ def main():
     t.add_argument("issue")
     t.add_argument("topic")
     t.add_argument("--name", help="this session's ListAgents name")
+    t.add_argument("--local", action="store_true",
+                   help="the record alone: cut no ref, for work that lands no "
+                        "commit in any repository")
+    t.add_argument("--session", metavar="SID",
+                   help="the session id to record (default "
+                        "$CLAUDE_CODE_SESSION_ID); a hook is handed one and "
+                        "has no environment to read it from")
     t.set_defaults(fn=cmd_take)
 
     s = sub.add_parser("status", parents=[where])
@@ -738,6 +933,10 @@ def main():
     r.add_argument("--confirmed-absent", metavar="WHO",
                    help="who established the session is gone. `dead` alone "
                         "never releases a claim.")
+    r.add_argument("--session", metavar="SID",
+                   help="the caller's own session id. Matching the record's "
+                        "`session` proves the caller IS the holder, which "
+                        "needs no absence established by anybody.")
     r.set_defaults(fn=cmd_release)
 
     v = sub.add_parser("live", parents=[where])

@@ -138,7 +138,49 @@ case("release refuses a record whose pid belongs to something else",
      want="reads other", code=1)
 case("take refuses a subtask this machine already has a record for",
      ["take", "1", "7", "x"], {"7": DEAD_REC},
-     want="already exists", code=1)
+     want="already claimed", code=3)
+case("...and the refusal names the session to go and ask",
+     ["take", "1", "7", "x"], {"7": DEAD_REC}, want="session s1", code=3)
+
+# `--local` reaches no network at all, so the whole of it is covered here.
+LOCAL_REC = "session mine\nname n1\npid 1\nbranch campaign-1/7-x\nlocal yes\n"
+RELEASED_REC = LOCAL_REC + "released 2026-09-02T10:00:00+0900 by mine\n"
+
+case("take --local writes the record and says no ref was cut",
+     ["take", "--local", "1", "7", "x"], want="no ref is cut", code=0)
+case("...and the record carries `local yes`, which is what release reads",
+     ["take", "--local", "1", "7", "x"], want="local yes", code=0)
+case("take --local on a live record refuses like any other take",
+     ["take", "--local", "1", "7", "x"], {"7": LOCAL_REC},
+     want="already claimed", code=3)
+# A record that will not decode is a reading that failed. Answering `already
+# claimed` would be right by accident; answering 0 would hand out a held claim.
+case("take on an undecodable record refuses without concluding",
+     ["take", "--local", "1", "7", "x"], {"7": b"\xff\xfe not text\n"},
+     want="will not decode", code=1)
+# Scoped to unsettled records: a subtask that returns to its starting state
+# must be re-takeable, or a re-opened issue can never be worked again.
+case("take re-takes a released record and says why it may",
+     ["take", "--local", "1", "7", "x"], {"7": RELEASED_REC},
+     want="marked released", code=0)
+
+case("release --session marks a local claim released, deleting no ref",
+     ["release", "7", "--session", "mine"], {"7": LOCAL_REC},
+     want="marked", code=0)
+case("...and says there was never a ref to delete",
+     ["release", "7", "--session", "mine"], {"7": LOCAL_REC},
+     want="no ref was ever cut", code=0)
+case("release refuses a local claim held by another session",
+     ["release", "7", "--session", "theirs"], {"7": LOCAL_REC},
+     want="held by session mine", code=1)
+case("release refuses a local claim with no proof of any kind",
+     ["release", "7"], {"7": LOCAL_REC},
+     want="Pass --session", code=1)
+# The PostToolUse half fires on every close, so a second release of the same
+# record is ordinary and must not read as a failure.
+case("releasing an already-released record is a no-op, not an error",
+     ["release", "7", "--session", "mine"], {"7": RELEASED_REC},
+     want="already marked released", code=0)
 
 
 PS = ("Fri Aug  7 13:37:53 2026     claude.exe\n"
