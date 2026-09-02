@@ -7,10 +7,18 @@ knows about is not mechanised, it is lost. This is the announcement, and a
 SessionStart hook runs it.
 
 It is derived, never a hand-kept list -- a second copy of the inventory would
-drift exactly the way the prose copies this campaign is deleting drifted. Two
-facts already in the tree carry it: every script states its purpose on the line
-under its shebang, and install-hooks names which of them git runs on its own. So
+drift exactly the way the prose copies this campaign is deleting drifted. Three
+facts already on this machine carry it: every script states its purpose on the
+line under its shebang, install-hooks names which of them git runs on its own,
+and ~/.claude/settings.json names which of them the HARNESS runs on its own. So
 adding a script changes this output with no second edit anywhere.
+
+The harness half is read from the settings file rather than from install-hooks,
+for the same reason the git half is read from the installed hooks: what an
+installer writes can drift from what is installed, and what actually runs is the
+question a session is asking. It is also the half that can be true of no
+checkout at all -- the guard is registered machine-wide, so a session in a
+worktree sees it running over a script the worktree also holds.
 
 A script it cannot read, or one whose kind it cannot tell, is printed as such.
 An inventory that silently omits a primitive is worse than none: it reads as a
@@ -38,6 +46,7 @@ exists to prevent, so adding a root is the same edit here as anywhere.
 
 Usage: scripts/campaign-primitives.py [--brief] [--scripts-dir DIR]
 """
+import json
 import re
 import subprocess
 import sys
@@ -153,6 +162,46 @@ def hook_run(hook_texts, names):
     return found, problems
 
 
+HARNESS_SETTINGS = Path.home() / ".claude" / "settings.json"
+
+
+def harness_run(settings_path, names):
+    """Which of these scripts the harness runs unasked, from its settings.
+
+    Returns (found, problems). Every failure to read is a problem rather than
+    an empty set: a settings file that would not parse is not a machine with no
+    hooks, and the difference decides whether a session is told the guard is
+    there.
+
+    The match is on the script's basename anywhere in a hook's `command`,
+    because a command is a shell line -- a path, quoting and flags around it --
+    and parsing it would be a second reader of how install-hooks writes one."""
+    found, problems = set(), []
+    try:
+        settings = json.loads(settings_path.read_text())
+    except FileNotFoundError:
+        return found, [f"{settings_path} does not exist, so no harness hook is "
+                       f"registered on this machine"]
+    except (OSError, ValueError) as e:
+        return found, [f"{settings_path} would not read "
+                       f"({e.__class__.__name__}), so what the harness runs is "
+                       f"unknown"]
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return found, [f"{settings_path} has no `hooks` object this can read"]
+    for event, entries in sorted(hooks.items()):
+        if not isinstance(entries, list):
+            problems.append(f"{settings_path} {event} is not a list of entries")
+            continue
+        for entry in entries:
+            for h in (entry or {}).get("hooks") or []:
+                command = (h or {}).get("command") or ""
+                for name in names:
+                    if name in command:
+                        found.add(name)
+    return found, problems
+
+
 def script_roots(scripts_dir):
     """Every directory this repository parks a script in, newest-found last.
 
@@ -201,8 +250,10 @@ def main():
     scripts = [(label + p.name, p, label == "")
                for label, root in script_roots(here)
                for p in executables(root)]
-    runs, problems = hook_run(hook_texts,
-                              {p.name for _, p, top in scripts if top})
+    top_names = {p.name for _, p, top in scripts if top}
+    runs, problems = hook_run(hook_texts, top_names)
+    harness, harness_problems = harness_run(HARNESS_SETTINGS, top_names)
+    runs |= harness
     guards, readers, unknown = [], [], []
     for name, p, top in scripts:
         summ = summary(p)
@@ -233,7 +284,13 @@ def main():
             print("     !! no hook declares a script named below, so nothing "
                   "in this checkout is\n        known to be guarded.")
 
-    print(f"\n  run by a git hook, unasked ({len(guards)}):")
+    if harness:
+        print(f"\n  harness hooks in {HARNESS_SETTINGS} ({len(harness)}): "
+              f"{', '.join(sorted(harness))}")
+    for w in harness_problems:
+        print(f"     !! {w}")
+
+    print(f"\n  run unasked, by git or by the harness ({len(guards)}):")
     for n, summ in guards:
         print(f"    {n:30} {summ}")
     print(f"\n  a flow calls these ({len(readers)}):")

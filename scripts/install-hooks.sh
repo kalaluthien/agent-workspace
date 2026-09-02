@@ -1,5 +1,18 @@
 #!/usr/bin/env sh
-# Install this repository's git hooks. Idempotent; run it after a clone.
+# Install this repository's git hooks and its harness hooks. Idempotent; run it
+# after a clone.
+#
+# TWO HOOK SYSTEMS, AND WHY THE SECOND IS NOT IN THIS REPOSITORY'S SETTINGS
+#
+# check-campaign-claim.py has to fire for a delegate whose cwd is
+# <campaign>/repos/<repo>/, and that is a different git repository with its own
+# settings. Probed rather than assumed: a PreToolUse hook declared in this
+# repository's .claude/settings.json fired for a `claude -p` run at the
+# container root and did NOT fire for one whose cwd was
+# retire-workspace-board-260902/repos/dotclaude/. So it is registered in
+# ~/.claude/settings.json, where every session on this machine reads it, and
+# the script no-ops when cwd resolves to no campaign directory -- which is what
+# makes a machine-wide registration safe for a repository-scoped rule.
 #
 # pre-commit chains the machine-wide guard at ~/.claude/git-hooks/no-main-commits
 # (if present), then this repository's own: check-rule-readers, check-tree-shape,
@@ -141,3 +154,76 @@ HOOK
 
 chmod +x "$hook"
 echo "installed: $hook"
+
+# ---------------------------------------------------- the harness hooks
+#
+# Registered in ~/.claude/settings.json for the reason in the header. The merge
+# is done in Python because settings.json is JSON with a person's own hooks in
+# it: a shell that rewrote the file would have to reproduce every key it did not
+# come to change, and the one it drops is silent.
+#
+# The two entries are keyed by the script's basename, so re-running this
+# replaces them rather than stacking a second copy on every clone.
+#
+# The line below is the one list of what this installs into the harness, in the
+# same shape as the `# runs:` lines above and read the same two ways: by the
+# assignment under it, and by install-hooks-test, which builds its fixture from
+# it. Add a harness hook by adding it here.
+# installs: check-campaign-claim.py
+guard=$root/scripts/$(sed -n 's/^# installs: //p' "$0")
+if [ ! -x "$guard" ]; then
+	echo "refusing: $guard is missing or not executable, so the claim guard" >&2
+	echo "would be registered as a command that cannot run -- which reads to" >&2
+	echo "every session like a rule being enforced." >&2
+	exit 1
+fi
+
+python3 - "$guard" <<'PY'
+import json, os, sys
+
+guard = sys.argv[1]
+name = os.path.basename(guard)
+path = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+
+# The matcher is the tool list the guard has an opinion about. Bash is on it
+# because a changing shell command is most of what an executor does; the guard
+# itself decides which Bash calls count, so widening the matcher costs a process
+# and never a false refusal.
+MATCHER = "Edit|Write|NotebookEdit|Bash"
+WANT = {
+    "PreToolUse": [f'"{guard}"'],
+    "PostToolUse": [f'"{guard}" --released'],
+}
+
+try:
+    with open(path) as handle:
+        settings = json.load(handle)
+except FileNotFoundError:
+    print(f"refusing: {path} does not exist. This installs INTO a person's "
+          f"settings and will not create one.", file=sys.stderr)
+    sys.exit(1)
+except (OSError, ValueError) as e:
+    print(f"refusing: {path} would not read ({e.__class__.__name__}: {e}). "
+          f"Rewriting it now would lose whatever is in it.", file=sys.stderr)
+    sys.exit(1)
+
+hooks = settings.setdefault("hooks", {})
+for event, commands in WANT.items():
+    entries = hooks.setdefault(event, [])
+    # Every entry mentioning this script goes, whatever matcher or flags it
+    # carried: an old registration left beside a new one runs the guard twice
+    # and, if its event moved, enforces nothing from the slot it kept.
+    kept = [e for e in entries
+            if not any(name in (h.get("command") or "")
+                       for h in (e.get("hooks") or []))]
+    dropped = len(entries) - len(kept)
+    kept.append({"matcher": MATCHER,
+                 "hooks": [{"type": "command", "command": c} for c in commands]})
+    hooks[event] = kept
+    print(f"installed: {path} {event} {MATCHER} -> {name}"
+          + (f" (replaced {dropped} earlier entry/entries)" if dropped else ""))
+
+with open(path, "w") as handle:
+    json.dump(settings, handle, indent=2)
+    handle.write("\n")
+PY

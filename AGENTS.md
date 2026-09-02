@@ -145,7 +145,9 @@ resolves the harness name a claim record holds. `herdr agent list` shows the pan
 - **Branch** — `campaign-<N>/<issue>-<topic>`, the subtask's claim as well as its
   workspace. `campaign-claim` cuts it from the remote and writes the record;
   create-ref refuses an existing ref server-side, so the claim is atomic where a
-  survey-then-file is not.
+  survey-then-file is not. **`take --local` writes the record and no ref**, for
+  work that lands no commit; there the atomicity is `O_EXCL` on the record, which
+  serializes this machine and not every machine — the ceiling the binding sets.
 
 # Campaign work
 
@@ -177,11 +179,14 @@ what was built. Quote `campaign-tracker settlement`'s note for that row, not its
 
 **`## Repos`** says which repositories to clone when a campaign is opened, and
 `scripts/campaign-repos.py <path>` is its one reader; `- none` is the whole list for
-a repo-less campaign, which files its subtasks on the container tracker. **The
-claim is still create-ref on the container** even when no container code will
-change: the branch is the claim before it is a workspace. A claim whose branch
-holds nothing beyond `origin/main` is released by `scripts/campaign-claim.py
-release`, which refuses on anything but a confirmed absence — `dead` is not proof.
+a repo-less campaign, which files its subtasks on the container tracker. **Work
+that lands no commit is claimed all the same**, with `campaign-claim take
+--local`: the record alone, no ref. **`scripts/check-campaign-claim.py` is what
+makes that true rather than remembered** — a `PreToolUse` guard answering "does
+this session hold an unreleased claim on the campaign its cwd is in", refusing
+every changing call that does not. `install-hooks.sh` registers it in
+`~/.claude/settings.json`, because a delegate's clone is a different repository
+and reads none of this one's settings.
 
 ## Execution mode
 

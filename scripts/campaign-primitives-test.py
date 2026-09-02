@@ -10,6 +10,8 @@ nothing guards it.
 Usage: scripts/campaign-primitives-test.py
 """
 import importlib.machinery
+import json
+import os
 import importlib.util
 import subprocess
 import sys
@@ -143,7 +145,42 @@ def main():
     check("the two guards are announced",
           "check-tree-shape.py" in out and "check-rule-readers.py" in out)
     check("it separates what runs unasked from what a flow calls",
-          "run by a git hook, unasked" in out and "a flow calls these" in out)
+          "run unasked, by git or by the harness" in out
+          and "a flow calls these" in out)
+
+    # The harness half. Its own section, because a settings.json that would not
+    # parse and one with no hooks in it are different answers and only the
+    # first denies the listing.
+    with tempfile.TemporaryDirectory() as d:
+        home = Path(d)
+        (home / ".claude").mkdir()
+        (home / ".claude" / "settings.json").write_text(json.dumps({"hooks": {
+            "PreToolUse": [{"matcher": "Edit",
+                            "hooks": [{"type": "command",
+                                       "command": "/x/check-campaign-claim.py"}]}]}}))
+        r = subprocess.run([sys.executable, str(PRIM)], cwd=PRIM.parent.parent,
+                           capture_output=True, text=True,
+                           env=dict(os.environ, HOME=str(home)))
+        out = r.stdout + r.stderr
+        check("a harness-registered guard is announced as running unasked",
+              "harness hooks in" in out and "check-campaign-claim.py" in out)
+    with tempfile.TemporaryDirectory() as d:
+        home = Path(d)
+        (home / ".claude").mkdir()
+        (home / ".claude" / "settings.json").write_text("{ not json")
+        r = subprocess.run([sys.executable, str(PRIM)], cwd=PRIM.parent.parent,
+                           capture_output=True, text=True,
+                           env=dict(os.environ, HOME=str(home)))
+        out = r.stdout + r.stderr
+        check("settings that will not parse is reported, not read as no hooks",
+              "would not read" in out and r.returncode == 0)
+    with tempfile.TemporaryDirectory() as d:
+        r = subprocess.run([sys.executable, str(PRIM)], cwd=PRIM.parent.parent,
+                           capture_output=True, text=True,
+                           env=dict(os.environ, HOME=str(d)))
+        out = r.stdout + r.stderr
+        check("an absent settings file says so rather than announcing nothing",
+              "does not exist" in out and r.returncode == 0)
 
     # core.hooksPath: git looks there and nowhere else, so resolving the hooks
     # directory by hand instead of asking git could report hooks as installed
