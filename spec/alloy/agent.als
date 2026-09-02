@@ -142,7 +142,14 @@ pred launch[a: Agent] {
   a.launcher = By.actor
   a.host = Site.mach
   Now.issue = a.task
-  a.task in Claimed
+  /* A REF is what a delegate's launch waits on, and only a delegate's. A
+     session working with its own hands starts on work that may land no commit
+     at all, where `take --local` writes the record and cuts nothing -- so
+     requiring a ref here would model a create-ref that does not happen, and it
+     did: it made R4h unsatisfiable and the model claimed a hole closed that
+     this campaign then fell into. What must hold on this edge is the RECORD,
+     and that is `claimBeforeWork`, not a conjunct here. */
+  no a.peer implies a.task in Claimed
   treeAt[By.actor.holds, a.host].checkout[a.task.home] = a.topic
   Launched' = Launched + a
   Live'     = Live + a
@@ -399,6 +406,18 @@ pred localCheckedShutdown { always (Now.ev = StandDown implies Target.agent not 
 pred claimBeforeLaunch { always (Now.ev = Launch implies Now.issue in By.actor.claims) }
 pred claimAtomic       { always (Now.ev = Claim  implies Now.issue not in Claimed) }
 
+/* The gate on LAUNCH covers the executor a session starts and says nothing
+   about the executor a session IS: `work` carries no `By.actor`, so a session
+   working its own claim reaches the same subtask along an edge
+   `claimBeforeLaunch` never touches. R4h is that hole and R4i is its repair --
+   scripts/check-campaign-claim.py, a PreToolUse guard refusing a changing call
+   from a session holding no claim. Keyed on `a.peer` because a delegate has no
+   session to hold one; its launcher was gated already. */
+pred claimBeforeWork {
+  always (Now.ev = Work and some Target.agent.peer
+            implies Now.issue in Target.agent.peer.claims)
+}
+
 /* The rule as written, the honest local reading, and the reading a session
    can actually perform. */
 pred closeDisciplineFull[c: Campaign] {
@@ -619,6 +638,34 @@ pred R4g_ClaimWithoutAtomicityStillShared {
   some disj s1, s2: Session, i: Issue |
     eventually (i in s1.claims and i in s2.claims)
   R4e_NumberedBranchStillShared
+}
+
+/* R4h. THE HOLE, and the one this campaign actually fell into: a session works
+   its own subtask and no claim of it ever exists, so every peer reading the
+   records sees an open sub-issue indistinguishable from one nobody started. */
+pred R4h_OwnHandsWorkWithoutClaim {
+  some s: Session, a: Agent {
+    a.peer = s
+    eventually (Now.ev = Work and Target.agent = a)
+    always a.task not in s.claims
+  }
+}
+
+/* R4i. The guard closes it. */
+pred R4i_GuardClosesOwnHandsGap {
+  claimBeforeWork
+  R4h_OwnHandsWorkWithoutClaim
+}
+
+/* R4j. CONTROL for R4i: UNSAT there would mean the guard forbids the session
+   from working at all rather than from working unclaimed. */
+pred R4j_GuardAdmitsClaimedWork {
+  claimBeforeWork
+  some s: Session, a: Agent {
+    a.peer = s
+    eventually (Now.ev = Claim and By.actor = s and Now.issue = a.task
+                and eventually (Now.ev = Work and Target.agent = a))
+  }
 }
 
 /* =================== retiring another session's delegate =================== */
@@ -935,6 +982,10 @@ run R4e_NumberedBranchStillShared for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Ag
 run R4f_ClaimClosesSameSubtask    for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps expect 0
 -- control: the 422 is load-bearing
 run R4g_ClaimWithoutAtomicityStillShared for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+-- the own-hands hole, the guard that closes it, and the control
+run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PR, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 1
+run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PR, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 0
+run R4j_GuardAdmitsClaimedWork   for 3 Issue, 1 PR, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Topic, 1 Tree, 12 steps expect 1
 
 -- the gap TwoStepShutdownSuffices rests on
 run R5b_VisibleNotPushed         for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps expect 1

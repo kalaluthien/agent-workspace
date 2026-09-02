@@ -11,6 +11,7 @@ The remote is a local bare repo; nothing here reaches the network.
 
 Usage: scripts/install-hooks-test.py
 """
+import json
 import os
 import shutil
 import subprocess
@@ -32,14 +33,17 @@ def _needed():
 
     Both `# runs:` lines in the installer are read: the pre-commit one inside
     its heredoc and the post-commit one, which is where push-campaign-branch
-    comes from.
+    comes from. `# installs:` is read for the same reason one line down: the
+    installer refuses when a harness hook it is registering is not there, so a
+    fixture missing it fails every case with one unrelated message.
     """
     out = ["install-hooks.sh"]
     for line in (SCRIPTS / "install-hooks.sh").read_text().splitlines():
-        if line.startswith("# runs: "):
-            for n in line[len("# runs: "):].split():
-                if n not in out:
-                    out.append(n)
+        for key in ("# runs: ", "# installs: "):
+            if line.startswith(key):
+                for n in line[len(key):].split():
+                    if n not in out:
+                        out.append(n)
     return out
 
 
@@ -92,8 +96,20 @@ class Repo:
 
 
 def installer(root):
+    """Run the installer against a HOME of its own.
+
+    Load-bearing, not tidiness: the installer now writes the harness hooks into
+    $HOME/.claude/settings.json, and a suite that let it see the real one would
+    edit the person running it -- a case whose damage is outside the temporary
+    directory everything else here is confined to."""
+    home = root.parent / "home"
+    (home / ".claude").mkdir(parents=True, exist_ok=True)
+    settings = home / ".claude" / "settings.json"
+    if not settings.exists():
+        settings.write_text("{}\n")
     return subprocess.run([str(root / "scripts" / "install-hooks.sh")], cwd=root,
-                          capture_output=True, text=True)
+                          capture_output=True, text=True,
+                          env=dict(os.environ, HOME=str(home)))
 
 
 def main():
@@ -278,6 +294,97 @@ def main():
         c = r.commit()
         check("a missing push script says the commit was not pushed",
               "NOT pushed" in c.stdout + c.stderr, (c.stdout + c.stderr)[:200])
+
+    # 10. The harness half. A git hook and a settings.json entry fail in
+    # opposite directions -- git refuses loudly, a hook nobody registered is
+    # silent -- so the registration gets its own cases.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        out = installer(r.root)
+        settings = json.loads((r.root.parent / "home" / ".claude"
+                               / "settings.json").read_text())
+        def commands(event):
+            return [h["command"]
+                    for e in settings.get("hooks", {}).get(event, [])
+                    for h in e["hooks"]]
+        check("the guard is registered on PreToolUse",
+              any("check-campaign-claim.py" in c for c in commands("PreToolUse")),
+              str(settings)[:200])
+        # The release half is on PostToolUse and carries --released. Asserted
+        # apart from the entry existing: a PostToolUse slot holding the PRE
+        # command would register, run, exit 2 and enforce nothing.
+        check("...and the release half is on PostToolUse with --released",
+              any(c.endswith("--released") for c in commands("PostToolUse")),
+              str(commands("PostToolUse"))[:200])
+        check("...and the installer says where it wrote them",
+              "settings.json PreToolUse" in out.stdout, out.stdout[:200])
+        # The registered command must fail CLOSED when its script is gone. Run
+        # each one the way the harness does -- through a shell -- after
+        # deleting the guard: a bare path exits 127, which the harness reads as
+        # not-a-refusal, so a moved checkout would silently un-enforce the
+        # rule. Exit 2 is the one code that refuses. Asserted on the exit the
+        # harness reads, not on the text of the command.
+        (r.root / "scripts" / "check-campaign-claim.py").unlink()
+        for event in ("PreToolUse", "PostToolUse"):
+            for cmd in commands(event):
+                if "check-campaign-claim.py" not in cmd:
+                    continue
+                run = subprocess.run(["sh", "-c", cmd], input="{}",
+                                     capture_output=True, text=True)
+                check(f"{event}: a missing guard refuses (exit 2) instead of "
+                      f"failing open",
+                      run.returncode == 2,
+                      f"exit {run.returncode} from `{cmd}`; "
+                      f"{run.stderr.strip()[:120]}")
+
+        # Idempotent: a second clone must not leave the guard running twice.
+        installer(r.root)
+        settings = json.loads((r.root.parent / "home" / ".claude"
+                               / "settings.json").read_text())
+        check("re-running replaces the entry rather than stacking one",
+              len([c for c in commands("PreToolUse")
+                   if "check-campaign-claim.py" in c]) == 1,
+              str(commands("PreToolUse"))[:200])
+
+    # 11. Registering a command that cannot run reads to every session like a
+    # rule being enforced, so it refuses instead.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        (r.root / "scripts" / "check-campaign-claim.py").chmod(0o644)
+        out = installer(r.root)
+        check("a guard that is not executable refuses the install",
+              out.returncode != 0 and "not executable" in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
+
+    # 12. This writes INTO a person's settings. Neither an absent file nor an
+    # unparseable one may be answered by writing a fresh one over it.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        home = r.root.parent / "home"
+        (home / ".claude").mkdir(parents=True)
+        (home / ".claude" / "settings.json").write_text("{ not json")
+        out = installer(r.root)
+        check("settings.json that will not parse refuses rather than overwrites",
+              out.returncode != 0 and "would not read" in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
+        check("...and the file is left exactly as it was",
+              (home / ".claude" / "settings.json").read_text() == "{ not json")
+
+    # The absent case is its own branch and not the unparseable one: creating a
+    # settings.json would be this script deciding a person's harness config for
+    # them, on a machine where the absence may be deliberate.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        empty = r.root.parent / "nohome"
+        empty.mkdir()
+        out = subprocess.run([str(r.root / "scripts" / "install-hooks.sh")],
+                             cwd=r.root, capture_output=True, text=True,
+                             env=dict(os.environ, HOME=str(empty)))
+        check("an absent settings.json refuses rather than creating one",
+              out.returncode != 0 and "does not exist" in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
+        check("...and none was created",
+              not (empty / ".claude" / "settings.json").exists())
 
     for f in fails:
         print(f"FAIL  {f}")
