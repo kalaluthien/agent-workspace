@@ -35,6 +35,20 @@ takers on ONE machine, where create-ref serialises them across all of them. That
 is the same ceiling the binding already sets -- one campaign, one machine -- so
 `--local` gives up nothing a repo-less campaign had.
 
+A GONE REF WITH A MERGED PULL REQUEST IS NOTHING BEYOND MAIN
+
+The normal end of a branch claim is a merged pull request and a deleted ref,
+and the comparison `release` asks for then answers 404. A comparison that did
+not happen is not an empty branch, so that used to refuse -- on the one path
+every finished sub-issue takes. The 404 is read apart from every other failure,
+and it is not trusted alone: the compare 404s identically for a gone ref, a
+missing base and an unreachable repository, so `release` then asks the ref's
+own endpoint and goes on only when that says 404 too. Then it asks GitHub for
+a merged pull request whose head was this branch, and one found is the durable record that everything the
+branch held is on main. No ref and no merged pull request is still a refusal,
+because a branch that vanished without merging is reported, never released.
+The verdict line is printed once, after whichever check ran, never before.
+
 RELEASED IS A MARK, NOT A DELETION
 
 A local claim is released by marking the record `released <timestamp>`, not by
@@ -681,6 +695,43 @@ def ahead_verdict(returncode, out, err, repo, branch):
     return True, None
 
 
+def ref_gone(returncode, err):
+    """Did the comparison answer 404, meaning the ref is not there? Every
+    other non-zero is a question that was not answered, and stays one."""
+    return returncode != 0 and "HTTP 404" in (err or "")
+
+
+def ref_probe(returncode, err):
+    """What `git/ref/heads/<branch>` said: `present`, `gone`, or `unanswered`.
+    Asked only after the comparison answered 404, because that 404 is the
+    same bytes for a gone ref, a missing base, and an unreachable repository;
+    only the ref's own endpoint separates the first from the other two."""
+    if returncode == 0:
+        return "present"
+    if "HTTP 404" in (err or ""):
+        return "gone"
+    return "unanswered"
+
+
+def merged_head_verdict(returncode, out, repo, branch):
+    """Read `gh pr list --head <branch> --state merged`. Returns (ok, text):
+    the merged pull request's number when ok, the refusal otherwise."""
+    if returncode != 0:
+        return False, (f"could not ask {repo} for a merged pull request whose "
+                       f"head was {branch}. A question that did not get "
+                       f"answered is not an absence.")
+    try:
+        prs = json.loads(out or "[]")
+    except json.JSONDecodeError:
+        return False, (f"{repo} answered the pull request question with "
+                       f"something that is not JSON: {(out or '')[:120]!r}")
+    if not prs:
+        return False, (f"{repo} has no ref {branch} and no merged pull request "
+                       f"whose head was it. A branch that vanished without "
+                       f"merging is reported, never released.")
+    return True, f"merged as #{prs[0].get('number', '?')}"
+
+
 def cmd_release(args):
     _, claims = campaign_dir(args.dir)
     path = record_path(claims, args.issue)
@@ -745,15 +796,40 @@ def cmd_release(args):
         print(f"refusing: {refusal}\n  Deleting a claim costs the one thing "
               f"keeping two executors off the sub-issue.", file=sys.stderr)
         return 1
-    print("released by its own holder, session " + proof if mine
-          else f"absence confirmed by: {proof}")
+    verdict = ("released by its own holder, session " + proof if mine
+               else f"absence confirmed by: {proof}")
 
     r = run("gh", "api", compare_path(args.repo, branch), "--jq", ".ahead_by")
+    if ref_gone(r.returncode, r.stderr):
+        q = run("gh", "api", f"repos/{args.repo}/git/ref/heads/{branch}")
+        state = ref_probe(q.returncode, q.stderr)
+        if state != "gone":
+            print(f"refusing: the comparison against main answered 404 but the "
+                  f"ref {branch} is {state} on {args.repo}"
+                  f"{'' if state == 'present' else ': ' + q.stderr.strip()[:120]}. "
+                  f"A comparison that did not happen is not an empty branch.",
+                  file=sys.stderr)
+            return 1
+        p = run("gh", "pr", "list", "-R", args.repo, "--head", branch,
+                "--state", "merged", "--json", "number")
+        ok, text = merged_head_verdict(p.returncode, p.stdout, args.repo,
+                                       branch)
+        if not ok:
+            print(f"refusing: {text}", file=sys.stderr)
+            return 1
+        print(verdict)
+        print(f"{args.repo} has no ref {branch}, and it was {text}: nothing "
+              f"beyond main, and no ref to delete")
+        if rec:
+            path.unlink()
+            print(f"deleted {path}")
+        return 0
     ok, refusal = ahead_verdict(r.returncode, r.stdout, r.stderr, args.repo,
                                 branch)
     if not ok:
         print(f"refusing: {refusal}", file=sys.stderr)
         return 1
+    print(verdict)
     print(f"{args.repo} says {branch} holds nothing beyond main")
 
     r = run("gh", "api", "-X", "DELETE", delete_path(args.repo, branch))
