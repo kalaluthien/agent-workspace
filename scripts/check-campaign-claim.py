@@ -23,10 +23,11 @@ imported and not moved into this repository because the pattern is machine-wide
 not -- and a repository-local copy would be the second reader all over again,
 with the direction of the dependency reversed.
 
-The pattern is matched against the command with its quoted strings emptied
-(`outside_quotes`): text handed to a command as an argument is not a command,
-and `gh issue create --body "... git mv ..."` must file the issue whose number
-the claim is minted from.
+The pattern is matched against the command with its PROSE spans blanked
+(`outside_quotes`): the argument of --body, --title, --message, -m, -t is text
+a service is handed, and `gh issue create --body "... git mv ..."` must file
+the issue whose number the claim is minted from. Every other quoted span stays
+visible, because the sinks that execute text cannot be listed.
 
 That pattern has no opinion about service doors, because a takeaway check does
 not need one. The three `gh` writes a claim actually gates -- closing, editing
@@ -178,32 +179,36 @@ def held_by(claim_module, records, session_id, issue=None):
 
 
 QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
-# A quoted span the shell still executes: it holds a command substitution, or
-# it is the argument of `eval` or of a `-c` (bash -c, sh -c, python -c).
-EXECUTED_INSIDE = re.compile(r"\$\(|`")
-# `c` anywhere in the cluster: bash runs `-cx` and `-Ecx` like `-xc`.
-EXECUTES_NEXT = re.compile(r"(?:\beval|\s-[a-zA-Z]*c[a-zA-Z]*)\s*$")
+# The flags whose argument is prose handed to a service, never run: an issue
+# or pull request body or title, a commit message, release notes.
+PROSE_SINK = re.compile(r"(?:--body|--title|--message|--notes|-m|-t)(?:\s*=|\s+)$")
+# What the shell still runs inside a double-quoted prose span: the head of a
+# command substitution, up to its first newline or closing paren.
+SUBST_HEAD = re.compile(r"\$\(([^\n)]*)|`([^\n`]*)")
 
 
 def outside_quotes(command):
-    """The command with every quoted string emptied -- except one the shell
-    would execute -- so a pattern matched against it sees the words that run
-    and not the text they are handed. `gh issue create --body "... git mv a b
-    ..."` files an issue; the `mv` inside its body is prose, and matching it
-    refused the one step that cannot hold a claim yet, since the number is
-    minted there. A span holding `$(` or a backtick, or following `eval` or
-    `-c`, is kept whole: the shell runs what is inside it. Inside single
-    quotes `$(` and a backtick are literal and the span is blanked."""
+    """The command with its prose spans blanked, so a pattern matched against
+    it sees the words the shell runs and not the text a service is handed.
+    `gh issue create --body "... git mv a b ..."` files an issue; the `mv` in
+    its body is prose, and matching it refused the one step that cannot hold
+    a claim yet, since the number is minted there.
+
+    Every other quoted span is kept whole, whatever it follows: `eval`, `-c`,
+    `ssh host "..."`, a string piped into a shell -- the sinks that execute
+    text cannot be listed, so nothing is hidden by default. A prose span is
+    blanked except for the head of each `$(...)` or backtick inside a
+    double-quoted one, which the shell does run: `--body "$(cat <<'EOF'"` keeps
+    `cat <<'EOF'`, `--body "$(git mv a b)"` keeps `git mv a b`. Inside single
+    quotes `$(` is literal and the span is blanked whole."""
     def keep_or_blank(m):
         span = m.group(0)
-        # `$(` and a backtick are literal inside single quotes -- POSIX single
-        # quotes suppress every expansion -- so only a double-quoted span
-        # holding one is kept. `eval` and `-c` (in any flag cluster, `-lc`
-        # included) re-parse their argument whichever quote enclosed it.
-        executed_inside = span[0] == '"' and EXECUTED_INSIDE.search(span)
-        if executed_inside or EXECUTES_NEXT.search(command[:m.start()]):
+        if not PROSE_SINK.search(command[:m.start()]):
             return span
-        return '""'
+        if span[0] == "'":
+            return "''"
+        heads = [a or b for a, b in SUBST_HEAD.findall(span)]
+        return '"' + " ; ".join(heads) + '"'
     return QUOTED.sub(keep_or_blank, command)
 
 

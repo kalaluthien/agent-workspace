@@ -129,7 +129,11 @@ def main():
                 ("Bash", "gh issue create -R o/r --body-file /tmp/b.md",
                  "filing an issue is not a change"),
                 ("Bash", "gh issue create -R o/r --body 'the $(git mv a b) is prose'",
-                 "a $( inside single quotes is literal, not a change")):
+                 "a $( inside a single-quoted body is literal, not a change"),
+                ("Bash", 'gh issue create -R o/r --body "$(cat <<\'EOF\'\nrun git mv a b\nEOF\n)"',
+                 "a heredoc read into a body keeps only `cat`, not a change"),
+                ("Bash", 'gh pr create --title "mv the file" --body-file x.md',
+                 "a title is prose, not a change")):
             r = ask(root, tool=tool, command=command)
             check(f"{why}", r.returncode == 0,
                   f"exit {r.returncode}: {out(r)[:200]}")
@@ -144,16 +148,19 @@ def main():
         r = ask(root, tool="Bash", command='echo "x" > out.txt')
         check("a redirect outside the quotes is still a change",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
-        # Quoted text the shell executes is not prose, one case per door.
+        # Quoted text that is not a prose sink stays visible, whatever runs it:
+        # the sinks that execute text cannot be listed, so nothing else is hidden.
         for command, why in (
                 ('gh issue create --body "$(git mv a b)"',
-                 "a command substitution inside quotes is still a change"),
+                 "a command substitution inside a double-quoted body is still a change"),
                 ('gh issue create --body "`git mv a b`"',
-                 "a backtick substitution inside quotes is still a change"),
+                 "a backtick substitution inside a double-quoted body is still a change"),
                 ('eval "git mv a b"', "an eval'd string is still a change"),
                 ('bash -c "git mv a b"', "a -c string is still a change"),
                 ("bash -lc 'git mv a b'", "a -c in a flag cluster, single-quoted, is still a change"),
-                ('bash -cx "git mv a b"', "a -c anywhere in the cluster is still a change")):
+                ('bash -cx "git mv a b"', "a -c anywhere in the cluster is still a change"),
+                ('ssh host "git mv a b"', "a string handed to ssh is still a change"),
+                ("printf '%s' 'git mv a b' | bash", "a string piped into a shell is still a change")):
             r = ask(root, tool="Bash", command=command)
             check(why, r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 
