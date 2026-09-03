@@ -123,10 +123,25 @@ def main():
         for tool, command, why in (
                 ("Read", None, "a read is not a change"),
                 ("Bash", "git status", "a read-only shell command is not a change"),
-                ("Bash", "grep -r x .", "a search is not a change")):
+                ("Bash", "grep -r x .", "a search is not a change"),
+                ("Bash", 'gh issue create -R o/r --title t --body "run git mv a b"',
+                 "a changing word inside quoted argument text is not a change"),
+                ("Bash", "gh issue create -R o/r --body-file /tmp/b.md",
+                 "filing an issue is not a change")):
             r = ask(root, tool=tool, command=command)
             check(f"{why}", r.returncode == 0,
                   f"exit {r.returncode}: {out(r)[:200]}")
+
+    # The quoted-text carve-out must not swallow the command itself: the same
+    # words unquoted are still a change.
+    with tempfile.TemporaryDirectory() as d:
+        root = container(d, {"demo-260902": {}})
+        r = ask(root, tool="Bash", command="git mv a b")
+        check("the same words outside quotes are still a change",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
+        r = ask(root, tool="Bash", command='echo "x" > out.txt')
+        check("a redirect outside the quotes is still a change",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 
     # 5. The two exemptions, each on its own. They are the paths a refused
     # session has to be able to take to stop being refused.

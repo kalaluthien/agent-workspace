@@ -23,6 +23,11 @@ imported and not moved into this repository because the pattern is machine-wide
 not -- and a repository-local copy would be the second reader all over again,
 with the direction of the dependency reversed.
 
+The pattern is matched against the command with its quoted strings emptied
+(`outside_quotes`): text handed to a command as an argument is not a command,
+and `gh issue create --body "... git mv ..."` must file the issue whose number
+the claim is minted from.
+
 That pattern has no opinion about service doors, because a takeaway check does
 not need one. The three `gh` writes a claim actually gates -- closing, editing
 and commenting on an issue, and merging a pull request -- are added here, in
@@ -172,6 +177,18 @@ def held_by(claim_module, records, session_id, issue=None):
     return out
 
 
+QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
+
+
+def outside_quotes(command):
+    """The command with every quoted string emptied, so a pattern matched
+    against it sees the words the shell would run and not the text they are
+    handed. `gh issue create --body "... git mv a b ..."` files an issue; the
+    `mv` inside its body is prose, and matching it refused the one step that
+    cannot hold a claim yet, since the number is minted there."""
+    return QUOTED.sub('""', command)
+
+
 def changing(payload, changing_command):
     """(is it a changing call, why). Returns (False, reason) for a call this
     guard has no opinion about, so the allow path can say which one it was."""
@@ -185,7 +202,7 @@ def changing(payload, changing_command):
         return True, f"{tool} changes a file"
     if tool != "Bash":
         return False, f"{tool} changes nothing this guard reads"
-    command = tool_input.get("command") or ""
+    command = outside_quotes(tool_input.get("command") or "")
     if "campaign-claim.py" in command:
         # Taking a claim cannot itself require one.
         return False, "the command runs campaign-claim.py"
@@ -193,7 +210,7 @@ def changing(payload, changing_command):
         return True, "the command writes to the campaign plane through gh"
     if changing_command.search(command):
         return True, "the command matches the changing-command pattern"
-    return False, "the command matches no changing form"
+    return False, "the command matches no changing form, outside quoted text"
 
 
 def close_target(command):
