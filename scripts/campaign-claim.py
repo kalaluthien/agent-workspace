@@ -50,6 +50,19 @@ branch held is on main. No ref and no merged pull request is still a refusal,
 because a branch that vanished without merging is reported, never released.
 The verdict line is printed once, after whichever check ran, never before.
 
+A REF AHEAD OF MAIN IS KEPT; THE RECORD IS NOT
+
+The ref and the record end a release differently. The ref is the pull
+request's head, and a branch still ahead of main is reported, never deleted,
+whoever asks -- the holder included. The record is the claim, and once the
+holder is confirmed absent that is a different question: whether a successor
+may `take` the sub-issue, which does not depend on how far the branch got.
+So a confirmed absence with commits still on the branch keeps the ref,
+deletes the record, and prints both facts -- the count that stayed the ref's
+hand, and the path that no longer blocks a `take`. The holder's own release
+(`mine`) gets no such split: it asked to release, so a ref not yet safe to
+delete is still a plain refusal, record and all.
+
 `stood-down` RECORDS THE AGREEMENT WHERE THE CLOSE GATE CAN READ IT
 
 STAND DOWN is a session-to-session message and leaves no record, so a close
@@ -776,16 +789,29 @@ def release_gate(rec, branch_arg, confirmed, liveness_word, mine=False):
     return branch_arg, None
 
 
-def ahead_verdict(returncode, out, err, repo, branch):
-    """Read the comparison. Returns (ok, refusal)."""
+def ahead_count(returncode, out):
+    """The comparison's ahead_by as an int, or None when the question was not
+    answered. Split out of ahead_verdict so cmd_release can tell "ahead of
+    main by a known N" apart from "the comparison did not happen" -- only the
+    first is safe to act on when the holder is a confirmed absence rather
+    than the caller itself."""
     ahead = (out or "").strip()
     if returncode != 0 or not ahead.isdigit():
+        return None
+    return int(ahead)
+
+
+def ahead_verdict(returncode, out, err, repo, branch):
+    """Read the comparison. Returns (ok, refusal)."""
+    n = ahead_count(returncode, out)
+    if n is None:
+        ahead = (out or "").strip()
         return False, (f"could not ask {repo} how far {branch} is ahead of "
                        f"main; got {ahead!r}; {(err or '').strip()[:200]}. "
                        f"A comparison that did not happen is not an empty "
                        f"branch.")
-    if ahead != "0":
-        return False, (f"{repo} says {branch} is {ahead} commit(s) ahead of "
+    if n != 0:
+        return False, (f"{repo} says {branch} is {n} commit(s) ahead of "
                        f"main. A ref holding commits is reported, never "
                        f"deleted.")
     return True, None
@@ -923,6 +949,20 @@ def cmd_release(args):
     ok, refusal = ahead_verdict(r.returncode, r.stdout, r.stderr, args.repo,
                                 branch)
     if not ok:
+        n = ahead_count(r.returncode, r.stdout)
+        if not mine and n and rec:
+            # A confirmed absence releases the claim, not the branch: the ref
+            # is the pull request's head and stays commits and all, but the
+            # record is what blocks a successor's `take`, and the absence is
+            # what makes deleting it safe.
+            print(verdict)
+            print(f"{args.repo} says {branch} is {n} commit(s) ahead of "
+                  f"main: the ref is kept, since it is the pull request's "
+                  f"head.")
+            path.unlink()
+            print(f"deleted {path}: the confirmed absence retires the "
+                  f"claim, not the branch it points at.")
+            return 0
         print(f"refusing: {refusal}", file=sys.stderr)
         return 1
     print(verdict)

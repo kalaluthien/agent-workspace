@@ -85,6 +85,21 @@ exit 97
 """
 
 
+# A compare that answers "3 commits ahead of main", for the case that proves
+# a confirmed absence deletes the record and leaves an ahead ref alone. Any
+# other call -- the ref delete included -- is an escape from that branch, and
+# is refused loudly rather than silently taking effect.
+GH_AHEAD3 = """#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    *compare/main*) echo "3"; exit 0 ;;
+  esac
+done
+echo "gh shim: this case reached an endpoint it did not stub: $*" >&2
+exit 97
+"""
+
+
 def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
     with tempfile.TemporaryDirectory() as d:
         claims = Path(d) / "runtime" / "claims"
@@ -757,6 +772,45 @@ def live(m):
     return ran, out
 
 
+def release_ahead_confirmed_absence():
+    """A dead record whose branch is still ahead of main: the confirmed
+    absence frees the record for a successor's `take` without touching the
+    ref, which is the pull request's head and stays whatever it holds."""
+    ran, out = [], []
+
+    def c(name, cond):
+        ran.append(name)
+        if not cond:
+            out.append(name)
+
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        rec_path = claims / "7"
+        rec_path.write_text(DEAD_REC)
+        os.utime(rec_path, (OLD, OLD))
+        shim = Path(d) / "shim"
+        shim.mkdir()
+        (shim / "gh").write_text(GH_AHEAD3)
+        (shim / "gh").chmod(0o755)
+        env = dict(os.environ, PATH=f"{shim}:{os.environ.get('PATH', '')}")
+        r = subprocess.run(
+            [sys.executable, str(CLAIM), "release", "7",
+             "--confirmed-absent", "asked the peer", "--dir", d],
+            capture_output=True, text=True, env=env)
+        out_text = r.stdout + r.stderr
+        c("a dead record on a branch 3 commits ahead of main, released with "
+          "--confirmed-absent, deletes the record (freeing the sub-issue for "
+          "a `take`), makes no ref-delete call, and names both facts in the "
+          "message",
+          r.returncode == 0
+          and not rec_path.exists()
+          and "deleted campaign-1/7-x" not in out_text
+          and "3 commit(s) ahead of main" in out_text and "kept" in out_text
+          and str(rec_path) in out_text and "deleted" in out_text)
+    return ran, out
+
+
 def main():
     failed = 0
     import importlib.machinery, importlib.util
@@ -767,8 +821,9 @@ def main():
     spec.loader.exec_module(m)
     pure_ran, pure_failed = pure_cases(m)
     live_ran, live_failed = live(m)
-    pure_ran += live_ran
-    pure_failed += live_failed
+    release_ran, release_failed = release_ahead_confirmed_absence()
+    pure_ran += live_ran + release_ran
+    pure_failed += live_failed + release_failed
     for name in pure_failed:
         print(f"FAIL  {name}")
     failed += len(pure_failed)
