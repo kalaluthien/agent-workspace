@@ -75,6 +75,9 @@ exit 4
 """
 
 
+HOSTNAME = subprocess.run(["hostname", "-s"], capture_output=True, text=True).stdout.strip()
+
+
 def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
     with tempfile.TemporaryDirectory() as d:
         claims = Path(d) / "runtime" / "claims"
@@ -95,7 +98,8 @@ def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
             shim.mkdir()
             for name, body, on in (("ps", PS_SHIM, stub_ps),
                                    ("gh", GH_FAILS if stub_gh == "fails"
-                                    else GH_SHIM, stub_gh)):
+                                    else GH_SHIM.replace("some-other-machine", HOSTNAME)
+                                    if stub_gh == "here" else GH_SHIM, stub_gh)):
                 if on:
                     (shim / name).write_text(body)
                     (shim / name).chmod(0o755)
@@ -247,13 +251,23 @@ case("take refuses a --name that is not the shape at all",
 # through the gh shim otherwise (its arguments land in gh-comment.log).
 case("stood-down refuses while this session holds an unreleased claim",
      ["stood-down", "1", "--session", "mine"], {"7": LOCAL_REC},
+     env={"CLAUDE_CODE_SESSION_ID": "mine"},
      want="still holds claim(s) #7", code=1)
 case("stood-down refuses with no session id to name",
      ["stood-down", "1"], env={"CLAUDE_CODE_SESSION_ID": ""},
      want="names no session", code=1)
-case("stood-down posts once every claim here is released",
+case("stood-down refuses to speak for a peer",
+     ["stood-down", "1", "--session", "theirs"], {"7": RELEASED_REC},
+     env={"CLAUDE_CODE_SESSION_ID": "mine"},
+     want="never for a peer", code=1, absent="posted on")
+case("stood-down reads the binding before it posts, and `elsewhere` refuses",
+     ["stood-down", "1", "--session", "mine"], {"7": RELEASED_REC},
+     env={"CLAUDE_CODE_SESSION_ID": "mine"},
+     want="bound elsewhere", code=1, stub_gh=True, absent="posted on")
+case("stood-down posts once every claim here is released and the binding is here",
      ["stood-down", "1", "--session", "mine", "--name", "campaign-1-executor-2"],
-     {"7": RELEASED_REC}, want="posted on", code=0, stub_gh=True)
+     {"7": RELEASED_REC}, env={"CLAUDE_CODE_SESSION_ID": "mine"},
+     want="posted on", code=0, stub_gh="here")
 
 case("release --session marks a local claim released, deleting no ref",
      ["release", "7", "--session", "mine"], {"7": LOCAL_REC},

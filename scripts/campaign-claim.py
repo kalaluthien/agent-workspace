@@ -57,7 +57,9 @@ gate could only read presence: a peer that had finished, released its claims
 and was merely sitting in the directory blocked the close. `stood-down <N>`
 posts a comment on the campaign issue whose first line is
 `STOOD DOWN <name> <session-id>`, after refusing while this session still
-holds an unreleased claim here. `live` reads those comments as its third
+holds an unreleased claim here, refusing a `--session` that is not its own
+(the comment is the peer's word and nobody may speak it for a peer), and
+reading the binding, since a comment on the campaign issue is a gated write. `live` reads those comments as its third
 reading and lists the sessions under the tree that have neither a claim nor
 a STOOD DOWN comment; a close refuses on that list and on live claims, and
 passes a stood-down peer whatever its cwd. The comment is the evidence
@@ -594,6 +596,20 @@ def binding_verdict(word):
     return f"the binding could not be read (campaign-tracker bound said {word!r})"
 
 
+def binding_refusal(anchor):
+    """Read the binding through its one reader and say why it refuses, or
+    None. Shared by every write here that the binding gates."""
+    b = run(sys.executable, str(HERE / "campaign-tracker.py"), "bound",
+            str(anchor))
+    word = (b.stdout.strip().split() or [""])[0]
+    # Whole, on one line: the tracker's prefix is over a hundred characters
+    # and gh's auth failure is several lines with the cause on the first, so
+    # neither a prefix cut nor a last-line keep carries both ends.
+    why = " ".join(b.stderr.split()) or b.stdout.strip() or "no message"
+    return binding_verdict(word if b.returncode == 0 else
+                           f"exit {b.returncode}: {why}")
+
+
 def cmd_take(args):
     _, claims = campaign_dir(args.dir)
     branch = f"campaign-{args.anchor}/{args.issue}-{args.topic}"
@@ -644,15 +660,7 @@ def cmd_take(args):
     # the bound machine makes. Read from the one reader, never re-derived. A
     # --local claim lands no ref and stays off the network, so it is gated by
     # the rule alone.
-    b = run(sys.executable, str(HERE / "campaign-tracker.py"), "bound",
-            str(args.anchor))
-    word = (b.stdout.strip().split() or [""])[0]
-    # Whole, on one line: the tracker's prefix is over a hundred characters
-    # and gh's auth failure is several lines with the cause on the first, so
-    # neither a prefix cut nor a last-line keep carries both ends.
-    why = " ".join(b.stderr.split()) or b.stdout.strip() or "no message"
-    refusal = binding_verdict(word if b.returncode == 0 else
-                              f"exit {b.returncode}: {why}")
+    refusal = binding_refusal(args.anchor)
     if refusal:
         print(f"refusing: {refusal}", file=sys.stderr)
         return 1
@@ -1086,11 +1094,20 @@ def not_stood_down(idle, stood, tree):
 
 def cmd_stood_down(args):
     _, claims = campaign_dir(args.dir)
-    session = args.session or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    own = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    session = args.session or own
     if not session:
         print("refusing: no session id (--session or $CLAUDE_CODE_SESSION_ID); "
               "a STOOD DOWN that names no session can be matched to nobody.",
               file=sys.stderr)
+        return 1
+    # The comment is the peer's own word, which is what makes it evidence: a
+    # session may stand itself down and nobody else. A hook is handed the
+    # session id it acts for, and that id equals the environment's.
+    if own and session != own:
+        print(f"refusing: --session {session} is not this session ({own}). A "
+              f"STOOD DOWN is posted by the session it names, never for a "
+              f"peer.", file=sys.stderr)
         return 1
     recs, odd = claim_records(claims)
     if odd:
@@ -1106,6 +1123,11 @@ def cmd_stood_down(args):
               f"{', '.join('#' + i for i in held)} here. Release them first; "
               f"a STOOD DOWN over a live claim would read as agreement while "
               f"the work is still attributed.", file=sys.stderr)
+        return 1
+    # A comment on the campaign issue is a write the binding gates.
+    refusal = binding_refusal(args.anchor)
+    if refusal:
+        print(f"refusing: {refusal}", file=sys.stderr)
         return 1
     line = stood_down_line(args.name, session)
     r = run("gh", "issue", "comment", str(args.anchor), "-R", args.repo,

@@ -301,7 +301,7 @@ pred standDown[a: Agent] {
   a in Live and a not in StoodDown
   a.task in By.actor.holds.members
   StoodDown' = StoodDown + a
-  Retired' = Retired
+  Stood' = Stood and Retired' = Retired
   keepLife and keepReview and keepMsgs and keepAddress and keepBorn
   Now.ev = StandDown and Now.issue = a.task and Target.agent = a
 }
@@ -328,7 +328,7 @@ pred retire[a: Agent] {
   Retired' = Retired + a
   Live'    = Live - a
   Local' = Local and Visible' = Visible and Confirmed' = Confirmed
-  StoodDown' = StoodDown
+  StoodDown' = StoodDown and Stood' = Stood
   keepReview and keepMsgs and keepAddress and keepBorn
   Now.ev = Retire and Now.issue = a.task and Target.agent = a
 }
@@ -356,7 +356,7 @@ pred aRelease {
 pred agentInit {
   no Launched and no Live and no Local and no Visible
   no Reported and no Addressed and no Asked and no Answered
-  no Waiting and no Confirmed and no Reviewed and no StoodDown and no Retired
+  no Waiting and no Confirmed and no Reviewed and no StoodDown and no Stood and no Retired
 }
 
 pred agentStep {
