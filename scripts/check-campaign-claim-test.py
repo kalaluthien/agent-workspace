@@ -127,7 +127,9 @@ def main():
                 ("Bash", 'gh issue create -R o/r --title t --body "run git mv a b"',
                  "a changing word inside quoted argument text is not a change"),
                 ("Bash", "gh issue create -R o/r --body-file /tmp/b.md",
-                 "filing an issue is not a change")):
+                 "filing an issue is not a change"),
+                ("Bash", "gh issue create -R o/r --body 'the $(git mv a b) is prose'",
+                 "a $( inside single quotes is literal, not a change")):
             r = ask(root, tool=tool, command=command)
             check(f"{why}", r.returncode == 0,
                   f"exit {r.returncode}: {out(r)[:200]}")
@@ -149,7 +151,8 @@ def main():
                 ('gh issue create --body "`git mv a b`"',
                  "a backtick substitution inside quotes is still a change"),
                 ('eval "git mv a b"', "an eval'd string is still a change"),
-                ('bash -c "git mv a b"', "a -c string is still a change")):
+                ('bash -c "git mv a b"', "a -c string is still a change"),
+                ("bash -lc 'git mv a b'", "a -c in a flag cluster, single-quoted, is still a change")):
             r = ask(root, tool="Bash", command=command)
             check(why, r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 

@@ -181,7 +181,7 @@ QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
 # A quoted span the shell still executes: it holds a command substitution, or
 # it is the argument of `eval` or of a `-c` (bash -c, sh -c, python -c).
 EXECUTED_INSIDE = re.compile(r"\$\(|`")
-EXECUTES_NEXT = re.compile(r"(?:\beval|\s-c)\s*$")
+EXECUTES_NEXT = re.compile(r"(?:\beval|\s-[a-zA-Z]*c)\s*$")
 
 
 def outside_quotes(command):
@@ -191,10 +191,17 @@ def outside_quotes(command):
     ..."` files an issue; the `mv` inside its body is prose, and matching it
     refused the one step that cannot hold a claim yet, since the number is
     minted there. A span holding `$(` or a backtick, or following `eval` or
-    `-c`, is kept whole: the shell runs what is inside it."""
+    `-c`, is kept whole: the shell runs what is inside it. Inside single
+    quotes `$(` and a backtick are literal and the span is blanked."""
     def keep_or_blank(m):
-        if EXECUTED_INSIDE.search(m.group(0)) or EXECUTES_NEXT.search(command[:m.start()]):
-            return m.group(0)
+        span = m.group(0)
+        # `$(` and a backtick are literal inside single quotes -- POSIX single
+        # quotes suppress every expansion -- so only a double-quoted span
+        # holding one is kept. `eval` and `-c` (in any flag cluster, `-lc`
+        # included) re-parse their argument whichever quote enclosed it.
+        executed_inside = span[0] == '"' and EXECUTED_INSIDE.search(span)
+        if executed_inside or EXECUTES_NEXT.search(command[:m.start()]):
+            return span
         return '""'
     return QUOTED.sub(keep_or_blank, command)
 
