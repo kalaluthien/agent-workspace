@@ -142,6 +142,16 @@ def main():
         r = ask(root, tool="Bash", command='echo "x" > out.txt')
         check("a redirect outside the quotes is still a change",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
+        # Quoted text the shell executes is not prose, one case per door.
+        for command, why in (
+                ('gh issue create --body "$(git mv a b)"',
+                 "a command substitution inside quotes is still a change"),
+                ('gh issue create --body "`git mv a b`"',
+                 "a backtick substitution inside quotes is still a change"),
+                ('eval "git mv a b"', "an eval'd string is still a change"),
+                ('bash -c "git mv a b"', "a -c string is still a change")):
+            r = ask(root, tool="Bash", command=command)
+            check(why, r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 
     # 5. The two exemptions, each on its own. They are the paths a refused
     # session has to be able to take to stop being refused.

@@ -178,15 +178,25 @@ def held_by(claim_module, records, session_id, issue=None):
 
 
 QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
+# A quoted span the shell still executes: it holds a command substitution, or
+# it is the argument of `eval` or of a `-c` (bash -c, sh -c, python -c).
+EXECUTED_INSIDE = re.compile(r"\$\(|`")
+EXECUTES_NEXT = re.compile(r"(?:\beval|\s-c)\s*$")
 
 
 def outside_quotes(command):
-    """The command with every quoted string emptied, so a pattern matched
-    against it sees the words the shell would run and not the text they are
-    handed. `gh issue create --body "... git mv a b ..."` files an issue; the
-    `mv` inside its body is prose, and matching it refused the one step that
-    cannot hold a claim yet, since the number is minted there."""
-    return QUOTED.sub('""', command)
+    """The command with every quoted string emptied -- except one the shell
+    would execute -- so a pattern matched against it sees the words that run
+    and not the text they are handed. `gh issue create --body "... git mv a b
+    ..."` files an issue; the `mv` inside its body is prose, and matching it
+    refused the one step that cannot hold a claim yet, since the number is
+    minted there. A span holding `$(` or a backtick, or following `eval` or
+    `-c`, is kept whole: the shell runs what is inside it."""
+    def keep_or_blank(m):
+        if EXECUTED_INSIDE.search(m.group(0)) or EXECUTES_NEXT.search(command[:m.start()]):
+            return m.group(0)
+        return '""'
+    return QUOTED.sub(keep_or_blank, command)
 
 
 def changing(payload, changing_command):
