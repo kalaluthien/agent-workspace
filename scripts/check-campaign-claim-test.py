@@ -123,10 +123,49 @@ def main():
         for tool, command, why in (
                 ("Read", None, "a read is not a change"),
                 ("Bash", "git status", "a read-only shell command is not a change"),
-                ("Bash", "grep -r x .", "a search is not a change")):
+                ("Bash", "grep -r x .", "a search is not a change"),
+                ("Bash", 'gh issue create -R o/r --title t --body "run git mv a b"',
+                 "a changing word inside quoted argument text is not a change"),
+                ("Bash", "gh issue create -R o/r --body-file /tmp/b.md",
+                 "filing an issue is not a change"),
+                ("Bash", "gh issue create -R o/r --body 'the $(git mv a b) is prose'",
+                 "a $( inside a single-quoted body is literal, not a change"),
+                ("Bash", 'gh issue create -R o/r --body "$(cat <<\'EOF\'\nrun git mv a b\nEOF\n)"',
+                 "a heredoc read into a body keeps only `cat`, not a change"),
+                ("Bash", 'gh pr create --title "mv the file" --body-file x.md',
+                 "a title is prose, not a change"),
+                ("Bash", 'gh issue create -R o/r --title "R&D notes" --body "run git mv x y"',
+                 "an & in an earlier title does not unblank a later body")):
             r = ask(root, tool=tool, command=command)
             check(f"{why}", r.returncode == 0,
                   f"exit {r.returncode}: {out(r)[:200]}")
+
+    # The quoted-text carve-out must not swallow the command itself: the same
+    # words unquoted are still a change.
+    with tempfile.TemporaryDirectory() as d:
+        root = container(d, {"demo-260902": {}})
+        r = ask(root, tool="Bash", command="git mv a b")
+        check("the same words outside quotes are still a change",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
+        r = ask(root, tool="Bash", command='echo "x" > out.txt')
+        check("a redirect outside the quotes is still a change",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
+        # Quoted text that is not a prose sink stays visible, whatever runs it:
+        # the sinks that execute text cannot be listed, so nothing else is hidden.
+        for command, why in (
+                ('gh issue create --body "$(git mv a b)"',
+                 "a command substitution inside a double-quoted body is still a change"),
+                ('gh issue create --body "`git mv a b`"',
+                 "a backtick substitution inside a double-quoted body is still a change"),
+                ('eval "git mv a b"', "an eval'd string is still a change"),
+                ('bash -c "git mv a b"', "a -c string is still a change"),
+                ("bash -lc 'git mv a b'", "a -c in a flag cluster, single-quoted, is still a change"),
+                ('bash -cx "git mv a b"', "a -c anywhere in the cluster is still a change"),
+                ('ssh host "git mv a b"', "a string handed to ssh is still a change"),
+                ("printf '%s' 'git mv a b' | bash", "a string piped into a shell is still a change"),
+                ("xargs -t 'git mv a b'", "a sink-like flag on a program other than gh blanks nothing")):
+            r = ask(root, tool="Bash", command=command)
+            check(why, r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 
     # 5. The two exemptions, each on its own. They are the paths a refused
     # session has to be able to take to stop being refused.
@@ -154,6 +193,15 @@ def main():
         r = ask(root, session="sid-2")
         check("...and does not allow another session's",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
+
+    # The close target is read from the filtered command too: prose in a body
+    # must not name the issue a claim is checked against.
+    with tempfile.TemporaryDirectory() as d:
+        root = container(d, {"demo-260902": {"42": RECORD.replace("campaign-1/7-x", "campaign-1/42-y")}})
+        r = ask(root, tool="Bash",
+                command='gh issue comment 42 -R o/r --body "see gh issue close 5 today"')
+        check("a close named inside a body is not the target the claim is checked against",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
 
     # A released record is attribution, not a claim. Its own case, because
     # treating it as one is the exact way a closed sub-issue's claim would keep

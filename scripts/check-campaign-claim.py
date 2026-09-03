@@ -23,6 +23,12 @@ imported and not moved into this repository because the pattern is machine-wide
 not -- and a repository-local copy would be the second reader all over again,
 with the direction of the dependency reversed.
 
+The pattern is matched against the command with its PROSE spans blanked
+(`outside_quotes`): the argument of --body, --title, --message, -m, -t is text
+a service is handed, and `gh issue create --body "... git mv ..."` must file
+the issue whose number the claim is minted from. Every other quoted span stays
+visible, because the sinks that execute text cannot be listed.
+
 That pattern has no opinion about service doors, because a takeaway check does
 not need one. The three `gh` writes a claim actually gates -- closing, editing
 and commenting on an issue, and merging a pull request -- are added here, in
@@ -172,6 +178,51 @@ def held_by(claim_module, records, session_id, issue=None):
     return out
 
 
+QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
+# The flags whose argument is prose handed to a service, never run: an issue
+# or pull request body or title, a commit message, release notes.
+# Only in a `gh` segment: `xargs -t '...'` and `-m` on any other program are
+# not prose sinks, and blanking after them would hide what they run.
+PROSE_SINK = re.compile(r"\bgh\b[^|;&]*(?:--body|--title|--message|--notes|-m|-t)(?:\s*=|\s+)$")
+# What the shell still runs inside a double-quoted prose span: the head of a
+# command substitution, up to its first newline or closing paren.
+SUBST_HEAD = re.compile(r"\$\(([^\n)]*)|`([^\n`]*)")
+
+
+def outside_quotes(command):
+    """The command with its prose spans blanked, so a pattern matched against
+    it sees the words the shell runs and not the text a service is handed.
+    `gh issue create --body "... git mv a b ..."` files an issue; the `mv` in
+    its body is prose, and matching it refused the one step that cannot hold
+    a claim yet, since the number is minted there.
+
+    A sink counts only inside a `gh` segment; `xargs -t '...'` is not one.
+    Every other quoted span is kept whole, whatever it follows: `eval`, `-c`,
+    `ssh host "..."`, a string piped into a shell -- the sinks that execute
+    text cannot be listed, so nothing is hidden by default. A prose span is
+    blanked except for the head of each `$(...)` or backtick inside a
+    double-quoted one, which the shell does run: `--body "$(cat <<'EOF'"` keeps
+    `cat <<'EOF'`, `--body "$(git mv a b)"` keeps `git mv a b`. Inside single
+    quotes `$(` is literal and the span is blanked whole."""
+    # Built left to right, and the sink scan reads the OUTPUT so far: an
+    # earlier prose span already blanked cannot hide the `gh` segment with a
+    # `&` or `|` of its own (`--title "R&D" --body "..."`).
+    out, pos = [], 0
+    for m in QUOTED.finditer(command):
+        out.append(command[pos:m.start()])
+        span = m.group(0)
+        if not PROSE_SINK.search("".join(out)):
+            out.append(span)
+        elif span[0] == "'":
+            out.append("''")
+        else:
+            heads = [a or b for a, b in SUBST_HEAD.findall(span)]
+            out.append('"' + " ; ".join(heads) + '"')
+        pos = m.end()
+    out.append(command[pos:])
+    return "".join(out)
+
+
 def changing(payload, changing_command):
     """(is it a changing call, why). Returns (False, reason) for a call this
     guard has no opinion about, so the allow path can say which one it was."""
@@ -185,7 +236,7 @@ def changing(payload, changing_command):
         return True, f"{tool} changes a file"
     if tool != "Bash":
         return False, f"{tool} changes nothing this guard reads"
-    command = tool_input.get("command") or ""
+    command = outside_quotes(tool_input.get("command") or "")
     if "campaign-claim.py" in command:
         # Taking a claim cannot itself require one.
         return False, "the command runs campaign-claim.py"
@@ -193,7 +244,7 @@ def changing(payload, changing_command):
         return True, "the command writes to the campaign plane through gh"
     if changing_command.search(command):
         return True, "the command matches the changing-command pattern"
-    return False, "the command matches no changing form"
+    return False, "the command matches no changing form, outside quoted text"
 
 
 def close_target(command):
@@ -265,7 +316,7 @@ def pre(payload, claim_module, changing_command):
             "A claim is attributed by session id and by nothing else."])
 
     command = (payload.get("tool_input") or {}).get("command") or ""
-    issue = close_target(command)
+    issue = close_target(outside_quotes(command))
 
     found, unread, missing = {}, [], []
     for d in dirs:
@@ -344,7 +395,7 @@ def released(payload, claim_module):
     """Mark a closed sub-issue's claim released. Always exits 0."""
     session_id = payload.get("session_id") or ""
     command = (payload.get("tool_input") or {}).get("command") or ""
-    issue = close_target(command)
+    issue = close_target(outside_quotes(command))
     if not issue:
         return 0
     root, dirs, note, refusal_lines = setting(payload)
