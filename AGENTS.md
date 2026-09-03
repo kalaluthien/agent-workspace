@@ -10,6 +10,9 @@ cannot see what lives off this tree — `main`'s branch protection, the machine-
 git hooks — so its silence is not evidence that no mechanism exists. Use `gh` for
 every GitHub operation; it is authenticated here.
 
+**Ask the person only what no check can settle** — preference, scope, a
+destructive stake. Everything else, decide and do, and report the decision.
+
 # The campaign
 
 One assignment a person is responsible for, worked across the repositories it
