@@ -227,8 +227,11 @@ body moved?" has no answer. Say nothing was written, then repair the way
 the cause among its three, fold the changes into the README, refresh the derived
 copy from `/tmp/body-now`, and re-run.
 
-Only then overwrite, and refresh the derived copy so the next write compares
-against this one.
+Only then overwrite, and refresh **both** the README and the derived copy from
+the read-back, so the next write compares read-back against read-back. The round
+trip is not byte-stable -- a body sent with one trailing newline comes back with
+two -- so the body compare below strips trailing newlines on both sides; `gh
+issue view --json body` is the canonical form, never the file that was sent.
 
 ```sh
 gh issue edit "$N" -R kalaluthien/agent-workspace --body-file "$README"
@@ -237,11 +240,17 @@ gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/b
   mv /tmp/repos-after.tmp /tmp/repos-after ||
   { rm -f /tmp/repos-after.tmp
     echo "REFUSE: the body GitHub stored does not read; the index may be lost"; }
-cmp -s /tmp/repos-before /tmp/repos-after && echo "index survived"
-cp /tmp/body-after "$DERIVED"
+cmp -s /tmp/repos-before /tmp/repos-after && echo "index survived" &&
+  command diff <(printf '%s\n' "$(cat "$README")") <(printf '%s\n' "$(cat /tmp/body-after)") &&
+  echo "body survived" &&
+  cp /tmp/body-after "$README" &&
+  cp /tmp/body-after "$DERIVED"
 ```
 
-Not identical: say so and stop before step 5, while the README still exists.
+Either compare failing: say so and stop before step 5, while the README still
+exists. `"$(cat ...)"` drops every trailing newline and `printf` puts one back,
+which is the whole normalisation; anything else that differs was lost in the
+write.
 
 Holds when: the anchor issue body is this campaign's README, `## Repos` list
 included, compared against `runtime/anchor-body-derived.md` before it was written

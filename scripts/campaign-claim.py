@@ -53,7 +53,17 @@ something sets it, and the record is where a stale name does lasting damage:
 naming both numbers. opening-campaign step 3 is the step that sets the name;
 this is its second reader.
 
-`--session` IS THE HOLDER'S OWN PROOF
+
+`--session` ON `take` IS THE LAUNCH-TIME PATH
+
+A launcher must claim the branch before the delegate exists and must hold no
+record of its own, and `take --session <the delegate's session id> --name
+<its name>` is both at once: the ref is cut now, the record is attributed to
+the delegate by the one field every join reads. The pid is written `unknown`
+whenever `--session` names a session other than the caller's, because the
+caller's pid would be a lie that `status` reads as the delegate's liveness.
+
+`--session` ON `release` IS THE HOLDER'S OWN PROOF
 
 `--confirmed-absent` exists because a THIRD party cannot tell a dead session
 from a restarted one. The holder itself has no such problem: a caller whose
@@ -314,10 +324,14 @@ def write_record(path, name, branch, local=False, session_arg=None,
     window between the two in which a peer's take lands, and the window is
     exactly the collision the claim exists to stop. Returns (body, refusal);
     a refusal means nothing was written."""
-    session = session_arg or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    pid = os.environ.get("CLAUDE_PID", "")
+    own = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    session = session_arg or own
+    # Another session's record must not carry this process's pid: `status`
+    # would read the launcher's liveness as the delegate's.
+    pid = os.environ.get("CLAUDE_PID", "") if session == own else ""
     missing = [k for k, v in (("CLAUDE_CODE_SESSION_ID", session),
-                              ("CLAUDE_PID", pid)) if not v]
+                              ("CLAUDE_PID", pid if session == own else "n/a"))
+               if not v]
     if missing:
         print(f"!! {' and '.join(missing)} not set; the record will carry "
               f"'unknown' there.\n"

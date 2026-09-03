@@ -120,7 +120,12 @@ naming somebody else means the campaign was migrated out from under you.
 
 **Every session of a campaign is an executor**, and **no role licenses a write,
 nor does asking**: a session that cannot satisfy a guard does not make the write.
-**Claim the branch before you launch onto it**, with `campaign-claim take`.
+**Claim the branch before you launch onto it**, with `campaign-claim take
+--session <the delegate's session id> --name <the delegate's name>`: the branch
+is cut now, and the record is the delegate's from the start, because a record
+is attributed by `session` and the launcher chose the delegate's before launching
+(`.claude/skills/opening-campaign/references/launching.md`). A record written that way carries no pid, since the
+delegate's does not exist yet; `live` joins on the session id and reads it fine.
 
 ## The session name
 
@@ -306,8 +311,9 @@ from elsewhere reads *its* working tree and comes back clean regardless.
 
 **Every claimant writes a record, and `scripts/campaign-claim.py` writes it**, so the
 shape lives in one place and a delegate runs the script rather than copying it.
-The session that *launched* a delegate writes none: it holds no claim, and a
-second address would make the close gate count one claim twice. Each field answers
+The session that *launched* a delegate writes none *of its own*: it holds no
+claim, and a second address would make the close gate count one claim twice --
+the record it writes at launch names the delegate's session, not its own. Each field answers
 one question — liveness from `pid`, addressing from `name`, and `session` when both
 have gone stale, it being the only field on **either side of the join** surviving a
 restart and a rename. A name that no longer resolves is a stale record, not a dead

@@ -17,6 +17,13 @@ Launch in `<campaign>/repos/<repo>/` with `--append-system-prompt-file
 - **Put the prompt before any variadic flag.** `--add-dir` and `--allowedTools`
   swallow a trailing prompt as one of their own values, and the run dies on
   "Input must be provided".
+- **Pass `--add-dir <container> [<other paths the brief names>]`**, always at
+  least the container. A member-repo delegate's cwd is `<campaign>/repos/<repo>/`,
+  and its brief under `<campaign>/runtime/handover/`, the claim script under
+  `<container>/scripts/`, and the campaign `AGENTS.md` all lie outside it, so
+  without the flag its first `Read` of the brief stops on a permission prompt --
+  a fourth silent stop beside the three below, observed 2026-09-02. Add every
+  source checkout the brief points at the same way; the flag is variadic.
 - Choose the session UUID in advance (`--session-id`) so the transcript path is
   known before the agent starts, and `--name` it per § The session name. `--name`
   sets the harness name only; set the herdr pane name too, because the two do not
