@@ -167,6 +167,32 @@ CASES = [
     ("R3 ...but the word in prose is a mention",
      {"AGENTS.md": "t\n\nThe `CLAIMED` message was retired by #59.\n"}, None),
 
+    # The #105 merges, one case per name in each alternation: the #139 sweep
+    # mangled `campaign-(anchors|...)` to `campaign-(campaign issues|...)` and
+    # every suite stayed green, because nothing here spelled a name. Removing
+    # any one name from its alternation now fails the case that spells it.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 scripts/campaign-anchors is retired",
+     {"scripts/x.py": 'run("scripts/campaign-anchors")\n'}, "R3"),
+    ("R3 scripts/campaign-bound is retired",
+     {"scripts/x.py": 'run("scripts/campaign-bound", "1")\n'}, "R3"),
+    ("R3 scripts/campaign-subtasks is retired",
+     {"scripts/x.py": 'run("scripts/campaign-subtasks", "1")\n'}, "R3"),
+    ("R3 scripts/campaign-settlement is retired",
+     {"scripts/x.py": 'run("scripts/campaign-settlement", "1")\n'}, "R3"),
+    ("R3 scripts/campaign-live is retired",
+     {"scripts/x.py": 'run("scripts/campaign-live", "1")\n'}, "R3"),
+    ("R3 scripts/campaign-session-alive is retired",
+     {"scripts/x.py": 'run("scripts/campaign-session-alive", "1")\n'}, "R3"),
+    ("R3 scripts/alloy-trace-digest is retired",
+     {"scripts/x.py": 'run("scripts/alloy-trace-digest", "s.txt")\n'}, "R3"),
+    ("R3 a bare scripts/acquire-repo is the stale call",
+     {"scripts/x.py": 'run("scripts/acquire-repo.sh", "o/r")\n'}, "R3"),
+    ("R3 ...and the moved path is the correct one",
+     {"scripts/x.py": 'run(".claude/skills/opening-campaign/scripts/acquire-repo.sh", "o/r")\n'}, None),
+    ("R3 the live tracker subcommand is not a retired name",
+     {"scripts/x.py": 'run("scripts/campaign-tracker.py", "campaign-issues")\n'}, None),
+
     # The forms a quote-immediately-after-the-word pattern would miss. One
     # case each.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
