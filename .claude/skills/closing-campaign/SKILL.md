@@ -240,11 +240,11 @@ gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/b
   mv /tmp/repos-after.tmp /tmp/repos-after ||
   { rm -f /tmp/repos-after.tmp
     echo "REFUSE: the body GitHub stored does not read; the index may be lost"; }
-cmp -s /tmp/repos-before /tmp/repos-after && echo "index survived"
-command diff <(printf '%s\n' "$(cat "$README")") <(printf '%s\n' "$(cat /tmp/body-after)") &&
-  echo "body survived"
-cp /tmp/body-after "$README"
-cp /tmp/body-after "$DERIVED"
+cmp -s /tmp/repos-before /tmp/repos-after && echo "index survived" &&
+  command diff <(printf '%s\n' "$(cat "$README")") <(printf '%s\n' "$(cat /tmp/body-after)") &&
+  echo "body survived" &&
+  cp /tmp/body-after "$README" &&
+  cp /tmp/body-after "$DERIVED"
 ```
 
 Either compare failing: say so and stop before step 5, while the README still

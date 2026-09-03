@@ -330,7 +330,8 @@ def write_record(path, name, branch, local=False, session_arg=None,
     # would read the launcher's liveness as the delegate's.
     pid = os.environ.get("CLAUDE_PID", "") if session == own else ""
     missing = [k for k, v in (("CLAUDE_CODE_SESSION_ID", session),
-                              ("CLAUDE_PID", pid)) if not v]
+                              ("CLAUDE_PID", pid if session == own else "n/a"))
+               if not v]
     if missing:
         print(f"!! {' and '.join(missing)} not set; the record will carry "
               f"'unknown' there.\n"
