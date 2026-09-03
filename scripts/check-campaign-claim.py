@@ -37,6 +37,29 @@ SERVICE_DOORS, and are this script's own.
 An import that fails is a refusal, not a pass: a guard that cannot read the
 pattern it guards by has permitted nothing.
 
+WHAT IT WRITES TO, WHICH IS NOT THE SAME QUESTION AS WHERE IT SITS
+
+A claim is a record about campaign work, so the guard owns a change that lands
+on campaign work: a target inside a container tree, or inside a campaign
+directory at the root. A target in neither -- `/tmp`, `$HOME`, another
+checkout entirely -- is allowed whatever claim the session holds, because
+refusing it enforces nothing about a sub-issue and stops every scratch write a
+session in the container makes.
+
+The target is read from the tool: the path field for a file tool, and for
+`Bash` every path-like token OUTSIDE quoted text, absolute or resolved against
+the payload's cwd. A token is path-like when it names a path -- a leading `/`,
+`./`, `../`, `~/`, or a `/` anywhere in it -- because a bare word is a
+subcommand as often as a file and reading it as a file would allow `git mv a b`
+on the strength of a guess.
+
+Bash's reading is all-or-nothing and its empty case is NOT an allow. Every path
+token outside allows; one token inside, or NO token read at all (`git commit`,
+`gh pr merge`), falls through to the claim reading below. Those two are printed
+apart -- "no path token" against "every path token outside" -- because a guard
+that cannot see a target has looked and found nothing, which is not the same
+as looking and finding it elsewhere.
+
 WHICH CAMPAIGN, AND WHAT IT DOES WHEN IT CANNOT TELL
 
 The container root is the topmost ancestor of `cwd` holding this repository's
@@ -258,6 +281,105 @@ def close_target(command):
     return None
 
 
+# A shell word: everything the shell's own separators leave standing. `>` and
+# `<` are separators here so a redirect written without a space still yields
+# its path (`cat >/tmp/x`).
+SHELL_WORD = re.compile(r"[^\s;|&<>()]+")
+# What makes a word a PATH rather than a subcommand, a flag value, or a branch
+# name. Deliberately narrow: a word with no `/` in it is not read as a path,
+# so nothing is allowed on a guess.
+PATHISH = re.compile(r"^~?/|^\.\.?/|/")
+
+
+def resolve_target(token, cwd):
+    """(absolute path, why_unreadable) for one path token."""
+    try:
+        p = Path(os.path.expanduser(token))
+        p = p if p.is_absolute() else cwd / p
+        return p.resolve(), None
+    except (OSError, RuntimeError, ValueError) as e:
+        return None, f"{token!r} would not resolve ({e.__class__.__name__})"
+
+
+def lands_outside(target: Path, root: Path, dirs):
+    """(True, None) when the target is in no container tree and no campaign
+    directory; (False, what it is inside) otherwise.
+
+    `container_root` and not `root` alone: another checkout of this repository
+    -- the main one, seen from a worktree -- is a container tree too, and a
+    write into it is campaign work read from the wrong side."""
+    other = container_root(target)
+    if other is not None:
+        return False, f"inside the container {other}"
+    if target == root or root in target.parents:
+        return False, f"inside the container {root}"
+    for d in dirs or ():
+        if target == d or d in target.parents:
+            return False, f"inside the campaign directory {d}"
+    return True, None
+
+
+def path_tokens(command):
+    """The path-like words of a command, with its prose spans already blanked.
+
+    A flag's own name is dropped, and a `--flag=path` keeps the value: the
+    name carries no target and matching `/` in one (`--body-file`) reads
+    nothing."""
+    out = []
+    for m in SHELL_WORD.finditer(command):
+        word = m.group(0).strip("\"'")
+        if word.startswith("-"):
+            if "=" not in word:
+                continue
+            word = word.split("=", 1)[1].strip("\"'")
+        if not word or "://" in word:
+            continue
+        if PATHISH.search(word):
+            out.append(word)
+    return out
+
+
+def target_reading(payload, cwd, root, dirs):
+    """(verdict, line) -- what this call writes to, as far as it can be read.
+
+    "outside" allows on its own; "inside" and "unread" fall through to the
+    claim reading, and are named apart so an absent target never reads as one
+    found elsewhere."""
+    tool = payload.get("tool_name", "")
+    tool_input = payload.get("tool_input") or {}
+    if tool in FILE_TOOLS:
+        raw = next((tool_input[k] for k in PATH_KEYS if tool_input.get(k)), None)
+        if not raw:
+            return "unread", f"{tool} carries no path field, so no target was read"
+        target, why = resolve_target(str(raw), cwd)
+        if why:
+            return "unread", f"{tool} target {why}"
+        outside, where = lands_outside(target, root, dirs)
+        if outside:
+            return "outside", f"{tool} target {target} is in no container tree " \
+                              f"and no campaign directory"
+        return "inside", f"{tool} target {target} is {where}"
+    if tool != "Bash":
+        return "unread", f"{tool} names no path this guard can read"
+    tokens = path_tokens(outside_quotes(tool_input.get("command") or ""))
+    if not tokens:
+        return "unread", ("no path token could be read from the command outside "
+                          "quoted text, so its target is unknown")
+    seen = []
+    for token in tokens:
+        target, why = resolve_target(token, cwd)
+        if why:
+            return "unread", f"a path token {why}"
+        outside, where = lands_outside(target, root, dirs)
+        if not outside:
+            return "inside", f"the path token {token!r} resolves to {target}, " \
+                             f"{where}"
+        seen.append(str(target))
+    return "outside", (f"every path token read outside quoted text lands in no "
+                       f"container tree and no campaign directory: "
+                       f"{', '.join(seen)}")
+
+
 def refuse(lines):
     print("check-campaign-claim: REFUSED.", file=sys.stderr)
     for line in lines:
@@ -275,26 +397,26 @@ def read_payload():
 
 
 def setting(payload):
-    """(root, dirs, note, refusal_lines) -- where this session is, or why the
-    question could not be answered."""
+    """(cwd, root, dirs, note, refusal_lines) -- where this session is, or why
+    the question could not be answered."""
     cwd = payload.get("cwd") or os.getcwd()
     try:
         cwd = Path(cwd).resolve()
     except OSError as e:
-        return None, None, None, [f"cwd {cwd!r} would not resolve "
-                                  f"({e.__class__.__name__})."]
+        return None, None, None, None, [f"cwd {cwd!r} would not resolve "
+                                        f"({e.__class__.__name__})."]
     root = container_root(cwd)
     if root is None:
-        return None, None, f"no container above {cwd}", None
+        return cwd, None, None, f"no container above {cwd}", None
     dirs, note = campaign_dirs(root, cwd)
     if dirs is None:
-        return root, None, note, [note]
-    return root, dirs, note, None
+        return cwd, root, None, note, [note]
+    return cwd, root, dirs, note, None
 
 
 def pre(payload, claim_module, changing_command):
     session_id = payload.get("session_id") or ""
-    root, dirs, note, refusal_lines = setting(payload)
+    cwd, root, dirs, note, refusal_lines = setting(payload)
     if refusal_lines:
         return refuse(refusal_lines + [
             "This guard could not read where it is, which is not the same as "
@@ -307,6 +429,13 @@ def pre(payload, claim_module, changing_command):
     is_changing, why = changing(payload, changing_command)
     if not is_changing:
         return 0
+
+    verdict, where = target_reading(payload, cwd, root, dirs)
+    if verdict == "outside":
+        print(f"check-campaign-claim: allowed, target outside. {where}.")
+        return 0
+    print(f"check-campaign-claim: target read as {verdict} -- {where}; "
+          f"reading the claim.")
 
     if not session_id:
         return refuse([
@@ -398,7 +527,7 @@ def released(payload, claim_module):
     issue = close_target(outside_quotes(command))
     if not issue:
         return 0
-    root, dirs, note, refusal_lines = setting(payload)
+    _cwd, root, dirs, note, refusal_lines = setting(payload)
     if root is None or not dirs or refusal_lines:
         print(f"check-campaign-claim --released: not releasing #{issue}: "
               f"{note or (refusal_lines or ['unreadable'])[0]}")

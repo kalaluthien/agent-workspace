@@ -208,9 +208,12 @@ what was built. Quote `campaign-tracker settlement`'s note for that row, not its
 a repo-less campaign, which files its sub-issues on the container tracker. **Work
 that lands no commit is claimed all the same**, with `campaign-claim take
 --local`: the record alone, no ref. **`scripts/check-campaign-claim.py` is what
-makes that true rather than remembered** — a `PreToolUse` guard answering "does
-this session hold an unreleased claim on the campaign its cwd is in", refusing
-every changing call that does not. `install-hooks.sh` registers it in
+makes that true rather than remembered** — a `PreToolUse` guard answering "is
+this a change to campaign work that no unreleased claim of this session covers",
+refusing the ones that are. A change landing outside every container tree and
+every campaign directory is not campaign work and is not refused; how the guard
+reads a target, and what it does when it cannot, is its docstring's.
+`install-hooks.sh` registers it in
 `~/.claude/settings.json`, because a delegate's clone is a different repository
 and reads none of this one's settings.
 

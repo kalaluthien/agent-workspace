@@ -431,7 +431,17 @@ pred claimAtomic       { always (Now.ev = Claim  implies Now.issue not in Claime
    `claimBeforeLaunch` never touches. R4h is that hole and R4i is its repair --
    scripts/check-campaign-claim.py, a PreToolUse guard refusing a changing call
    from a session holding no claim. Keyed on `a.peer` because a delegate has no
-   session to hold one; its launcher was gated already. */
+   session to hold one; its launcher was gated already.
+
+   `Work` is what the gate is on, and what makes a call `Work` is its TARGET,
+   not where the session sits: a change landing outside every container tree
+   and every campaign directory is not work on a sub-issue and is no step of
+   this relation. The guard reads that target where it can -- a file tool's
+   path, a shell's path-like words -- and falls back to this rule where it
+   cannot, an unread target not being a target read as elsewhere. No atom here
+   carries a path, so the reading itself is the script's and is stated in its
+   docstring; the model says only that a write on nothing this campaign owns is
+   outside `Work`. */
 pred claimBeforeWork {
   always (Now.ev = Work and some Target.agent.peer
             implies Now.issue in Target.agent.peer.claims)

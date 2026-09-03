@@ -306,6 +306,58 @@ def main():
               r.returncode == 0 and "Re-run" in out(r),
               f"exit {r.returncode}: {out(r)[:200]}")
 
+    # 12. What the call WRITES TO, which is a different question from where the
+    # session sits. Every case here runs from the container root with no claim
+    # anywhere -- the setting group 3 proved is a refusal -- so a case that
+    # passes does so on the target reading and on nothing else.
+    with tempfile.TemporaryDirectory() as d:
+        root = container(d, {"demo-260902": {}})
+        OUT = "/tmp/check-campaign-claim-fixture.html"
+
+        r = ask(root, tool="Write", path=OUT)
+        check("a Write to a path in no container and no campaign is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and the allow names the path it read and the branch taken",
+              OUT in out(r) and "allowed, target outside" in out(r), out(r)[:300])
+
+        r = ask(root, tool="Bash", command=f"echo hi > {OUT}")
+        check("a shell redirect to a path outside every campaign is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(root, tool="Bash", command="mkdir -p /tmp/check-campaign-claim-shot")
+        check("a mkdir outside every campaign is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
+        # The other side of the same branch: inside is still the claim's.
+        r = ask(root, tool="Write", path=str(root / "demo-260902" / "notes.md"))
+        check("a Write under a campaign directory is still refused",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(root, tool="Write", path=str(root / "AGENTS.md"))
+        check("a Write inside the container tree is still refused",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+
+        # A command with no path in it at all falls back to the old reading,
+        # and says which of the two happened: looked and found nothing.
+        r = ask(root, tool="Bash", command="git commit -m x")
+        check("a command carrying no path token is still refused",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says no path token could be read, not that one was outside",
+              "no path token could be read" in out(r), out(r)[:400])
+
+        # All-or-nothing: one token landing inside denies the ones outside.
+        r = ask(root, tool="Bash",
+                command=f"cp {OUT} {root / 'demo-260902' / 'b.txt'}")
+        check("one path token inside a campaign directory refuses the whole call",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...naming the token that landed inside",
+              "demo-260902" in out(r) and "resolves to" in out(r), out(r)[:400])
+
+        # A claim still allows what the target reading sent to it, so the new
+        # branch cannot be what makes group 6 pass.
+        root2 = container(Path(d) / "held", {"demo-260902": {"7": RECORD}})
+        r = ask(root2, tool="Write", path=str(root2 / "demo-260902" / "notes.md"))
+        check("a held claim still allows a write inside its campaign",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
     for f in fails:
         print(f"FAIL  {f}")
     print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
