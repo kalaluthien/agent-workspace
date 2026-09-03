@@ -8,7 +8,9 @@
  *              sub-issue, which machine, which session launched it, which
  *              branch, and -- when the agent IS a campaign session working its
  *              own claim -- which session that is.
- *   Role       what an agent is for. `Executor` is the only kind today.
+ *   Role       what an agent is for: an Executor works the sub-issue on its
+ *              branch; a Planner filed it and distributes it, holding no
+ *              claim of its own.
  *   Launched   agents that have been launched, and Live those still running.
  *   LocalOnly  agents holding work that exists only on their host.
  *   PushedToRemote  agents whose branch is on the remote, a different fact.
@@ -51,12 +53,17 @@ sig Agent {
   peer:     lone Session
 }
 
-/* What an agent is FOR. `Executor` is the only kind today, so every agent has
-   that role and no command means anything different for the split existing. A
-   second kind is added here, and takes whatever of the state below it turns
-   out not to share. */
+/* What an agent is FOR. An Executor works a sub-issue on the branch it or its
+   launcher claimed. A Planner is a session's own atom (`some peer`) on a
+   sub-issue it filed and distributes: it never takes `work` or `report`, so it
+   is never LocalOnly and holds no claim -- what it executes itself is an
+   Executor atom of the same session. A delegate launch is the planner's act,
+   and `launch` says so. Of the state below, a planner does not share
+   LocalOnly, PushedToRemote and Reported. A third kind is added here the same
+   way, and takes whatever of the state below it turns out not to share. */
 abstract sig Role {}
 one sig Executor extends Role {}
+one sig Planner  extends Role {}
 
 var sig Launched in Agent {}
 var sig Live     in Agent {}
@@ -95,6 +102,7 @@ one sig Target { var agent: lone Agent }
 fact AgentWellFormed {
   all c: Campaign | c.campaignIssue not in Agent.task
   all a: Agent | some a.peer implies (a.launcher = a.peer and a.host = a.peer.machine)
+  all a: Agent | a.role = Planner implies some a.peer   -- a planner is a session, never a delegate
   always Live in Launched
   always Retired in Launched
   always no Live & Retired
@@ -184,6 +192,10 @@ pred launch[a: Agent] {
      ref unconditionally: it would model a create-ref that does not happen, and
      the record is what must hold on this edge -- `claimBeforeWork` says so. */
   no a.peer implies a.task in Claimed
+  /* A delegate is the planner's act: the launching session holds a live
+     Planner atom on this sub-issue, the one that filed and distributes it. A
+     session working its own claim needs none -- the one-executor shape. */
+  no a.peer implies (some p: role.Planner | p.peer = Who.session and p.task = a.task and p in Live)
   campaignDirAt[Who.session.worksOn, a.host].checkedOut[a.task.repo] = a.branch
   Launched' = Launched + a
   Live'     = Live + a
@@ -207,9 +219,11 @@ pred agentDeleteDir {
   no Target.agent
 }
 
-/* Clears an earlier confirmation here rather than at the point it is read. */
+/* Clears an earlier confirmation here rather than at the point it is read.
+   The executor's edge: a planner that executes a sub-issue itself is an
+   Executor atom of the same session, so no Planner atom is ever LocalOnly. */
 pred work[a: Agent] {
-  a in Live and a not in Waiting
+  a in Live and a not in Waiting and a.role = Executor
   LocalOnly' = LocalOnly + a
   Confirmed' = Confirmed - a
   Live' = Live and PushedToRemote' = PushedToRemote
@@ -252,9 +266,10 @@ pred answer[a: Agent] {
 }
 
 /* A prompt to verify, never the verification, so this event writes NOTHING
-   but the claim itself. */
+   but the claim itself. A REPORT names a pull request, so it is the
+   executor's. */
 pred report[a: Agent] {
-  a in Live
+  a in Live and a.role = Executor
   Reported' = Reported + a
   Asked' = Asked and Answered' = Answered and Waiting' = Waiting
   keepLife and keepReview and keepAddress and keepShutdown and keepLaunched

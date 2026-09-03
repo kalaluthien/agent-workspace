@@ -51,9 +51,27 @@ assert SilenceResolutionStaysSafe {
   (resolveSilenceExternally and coLocatedShutdown) implies noWorkDestroyed
 }
 
+/* A planner holds no claim, so the only branch it may hold local-only work on
+   is one it claimed -- and the model reaches no such state at all, because
+   `work` is the executor's edge. Dropping `a.role = Executor` from `work`
+   reddens it. */
+assert PlannerNeverLocalOnlyUnclaimed {
+  always all a: role.Planner | a in LocalOnly implies a.task in a.peer.claimedIssues
+}
+
+/* Every delegate was launched by its planner: the launching session holds a
+   Planner atom on the delegate's sub-issue. Dropping the planner conjunct from
+   `launch` reddens it; P2 in scenarios is the control that delegates still
+   launch. */
+assert DelegateLaunchedByPlanner {
+  always all a: Launched | no a.peer implies
+    (some p: role.Planner | p.peer = a.launcher and p.task = a.task)
+}
+
 /* ---------------- reachability floor ---------------- */
 
 pred Cov_LaunchAgent      { eventually (Now.event = Launch and some Target.agent) }
+pred Cov_LaunchDelegate   { eventually (Now.event = Launch and no Target.agent.peer) }
 pred Cov_Work             { eventually Now.event = Work }
 pred Cov_Push             { eventually Now.event = Push }
 pred Cov_Status           { eventually Now.event = Status }
@@ -88,8 +106,15 @@ check TwoStepCoLocatedSuffices   for 2 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
 -- rule 3's repair reopens nothing
 check SilenceResolutionStaysSafe for 2 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0
 
+-- a planner never holds local-only work on a branch it did not claim
+check PlannerNeverLocalOnlyUnclaimed for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+-- every delegate has a planner behind its launch
+check DelegateLaunchedByPlanner       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+
 -- every own event fires in some trace
 run Cov_LaunchAgent      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+-- a delegate launch needs the planner atom beside it, so this runs at 2 Agent
+run Cov_LaunchDelegate   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Work             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Push             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Status           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
