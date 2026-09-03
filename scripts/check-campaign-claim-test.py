@@ -160,7 +160,8 @@ def main():
                 ("bash -lc 'git mv a b'", "a -c in a flag cluster, single-quoted, is still a change"),
                 ('bash -cx "git mv a b"', "a -c anywhere in the cluster is still a change"),
                 ('ssh host "git mv a b"', "a string handed to ssh is still a change"),
-                ("printf '%s' 'git mv a b' | bash", "a string piped into a shell is still a change")):
+                ("printf '%s' 'git mv a b' | bash", "a string piped into a shell is still a change"),
+                ("xargs -t 'git mv a b'", "a sink-like flag on a program other than gh blanks nothing")):
             r = ask(root, tool="Bash", command=command)
             check(why, r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 
@@ -190,6 +191,15 @@ def main():
         r = ask(root, session="sid-2")
         check("...and does not allow another session's",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
+
+    # The close target is read from the filtered command too: prose in a body
+    # must not name the issue a claim is checked against.
+    with tempfile.TemporaryDirectory() as d:
+        root = container(d, {"demo-260902": {"42": RECORD.replace("campaign-1/7-x", "campaign-1/42-y")}})
+        r = ask(root, tool="Bash",
+                command='gh issue comment 42 -R o/r --body "see gh issue close 5 today"')
+        check("a close named inside a body is not the target the claim is checked against",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
 
     # A released record is attribution, not a claim. Its own case, because
     # treating it as one is the exact way a closed sub-issue's claim would keep

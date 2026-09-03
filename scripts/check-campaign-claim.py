@@ -181,7 +181,9 @@ def held_by(claim_module, records, session_id, issue=None):
 QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
 # The flags whose argument is prose handed to a service, never run: an issue
 # or pull request body or title, a commit message, release notes.
-PROSE_SINK = re.compile(r"(?:--body|--title|--message|--notes|-m|-t)(?:\s*=|\s+)$")
+# Only in a `gh` segment: `xargs -t '...'` and `-m` on any other program are
+# not prose sinks, and blanking after them would hide what they run.
+PROSE_SINK = re.compile(r"\bgh\b[^|;&]*(?:--body|--title|--message|--notes|-m|-t)(?:\s*=|\s+)$")
 # What the shell still runs inside a double-quoted prose span: the head of a
 # command substitution, up to its first newline or closing paren.
 SUBST_HEAD = re.compile(r"\$\(([^\n)]*)|`([^\n`]*)")
@@ -194,6 +196,7 @@ def outside_quotes(command):
     its body is prose, and matching it refused the one step that cannot hold
     a claim yet, since the number is minted there.
 
+    A sink counts only inside a `gh` segment; `xargs -t '...'` is not one.
     Every other quoted span is kept whole, whatever it follows: `eval`, `-c`,
     `ssh host "..."`, a string piped into a shell -- the sinks that execute
     text cannot be listed, so nothing is hidden by default. A prose span is
@@ -305,7 +308,7 @@ def pre(payload, claim_module, changing_command):
             "A claim is attributed by session id and by nothing else."])
 
     command = (payload.get("tool_input") or {}).get("command") or ""
-    issue = close_target(command)
+    issue = close_target(outside_quotes(command))
 
     found, unread, missing = {}, [], []
     for d in dirs:
@@ -384,7 +387,7 @@ def released(payload, claim_module):
     """Mark a closed sub-issue's claim released. Always exits 0."""
     session_id = payload.get("session_id") or ""
     command = (payload.get("tool_input") or {}).get("command") or ""
-    issue = close_target(command)
+    issue = close_target(outside_quotes(command))
     if not issue:
         return 0
     root, dirs, note, refusal_lines = setting(payload)
