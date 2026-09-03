@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Run one spec/alloy module, hold its command list, and digest its traces.
+"""Run one spec/campaign module, hold its command list, and digest its traces.
 
     scripts/alloy-check.py <file.als> [-o <dir>]
     scripts/alloy-check.py --commands <dir> [--write]
     scripts/alloy-check.py --digest <solution-0.txt> [...]
 
-Every command in spec/alloy/*.als carries its own verdict, in the `expect`
+Every command in spec/campaign/*/*.als carries its own verdict, in the `expect`
 clause the solver enforces: `expect 0` where the solver says UNSAT -- a check
 with no counterexample, a run with no instance -- and `expect 1` where it says
 SAT. Alloy exits non-zero and names each command that came out other than its
@@ -31,11 +31,15 @@ property over "the commands that exist" still holds, over a smaller set. Only a
 second statement that does NOT regenerate can catch it.
 
 --commands is that statement. It extracts every `check`/`run` declaration from
-the .als files in <dir> and compares them to <dir>/commands.lock.json, naming
-each command that appeared or went. `--write` regenerates the lockfile, which
-is how a deliberate change is recorded. The lockfile holds the module, the kind
-and the name, and deliberately NOT the scope, which is tuned often, nor the
-`expect` value, which would put a verdict back in a file for a script to read.
+the .als files under <dir>, RECURSIVELY, and compares them to
+<dir>/commands.lock.json, naming each command that appeared or went. `--write`
+regenerates the lockfile, which is how a deliberate change is recorded. The
+lockfile holds the module, the kind and the name, and deliberately NOT the
+scope, which is tuned often, nor the `expect` value, which would put a verdict
+back in a file for a script to read. The module key is the path relative to
+<dir> -- `orchestration/checks.als` -- so a command moving between entities
+reads as one
+line gone and one line new, naming itself at both ends.
 
 Its ceiling, stated rather than hidden: it does not stop a commit that deletes a
 command and regenerates in one go, any more than a hand-kept count stops one
@@ -48,12 +52,13 @@ no command result to check at all.
 `--digest` condenses the traces the run above just wrote. The raw `-t text` dump
 repeats every static signature in every state, which buries the handful of
 relations a scenario is actually about; the digest prints the event, its
-arguments, and the varying relations only, one line per state. The four models
-in spec/alloy/ are layered and open one another, so a composed trace names every
-relation and every atom by its module path -- `session/repos/ledger/Now<:ev`.
-The path is stripped: which layer declared a relation is the model's business,
-not a reader's. It reads the run's output rather than the model, so it is the
-same command's second half rather than a second script.
+arguments, and the varying relations only, one line per state. The five entities
+in spec/campaign/ are layered and open one another, so a composed trace names
+every relation and every atom by its module path -- the chain of `system`
+modules, `system/system/system/system/system/Now<:event`. The path is stripped:
+which entity declared a relation is the model's business, not a reader's. It
+reads the run's output rather than the model, so it is the same command's
+second half rather than a second script.
 """
 import json
 import os
@@ -72,17 +77,38 @@ LOCK = "commands.lock.json"
 
 
 def inventory(directory):
-    """[[module, kind, name]] over every .als in <directory>, sorted."""
-    als = sorted(f for f in os.listdir(directory) if f.endswith(".als"))
+    """[[module, kind, name]] over every .als under <directory>, sorted.
+
+    The module key is the path relative to <directory>, so the entity a command
+    lives in is part of what the lockfile states.
+    """
+    # Three ways this can come back empty, and they are not the same answer.
+    # `os.walk` yields nothing for all three, so each is asked before it runs:
+    # a directory that is not there and a path that is not a directory are
+    # "I could not look", and only the third is "I looked and found nothing".
+    if not os.path.exists(directory):
+        raise SystemExit(f"alloy-check --commands: {directory} does not exist, "
+                         f"so nothing was read and no command list was compared")
+    if not os.path.isdir(directory):
+        raise SystemExit(f"alloy-check --commands: {directory} is not a directory, "
+                         f"so nothing was read; name the directory holding the "
+                         f"models and {LOCK}")
+    als = []
+    for root, _, names in os.walk(directory):
+        for name in names:
+            if name.endswith(".als"):
+                als.append(os.path.relpath(os.path.join(root, name), directory))
     if not als:
-        raise SystemExit(f"alloy-check --commands: no .als files in {directory}")
+        raise SystemExit(f"alloy-check --commands: {directory} was read and holds "
+                         f"no .als file at any depth; the models are gone or this "
+                         f"is the wrong directory")
     found = []
-    for name in als:
-        with open(os.path.join(directory, name)) as fh:
+    for key in sorted(als):
+        with open(os.path.join(directory, key)) as fh:
             for line in fh:
                 m = DECL.match(line)
                 if m:
-                    found.append([name, m.group(1), m.group(2)])
+                    found.append([key, m.group(1), m.group(2)])
     return sorted(found)
 
 
@@ -120,9 +146,9 @@ def commands_mode(directory, write):
     gone = [c for c in was if c not in found]
     new = [c for c in found if c not in was]
     for mod, kind, name in gone:
-        print(f"GONE      {mod:<12} {kind:<6} {name}")
+        print(f"GONE      {mod:<22} {kind:<6} {name}")
     for mod, kind, name in new:
-        print(f"NEW       {mod:<12} {kind:<6} {name}")
+        print(f"NEW       {mod:<22} {kind:<6} {name}")
     if gone or new:
         print(f"RESULT    {len(gone)} gone, {len(new)} new; if deliberate, "
               f"rerun with --write and commit {LOCK}")
@@ -154,65 +180,68 @@ def run_alloy(path, outdir):
 # Relations worth showing, in the order a reader wants them.
 VARYING = [
     # the observers: the event and its arguments, one per layer that adds one
-    ("Now<:ev", "ev"),
-    ("By<:actor", "by"),
+    ("Now<:event", "ev"),
+    ("Who<:session", "by"),
     ("Now<:issue", "arg"),
     ("Target<:agent", "agentArg"),
-    ("Site<:mach", "on"),
-    ("Site<:repo", "repoArg"),
-    # ledger
+    ("Where<:machine", "on"),
+    ("Where<:repo", "repoArg"),
+    # github
     ("Open", "open"),
     ("Merged", "merged"),
-    ("Issue<:pr", "pr"),
+    ("Issue<:pullRequest", "pr"),
     ("Filed", "filed"),
-    ("Campaign<:members", "members"),
-    ("Campaign<:sub", "sub"),
-    ("Campaign<:body", "body"),
-    # repos
-    ("Present", "dirs"),
-    ("Tree<:co", "co"),
+    ("Campaign<:memberIssues", "members"),
+    ("Campaign<:subIssues", "sub"),
+    ("Campaign<:reposInBody", "body"),
     ("Claimed", "claimed"),
-    ("Behind", "behind"),
-    ("Unpushed", "unpushed"),
+    # directory
+    ("OnDisk", "dirs"),
+    ("CampaignDir<:checkedOut", "co"),
+    # synchronization
+    ("ContainerBehind", "behind"),
+    ("ContainerUnpushed", "unpushed"),
     ("CloneBehind", "cloneBehind"),
     # session
-    ("Session<:holds", "holds"),
+    ("Session<:worksOn", "holds"),
     ("Surveyed", "surveyed"),
-    ("Session<:saw", "saw"),
-    ("Session<:readme", "readme"),
-    ("Session<:seen", "seen"),
-    ("Session<:claims", "claims"),
-    # agent
+    ("Session<:surveyResult", "saw"),
+    ("Session<:reposInReadme", "readme"),
+    ("Session<:reposInBodyAsRead", "seen"),
+    ("Session<:claimedIssues", "claims"),
+    # orchestration
     ("Launched", "launched"),
     ("Live", "live"),
-    ("Local", "local"),
-    ("Visible", "visible"),
+    ("LocalOnly", "local"),
+    ("PushedToRemote", "visible"),
     ("Reported", "reported"),
     ("Asked", "asked"),
     ("Answered", "answered"),
     ("Waiting", "waiting"),
     ("Confirmed", "confirmed"),
-    ("StoodDown", "stoodDown"),
+    ("StandDownTaken", "stoodDown"),
     ("Retired", "retired"),
 ]
-STATIC = ["Issue<:home", "Campaign<:campaignIssue", "Req<:covers",
-          "Tree<:camp", "Tree<:mach", "Session<:smach",
-          "Agent<:task", "Agent<:host", "Agent<:launcher", "Agent<:topic"]
+STATIC = ["Issue<:repo", "Campaign<:campaignIssue", "Request<:covers",
+          "CampaignDir<:campaign", "CampaignDir<:machine", "Session<:machine",
+          "Agent<:role", "Agent<:task", "Agent<:host", "Agent<:launcher",
+          "Agent<:branch"]
 
 WANTED = {key for key, _ in VARYING} | set(STATIC)
 
 # `Now->OpenPR` and `Target->A0`: the observer atom adds nothing to a cell whose
 # column already names it.
-OBSERVER = re.compile(r"\b(?:Now|Site|By|Target)->")
+OBSERVER = re.compile(r"\b(?:Now|Where|Who|Target)->")
 
 ATOM = re.compile(r"(\w+)\$(\d+)")
-# `session/repos/ledger/Issue$0` -> `Issue$0`: a layered model qualifies every
-# name by the module that declared it, and no reader wants that in every cell.
+# `system/system/system/system/Issue$0` -> `Issue$0`: a layered model qualifies
+# every name by the module path that declared it, and no reader wants that in
+# every cell.
 QUALIFIER = re.compile(r"[A-Za-z_]\w*(?:/[A-Za-z_]\w*)*/")
 
-LETTER = {"Issue": "I", "PR": "P", "Campaign": "C", "Machine": "M",
-          "Repo": "R", "Agent": "A", "Session": "S", "Topic": "TP",
-          "Tree": "TR"}
+LETTER = {"Issue": "I", "PullRequest": "P", "Campaign": "C", "Machine": "M",
+          "Repo": "R", "Agent": "A", "Session": "S", "Branch": "B",
+          "CampaignDir": "D"}
 
 
 def unqualify(text):

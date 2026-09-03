@@ -6,7 +6,7 @@ it. This is the one reader of that question -- "what would the delete destroy,
 and what on this campaign's own branches has never left this machine?" -- so
 closing-campaign step 2 is one call to this script rather than nine git
 commands in prose. A second reader written by hand somewhere else is what
-drifts, which is the same reason spec/alloy/ledger.als's settlement has exactly
+drifts, which is the same reason spec/campaign/github/system.als's settlement has exactly
 one implementation, `campaign-tracker settlement`.
 
 It reads two places, and the second only when it is handed one:

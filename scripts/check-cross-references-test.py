@@ -54,7 +54,7 @@ BASE = {
         "echo hi\n"
         "```\n"
     ),
-    "spec/alloy/agent.als": "sig S {}\n",
+    "spec/campaign/orchestration/system.als": "sig S {}\n",
     f"{SKILL}/SKILL.md": "# demo skill\n",
     f"{SKILL}/references/gotchas.md": "# gotchas\n",
     f"{SKILL}/assets/handover.md": "# handover\n",
@@ -122,9 +122,9 @@ CASES = [
 
     # ---- S3: a spec path.
     ("S3 a spec file that is there",
-     {"a.md": "The contract is `spec/alloy/agent.als`.\n"}, None),
+     {"a.md": "The contract is `spec/campaign/orchestration/system.als`.\n"}, None),
     ("S3 a spec file that is not there",
-     {"a.md": "The contract is `spec/alloy/gone.als`.\n"},
+     {"a.md": "The contract is `spec/campaign/orchestration/gone.als`.\n"},
      ("DANGLING", "S3: nothing at this path")),
 
     # ---- S4: relative, and resolved against the SKILL ROOT rather than the
@@ -148,7 +148,7 @@ CASES = [
     ("a placeholder inside a real prefix is a template, not a truncated path",
      {"a.md": f"Copy `{SKILL}/assets/agents/<kind>.md` across.\n"}, None),
     ("a glob is a template",
-     {"a.md": "Run it over `spec/alloy/*.als`.\n"}, None),
+     {"a.md": "Run it over `spec/campaign/*/*.als`.\n"}, None),
     ("a citation qualified by a path outside the repository is external",
      {"a.md": "The fast-forward `~/.claude/CLAUDE.md` § Git prescribes.\n"},
      None),
@@ -247,7 +247,7 @@ def main():
     # --list prints the buckets that are not verdicts, so the scope boundary is
     # readable rather than implied.
     extra += 1
-    r = run_case({"a.md": "Run it over `spec/alloy/*.als`.\n"}, args=("--list",))
+    r = run_case({"a.md": "Run it over `spec/campaign/*/*.als`.\n"}, args=("--list",))
     if "template\t" not in r.stdout:
         failed += 1
         print("FAIL  --list shows the template bucket\n"

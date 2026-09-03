@@ -10,9 +10,11 @@ alone, and each has already been broken once or is one careless commit from it.
 WHAT IT CHECKS
 
   R1  spec/ and docs/ hold no markdown.
-      spec/ is Alloy whose comments are the spec; docs/ is HTML drawn for a
-      reader. A markdown file under either is misfiled, and "temporary" is what
-      it is always called.
+      spec/ is Alloy whose comments are the spec, and an HTML diagram may sit
+      beside a model; docs/ is HTML drawn for a reader. What this refuses is
+      markdown under either, which is what "temporary" always turns out to be.
+      Nothing here counts the diagrams or checks where one sits: that would be
+      a rule with no reader, and this is the reader.
 
   R2  every tracked top-level entry is named in .gitignore's allowlist.
       The root is `/*` plus `!` lines. A directory that gets tracked without

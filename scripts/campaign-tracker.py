@@ -43,8 +43,8 @@ index       The sub-issue index -- the whole of it. `gh issue create --parent` i
             is the only read. It pages at thirty, and the close is the one place
             the index is read before a directory is deleted.
 
-settlement  The observable spec/alloy/ scenarios are judged by. Verdicts match
-            spec/alloy/ledger.als: `complete` (closed, and a pull request that
+settlement  The observable spec/campaign/ scenarios are judged by. Verdicts match
+            spec/campaign/github/system.als: `complete` (closed, and a pull request that
             closed it is merged), `dropped` (closed with no merged pull request),
             `open`. Settled is "the issue is closed", both verdicts alike; the
             merged pull request only says which kind.
