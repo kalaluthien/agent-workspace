@@ -126,7 +126,7 @@ pred S11_MergedButIssueLeftOpen {
 pred S12_TwoCampaignsOneRepo {
   #Campaign = 2
   all c: Campaign | #c.memberIssues = 1
-  one r: Repo - Container | Campaign.memberIssues.repo = r
+  one r: Repo - Base | Campaign.memberIssues.repo = r
   mergeClosed[Campaign.memberIssues]
   always Now.event not in AddMember + RemoveMember
   all c: Campaign | closeDiscipline[c]
@@ -170,23 +170,23 @@ pred S14_FollowUpAfterClose {
   }
 }
 
-/* Under the narrow reading the container cannot be a member of its own
+/* Under the narrow reading the base cannot be a member of its own
    campaign at all: the model forbade what was about to happen for real. */
-pred S16a_ContainerMemberUnderNarrowReading {
-  containerIsCampaignIssueOnly
-  some c: Campaign, i: c.memberIssues | i.repo = Container
+pred S16a_BaseMemberUnderNarrowReading {
+  baseIsCampaignIssueOnly
+  some c: Campaign, i: c.memberIssues | i.repo = Base
 }
 
 /* The tracker's third kind. It was UNSAT at any bound while
-   `containerIssuesAreCampaignIssues` was a fact, and no verdict said so. */
-pred S18_PlainContainerIssue {
-  some i: Issue | i.repo = Container and always (i not in Campaign.campaignIssue + Campaign.memberIssues)
+   `baseIssuesAreCampaignIssues` was a fact, and no verdict said so. */
+pred S18_PlainBaseIssue {
+  some i: Issue | i.repo = Base and always (i not in Campaign.campaignIssue + Campaign.memberIssues)
 }
 
 /* Why the clause is kept rather than deleted: as a predicate it still says
    exactly what it said as a fact. */
-pred S18a_PlainContainerIssueUnderClosedWorld {
-  containerIssuesAreCampaignIssues and S18_PlainContainerIssue
+pred S18a_PlainBaseIssueUnderClosedWorld {
+  baseIssuesAreCampaignIssues and S18_PlainBaseIssue
 }
 
 /* ---------------- commands ---------------- */
@@ -210,8 +210,8 @@ run S13b_ReopenAnyClosed        for exactly 2 Issue, 1 PullRequest, exactly 1 Ca
 run S13c_ReopenWithPR           for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 0
 run S14_FollowUpAfterClose      for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 2 Repo, 14 steps expect 1
 -- the narrow reading forbade it
-run S16a_ContainerMemberUnderNarrowReading for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
+run S16a_BaseMemberUnderNarrowReading for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
 -- the tracker's third kind exists
-run S18_PlainContainerIssue              for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 1
+run S18_PlainBaseIssue              for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 1
 -- control: the clause bites
-run S18a_PlainContainerIssueUnderClosedWorld for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 0
+run S18a_PlainBaseIssueUnderClosedWorld for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 0

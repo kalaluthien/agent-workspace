@@ -1,6 +1,6 @@
-# agent-workspace
+# campaign-base
 
-A container for running **campaigns** — units of work across the repositories
+A base for running **campaigns** — units of work across the repositories
 they need — on repositories that live elsewhere.
 
 A campaign is one assignment a person is responsible for, worked across the
@@ -14,7 +14,7 @@ everything durable was already somewhere else.
 ## Shape
 
 ```
-agent-workspace/
+campaign-base/
   AGENTS.md CLAUDE.md README.md .gitignore    tracked here
   .claude/skills/opening-campaign
   .claude/skills/closing-campaign
@@ -28,7 +28,7 @@ agent-workspace/
     repos/api/  repos/web/       member repositories, each its own git repo
 ```
 
-`.gitignore` is an allowlist: it ignores `/*` and re-admits only the container's
+`.gitignore` is an allowlist: it ignores `/*` and re-admits only the base's
 own files. Campaign directories and everything cloned into them stay untracked,
 so a campaign can never be committed into the wrong repository by accident.
 

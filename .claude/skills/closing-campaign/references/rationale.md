@@ -66,7 +66,7 @@ to catch. This is where that bites.
 
 Step 1's two unenumerable cases land here: an agent herdr has forgotten and an
 executor nothing recorded both still leave their work in a checkout. The delete
-spares the container checkout, but step 5 closes the campaign issue indexing it, so it is
+spares the base checkout, but step 5 closes the campaign issue indexing it, so it is
 read here too.
 
 **Why the reading is a script and not the nine commands it replaced.** Absent
@@ -100,7 +100,7 @@ written at all is `AGENTS.md` § The campaign issue body.
 **Why announce at all.** Step 1's gate is local, and under one campaign, one
 machine that covers everything legitimate: every agent and every executor session
 is on the bound machine, step 1 enumerates `runtime/claims/` and so sees every
-one that wrote a record, and step 2 read the container and `repos/` for the work
+one that wrote a record, and step 2 read the base and `repos/` for the work
 of one that did not. A machine working this
 campaign against the binding is what neither can see, and no cheap local check
 fixes it. Announcing narrows that window rather than closing it — a session that
@@ -126,7 +126,7 @@ skipped, and it sees hands and subagent executors that no `herdr agent list` row
 would. `AGENTS.md` forbids deleting a claim ref while an agent on your machine
 works it; this is the one place where that has been established for every ref at
 once. Reaching into a member repository's refs from a close would be the
-cross-repository sweep this container forbids.
+cross-repository sweep this base forbids.
 
 **Ancestry, not equality**, in numbers: a zero-commit claim compared against
 today's `main` sha reads unequal and would be refused as holding work — exactly

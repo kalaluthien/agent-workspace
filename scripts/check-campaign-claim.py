@@ -43,11 +43,11 @@ pattern it guards by has permitted nothing.
 WHAT IT WRITES TO, WHICH IS NOT THE SAME QUESTION AS WHERE IT SITS
 
 A claim is a record about campaign work, so the guard owns a change that lands
-on campaign work: a target inside a container tree, or inside a campaign
+on campaign work: a target inside a base tree, or inside a campaign
 directory at the root. A target in neither -- `/tmp`, `$HOME`, another
 checkout entirely -- is allowed whatever claim the session holds, because
 refusing it enforces nothing about a sub-issue and stops every scratch write a
-session in the container makes.
+session in the base makes.
 
 The target is read from the tool: the path field for a file tool, and for
 `Bash` the OPERANDS OF THE CHANGING FORMS THAT MATCHED -- the word a redirect
@@ -76,23 +76,23 @@ looking and finding it elsewhere.
 
 WHICH CAMPAIGN, AND WHAT IT DOES WHEN IT CANNOT TELL
 
-The container root is the topmost ancestor of `cwd` holding this repository's
+The base root is the topmost ancestor of `cwd` holding this repository's
 own marker, so a linked worktree under `.claude/worktrees/` and a delegate's
 clone under `<campaign>/repos/<repo>/` both resolve to it rather than to
-themselves. No container above `cwd` means this session is not in a campaign at
+themselves. No base above `cwd` means this session is not in a campaign at
 all and the hook exits 0 -- it is installed machine-wide and most sessions on
 this machine are nobody's campaign.
 
-Inside a container, the directories searched are: the one campaign directory
+Inside a base, the directories searched are: the one campaign directory
 `cwd` sits in, if it sits in one; otherwise every campaign directory at the
-root. The union is deliberate, and it is what makes the container root
+root. The union is deliberate, and it is what makes the base root
 answerable at all: a session there could be working either open campaign, and
 the question the guard can actually decide is not "which campaign is this" but
 "does this session hold a claim anywhere on this machine". Refusing on the
-ambiguity instead would refuse every write in the container whenever two
+ambiguity instead would refuse every write in the base whenever two
 campaigns are open.
 
-A container with no campaign directory exits 0. A campaign directory with no
+A base with no campaign directory exits 0. A campaign directory with no
 `runtime/claims/` REFUSES: an empty one says no claim was taken, a missing one
 says nothing, and only the first is a reading.
 
@@ -123,7 +123,7 @@ CLAIM = HERE / "campaign-claim.py"
 # AGENTS.md in it -- and the campaign directory beside it has one of those. The
 # marker is the script this one reuses, so a root it names is a root whose
 # reader exists.
-CONTAINER_MARKER = Path("scripts") / "campaign-claim.py"
+BASE_MARKER = Path("scripts") / "campaign-claim.py"
 
 # `<slug>-<YYMMDD>`. AGENTS.md's shape, read as a shape: nothing derives the
 # list of campaigns from GitHub, because the question is which directories are
@@ -166,7 +166,7 @@ def load(path, name):
     return module, None
 
 
-def container_root(cwd: Path):
+def base_root(cwd: Path):
     """The topmost ancestor of cwd that is this repository's root, or None.
 
     Topmost and not nearest: a linked worktree is itself a checkout of this
@@ -174,7 +174,7 @@ def container_root(cwd: Path):
     that has no campaign directory under it and read as "not in a campaign"."""
     found = None
     for d in [cwd, *cwd.parents]:
-        if (d / CONTAINER_MARKER).is_file():
+        if (d / BASE_MARKER).is_file():
             found = d
     return found
 
@@ -356,17 +356,17 @@ def resolve_target(token, cwd):
 
 
 def lands_outside(target: Path, root: Path, dirs):
-    """(True, None) when the target is in no container tree and no campaign
+    """(True, None) when the target is in no base tree and no campaign
     directory; (False, what it is inside) otherwise.
 
-    `container_root` and not `root` alone: another checkout of this repository
-    -- the main one, seen from a worktree -- is a container tree too, and a
+    `base_root` and not `root` alone: another checkout of this repository
+    -- the main one, seen from a worktree -- is a base tree too, and a
     write into it is campaign work read from the wrong side."""
-    other = container_root(target)
+    other = base_root(target)
     if other is not None:
-        return False, f"inside the container {other}"
+        return False, f"inside the base {other}"
     if target == root or root in target.parents:
-        return False, f"inside the container {root}"
+        return False, f"inside the base {root}"
     for d in dirs or ():
         if target == d or d in target.parents:
             return False, f"inside the campaign directory {d}"
@@ -391,7 +391,7 @@ def operands(args):
     one. An ATTACHED one on a LONG option is the write target itself in
     `--target-directory=.`, so a `--x=value` word contributes its value -- but
     only a value that looks like a path, because `--interactive=never`
-    contributes `never`, and resolving that against the container names a
+    contributes `never`, and resolving that against the base names a
     location nothing in the command asked for. A value that does not look like
     a path is UNREAD, which still refuses; it just refuses for what was read.
 
@@ -594,7 +594,7 @@ def target_reading(payload, cwd, root, dirs, changing_command):
             return "unread", f"{tool} target {why}"
         outside, where = lands_outside(target, root, dirs)
         if outside:
-            return "outside", f"{tool} target {target} is in no container tree " \
+            return "outside", f"{tool} target {target} is in no base tree " \
                               f"and no campaign directory"
         return "inside", f"{tool} target {target} is {where}"
     if tool != "Bash":
@@ -614,7 +614,7 @@ def target_reading(payload, cwd, root, dirs, changing_command):
                               f"{target}, {where}")
         seen.append(f"`{form}` {word!r} -> {target}")
     return "outside", (f"every operand of every changing form read lands in no "
-                       f"container tree and no campaign directory: "
+                       f"base tree and no campaign directory: "
                        f"{'; '.join(seen)}")
 
 
@@ -643,9 +643,9 @@ def setting(payload):
     except OSError as e:
         return None, None, None, None, [f"cwd {cwd!r} would not resolve "
                                         f"({e.__class__.__name__})."]
-    root = container_root(cwd)
+    root = base_root(cwd)
     if root is None:
-        return cwd, None, None, f"no container above {cwd}", None
+        return cwd, None, None, f"no base above {cwd}", None
     dirs, note = campaign_dirs(root, cwd)
     if dirs is None:
         return cwd, root, None, note, [note]
@@ -662,7 +662,7 @@ def pre(payload, claim_module, changing_command):
     if root is None:
         return 0                       # not a campaign session; not this hook's
     if not dirs:
-        return 0                       # a container with no campaign on it
+        return 0                       # a base with no campaign on it
 
     is_changing, why = changing(payload, changing_command)
     if not is_changing:

@@ -18,10 +18,10 @@ Launch in `<campaign>/repos/<repo>/` with `--append-system-prompt-file
 - **Put the prompt before any variadic flag.** `--add-dir` and `--allowedTools`
   swallow a trailing prompt as one of their own values, and the run dies on
   "Input must be provided".
-- **Pass `--add-dir <container> [<other paths the brief names>]`**, always at
-  least the container. A member-repo delegate's cwd is `<campaign>/repos/<repo>/`,
+- **Pass `--add-dir <base> [<other paths the brief names>]`**, always at
+  least the base. A member-repo delegate's cwd is `<campaign>/repos/<repo>/`,
   and its brief under `<campaign>/runtime/handover/`, the claim script under
-  `<container>/scripts/`, and the campaign `AGENTS.md` all lie outside it, so
+  `<base>/scripts/`, and the campaign `AGENTS.md` all lie outside it, so
   without the flag its first `Read` of the brief stops on a permission prompt --
   a fourth silent stop beside the three below, observed 2026-09-02. Add every
   source checkout the brief points at the same way; the flag is variadic.
@@ -30,7 +30,7 @@ Launch in `<campaign>/repos/<repo>/` with `--append-system-prompt-file
   § The session name -- a delegate is always the executor role. `--name`
   sets the harness name only; set the herdr pane name too, because the two do not
   propagate. `scripts/campaign-name-session.py` does both.
-- Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to the container's pool. A memory pool
+- Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to the base's pool. A memory pool
   inside a git-ignored campaign directory dies with the directory.
 
 ## Delivering the prompt
@@ -105,23 +105,23 @@ peer session's — where from inside the pane it returned the caller's own.
 `herdr agent list` takes no target and needs no guard: listing answers the same
 from outside a pane as from inside.
 
-That the guard passes on this container's daily path is a measurement, not a
+That the guard passes on this base's daily path is a measurement, not a
 property: probed over a campaign session, a peer executor session and a freshly
 started delegate, each carrying `HERDR_ENV=1` and its own `HERDR_PANE_ID`, while
 a process started outside any pane carried neither. The first plain-terminal or
 `-p` session here falsifies it, which is what the guard is for.
 
-## The container as a member of its own campaign
+## The base as a member of its own campaign
 
-The container gets cloned into `<campaign>/repos/agent-workspace/`, so one
+The base gets cloned into `<campaign>/repos/campaign-base/`, so one
 repository has two checkouts. Read both hazards with one command — **before
 launching a delegate, right after merging its pull request, and before the outer
 session next edits anything**:
 
 ```sh
-CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-git -C "$CONTAINER" fetch origin -q
-git -C "$CONTAINER" rev-list --left-right --count origin/main...HEAD   # want "0	0"
+BASE=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
+git -C "$BASE" fetch origin -q
+git -C "$BASE" rev-list --left-right --count origin/main...HEAD   # want "0	0"
 ```
 
 Behind means a merged pull request this checkout has not caught up to, and
@@ -129,7 +129,7 @@ editing from here can silently revert work that landed: pull, then read zero
 again before editing.
 
 **The clone must not be behind *at launch*, which is a different check.** "Do not
-clone while the container is ahead" is not sufficient: the remote can move
+clone while the base is ahead" is not sufficient: the remote can move
 between the clone and the launch, on a campaign of any length, leaving the
 delegate behind with nothing reporting it.
 
@@ -140,4 +140,4 @@ git -C <campaign>/repos/<repo> rev-list --left-right --count origin/main...HEAD
 
 A delegate launched behind obeys an `AGENTS.md` the launching session has already
 superseded, and nothing reports it. Pull the clone, then launch. Pushing the
-container before cloning is worth doing and is not sufficient.
+base before cloning is worth doing and is not sufficient.

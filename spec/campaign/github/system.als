@@ -2,12 +2,12 @@
  * Everything GitHub records about a campaign -- and the entry point to spec/.
  * It opens nothing: this is the bottom entity.
  *
- *   Repo         a repository, with Container the one this model runs in.
+ *   Repo         a repository, with Base the one this model runs in.
  *   PullRequest  a pull request, and Merged the ones that landed.
  *   Issue        an issue: which repository its work lands in -- where its
  *                branch is cut and its pull request opened -- and which pull
  *                request it has. Open holds the ones still open. Every issue
- *                is FILED on the Container's tracker, whatever its `repo`; a
+ *                is FILED on the Base's tracker, whatever its `repo`; a
  *                member repository receives only branches and pull requests,
  *                so the tracker is a constant here and not a field.
  *   Campaign     a campaign: its campaign issue, the sub-issues that truly
@@ -28,7 +28,7 @@
  *   github/          issues, pull requests, the sub-issue index, the campaign
  *                    issue body, and the claim
  *   directory/       one campaign's directory on a machine, and its checkouts
- *   synchronization/ how far behind origin each container checkout is
+ *   synchronization/ how far behind origin each base checkout is
  *   session/         a campaign session: one role, bound to one machine
  *   orchestration/   agents, and how a campaign session coordinates them
  *
@@ -54,7 +54,7 @@
  *
  * A command someone DELETES misses no expectation, having none left to miss,
  * and nothing generated from these files can see that either. So the command
- * list is stated a second time, in commands.lock.json beside them, which is
+ * list is stated a second time, in commands.snapshot.json beside them, which is
  * committed and compared rather than regenerated:
  *
  *   scripts/alloy-check.py spec/campaign/github/scenarios.als -o /tmp/alloy-github
@@ -83,7 +83,7 @@
 module github/system
 
 sig Repo {}
-one sig Container extends Repo {}
+one sig Base extends Repo {}
 
 sig PullRequest {}
 
@@ -108,7 +108,7 @@ var sig Filed  in Campaign {}
 var sig Claimed in Issue {}
 
 fact WellFormed {
-  all c: Campaign | c.campaignIssue.repo = Container
+  all c: Campaign | c.campaignIssue.repo = Base
   all disj c1, c2: Campaign | c1.campaignIssue != c2.campaignIssue
   always all p: PullRequest | lone pullRequest.p
   always all i: Issue | some i.pullRequest implies i.pullRequest' = i.pullRequest    -- a pull request link is never undone
@@ -143,17 +143,17 @@ pred mergeClosed[s: set Issue] {
                      implies (some i.pullRequest and i.pullRequest in Merged))
 }
 
-/* Not a fact: the container's tracker holds THREE kinds of issue, and a
+/* Not a fact: the base's tracker holds THREE kinds of issue, and a
    global fact admitting the third says nothing. S18/S18a are why. Read
-   `i.repo = Container` throughout as "its work lands in the container" --
-   the container as a member of its own campaign -- since filing is on the
-   container for every issue and so distinguishes nothing. */
-pred containerIssuesAreCampaignIssues {
-  all i: Issue | i.repo = Container implies (i in Campaign.campaignIssue or eventually i in Campaign.memberIssues)
+   `i.repo = Base` throughout as "its work lands in the base" --
+   the base as a member of its own campaign -- since filing is on the
+   base for every issue and so distinguishes nothing. */
+pred baseIssuesAreCampaignIssues {
+  all i: Issue | i.repo = Base implies (i in Campaign.campaignIssue or eventually i in Campaign.memberIssues)
 }
 
 /* The narrower reading, kept runnable beside it. */
-pred containerIsCampaignIssueOnly { always all i: Issue | i.repo = Container implies i in Campaign.campaignIssue }
+pred baseIsCampaignIssueOnly { always all i: Issue | i.repo = Base implies i in Campaign.campaignIssue }
 
 fun campaignOf[i: Issue]: lone Campaign { memberIssues.i }
 fun campaignIssueOf[i: Issue]: lone Campaign { campaignIssue.i }

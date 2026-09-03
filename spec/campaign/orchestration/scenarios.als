@@ -64,7 +64,7 @@ pred claimAtomic       { always (Now.event = Claim  implies Now.issue not in Cla
    session to hold one; its launcher was gated already.
 
    `Work` is what the gate is on, and what makes a call `Work` is its TARGET,
-   not where the session sits: a change landing outside every container tree
+   not where the session sits: a change landing outside every base tree
    and every campaign directory is not work on a sub-issue and is no step of
    this relation. The guard reads that target where it can -- a file tool's
    path, and a shell's write targets, which are the operands of the changing
@@ -227,7 +227,7 @@ pred R3c_GlobalCloseRuleBlocks {
    earlier acquire by the launching session itself. */
 pred R4c_CheckoutSwitchedUnderAgent {
   some c: Campaign, disj s1, s2: Session, a: Agent, r: Repo {
-    r != Container
+    r != Base
     s1.machine = s2.machine
     a.launcher = s1 and a.host = s1.machine and a.task.repo = r
     eventually (Now.event = Acquire and Who.session = s2 and Where.repo = r

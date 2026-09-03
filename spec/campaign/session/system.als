@@ -1,6 +1,6 @@
 /*
  * A campaign session: what makes a session one, and what it may do. It opens
- * synchronization/system because a session runs from a container checkout and
+ * synchronization/system because a session runs from a base checkout and
  * cares how far behind it is.
  *
  * A SESSION is one harness session -- the `claude` process a herdr pane runs,
@@ -81,7 +81,7 @@ fun sessionActed: set Event {
 /* `RemoveMember` is here because moving a sub-issue out has no sanctioned flow:
    it is a hand-run `gh issue edit --remove-parent`. */
 fun unattended: set Event {
-  OpenPullRequest + RemoveMember + PullContainer + PullClone + CommitLocal
+  OpenPullRequest + RemoveMember + PullBase + PullClone + CommitLocal
 }
 
 pred sessionFrame {

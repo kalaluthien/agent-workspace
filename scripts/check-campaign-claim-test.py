@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prove the claim guard refuses for the reason it prints, and allows for one too.
 
-Every case runs the shipped script against a fixture container built here --
+Every case runs the shipped script against a fixture base built here --
 never the real one -- and hands it a hook payload on stdin. No case reaches the
 network: the guard's PreToolUse half makes no request at all, and its PostToolUse
 half is covered only up to the point where it would ask GitHub whether an issue
@@ -36,11 +36,11 @@ RELEASED = RECORD + "released 2026-09-02T10:00:00+0900 by " + SESSION + "\n"
 OTHER = "session sid-2\nname exec-2\npid 1\nbranch campaign-1/7-x\nlocal yes\n"
 
 
-def container(d, campaigns):
-    """A fixture container: the marker script the guard resolves a root by, and
+def base(d, campaigns):
+    """A fixture base: the marker script the guard resolves a root by, and
     the campaign directories asked for. `campaigns` maps a directory name to a
     dict of claim records, or to None for a directory with no runtime/claims/."""
-    root = Path(d) / "container"
+    root = Path(d) / "base"
     (root / "scripts").mkdir(parents=True)
     # A copy and not a symlink: the guard imports it by path, and the record's
     # shape must come from the shipped script rather than a stand-in.
@@ -84,24 +84,24 @@ def main():
     def out(r):
         return r.stdout + r.stderr
 
-    # 1. Outside a container it must be invisible. This is the case that decides
+    # 1. Outside a base it must be invisible. This is the case that decides
     # whether a machine-wide registration is safe at all.
     with tempfile.TemporaryDirectory() as d:
         r = ask(d)
-        check("no container above cwd exits 0 and says nothing",
+        check("no base above cwd exits 0 and says nothing",
               r.returncode == 0 and not out(r).strip(),
               f"exit {r.returncode}: {out(r)[:200]}")
 
-    # 2. A container with no campaign on it is not a campaign session either.
+    # 2. A base with no campaign on it is not a campaign session either.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {})
+        root = base(d, {})
         r = ask(root)
-        check("a container with no campaign directory exits 0",
+        check("a base with no campaign directory exits 0",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:200]}")
 
     # 3. The refusal, and its four separable parts.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {}})
+        root = base(d, {"demo-260902": {}})
         r = ask(root)
         check("a changing call with no claim is refused",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
@@ -119,7 +119,7 @@ def main():
 
     # 4. Not every call is a changing call, and the guard must not be a wall.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {}})
+        root = base(d, {"demo-260902": {}})
         for tool, command, why in (
                 ("Read", None, "a read is not a change"),
                 ("Bash", "git status", "a read-only shell command is not a change"),
@@ -143,7 +143,7 @@ def main():
     # The quoted-text carve-out must not swallow the command itself: the same
     # words unquoted are still a change.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {}})
+        root = base(d, {"demo-260902": {}})
         r = ask(root, tool="Bash", command="git mv a b")
         check("the same words outside quotes are still a change",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
@@ -170,7 +170,7 @@ def main():
     # 5. The two exemptions, each on its own. They are the paths a refused
     # session has to be able to take to stop being refused.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {}})
+        root = base(d, {"demo-260902": {}})
         # Redirected on purpose. A bare `campaign-claim.py take` matches no
         # changing form and would pass with the exemption deleted, so a case
         # written that way pins nothing; the redirect is what makes the call
@@ -186,7 +186,7 @@ def main():
 
     # 6. A held claim allows, and only for the session that holds it.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {"7": RECORD}})
+        root = base(d, {"demo-260902": {"7": RECORD}})
         r = ask(root)
         check("a record naming this session allows the call", r.returncode == 0,
               f"exit {r.returncode}: {out(r)[:200]}")
@@ -197,7 +197,7 @@ def main():
     # The close target is read from the filtered command too: prose in a body
     # must not name the issue a claim is checked against.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {"42": RECORD.replace("campaign-1/7-x", "campaign-1/42-y")}})
+        root = base(d, {"demo-260902": {"42": RECORD.replace("campaign-1/7-x", "campaign-1/42-y")}})
         r = ask(root, tool="Bash",
                 command='gh issue comment 42 -R o/r --body "see gh issue close 5 today"')
         check("a close named inside a body is not the target the claim is checked against",
@@ -207,7 +207,7 @@ def main():
     # treating it as one is the exact way a closed sub-issue's claim would keep
     # licensing writes.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {"7": RELEASED}})
+        root = base(d, {"demo-260902": {"7": RELEASED}})
         r = ask(root)
         check("a released record licenses nothing", r.returncode == 2,
               f"exit {r.returncode}: {out(r)[:200]}")
@@ -217,7 +217,7 @@ def main():
     # 7. The delegate's cwd, which is a different git repository. The whole
     # placement question is this case.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {"7": RECORD}})
+        root = base(d, {"demo-260902": {"7": RECORD}})
         clone = root / "demo-260902" / "repos" / "dotclaude"
         clone.mkdir(parents=True)
         r = ask(clone, tool="Bash", command="git commit -m x")
@@ -233,18 +233,18 @@ def main():
     # marker, so resolving to the NEAREST root would land on a tree with no
     # campaign under it and read as "not in a campaign" -- a silent pass.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {"7": RECORD}})
+        root = base(d, {"demo-260902": {"7": RECORD}})
         tree = root / ".claude" / "worktrees" / "x"
         (tree / "scripts").mkdir(parents=True)
         (tree / "scripts" / "campaign-claim.py").write_text(CLAIM.read_text())
         r = ask(tree, session="sid-2")
-        check("a linked worktree resolves to the container, not to itself",
+        check("a linked worktree resolves to the base, not to itself",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 
     # 8. `gh issue close` is per-issue, not per-session. A claim on some other
     # sub-issue must not close this one.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {"7": RECORD}})
+        root = base(d, {"demo-260902": {"7": RECORD}})
         r = ask(root, tool="Bash", command="gh issue close 7 -R a/b")
         check("closing an issue this session holds is allowed",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:200]}")
@@ -257,7 +257,7 @@ def main():
     # 9. A missing claims/ cannot be enumerated, and that is a refusal. It is
     # the branch whose wrong answer -- treating it as empty -- is silent.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": None})
+        root = base(d, {"demo-260902": None})
         r = ask(root)
         check("a campaign directory with no runtime/claims/ refuses",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
@@ -266,15 +266,15 @@ def main():
         # And it refuses even when a claim IS held elsewhere: a directory that
         # could not be read may hold anything, so a pass from its neighbour is
         # not a pass for it.
-        root2 = container(Path(d) / "two", {"demo-260902": None,
-                                            "other-260901": {"7": RECORD}})
+        root2 = base(Path(d) / "two", {"demo-260902": None,
+                                       "other-260901": {"7": RECORD}})
         r = ask(root2)
         check("...and one unreadable directory denies a claim found in another",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 
     # 10. The guard's own inputs. Each is "I could not look", and none may pass.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {}})
+        root = base(d, {"demo-260902": {}})
         r = ask(root, stdin="not json")
         check("a payload that will not read refuses", r.returncode == 2,
               f"exit {r.returncode}: {out(r)[:200]}")
@@ -293,7 +293,7 @@ def main():
     # 11. The PostToolUse half exits 0 whatever happens, because exit 2 there
     # prints and execution continues -- a verdict nobody enforces.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {"7": RECORD}})
+        root = base(d, {"demo-260902": {"7": RECORD}})
         r = ask(root, tool="Bash", command="echo hi", post=True)
         check("the release half ignores a call that closed nothing",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:200]}")
@@ -307,15 +307,15 @@ def main():
               f"exit {r.returncode}: {out(r)[:200]}")
 
     # 12. What the call WRITES TO, which is a different question from where the
-    # session sits. Every case here runs from the container root with no claim
+    # session sits. Every case here runs from the base root with no claim
     # anywhere -- the setting group 3 proved is a refusal -- so a case that
     # passes does so on the target reading and on nothing else.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {}})
+        root = base(d, {"demo-260902": {}})
         OUT = "/tmp/check-campaign-claim-fixture.html"
 
         r = ask(root, tool="Write", path=OUT)
-        check("a Write to a path in no container and no campaign is allowed",
+        check("a Write to a path in no base and no campaign is allowed",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
         check("...and the allow names the path it read and the branch taken",
               OUT in out(r) and "allowed, target outside" in out(r), out(r)[:300])
@@ -338,12 +338,12 @@ def main():
         check("a Write under a campaign directory is still refused",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
         r = ask(root, tool="Write", path=str(root / "AGENTS.md"))
-        check("a Write inside the container tree is still refused",
+        check("a Write inside the base tree is still refused",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
 
         # A SLASHLESS operand is an operand. The words that look like paths are
         # not the target: with one unrelated outside path in the command,
-        # reading those allowed a copy over a container file.
+        # reading those allowed a copy over a base file.
         r = ask(root, tool="Bash", command="cp /tmp/x.md AGENTS.md")
         check("a slashless operand of a matched form denies the call",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
@@ -381,7 +381,7 @@ def main():
               f"exit {r.returncode}: {out(r)[:400]}")
         # The finding's own example: a script that HAPPENS to contain a `/`
         # (`s/a/b/`) used to be misread as a path-shaped write target by
-        # `looks_like_path`, refusing as inside a container the script never
+        # `looks_like_path`, refusing as inside a base the script never
         # touches. The real, sole target is `/tmp/out.txt`, outside.
         r = ask(root, tool="Bash",
                 command=f"sed -i --expression=s/a/b/ {OUT}")
@@ -398,7 +398,7 @@ def main():
         # command into sed_files() at all only matched the SHORT `-i`
         # spelling, so `--in-place` bypassed the whole guard as "not a
         # changing call" -- a false ALLOW on a real in-place edit, not a
-        # message-quality gap. `--in-place=.bak` inside the container is now
+        # message-quality gap. `--in-place=.bak` inside the base is now
         # read the same as `-i.bak` would be.
         r = ask(root, tool="Bash",
                 command="sed --in-place=.bak s/a/b/ AGENTS.md")
@@ -459,7 +459,7 @@ def main():
         # An option's ATTACHED value can be the write target itself, and
         # dropping the whole word discarded it -- finding 1's shape once more.
         r = ask(root, tool="Bash", command="cp --target-directory=. /tmp/a")
-        check("an attached option value inside the container denies the call",
+        check("an attached option value inside the base denies the call",
               r.returncode == 2 and "`cp` operand '.'" in out(r),
               f"exit {r.returncode}: {out(r)[:400]}")
         r = ask(root, tool="Bash", command="cp --target-directory=/tmp/b /tmp/a")
@@ -512,7 +512,7 @@ def main():
         check("...saying it read both operands and found them outside",
               "'/tmp/a' ->" in out(r) and "'/tmp/b' ->" in out(r), out(r)[:400])
         # The other half: an attached value that says nothing about being a
-        # path was resolved against the container anyway, so the refusal named
+        # path was resolved against the base anyway, so the refusal named
         # a location the command never asked for.
         r = ask(root, tool="Bash", command="rm --interactive=never /tmp/x")
         check("an attached value that does not look like a path is unread",
@@ -559,22 +559,22 @@ def main():
 
         # A claim still allows what the target reading sent to it, so the new
         # branch cannot be what makes group 6 pass.
-        root2 = container(Path(d) / "held", {"demo-260902": {"7": RECORD}})
+        root2 = base(Path(d) / "held", {"demo-260902": {"7": RECORD}})
         r = ask(root2, tool="Write", path=str(root2 / "demo-260902" / "notes.md"))
         check("a held claim still allows a write inside its campaign",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
 
-    # 13. A SECOND checkout of the container is a container tree too, and it is
-    # under neither this root nor any campaign directory. Only the target's own
-    # container lookup refuses it; the root and campaign-directory tests here
-    # both say "outside", so this is the one case that pins that clause.
+    # 13. A SECOND checkout of the base is a base tree too, and it is under
+    # neither this root nor any campaign directory. Only the target's own base
+    # lookup refuses it; the root and campaign-directory tests here both say
+    # "outside", so this is the one case that pins that clause.
     with tempfile.TemporaryDirectory() as d:
-        root = container(d, {"demo-260902": {}})
-        elsewhere = container(str(Path(d) / "second"), {})
+        root = base(d, {"demo-260902": {}})
+        elsewhere = base(str(Path(d) / "second"), {})
         r = ask(root, tool="Write", path=str(elsewhere / "AGENTS.md"))
-        check("a Write into another checkout of the container is refused",
+        check("a Write into another checkout of the base is refused",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...naming the container the target is in, not the one cwd is in",
+        check("...naming the base the target is in, not the one cwd is in",
               str(elsewhere) in out(r), out(r)[:400])
         r = ask(root, tool="Bash", command=f"cp /tmp/x.md {elsewhere}/AGENTS.md")
         check("...and so is a shell copy into it", r.returncode == 2,

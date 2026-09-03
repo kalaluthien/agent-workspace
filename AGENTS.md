@@ -1,7 +1,7 @@
-# agent-workspace
+# campaign-base
 
-A container for running **campaigns**: units of work across the repositories they
-need, on repositories that live elsewhere. `README.md` says what the container is
+A base for running **campaigns**: units of work across the repositories they
+need, on repositories that live elsewhere. `README.md` says what the base is
 and `spec/campaign/*/*.als` why these rules are what they are; this is how to work
 here.
 
@@ -60,7 +60,7 @@ and whether it survives the machine. Identify the plane before any git command.
 
 | plane | holds | stored in |
 | --- | --- | --- |
-| **container** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `docs/`, `scripts/`, `.github/` | this repository |
+| **base** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `docs/`, `scripts/`, `.github/` | this repository |
 | **member repository** | the code and its history | each repository's own remote |
 | **campaign** | which repositories, what for, how far along | GitHub issues |
 
@@ -76,19 +76,19 @@ The campaign directory holds no plane of its own: git-ignored scratch, and
 **nothing durable may live only there** — a repo-less campaign lands its results
 in the campaign issue and its sub-issues, the memory pool, or a repository by hand.
 
-**Resolve the container root one way, everywhere:**
+**Resolve the base root one way, everywhere:**
 
 ```sh
-CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
+BASE=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
 ```
 
-The container root is the main checkout by definition, and this form returns it
+The base root is the main checkout by definition, and this form returns it
 from a linked worktree too, where `--show-toplevel` returns the worktree instead.
 Never run one git command across member repositories.
 
-### The container as its own member
+### The base as its own member
 
-The container gets cloned into `<campaign>/repos/agent-workspace/`, so one
+The base gets cloned into `<campaign>/repos/campaign-base/`, so one
 repository has two checkouts. **Behind is a merged pull request you have not
 caught up to**, and editing from the outer one can silently revert it; **the clone
 must not be behind at launch**; and **a skill edited inside the clone does not
@@ -108,7 +108,7 @@ never the exit status**, as for `campaign-local-work` and `campaign-claim alive`
 
 | the word | this session is |
 | --- | --- |
-| `here` | **a session of this campaign.** Name this session first (§ The session name), then work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4), and take a sub-issue. |
+| `here` | **a session of this campaign.** Name this session first (§ The session name), then work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4), and take the shape the request calls for — an executor takes a sub-issue, a planner files them and distributes. |
 | `elsewhere` | **not in this campaign.** Stop before any write and any launch, and name the machine. |
 | `unbound` | **not bound yet.** Only a person's word binds an existing campaign. |
 
@@ -140,10 +140,11 @@ which shape it takes.** A simple request has an executor only: the session files
 the sub-issue and works it. A request that needs decomposition has a **planner**,
 which takes the request, files the sub-issues and distributes them, and separate
 **executors**, each **a session of its own on this machine**: another session
-that takes a sub-issue, or a herdr delegate the planner launches when the work
-must run in a member repository's checkout (§ Execution mode says which, and a
-repo-less campaign has the first form and not the second; the launch itself is
-`.claude/skills/opening-campaign/references/launching.md`). A
+that takes a sub-issue, or a herdr delegate the planner launches (§ Execution
+mode chooses between them, by the repository first and then by cost — a delegate
+is the ordinary shape for a member repository and the mode of last resort for the
+base, and a repo-less campaign has the first form and not the second; the launch
+itself is `.claude/skills/opening-campaign/references/launching.md`). A
 separate executor is never the planner's subagent — a subagent shares the
 planner's pane and dies with it, and a claim record needs a session id of its
 own. The planner's own hands, and an in-process subagent it starts *on a
@@ -198,10 +199,10 @@ resolves the harness name a claim record holds. `herdr agent list` shows the pan
 
 ## ID, directory, branch
 
-- **ID** — the campaign issue's number in `kalaluthien/agent-workspace`, typed `#N`.
+- **ID** — the campaign issue's number in `kalaluthien/campaign-base`, typed `#N`.
   The campaign issue carries the `campaign` label; every survey lists by it, so a campaign issue
   filed without it is in nobody's listing.
-- **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, optional
+- **Directory** — `<slug>-<YYMMDD>/` at the base root, git-ignored, optional
   off the bound machine. A campaign *is* its campaign issue; the directory is one
   machine's cache, and holds the claim records, which live nowhere else.
 - **Branch** — `campaign-<N>/<issue>-<topic>`, the sub-issue's claim as well as its
@@ -219,11 +220,11 @@ person decides a close.
 
 ## Sub-issues
 
-One sub-issue is one GitHub issue, **filed on this container's tracker whatever
+One sub-issue is one GitHub issue, **filed on this base's tracker whatever
 repository its code lives in**, and created **as a sub-issue of the campaign issue**:
 
 ```sh
-gh issue create -R kalaluthien/agent-workspace --parent https://github.com/kalaluthien/agent-workspace/issues/<N> ...
+gh issue create -R kalaluthien/campaign-base --parent https://github.com/kalaluthien/campaign-base/issues/<N> ...
 ```
 
 That one flag is the whole index, and `campaign-tracker index <N>` reads it
@@ -232,7 +233,7 @@ back. Fill the body from `.claude/skills/opening-campaign/assets/sub-issue.md`.
 own issue conventions are never touched, and a repository this account does not
 own, or a sub-issue moving two repositories at once, needs no special case. The
 pull request body closes the sub-issue with the keyword and the full name,
-`Closes kalaluthien/agent-workspace#<issue>`: `campaign-tracker settlement`
+`Closes kalaluthien/campaign-base#<issue>`: `campaign-tracker settlement`
 reads `closedByPullRequestsReferences`, which a keyword populates and a bare
 mention does not, and the short `#<issue>` closes the member repository's own
 issue of that number instead. Which repository the work lands in is the
@@ -253,7 +254,7 @@ a repo-less campaign. **Work that lands no commit is claimed all the same**, wit
 --local`: the record alone, no ref. **`scripts/check-campaign-claim.py` is what
 makes that true rather than remembered** — a `PreToolUse` guard answering "is
 this a change to campaign work that no unreleased claim of this session covers",
-refusing the ones that are. A change landing outside every container tree and
+refusing the ones that are. A change landing outside every base tree and
 every campaign directory is not campaign work and is not refused; how the guard
 reads a target, and what it does when it cannot, is its docstring's.
 `install-hooks.sh` registers it in
@@ -271,7 +272,7 @@ sub-issue itself and the third is a separate executor.
 An executor that *changes* a repository runs in a process started in that
 repository's checkout: a herdr delegate in `<campaign>/repos/<repo>/` for a member
 repository, and a session or an in-process subagent on a worktree for the
-container. Reading any repository, and writing under `<campaign>/`, may run in any
+base. Reading any repository, and writing under `<campaign>/`, may run in any
 mode. The harness fact underneath: a subagent and an interactive session load the
 skills of the session or directory they were *started in*, and a skill marked
 `disable-model-invocation: true` must be spelled out in a brief, never named.
@@ -286,7 +287,7 @@ Then, within what the repository allows, choose by cost:
   toolchain, will take many turns, or two repositories must move together.
 
 **Weigh the setup against the work**: the delegate's price is paid per launch, so
-for the container it is the mode of last resort. All modes share the mechanics —
+for the base it is the mode of last resort. All modes share the mechanics —
 the branch is claimed by `campaign-claim take` after the issue exists, because the
 number is minted there; the `post-commit` hook pushes; it lands by a pull request.
 

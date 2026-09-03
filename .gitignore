@@ -1,4 +1,4 @@
-# The root tracks only container-level tooling. Everything an agent clones or
+# The root tracks only base-level tooling. Everything an agent clones or
 # generates below it stays untracked: a cloned repository carries its own git
 # history, and scratch work is not worth a commit.
 /*
@@ -16,7 +16,7 @@
 
 # Machine-local state never enters git. The allowlist above re-admits the whole
 # of .claude/, and the harness cuts agent worktrees inside it, so without this
-# line `git status` in the container root reports one every time an agent runs.
+# line `git status` in the base root reports one every time an agent runs.
 .claude/settings.local.json
 .claude/worktrees/
 .DS_Store

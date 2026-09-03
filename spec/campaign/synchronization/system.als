@@ -1,12 +1,12 @@
 /*
- * How far behind origin a machine's two container checkouts are: the OUTER one
+ * How far behind origin a machine's two base checkouts are: the OUTER one
  * a campaign session runs from, and the INNER clone under
- * `<campaign>/repos/agent-workspace/` a delegate is launched in. It opens
+ * `<campaign>/repos/campaign-base/` a delegate is launched in. It opens
  * directory/system because a clone lives in a campaign directory and a launch
  * happens in one.
  *
- *   ContainerBehind    machines whose outer checkout is behind origin/main.
- *   ContainerUnpushed  machines whose outer checkout holds commits origin lacks.
+ *   BaseBehind    machines whose outer checkout is behind origin/main.
+ *   BaseUnpushed  machines whose outer checkout holds commits origin lacks.
  *   CloneBehind        machines whose inner clone is behind origin/main.
  *
  * The outer checkout and the inner clone are two bits and not one because they
@@ -21,44 +21,44 @@ module synchronization/system
 
 open directory/system
 
-/* The OUTER container checkout a campaign session runs from. */
-var sig ContainerBehind   in Machine {}
-var sig ContainerUnpushed in Machine {}
-/* The INNER clone under <campaign>/repos/agent-workspace/. A separate bit
+/* The OUTER base checkout a campaign session runs from. */
+var sig BaseBehind   in Machine {}
+var sig BaseUnpushed in Machine {}
+/* The INNER clone under <campaign>/repos/campaign-base/. A separate bit
    because the two are cleared by different acts: a clone is cut fresh from
    origin/main, which says nothing about the outer checkout it sits inside. */
 var sig CloneBehind in Machine {}
 
 /* ---------------- observable events ---------------- */
 
-one sig PullContainer, PullClone, CommitLocal, Launch extends Event {}
+one sig PullBase, PullClone, CommitLocal, Launch extends Event {}
 
 fun synchronizationEvents: set Event {
-  PullContainer + PullClone + CommitLocal + Launch
+  PullBase + PullClone + CommitLocal + Launch
 }
 
-/* This entity writes no frame predicate. ContainerBehind, ContainerUnpushed
-   and CloneBehind are governed end to end by ContainerCheckoutFrame and
+/* This entity writes no frame predicate. BaseBehind, BaseUnpushed
+   and CloneBehind are governed end to end by BaseCheckoutFrame and
    CloneCheckoutFrame below, because the act that moves them most is a
    MergePullRequest, an event this entity does not own -- so there is nothing
    left for a step branch to frame, and the branches carry only the observer
    constraint. */
 
-pred pullContainer[m: Machine] {
-  m in ContainerBehind
-  ContainerBehind' = ContainerBehind - m and ContainerUnpushed' = ContainerUnpushed
-  Now.event = PullContainer and no Now.issue and Where.machine = m and no Where.repo
+pred pullBase[m: Machine] {
+  m in BaseBehind
+  BaseBehind' = BaseBehind - m and BaseUnpushed' = BaseUnpushed
+  Now.event = PullBase and no Now.issue and Where.machine = m and no Where.repo
 }
 
 pred pullClone[m: Machine] {
   m in CloneBehind
-  ContainerBehind' = ContainerBehind and ContainerUnpushed' = ContainerUnpushed
+  BaseBehind' = BaseBehind and BaseUnpushed' = BaseUnpushed
   Now.event = PullClone and no Now.issue and Where.machine = m and no Where.repo
 }
 
 pred commitLocal[m: Machine] {
-  m not in ContainerUnpushed
-  ContainerUnpushed' = ContainerUnpushed + m and ContainerBehind' = ContainerBehind
+  m not in BaseUnpushed
+  BaseUnpushed' = BaseUnpushed + m and BaseBehind' = BaseBehind
   Now.event = CommitLocal and no Now.issue and Where.machine = m and no Where.repo
 }
 
@@ -75,15 +75,15 @@ pred launch[m: Machine] {
    therefore agrees that editing .claude/skills/ in the clone cannot change the
    running campaign -- but it agrees BY CONSTRUCTION, so read it as a
    restatement of the assumption and not as evidence. */
-fact ContainerCheckoutFrame {
-  always ((Now.event not in PullContainer + CommitLocal) implies
-    (ContainerUnpushed' = ContainerUnpushed and
-     ((Now.event = MergePullRequest and Now.issue.repo = Container)
-        implies ContainerBehind' = Machine else ContainerBehind' = ContainerBehind)))
+fact BaseCheckoutFrame {
+  always ((Now.event not in PullBase + CommitLocal) implies
+    (BaseUnpushed' = BaseUnpushed and
+     ((Now.event = MergePullRequest and Now.issue.repo = Base)
+        implies BaseBehind' = Machine else BaseBehind' = BaseBehind)))
 }
 
 fact CloneCheckoutFrame {
-  always ((Now.event = MergePullRequest and Now.issue.repo = Container)
+  always ((Now.event = MergePullRequest and Now.issue.repo = Base)
     implies CloneBehind' = CloneBehind + OnDisk.machine
     else ((Now.event in CreateDir + PullClone)
       implies CloneBehind' = CloneBehind - Where.machine
@@ -91,12 +91,12 @@ fact CloneCheckoutFrame {
 }
 
 pred synchronizationInit {
-  no ContainerBehind and no ContainerUnpushed and no CloneBehind
+  no BaseBehind and no BaseUnpushed and no CloneBehind
 }
 
 pred synchronizationStep {
   (Now.event = Stutter and no Where.machine and no Where.repo)
-  or (some m: Machine | pullContainer[m] or pullClone[m] or commitLocal[m] or launch[m])
+  or (some m: Machine | pullBase[m] or pullClone[m] or commitLocal[m] or launch[m])
   /* An event of an entity below: those set `Where` themselves where they touch
      a machine, and this entity has no state a branch could frame. */
   or (Now.event in githubEvents + directoryEvents)

@@ -236,7 +236,7 @@ import sys
 import time
 from pathlib import Path
 
-DEFAULT_REPO = "kalaluthien/agent-workspace"
+DEFAULT_REPO = "kalaluthien/campaign-base"
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
 # What the exec'd binary is called on this install. Not a property of claude.
