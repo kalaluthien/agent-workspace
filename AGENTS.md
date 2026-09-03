@@ -199,9 +199,12 @@ back. Fill the body from `.claude/skills/opening-campaign/assets/sub-issue.md`.
 **A member repository receives only the branch and its pull request**, so its
 own issue conventions are never touched, and a repository this account does not
 own, or a sub-issue moving two repositories at once, needs no special case. The
-pull request body names the sub-issue in full, `kalaluthien/agent-workspace#<issue>`:
-that is what `campaign-tracker settlement` follows back, and the short `#<issue>`
-closes the member repository's own issue of that number instead.
+pull request body closes the sub-issue with the keyword and the full name,
+`Closes kalaluthien/agent-workspace#<issue>`: `campaign-tracker settlement`
+reads `closedByPullRequestsReferences`, which a keyword populates and a bare
+mention does not, and the short `#<issue>` closes the member repository's own
+issue of that number instead. Which repository the work lands in is the
+template's `Repository:` line, since the issue's own location no longer says.
 
 **A discovery becomes a sub-issue at the moment it is found**, by whoever can file
 it: one held in a session's memory dies with its pane.
