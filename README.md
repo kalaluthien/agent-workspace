@@ -76,5 +76,6 @@ below â€” `github`, `directory`, `synchronization`, `session`, `orchestration` â
 so the top one is
 the whole composed model. Each entity is three files: `system.als` is the
 signatures, events and trace, `scenarios.als` the witnesses, `checks.als` the
-assertions. `spec/campaign/orchestration/system.als` for how a campaign session
-and its agents talk.
+assertions. `spec/campaign/diagram.html` for the shape of all of it, and
+`spec/campaign/orchestration/system.als` for how a campaign session and its
+agents talk.
