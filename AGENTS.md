@@ -121,9 +121,9 @@ may file a sub-issue of any campaign, one it is not a session of included,
 because a sub-issue is a record and not a claim — the atomic gate stays
 `campaign-claim take`'s create-ref, and the model's `addMember`
 (`spec/campaign/github/system.als`) has no actor, machine, or binding
-precondition. What the filer still owes: file on the repository whose code
-changes, from the template, and leave adding that repository to `## Repos` to a
-bound session, since that is a scope change (`opening-campaign`, "A repository the campaign issue's `## Repos` list does not name").
+precondition. What the filer still owes: file from the template, and leave
+adding a repository the work needs to `## Repos` to a bound session, since that
+is a scope change (`opening-campaign`, "A repository the campaign issue's `## Repos` list does not name").
 
 **`BOUND <machine>` is a comment on the campaign issue, and the latest one wins.** Its
 first line is `BOUND <machine>` from `hostname -s`; anything after is prose.
@@ -187,16 +187,24 @@ person decides a close.
 
 ## Sub-issues
 
-One sub-issue is one GitHub issue, filed on the repository whose code changes, and
-created **as a sub-issue of the campaign issue**:
+One sub-issue is one GitHub issue, **filed on this container's tracker whatever
+repository its code lives in**, and created **as a sub-issue of the campaign issue**:
 
 ```sh
-gh issue create -R <owner/repo> --parent https://github.com/kalaluthien/agent-workspace/issues/<N> ...
+gh issue create -R kalaluthien/agent-workspace --parent https://github.com/kalaluthien/agent-workspace/issues/<N> ...
 ```
 
 That one flag is the whole index, and `campaign-tracker index <N>` reads it
-back, in any repository, public or private. Fill the body from
-`.claude/skills/opening-campaign/assets/sub-issue.md`.
+back. Fill the body from `.claude/skills/opening-campaign/assets/sub-issue.md`.
+**A member repository receives only the branch and its pull request**, so its
+own issue conventions are never touched, and a repository this account does not
+own, or a sub-issue moving two repositories at once, needs no special case. The
+pull request body closes the sub-issue with the keyword and the full name,
+`Closes kalaluthien/agent-workspace#<issue>`: `campaign-tracker settlement`
+reads `closedByPullRequestsReferences`, which a keyword populates and a bare
+mention does not, and the short `#<issue>` closes the member repository's own
+issue of that number instead. Which repository the work lands in is the
+template's `Repository:` line, since the issue's own location no longer says.
 
 **A discovery becomes a sub-issue at the moment it is found**, by whoever can file
 it: one held in a session's memory dies with its pane.
@@ -209,8 +217,7 @@ what was built. Quote `campaign-tracker settlement`'s note for that row, not its
 
 **`## Repos`** says which repositories to clone when a campaign is opened, and
 `scripts/campaign-repos.py <path>` is its one reader; `- none` is the whole list for
-a repo-less campaign, which files its sub-issues on the container tracker. **Work
-that lands no commit is claimed all the same**, with `campaign-claim take
+a repo-less campaign. **Work that lands no commit is claimed all the same**, with `campaign-claim take
 --local`: the record alone, no ref. **`scripts/check-campaign-claim.py` is what
 makes that true rather than remembered** — a `PreToolUse` guard answering "is
 this a change to campaign work that no unreleased claim of this session covers",

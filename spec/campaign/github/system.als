@@ -4,8 +4,12 @@
  *
  *   Repo         a repository, with Container the one this model runs in.
  *   PullRequest  a pull request, and Merged the ones that landed.
- *   Issue        an issue: which repository it is filed on, and which pull
- *                request it has. Open holds the ones still open.
+ *   Issue        an issue: which repository its work lands in -- where its
+ *                branch is cut and its pull request opened -- and which pull
+ *                request it has. Open holds the ones still open. Every issue
+ *                is FILED on the Container's tracker, whatever its `repo`; a
+ *                member repository receives only branches and pull requests,
+ *                so the tracker is a constant here and not a field.
  *   Campaign     a campaign: its campaign issue, the sub-issues that truly
  *                belong to it, the sub-issue index GitHub itself keeps, and the
  *                repository list in the campaign issue body. Filed holds the
@@ -84,7 +88,7 @@ one sig Container extends Repo {}
 sig PullRequest {}
 
 sig Issue {
-  repo:   one Repo,
+  repo:   one Repo,                  -- where the work lands, never where the issue is filed
   var pullRequest: lone PullRequest
 }
 
@@ -140,7 +144,10 @@ pred mergeClosed[s: set Issue] {
 }
 
 /* Not a fact: the container's tracker holds THREE kinds of issue, and a
-   global fact admitting the third says nothing. S18/S18a are why. */
+   global fact admitting the third says nothing. S18/S18a are why. Read
+   `i.repo = Container` throughout as "its work lands in the container" --
+   the container as a member of its own campaign -- since filing is on the
+   container for every issue and so distinguishes nothing. */
 pred containerIssuesAreCampaignIssues {
   all i: Issue | i.repo = Container implies (i in Campaign.campaignIssue or eventually i in Campaign.memberIssues)
 }

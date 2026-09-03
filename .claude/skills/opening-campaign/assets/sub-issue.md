@@ -1,4 +1,5 @@
 Campaign: kalaluthien/agent-workspace#<N>
+Repository: <owner/repo whose code changes, or none>
 
 <What is wrong or missing now, and what says so. One paragraph, no preamble.>
 

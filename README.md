@@ -41,9 +41,10 @@ so a campaign can never be committed into the wrong repository by accident.
 | what a campaign is and how far along it is | GitHub issues |
 
 A campaign's identity is its **campaign issue** in this repository. Sub-issues are
-issues on the repositories whose code changes — the container's own tracker when
-none does — each filed as a sub-issue of that campaign issue, and the link the creating
-command makes is the whole index. That makes
+issues in this repository too, whichever repository their code lives in — each
+filed as a sub-issue of that campaign issue, and the link the creating command
+makes is the whole index; a member repository receives only branches and pull
+requests. That makes
 GitHub the single record: a campaign can move from one machine to another, and a
 phone can read it, without anything local having to agree. It runs on one
 machine at a time, and the campaign issue's latest `BOUND` comment says which.
