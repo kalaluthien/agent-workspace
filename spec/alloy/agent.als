@@ -437,11 +437,14 @@ pred claimAtomic       { always (Now.ev = Claim  implies Now.issue not in Claime
    not where the session sits: a change landing outside every container tree
    and every campaign directory is not work on a sub-issue and is no step of
    this relation. The guard reads that target where it can -- a file tool's
-   path, a shell's path-like words -- and falls back to this rule where it
-   cannot, an unread target not being a target read as elsewhere. No atom here
-   carries a path, so the reading itself is the script's and is stated in its
-   docstring; the model says only that a write on nothing this campaign owns is
-   outside `Work`. */
+   path, and a shell's write targets, which are the operands of the changing
+   forms that matched and never the words that merely look like paths -- and
+   falls back to this rule where it cannot, an unread target not being a target
+   read as elsewhere. A write to the campaign plane through `gh` has no
+   filesystem target at all and is always `Work`. No atom here carries a path,
+   so the reading itself is the script's and is stated in its docstring; the
+   model says only that a write on nothing this campaign owns is outside
+   `Work`. */
 pred claimBeforeWork {
   always (Now.ev = Work and some Target.agent.peer
             implies Now.issue in Target.agent.peer.claims)

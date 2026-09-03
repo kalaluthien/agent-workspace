@@ -326,6 +326,12 @@ def main():
         r = ask(root, tool="Bash", command="mkdir -p /tmp/check-campaign-claim-shot")
         check("a mkdir outside every campaign is allowed",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and the allow names the form and the operand it read",
+              "`mkdir`" in out(r) and "/tmp/check-campaign-claim-shot" in out(r),
+              out(r)[:400])
+        r = ask(root, tool="Bash", command=f"sed -i 's/a/b/' {OUT}")
+        check("a sed -i on a file outside every campaign is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
 
         # The other side of the same branch: inside is still the claim's.
         r = ask(root, tool="Write", path=str(root / "demo-260902" / "notes.md"))
@@ -335,21 +341,71 @@ def main():
         check("a Write inside the container tree is still refused",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
 
-        # A command with no path in it at all falls back to the old reading,
-        # and says which of the two happened: looked and found nothing.
-        r = ask(root, tool="Bash", command="git commit -m x")
-        check("a command carrying no path token is still refused",
+        # A SLASHLESS operand is an operand. The words that look like paths are
+        # not the target: with one unrelated outside path in the command,
+        # reading those allowed a copy over a container file.
+        r = ask(root, tool="Bash", command="cp /tmp/x.md AGENTS.md")
+        check("a slashless operand of a matched form denies the call",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...and says no path token could be read, not that one was outside",
-              "no path token could be read" in out(r), out(r)[:400])
+        check("...naming the form and the operand that landed inside",
+              "`cp` operand 'AGENTS.md'" in out(r), out(r)[:400])
+        r = ask(root, tool="Bash", command="echo hi > /tmp/x ; rm -rf scripts")
+        check("a second segment's operand inside denies the whole command",
+              r.returncode == 2 and "`rm` operand 'scripts'" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        r = ask(root, tool="Bash", command=f"sed -i '' -e 's/a/b/' AGENTS.md")
+        check("a sed -i script is not read as its file operand",
+              r.returncode == 2 and "`sed -i` operand 'AGENTS.md'" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
 
-        # All-or-nothing: one token landing inside denies the ones outside.
-        r = ask(root, tool="Bash",
-                command=f"cp {OUT} {root / 'demo-260902' / 'b.txt'}")
-        check("one path token inside a campaign directory refuses the whole call",
+        # A git write's target is the repository. Every path in the command is
+        # a log or a message file, so none of them may carry an allow -- this
+        # is the class the guard exists for.
+        for command in ("git push 2>/tmp/err.log", "git commit -m x 2>/tmp/e",
+                        "git push origin HEAD | tee /tmp/push.log",
+                        "git commit -F /tmp/msg.txt"):
+            r = ask(root, tool="Bash", command=command)
+            check(f"a git write is refused whatever path it carries: {command}",
+                  r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the target is the repository, not the path it read",
+              "target is the repository" in out(r), out(r)[:400])
+
+        # The campaign plane is GitHub issues and has no path at all.
+        for command in ("gh issue comment 150 --body-file /tmp/b.md",
+                        "gh issue close 150 --comment-file /tmp/c.md"):
+            r = ask(root, tool="Bash", command=command)
+            check(f"a gh write to the campaign plane is refused: {command}",
+                  r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the campaign plane has no filesystem target",
+              "no filesystem target" in out(r), out(r)[:400])
+        # With a readable form of its own in the command, only the service-door
+        # short-circuit refuses this: the redirect it carries lands outside.
+        r = ask(root, tool="Bash", command="gh issue close 150 -R o/r > /tmp/close.log")
+        check("a gh campaign write is refused though its redirect lands outside",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...naming the token that landed inside",
-              "demo-260902" in out(r) and "resolves to" in out(r), out(r)[:400])
+        r = ask(root, tool="Bash",
+                command="curl -X POST https://api.example.com/x -o /tmp/out.json")
+        check("a writing HTTP request is refused whatever file it writes",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(root, tool="Bash",
+                command="curl -X POST https://api.example.com/x | tee /tmp/resp.json")
+        check("...and is refused though the form it pipes into lands outside",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...saying the target is a service, not the file it read",
+              "target is a service" in out(r), out(r)[:400])
+
+        # A form this cannot parse, and an operand it cannot resolve: two
+        # different "I could not look", and neither is an allow.
+        r = ask(root, tool="Bash", command="npm install lodash")
+        check("a changing form whose target this cannot read is refused",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says no readable form was found, not that one was outside",
+              "no changing form whose target is an operand" in out(r), out(r)[:400])
+        r = ask(root, tool="Bash", command="mkdir -p $SCRATCH/x")
+        check("an operand this cannot expand is refused",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the operand is an expansion, not a path outside",
+              "is an expansion or a glob" in out(r), out(r)[:400])
 
         # A claim still allows what the target reading sent to it, so the new
         # branch cannot be what makes group 6 pass.
@@ -357,6 +413,22 @@ def main():
         r = ask(root2, tool="Write", path=str(root2 / "demo-260902" / "notes.md"))
         check("a held claim still allows a write inside its campaign",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
+    # 13. A SECOND checkout of the container is a container tree too, and it is
+    # under neither this root nor any campaign directory. Only the target's own
+    # container lookup refuses it; the root and campaign-directory tests here
+    # both say "outside", so this is the one case that pins that clause.
+    with tempfile.TemporaryDirectory() as d:
+        root = container(d, {"demo-260902": {}})
+        elsewhere = container(str(Path(d) / "second"), {})
+        r = ask(root, tool="Write", path=str(elsewhere / "AGENTS.md"))
+        check("a Write into another checkout of the container is refused",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...naming the container the target is in, not the one cwd is in",
+              str(elsewhere) in out(r), out(r)[:400])
+        r = ask(root, tool="Bash", command=f"cp /tmp/x.md {elsewhere}/AGENTS.md")
+        check("...and so is a shell copy into it", r.returncode == 2,
+              f"exit {r.returncode}: {out(r)[:300]}")
 
     for f in fails:
         print(f"FAIL  {f}")
