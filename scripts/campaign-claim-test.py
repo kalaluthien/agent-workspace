@@ -192,6 +192,9 @@ case("...and says what to do about it",
 case("take accepts a --name of this campaign",
      ["take", "--local", "1", "7", "x", "--name", "campaign-1-executor-2"],
      want="name campaign-1-executor-2", code=0)
+case("take refuses a --name that is not the shape at all",
+     ["take", "--local", "1", "7", "x", "--name", "campaign-1-oops"],
+     want="not campaign-<anchor>-executor-<n>", code=1)
 
 case("release --session marks a local claim released, deleting no ref",
      ["release", "7", "--session", "mine"], {"7": LOCAL_REC},
@@ -296,6 +299,27 @@ def pure_cases(m):
     ok, why = m.ahead_verdict(0, "not a number", "", "a/b", "x")
     c("an answer that is not a number is a failed question, not a count",
       not ok and "did not happen" in why and "commit(s) ahead" not in why)
+
+    # The binding read before a ref is cut, one case per word it can say.
+    c("`here` admits the cut", m.binding_verdict("here") is None)
+    c("`elsewhere` refuses by name",
+      "bound elsewhere" in (m.binding_verdict("elsewhere") or ""))
+    c("`unbound` refuses by name",
+      "not bound" in (m.binding_verdict("unbound") or ""))
+    c("a reading that failed refuses, and says the binding could not be read",
+      "could not be read" in (m.binding_verdict("exit 1: boom") or ""))
+    # The name read against the one pattern, loaded from its owner.
+    naming, why = m.load_sibling("campaign-name-session.py", "cns_for_test")
+    c("the name rule loads from its sibling", why is None and naming is not None)
+    if naming is not None:
+        c("a name of this campaign is admitted",
+          m.name_verdict("campaign-1-executor-2", "1", naming.NAME) is None)
+        c("no name is admitted, the record may carry unknown",
+          m.name_verdict(None, "1", naming.NAME) is None)
+        c("another campaign's name is refused naming both numbers",
+          "campaign 116" in (m.name_verdict("campaign-116-executor-2", "1", naming.NAME) or ""))
+        c("a malformed name is refused, not read as no campaign",
+          "not campaign-<anchor>" in (m.name_verdict("campaign-1-oops", "1", naming.NAME) or ""))
 
     # A command that is not installed at all: a failed run carrying its reason,
     # never a traceback. `gh` and `ps` both go through this.

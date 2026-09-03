@@ -44,14 +44,24 @@ and does not block a re-take -- an idempotency key naming what was asked for
 rather than which attempt is the shape that refuses a repeat of work that has
 returned to its starting state.
 
-`--name` FROM ANOTHER CAMPAIGN IS REFUSED
+`--name` FROM ANOTHER CAMPAIGN, OR OF THE WRONG SHAPE, IS REFUSED
 
 A session that moved from one campaign to another keeps its old name unless
 something sets it, and the record is where a stale name does lasting damage:
-`list` prints `name` as the address to reach the holder. So `take` compares the
-`campaign-<M>-` a name carries against the anchor and refuses when they differ,
-naming both numbers. opening-campaign step 3 is the step that sets the name;
-this is its second reader.
+`list` prints `name` as the address to reach the holder. So `take` reads the
+name against campaign-name-session.py's NAME -- loaded from that file, the
+rule's one spelling -- and refuses a name that does not match it or whose
+anchor is another campaign's, naming both numbers. The name is set at the
+start of every session of a campaign (AGENTS.md § The session name); this is
+the reader that catches one that was not.
+
+THE BINDING IS READ BEFORE A REF IS CUT
+
+`take` runs campaign-tracker `bound <N>` and cuts a ref only on `here`:
+`elsewhere`, `unbound` and a failed read each refuse by name. That makes the
+claim one of the binding's mechanically gated writes; a launch, and a
+`--local` claim that lands no ref and stays off the network, are gated by the
+rule in AGENTS.md § The binding alone.
 
 
 `--session` ON `take` IS THE LAUNCH-TIME PATH
@@ -172,6 +182,8 @@ claimed, which is news rather than an error. Every verdict is on stdout, and the
 reading that produced it is printed beside it.
 """
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -500,27 +512,70 @@ def cmd_list(args):
     return 0
 
 
-def foreign_name(name, anchor):
-    """The campaign number a `campaign-<M>-...` name carries when it is not
-    this campaign's, else None. Pure, so the refusal has a case. A name of any
-    other shape is not judged here: campaign-name-session.py owns the shape,
-    and a record may honestly carry `unknown`."""
-    m = re.match(r"campaign-([0-9]+)-", name or "")
-    if m and m.group(1) != str(anchor):
-        return m.group(1)
+HERE = Path(__file__).resolve().parent
+
+
+def load_sibling(filename, modname):
+    """Import a sibling script by path. Returns (module, why_unreadable). A
+    failure is a refusal, never a pass: a reader that could not load the rule
+    has checked nothing."""
+    try:
+        spec = importlib.util.spec_from_loader(
+            modname, importlib.machinery.SourceFileLoader(
+                modname, str(HERE / filename)))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception as e:                      # noqa: BLE001 -- any of them
+        return None, f"{HERE / filename}: {e.__class__.__name__}: {e}"
+    return module, None
+
+
+def name_verdict(name, anchor, pattern):
+    """Why a --name may not enter this campaign's record, or None. Pure, so
+    each refusal has a case. `pattern` is campaign-name-session.py's NAME, the
+    rule's one spelling, loaded by the caller; its group 1 is the anchor. No
+    name at all is admitted, since a record may honestly carry `unknown`."""
+    if not name:
+        return None
+    m = pattern.match(name)
+    if not m:
+        return (f"--name {name} is not campaign-<anchor>-executor-<n>; "
+                f"scripts/campaign-name-session.py refuses it too")
+    if m.group(1) != str(anchor):
+        return (f"--name {name} belongs to campaign {m.group(1)}, and this "
+                f"claim is on campaign {anchor}. A stale name written into a "
+                f"record sends every later reader to the wrong session; "
+                f"rename first with scripts/campaign-name-session.py.")
     return None
+
+
+def binding_verdict(word):
+    """Why the binding refuses a ref cut, or None. `word` is the first token
+    campaign-tracker `bound` printed: `here` admits; `elsewhere` and `unbound`
+    refuse by name; anything else is a reading that failed, which refuses
+    too, because a binding that could not be read is not a binding here."""
+    if word == "here":
+        return None
+    if word == "elsewhere":
+        return ("the campaign is bound elsewhere; a claim is a write only its "
+                "machine makes (AGENTS.md § The binding)")
+    if word == "unbound":
+        return ("the campaign is not bound to any machine; only a person's "
+                "word binds it, and a claim comes after")
+    return f"the binding could not be read (campaign-tracker bound said {word!r})"
 
 
 def cmd_take(args):
     _, claims = campaign_dir(args.dir)
     branch = f"campaign-{args.anchor}/{args.issue}-{args.topic}"
-    other = foreign_name(args.name, args.anchor)
-    if other:
-        print(f"refusing: --name {args.name} belongs to campaign {other}, and "
-              f"this claim is on campaign {args.anchor}. A stale name written "
-              f"into a record sends every later reader to the wrong session; "
-              f"rename first with scripts/campaign-name-session.py.",
-              file=sys.stderr)
+    naming, why = load_sibling("campaign-name-session.py", "campaign_name_session")
+    if why:
+        print(f"refusing: the name rule could not be loaded ({why}); a --name "
+              f"cannot be checked, so none is written.", file=sys.stderr)
+        return 1
+    refusal = name_verdict(args.name, args.anchor, naming.NAME)
+    if refusal:
+        print(f"refusing: {refusal}", file=sys.stderr)
         return 1
     path = record_path(claims, args.issue)
     existing = read_record(path)
@@ -555,6 +610,20 @@ def cmd_take(args):
         print(f"wrote {path}")
         print("".join(f"  {l}\n" for l in body.splitlines()))
         return 0
+
+    # The binding, read before a ref is cut: a claim is one of the writes only
+    # the bound machine makes. Read from the one reader, never re-derived. A
+    # --local claim lands no ref and stays off the network, so it is gated by
+    # the rule alone.
+    b = run(sys.executable, str(HERE / "campaign-tracker.py"), "bound",
+            str(args.anchor))
+    word = (b.stdout.strip().split() or [""])[0]
+    refusal = binding_verdict(word if b.returncode == 0 else
+                              f"exit {b.returncode}: {b.stderr.strip()[:120]}")
+    if refusal:
+        print(f"refusing: {refusal}", file=sys.stderr)
+        return 1
+    print(f"bound here, so the claim may be cut")
 
     # Resolved and checked before the create, never written inline: a read that
     # fails and still prints goes up as the sha and comes back as the 422 that
