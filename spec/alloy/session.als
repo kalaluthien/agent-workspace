@@ -303,6 +303,12 @@ pred boundOnly {
             Binding.bound[By.actor.holds] = By.actor.smach)
   always ((Now.ev = CloseIssue and Now.issue in Campaign.anchor) implies
             Binding.bound[anchorOf[Now.issue]] = By.actor.smach)
+  /* The claim and the launch: `campaign-claim take` reads the binding before
+     it cuts a ref, so the claim is mechanically gated; the launch is gated by
+     AGENTS.md § The binding as a rule, stated here so the model and the prose
+     name the same set. */
+  always (Now.ev in Claim + Launch implies
+            Binding.bound[By.actor.holds] = By.actor.smach)
 }
 
 /* NARROWS the window rather than closing it: read and create are not atomic,

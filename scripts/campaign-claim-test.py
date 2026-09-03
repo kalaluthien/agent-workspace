@@ -50,7 +50,32 @@ exit 1
 """
 
 
-def run(args, files=None, mtime=None, env=None, stub_ps=False):
+# A stand-in `gh`, so the binding read inside `take` has a case without a
+# network. It answers the comments endpoint with one BOUND comment naming a
+# machine that is not this one, and refuses everything else -- so a ref call
+# that escaped the binding gate is visible as a different refusal.
+GH_SHIM = """#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    */comments) echo '[[{"body":"BOUND some-other-machine"}]]'; exit 0 ;;
+  esac
+done
+if [ "$1" = issue ] && [ "$2" = comment ]; then echo "$@" >> "$HOME/gh-comment.log"; exit 0; fi
+echo "gh shim: a ref call escaped the binding gate: $*" >&2
+exit 1
+"""
+
+
+# A `gh` that fails the way an unauthenticated one does: several lines, the
+# cause on the first. The binding read's failure branch must carry both which
+# command failed and why, so neither end of that message may be cut.
+GH_FAILS = """#!/bin/sh
+printf 'gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable. Example:\\n  env:\\n    GH_TOKEN: x\\n' >&2
+exit 4
+"""
+
+
+def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
     with tempfile.TemporaryDirectory() as d:
         claims = Path(d) / "runtime" / "claims"
         claims.mkdir(parents=True)
@@ -65,11 +90,15 @@ def run(args, files=None, mtime=None, env=None, stub_ps=False):
             if mtime is not None:
                 os.utime(claims / name, (mtime, mtime))
         e = dict(os.environ, **(env or {}))
-        if stub_ps:
+        if stub_ps or stub_gh:
             shim = Path(d) / "shim"
             shim.mkdir()
-            (shim / "ps").write_text(PS_SHIM)
-            (shim / "ps").chmod(0o755)
+            for name, body, on in (("ps", PS_SHIM, stub_ps),
+                                   ("gh", GH_FAILS if stub_gh == "fails"
+                                    else GH_SHIM, stub_gh)):
+                if on:
+                    (shim / name).write_text(body)
+                    (shim / name).chmod(0o755)
             e["PATH"] = f"{shim}:{e.get('PATH', '')}"
         return subprocess.run([sys.executable, str(CLAIM), *args, "--dir", d],
                               capture_output=True, text=True, env=e)
@@ -80,10 +109,11 @@ CASES = []
 
 
 def case(name, args, files=None, mtime=None, env=None, want=None, code=None,
-         stub_ps=False, absent=None):
+         stub_ps=False, absent=None, stub_gh=False):
     """`absent` is a string the output must NOT contain: a false warning is
     invisible to `want`, which only asks that the right line is present."""
-    CASES.append((name, args, files, mtime, env, want, code, stub_ps, absent))
+    CASES.append((name, args, files, mtime, env, want, code, stub_ps, absent,
+                  stub_gh))
 
 
 # The reading that says nothing is here, which must not read like a refusal.
@@ -192,6 +222,26 @@ case("...and says what to do about it",
 case("take accepts a --name of this campaign",
      ["take", "--local", "1", "7", "x", "--name", "campaign-1-executor-2"],
      want="name campaign-1-executor-2", code=0)
+# The binding read at its call site, against the gh shim: with the gate in
+# place the shim's BOUND comment is what refuses; with the gate removed the
+# first ref call reaches the shim and is refused as an escape instead.
+case("take reads the binding before cutting a ref, and `elsewhere` refuses",
+     ["take", "1", "7", "x"], want="bound elsewhere", code=1, stub_gh=True,
+     absent="escaped the binding gate")
+case("...and a `#`-prefixed anchor reads the same number the tracker read",
+     ["take", "#1", "7", "x", "--name", "campaign-1-executor-1"],
+     want="bound elsewhere", code=1, stub_gh=True, absent="belongs to campaign")
+# A binding read that failed is the "I could not look" branch: it must name
+# the command that failed AND the cause, so each end has its own case.
+case("a failed binding read names the command that failed",
+     ["take", "1", "7", "x"], stub_gh="fails", code=1,
+     want="campaign-tracker bound: gh api")
+case("...and the cause the command gave",
+     ["take", "1", "7", "x"], stub_gh="fails", code=1,
+     want="set the GH_TOKEN environment variable")
+case("take refuses a --name that is not the shape at all",
+     ["take", "--local", "1", "7", "x", "--name", "campaign-1-oops"],
+     want="not campaign-<anchor>-executor-<n>", code=1)
 
 # `stood-down`: refused while a claim is held, refused with no session, posted
 # through the gh shim otherwise (its arguments land in gh-comment.log).
@@ -308,6 +358,27 @@ def pure_cases(m):
     ok, why = m.ahead_verdict(0, "not a number", "", "a/b", "x")
     c("an answer that is not a number is a failed question, not a count",
       not ok and "did not happen" in why and "commit(s) ahead" not in why)
+
+    # The binding read before a ref is cut, one case per word it can say.
+    c("`here` admits the cut", m.binding_verdict("here") is None)
+    c("`elsewhere` refuses by name",
+      "bound elsewhere" in (m.binding_verdict("elsewhere") or ""))
+    c("`unbound` refuses by name",
+      "not bound" in (m.binding_verdict("unbound") or ""))
+    c("a reading that failed refuses, and says the binding could not be read",
+      "could not be read" in (m.binding_verdict("exit 1: boom") or ""))
+    # The name read against the one pattern, loaded from its owner.
+    naming, why = m.load_sibling("campaign-name-session.py", "cns_for_test")
+    c("the name rule loads from its sibling", why is None and naming is not None)
+    if naming is not None:
+        c("a name of this campaign is admitted",
+          m.name_verdict("campaign-1-executor-2", "1", naming.NAME) is None)
+        c("no name is admitted, the record may carry unknown",
+          m.name_verdict(None, "1", naming.NAME) is None)
+        c("another campaign's name is refused naming both numbers",
+          "campaign 116" in (m.name_verdict("campaign-116-executor-2", "1", naming.NAME) or ""))
+        c("a malformed name is refused, not read as no campaign",
+          "not campaign-<anchor>" in (m.name_verdict("campaign-1-oops", "1", naming.NAME) or ""))
 
     # The gone-ref path, one case per branch it can take. A ref present is the
     # ahead_verdict cases above; these are the two readings of a 404.
@@ -435,9 +506,22 @@ def live(m):
         if not cond:
             out.append(name)
 
-    def run_live(d, env=None):
-        return subprocess.run([sys.executable, str(CLAIM), "live", "1", "--dir", d],
+    def run_live(d, env=None, anchor="1"):
+        return subprocess.run([sys.executable, str(CLAIM), "live", anchor,
+                               "--dir", d],
                               capture_output=True, text=True, env=env)
+
+    # `#1` and `1` are the same campaign at the `live` parser too. Unstripped,
+    # the anchor never matches a branch and every record here reads stray --
+    # a warning that is invisible to a `want`, so it is asserted as absent.
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        (claims / "7").write_text("session S1\nbranch campaign-1/7-x\n")
+        r = run_live(d, {"PATH": "/nonexistent"}, anchor="#1")
+        out_text = r.stdout + r.stderr
+    c("a `#`-prefixed anchor does not make this campaign's own record stray",
+      "outside campaign" not in out_text)
 
     got, why = m.parse_agents(listing(agent("S1", "campaign-1-executor-1")))
     c("a listed session is keyed by its session id", why is None and "S1" in got)
@@ -659,7 +743,7 @@ def main():
     for name in pure_failed:
         print(f"FAIL  {name}")
     failed += len(pure_failed)
-    for name, args, files, mtime, env, want, code, stub_ps, absent in CASES:
+    for name, args, files, mtime, env, want, code, stub_ps, absent, stub_gh in CASES:
         if name.startswith("a missing claims directory"):
             with tempfile.TemporaryDirectory() as d:
                 r = subprocess.run([sys.executable, str(CLAIM), "list", "--dir", d],
@@ -670,7 +754,7 @@ def main():
                 print(f"FAIL  {name}\n      got exit {r.returncode}: "
                       f"{(r.stdout + r.stderr).strip()[:160]}")
             continue
-        r = run(args, files, mtime, env, stub_ps)
+        r = run(args, files, mtime, env, stub_ps, stub_gh)
         out = r.stdout + r.stderr
         ok = ((want is None or want in out) and (code is None or r.returncode == code)
               and (absent is None or absent not in out))

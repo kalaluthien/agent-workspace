@@ -56,41 +56,39 @@ Holds when: the anchor's latest `BOUND` comment names this machine, and
 `$CAMPAIGN_DIR` is absolute, a direct child of the container, and named
 `<slug>-<YYMMDD>`.
 
-### 1. Refuse while an agent is live under the tree
+### 1. Refuse while a peer holds a claim or has not stood down
 
 **If `TOOK_IT_HERE` is set, this step and step 2 are not applicable — report
-that, not a pass**; run them anyway, they cost two commands. Make both readings,
-either alone being blind to half the executors, and compare whole path segments.
+that, not a pass**; run them anyway, they cost one command. The gate reads
+*agreement*, not presence: a peer that has finished, released its claims and
+posted `STOOD DOWN` on the campaign issue passes whatever its cwd, and a peer
+that has not is asked, not killed. One reader makes all three readings —
+herdr's liveness, the claim records, and the campaign issue's `STOOD DOWN`
+comments — joined on the session id:
 
 ```sh
-herdr agent list | jq -r --arg tree "$CAMPAIGN_DIR" \
-  '.result.agents[]
-   | select(.cwd + "/" | startswith(($tree | sub("/$";"")) + "/"))
-   | "\(.name // "unnamed")\t\(.agent_status)\t\(.cwd)"'
-
-CLAIMDIR="$CAMPAIGN_DIR/runtime/claims"
-if [ ! -d "$CLAIMDIR" ]; then
-  echo "REFUSE: no $CLAIMDIR — claims cannot be enumerated"
-else
-  find "$CLAIMDIR" -type f -print | while read -r F; do
-    P=$(awk '$1 == "pid" { print $2 }' "$F")
-    V=$("$CONTAINER/scripts/campaign-claim.py" alive "$P" 2>&1) || V="unreadable ($V)"
-    case "$V" in
-      dead) ;;
-      alive|other) echo "live claim: $(basename "$F") [$V]"; cat "$F" ;;
-      *) echo "REFUSE: $(basename "$F") is $V"; cat "$F" ;;
-    esac
-  done
-fi
+"$CONTAINER/scripts/campaign-claim.py" live "$N" --dir "$CAMPAIGN_DIR"
 ```
 
-Any row from either: print the rows, name the agent, stop. The person retires it;
-this skill never kills an agent. No rows still leaves two cases step 2 is what
-catches (`references/rationale.md`).
+Read the word, never the exit status, and refuse on any of:
 
-Holds when: `runtime/claims/` existed, every record in it read `dead`, and no
-herdr agent's `cwd` was under `$CAMPAIGN_DIR` — or `TOOK_IT_HERE` is set and this
-step reported both as not applicable rather than as passed.
+- a non-zero exit — one of the three readings did not happen;
+- any row under **claims answered by a live session** — a live claim;
+- any row under **claims no live session on this machine answers** that does not
+  read `dead` — a pid this machine cannot vouch for;
+- any row under **live sessions under … with neither a claim nor a STOOD DOWN**.
+
+For each row of the last kind, send `STATUS`, then `STAND DOWN`, to every such
+session (`AGENTS.md` § The four messages), not only the first; the peer posts
+its own `STOOD DOWN` with `campaign-claim stood-down` once its work is on
+GitHub, and this step is re-run. This skill never kills an agent, and never
+posts a `STOOD DOWN` for anyone else: the comment is the peer's word, which is
+why it is evidence (`references/rationale.md`). No rows still leaves two cases
+step 2 is what catches.
+
+Holds when: `campaign-claim live` exited 0 and printed no row of the three
+refusing kinds — or `TOOK_IT_HERE` is set and this step reported not applicable
+rather than passed.
 
 ### 2. Refuse while work exists only on this machine
 

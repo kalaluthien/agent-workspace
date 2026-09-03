@@ -34,8 +34,22 @@ is what covers it. Step 1 reports "not applicable" on this path rather than
 ## Step 1 — the agents
 
 There is no holder to read. The holding session is retired (`AGENTS.md`
-§ The binding), so this step asks only what is live under the tree, and it asks
-it of both records because either alone is blind to half the executors.
+§ The binding), so this step asks what is live under the tree and whether it
+has agreed the campaign is over, and it asks `campaign-claim live` because
+either of its first two readings alone is blind to half the executors.
+
+**The comment is the evidence, not the pane.** A pane under the tree says a
+shell was opened there; it says nothing about whether the session in it is
+done, and a finished peer sitting idle in the directory blocked every close
+until a person shut its tab. `STAND DOWN` is a message between sessions and
+leaves no record. A `STOOD DOWN <name> <session-id>` comment on the campaign
+issue is durable, is the peer's own word, is posted only after it verified its
+work is on GitHub (`campaign-claim stood-down` refuses while the session holds
+an unreleased claim), and is joined to herdr's row on the session id — the one
+field a restart and a rename both leave alone. So a stood-down peer passes
+whatever its cwd, a live claim refuses whatever was posted, and a peer that has
+neither is asked. `spec/alloy/agent.als` carries it as `StoodDownPosted`, never
+over local-only work.
 
 A live PID that is some other `claude` reads as held. That is the safe direction
 to be wrong in here: leaving a claim standing costs a question, deleting a live

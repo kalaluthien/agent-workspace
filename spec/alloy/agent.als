@@ -49,6 +49,11 @@ var sig Waiting  in Agent {}
    local-only. */
 var sig Confirmed in Agent {}
 var sig StoodDown in Agent {}
+/* The executor has posted `STOOD DOWN <name> <session-id>` on the campaign
+   issue: the agreement made durable where a close gate can read it. Set only
+   by the executor itself, after it stood down, and never for one still Local
+   -- the comment says its work is on GitHub. */
+var sig Stood    in Agent {}
 var sig Retired  in Agent {}
 
 /* A bit on the PULL REQUEST, not on the executor: the review outlives the
@@ -110,11 +115,13 @@ pred sameBranch[a1, a2: Agent] {
 /* ---------------- observable events ---------------- */
 
 one sig Work, Push, Status, Answer, Report, Blocked, Decide,
-        Confirm, ConfirmElsewhere, Review, StandDown, Retire, AgentDie extends Event {}
+        Confirm, ConfirmElsewhere, Review, StandDown, StoodDownPosted, Retire,
+        AgentDie extends Event {}
 
 fun agentOwn: set Event {
   Work + Push + Status + Answer + Report + Blocked + Decide
-  + Confirm + ConfirmElsewhere + Review + StandDown + Retire + AgentDie
+  + Confirm + ConfirmElsewhere + Review + StandDown + StoodDownPosted + Retire
+  + AgentDie
 }
 /* `DeleteDir` is here because this layer has a bit with the directory's
    lifetime. `MergePR` is NOT: session.als gives it an actor and this layer
@@ -129,7 +136,7 @@ pred keepMsgs     { Reported' = Reported and Asked' = Asked and Answered' = Answ
 pred keepAddress  { Addressed' = Addressed }
 pred keepReview   { Reviewed' = Reviewed }
 pred keepLife     { Live' = Live and Local' = Local and Visible' = Visible and Confirmed' = Confirmed }
-pred keepShutdown { StoodDown' = StoodDown and Retired' = Retired }
+pred keepShutdown { StoodDown' = StoodDown and Stood' = Stood and Retired' = Retired }
 pred keepBorn     { Launched' = Launched }
 pred agentFrame   { keepLife and keepReview and keepMsgs and keepAddress and keepShutdown and keepBorn }
 
@@ -299,6 +306,18 @@ pred standDown[a: Agent] {
   Now.ev = StandDown and Now.issue = a.task and Target.agent = a
 }
 
+/* The executor's own record of the stand-down, on the campaign issue. It
+   is the executor's word (no By.actor), it comes after the stand-down, and
+   it is never posted over local-only work -- which is what makes the comment
+   evidence a close may read where a pane is not. */
+pred stoodDownPosted[a: Agent] {
+  a in StoodDown and a not in Stood and a not in Local
+  Stood'     = Stood + a
+  StoodDown' = StoodDown and Retired' = Retired
+  keepLife and keepReview and keepMsgs and keepAddress and keepBorn
+  Now.ev = StoodDownPosted and Now.issue = a.task and Target.agent = a and no By.actor
+}
+
 /* Anything still in Local at this instant is gone. The second disjunct is not
    a convenience: an executor that already died is retired with no stand-down,
    and that path skips every message, which is why the disciplines guard the
@@ -346,7 +365,7 @@ pred agentStep {
         launch[a] or work[a] or push[a]
         or status[a] or answer[a] or report[a]
         or blocked[a] or decide[a] or confirm[a] or confirmElsewhere[a]
-        or standDown[a] or retire[a] or agentDie[a])
+        or standDown[a] or stoodDownPosted[a] or retire[a] or agentDie[a])
   or (some i: Issue | review[i])
   or aRelease
   or aDeleteDir
@@ -837,6 +856,11 @@ pred Cov_Confirm          { eventually Now.ev = Confirm }
 pred Cov_ConfirmElsewhere { eventually Now.ev = ConfirmElsewhere }
 pred Cov_Review           { eventually Now.ev = Review }
 pred Cov_StandDown        { eventually Now.ev = StandDown }
+pred Cov_StoodDownPosted  { eventually Now.ev = StoodDownPosted }
+/* The comment is never over local-only work: no trace posts it while Local. */
+pred A19_StoodDownNeverLocal {
+  eventually (Now.ev = StoodDownPosted and Target.agent in Local)
+}
 pred Cov_Retire           { eventually Now.ev = Retire }
 pred Cov_AgentDie         { eventually Now.ev = AgentDie }
 pred Cov_GuardedRelease   { eventually Now.ev = Release }
@@ -1056,6 +1080,8 @@ run Cov_Confirm          for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Ma
 run Cov_ConfirmElsewhere for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
 run Cov_Review           for 3 Issue, 2 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps expect 1
 run Cov_StandDown        for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run Cov_StoodDownPosted  for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
+run A19_StoodDownNeverLocal for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 0
 run Cov_Retire           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
 run Cov_AgentDie         for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
 run Cov_GuardedRelease   for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1

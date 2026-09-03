@@ -8,10 +8,12 @@ name that `herdr agent list` shows, and the harness name that `ListAgents`
 resolves and a peer addresses. Renaming one leaves the session answering to two
 different names depending on who is asking, so this sets both and reports each.
 
-It is also the naming rule's one consumer. `AGENTS.md` § The session name states
+It is also the naming rule's owner. `AGENTS.md` § The session name states
 `campaign-<anchor>-<role>-<n>`; a name that does not match is refused here
 rather than half-applied, because a rule nothing must consume is a rule that
-drifts.
+drifts. `NAME` below is the one pattern: scripts/campaign-claim.py loads this
+file by path and reads it there, so `take` can refuse a name from another
+campaign without a second spelling of the shape.
 
 scripts/check-rule-readers.py is the second reader that keeps this claim true: it
 refuses a commit that stages either of the two herdr rename calls as code in
@@ -43,7 +45,7 @@ import sys
 # sharing a campaign and a role.
 # `executor` is the only role: a review runs as a subagent of the session that
 # wants the merge, so it has no session to name. AGENTS.md, "Naming a session".
-NAME = re.compile(r"^campaign-[0-9]+-executor-[0-9]+$")
+NAME = re.compile(r"^campaign-([0-9]+)-executor-[0-9]+$")   # group 1: the anchor
 
 
 def refuse(why):

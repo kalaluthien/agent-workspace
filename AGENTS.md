@@ -103,12 +103,16 @@ never the exit status**, as for `campaign-local-work` and `campaign-claim alive`
 
 | the word | this session is |
 | --- | --- |
-| `here` | **a session of this campaign.** Work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4), and take a sub-issue. |
+| `here` | **a session of this campaign.** Name this session first (§ The session name), then work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4), and take a sub-issue. |
 | `elsewhere` | **not in this campaign.** Stop before any write and any launch, and name the machine. |
 | `unbound` | **not bound yet.** Only a person's word binds an existing campaign. |
 
 **The binding gates four things**: the anchor body, a `BOUND` comment, a claim,
-and a launch. Read it before each of those. **The sub-issue link is outside it**:
+and a launch. Read it before each of those. Only one of the four has a machine
+behind it: `campaign-claim take` reads the binding before it cuts a ref and
+refuses on anything but `here`. The body write, the `BOUND` comment, a launch,
+and a `--local` claim are gated by this rule and the model (`spec/alloy/session.als`,
+`boundOnly`) alone, so read the word yourself before each. **The sub-issue link is outside it**:
 any session on any machine may file a sub-issue of any campaign, one it is not a
 session of included, because a sub-issue is a record and not a claim — the
 atomic gate stays `campaign-claim take`'s create-ref, and the model's `addMember`
@@ -137,7 +141,14 @@ delegate's does not exist yet; `live` joins on the session id and reads it fine.
 ## The session name
 
 **`campaign-<anchor>-executor-<n>`**, for every session on this machine; `<n>` is
-assigned in the order sessions appear, so two do not both pick `-1`.
+assigned in the order sessions appear, so two do not both pick `-1`. **Set it at
+the start of every session of a campaign, whichever path started it** — the
+`here` reading above, `opening-campaign` step 3, or a delegate launch — because a
+session that arrived from another campaign keeps that campaign's name until
+something sets it. The one pattern lives in `scripts/campaign-name-session.py`,
+and `campaign-claim take` reads it from there: a name of another campaign, or of
+the wrong shape, is refused at the first claim, which is where a stale name
+would otherwise become durable.
 
 **The sub-issue is deliberately not in the name**, because a session works several;
 the claim record says which one it holds. **Never test a name against a branch**:
@@ -300,10 +311,15 @@ resolves the address; herdr's pane label is not one.
 | `REPORT` | agent → campaign | a pull request URL and the sha it sits at, once per round, unsolicited |
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
+| `STOOD DOWN` | agent → campaign issue | a comment, first line `STOOD DOWN <name> <session-id>`, posted by `campaign-claim stood-down` after the agent's work is on GitHub and its claims are released |
 
-Four messages, carrying **only what the agent alone knows**: anything about
-finished work duplicates a GitHub fact, and the copy is what goes stale. **The
-claim is not among them** — it is a record, not an announcement.
+Four messages between sessions, carrying **only what the agent alone knows**:
+anything about finished work duplicates a GitHub fact, and the copy is what goes
+stale. **The claim is not among them** — it is a record, not an announcement.
+**`STOOD DOWN` is the one that leaves a record**, because the close gate reads
+agreement from it: `campaign-claim live` joins the comment to the session's
+herdr row, so a stood-down peer passes the close whatever its cwd, and a peer
+that has not is asked, never killed.
 
 **A verdict, a fix report, or a `REPORT` that does not pin its sha is
 unactionable**: verdicts and pushes race. **Between sessions, a relay is never the
@@ -391,8 +407,10 @@ agent it stopped looks exactly like one still thinking; when several go quiet
 together, read the reset time first — an outage to schedule around, not a retry.
 
 Retire finished agents as the campaign runs, not when it closes, and sweep with
-both readings. A campaign may not close while any agent is live under its tree,
-nor a repository be dropped while an agent works one of its sub-issues.
+all three readings (`campaign-claim live`). A campaign may not close while any
+session holds a live claim, or sits under its tree with no `STOOD DOWN` on the
+campaign issue; nor may a repository be dropped while an agent works one of its
+sub-issues.
 
 # Concurrency
 
