@@ -366,20 +366,26 @@ def operands(args):
 
     An option's own SEPARATE argument is kept as an operand: reading it as a
     path resolves a word that is not one, and that direction is the refusing
-    one. An ATTACHED one is the write target itself in `--target-directory=.`,
-    so a `=` option contributes its value -- but only a value that looks like a
-    path, because `--interactive=never` contributes `never`, and resolving that
-    against the container names a location nothing in the command asked for.
-    A value that does not look like a path is UNREAD, which still refuses; it
-    just refuses for what was read.
+    one. An ATTACHED one on a LONG option is the write target itself in
+    `--target-directory=.`, so a `--x=value` word contributes its value -- but
+    only a value that looks like a path, because `--interactive=never`
+    contributes `never`, and resolving that against the container names a
+    location nothing in the command asked for. A value that does not look like
+    a path is UNREAD, which still refuses; it just refuses for what was read.
 
     A SHORT option's attached value cannot be told from a flag cluster without
     a table per command -- `-rf` is two flags and `-t.` is a target -- so a
     short word whose tail is not purely alphabetic is UNREAD rather than
     guessed either way. That keeps `-p`, `-rf`, `-r` and `-a` reading as flags
     and refuses `-t.`, `-m755` and anything else carrying a value, at the cost
-    of never allowing those. A `--` word is never a cluster, so the test does
-    not reach one: `--no-clobber` is a flag and contributes no operand."""
+    of never allowing those. The `=` split is a LONG-option syntax only: a
+    short option has no `=` separator, so GNU tools read `-t=/tmp/d` as `-t`
+    with the attached value `=/tmp/d`, `=` included -- splitting on it first
+    reads the value as `/tmp/d` instead, one directory level up from the
+    target `cp` really writes to. A short word's tail is checked whole, `=`
+    included, which is exactly what makes it non-alphabetic and UNREAD. A `--`
+    word is never a cluster, so the test does not reach one: `--no-clobber` is
+    a flag and contributes no operand."""
     out, rest = [], False
     for word in args:
         if rest or not word.startswith("-"):
@@ -388,15 +394,14 @@ def operands(args):
         if word == "--":
             rest = True
             continue
-        if "=" in word:
-            value = word.split("=", 1)[1]
-            if not looks_like_path(value):
-                return None, (f"word {word!r} attaches a value that does not "
-                              f"say it is a path, so whether that value is a "
-                              f"write target is not readable")
-            out.append(value)
-            continue
         if word.startswith("--"):
+            if "=" in word:
+                value = word.split("=", 1)[1]
+                if not looks_like_path(value):
+                    return None, (f"word {word!r} attaches a value that does "
+                                  f"not say it is a path, so whether that "
+                                  f"value is a write target is not readable")
+                out.append(value)
             continue                            # a long flag, never a cluster
         tail = word.lstrip("-")
         if tail and not tail.isalpha():

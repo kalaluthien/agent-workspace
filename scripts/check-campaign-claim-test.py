@@ -421,6 +421,23 @@ def main():
         check("...and a purely alphabetic cluster is still read as flags",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
 
+        # #154 reopened: a `=` inside a SHORT word is not a long-option
+        # separator. The `=` split used to run before the short-word test, so
+        # `-t=/tmp/d` read as `--target-directory=/tmp/d` -- attached value
+        # `/tmp/d`, outside, allowed -- while GNU cp reads `-t`'s attached
+        # value as `=/tmp/d` whole, `=` included, relative to cwd and inside.
+        r = ask(root, tool="Bash", command="cp -t=/tmp/d /tmp/a")
+        check("a short option's `=`-attached value is unread, not split off",
+              r.returncode == 2 and "may be an option's attached value" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        # Same misreading with a `..` value: the split used to read the
+        # trailing `..` alone, which resolves outside cwd's own directory,
+        # where GNU cp's real target `=..` resolves inside it.
+        r = ask(root, tool="Bash", command="cp -t=.. /tmp/a")
+        check("...and so is the `..` spelling of the same short-option value",
+              r.returncode == 2 and "may be an option's attached value" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+
         # #154, both halves. Each refuses either way, so the exit status pins
         # neither: what the two cases pin is that the sentence names what was
         # actually read. A `--` word is never a cluster, and the cluster
