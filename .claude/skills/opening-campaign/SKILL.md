@@ -124,16 +124,18 @@ gh issue comment <N> -R kalaluthien/agent-workspace --body "BOUND $(hostname -s)
 **Then name this session, now that the number exists.** A session that opened
 this campaign while named for another keeps that name until something sets it,
 and nothing later does: every claim record, brief and peer message would then
-carry the wrong campaign's address. `<n>` is the next free one among the
-sessions `herdr agent list` shows for this campaign.
+carry the wrong campaign's address. `<role>` is `planner` when this session
+will file the sub-issues and hand them out, `executor` when it will work the
+one it files (`AGENTS.md` § The binding); `<n>` is the next free one among the
+sessions `herdr agent list` shows for this campaign, counted across both roles.
 
 ```sh
 test "${HERDR_ENV:-}" = 1 &&
-  "$CONTAINER/scripts/campaign-name-session.py" "$HERDR_PANE_ID" campaign-<N>-executor-<n>
+  "$CONTAINER/scripts/campaign-name-session.py" "$HERDR_PANE_ID" campaign-<N>-<role>-<n>
 ```
 
 Read what it reports applied, then confirm with `ListAgents` that the harness
-name is `campaign-<N>-executor-<n>` before step 4 begins. The caller's own
+name is `campaign-<N>-<role>-<n>` before step 4 begins. The caller's own
 rename is the one most likely to need a person, so a `FAILED` line is a stop:
 say so, and do not go on under the old name. `campaign-claim take` is the
 second reader — it refuses a `--name` from another campaign, or of the wrong
@@ -246,7 +248,7 @@ it, and do not push past it. **When a delegate will do the work**, the record
 must be the delegate's, not the launcher's: choose the delegate's session UUID
 and name first (`references/launching.md`) and pass them as
 `--session <uuid> --name campaign-<N>-executor-<n>`, so the branch is claimed
-before the launch and the launcher holds no record of its own
+before the launch and the planner holds no record of its own
 (`AGENTS.md` § The claim record). A repo-less campaign claims on the container all the
 same — `--repo` defaults there. Give the branch a local checkout only where the
 sub-issue has one, then put the branch name in the handover brief:

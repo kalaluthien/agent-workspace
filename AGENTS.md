@@ -23,6 +23,9 @@ sub-issues, and follow-ups keep arriving until someone decides it is over.
 ## Routing an arriving request
 
 Settle this before anything else. Most of what arrives here loads no skill.
+**The routing is the planner's reading**: the session a person hands a request
+to reads it here, and what it files and distributes from that reading is the
+planner role (§ The binding).
 
 **A person saying a campaign is over is routed before anything is read.** Load
 `closing-campaign` and stop, or the readings below take the close for a sub-issue.
@@ -133,19 +136,33 @@ itself, and when a person tells it to — migration, and the person's call becau
 nothing here can observe its premise. Post it, then read it back; a later `BOUND`
 naming somebody else means the campaign was migrated out from under you.
 
-**Every session of a campaign is an executor**, and **no role licenses a write,
-nor does asking**: a session that cannot satisfy a guard does not make the write.
-**Claim the branch before you launch onto it**, with `campaign-claim take
---session <the delegate's session id> --name <the delegate's name>`: the branch
-is cut now, and the record is the delegate's from the start, because a record
-is attributed by `session` and the launcher chose the delegate's before launching
-(`.claude/skills/opening-campaign/references/launching.md`). A record written that way carries no pid, since the
-delegate's does not exist yet; `live` joins on the session id and reads it fine.
+**A session of a campaign is a planner or an executor, and the request decides
+which shape it takes.** A simple request has an executor only: the session files
+the sub-issue and works it. A request that needs decomposition has a **planner**,
+which takes the request, files the sub-issues and distributes them, and separate
+**executors**, each a session of its own spawned as a herdr delegate
+(`.claude/skills/opening-campaign/references/launching.md`) and never as the
+planner's subagent — a subagent shares the planner's pane and dies with it, and a
+claim record needs a session id of its own; the planner's own hands and an
+in-process subagent on a worktree are the planner executing a sub-issue itself
+(§ Execution mode). **A planner holds no branch claim of its own**: it claims
+only when it executes a sub-issue itself, and is that sub-issue's executor then.
+The model is `Planner` in `spec/campaign/orchestration/system.als`.
+
+**No role licenses a write, nor does asking**: a session that cannot satisfy a
+guard does not make the write. **The planner claims the branch before it
+launches onto it**, with `campaign-claim take --session <the delegate's session
+id> --name <the delegate's name>`: the branch is cut now, and the record is the
+delegate's from the start, because a record is attributed by `session` and the
+planner chose the delegate's before launching. A record written that way carries
+no pid, since the delegate's does not exist yet; `live` joins on the session id
+and reads it fine.
 
 ## The session name
 
-**`campaign-<campaign issue>-executor-<n>`**, for every session on this machine; `<n>` is
-assigned in the order sessions appear, so two do not both pick `-1`. **Set it at
+**`campaign-<campaign issue>-<role>-<n>`**, the role being `planner` or
+`executor`, for every session on this machine; `<n>` is one counter across both
+roles, assigned in the order sessions appear, so two do not both pick `-1`. **Set it at
 the start of every session of a campaign, whichever path started it** — the
 `here` reading above, `opening-campaign` step 3, or a delegate launch — because a
 session that arrived from another campaign keeps that campaign's name until
@@ -230,8 +247,10 @@ and reads none of this one's settings.
 
 ## Execution mode
 
-**Do it here, hand it to a subagent, or hand it to a delegate.** The mode is
-chosen before the work starts, **first by the repository and only then by cost**.
+**Do it here, hand it to a subagent, or hand it to a delegate.** The planner
+chooses the mode before the work starts, **first by the repository and only then
+by cost**; the first two are the planner executing the sub-issue itself, and the
+third is a separate executor (§ The binding).
 
 An executor that *changes* a repository runs in a process started in that
 repository's checkout: a herdr delegate in `<campaign>/repos/<repo>/` for a member
@@ -281,7 +300,7 @@ Any `herdr` command that drives a pane, or resolves its target implicitly, is
 guarded by `test "${HERDR_ENV:-}" = 1` and names its target explicitly; the guard
 is against acting on somebody else's session, never against reading.
 
-A delegate is launched in `<campaign>/repos/<repo>/` with
+A delegate is launched by the planner in `<campaign>/repos/<repo>/` with
 `--append-system-prompt-file <campaign>/AGENTS.md`, because ancestor instruction
 files load only behind a dialog that defaults to declining. Four invariants: the
 brief is **a file** named by a one-sentence prompt; the prompt is delivered by
