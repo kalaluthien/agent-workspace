@@ -311,10 +311,15 @@ resolves the address; herdr's pane label is not one.
 | `REPORT` | agent → campaign | a pull request URL and the sha it sits at, once per round, unsolicited |
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
+| `STOOD DOWN` | agent → campaign issue | a comment, first line `STOOD DOWN <name> <session-id>`, posted by `campaign-claim stood-down` after the agent's work is on GitHub and its claims are released |
 
-Four messages, carrying **only what the agent alone knows**: anything about
-finished work duplicates a GitHub fact, and the copy is what goes stale. **The
-claim is not among them** — it is a record, not an announcement.
+Four messages between sessions, carrying **only what the agent alone knows**:
+anything about finished work duplicates a GitHub fact, and the copy is what goes
+stale. **The claim is not among them** — it is a record, not an announcement.
+**`STOOD DOWN` is the one that leaves a record**, because the close gate reads
+agreement from it: `campaign-claim live` joins the comment to the session's
+herdr row, so a stood-down peer passes the close whatever its cwd, and a peer
+that has not is asked, never killed.
 
 **A verdict, a fix report, or a `REPORT` that does not pin its sha is
 unactionable**: verdicts and pushes race. **Between sessions, a relay is never the
@@ -402,8 +407,10 @@ agent it stopped looks exactly like one still thinking; when several go quiet
 together, read the reset time first — an outage to schedule around, not a retry.
 
 Retire finished agents as the campaign runs, not when it closes, and sweep with
-both readings. A campaign may not close while any agent is live under its tree,
-nor a repository be dropped while an agent works one of its sub-issues.
+all three readings (`campaign-claim live`). A campaign may not close while any
+session holds a live claim, or sits under its tree with no `STOOD DOWN` on the
+campaign issue; nor may a repository be dropped while an agent works one of its
+sub-issues.
 
 # Concurrency
 
