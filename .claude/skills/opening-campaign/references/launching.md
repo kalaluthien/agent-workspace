@@ -1,7 +1,8 @@
 # Launching a delegate, in full
 
 The procedure behind `AGENTS.md` § Delegate launch, which keeps
-only the invariants. Everything here is a probed fact about herdr 0.8.2 and the
+only the invariants. The launcher is the planner and the delegate is an
+executor (`AGENTS.md` § The binding). Everything here is a probed fact about herdr 0.8.2 and the
 Claude CLI on this machine, and every item is a failure that raises no error.
 
 ## The launch line
@@ -25,7 +26,8 @@ Launch in `<campaign>/repos/<repo>/` with `--append-system-prompt-file
   a fourth silent stop beside the three below, observed 2026-09-02. Add every
   source checkout the brief points at the same way; the flag is variadic.
 - Choose the session UUID in advance (`--session-id`) so the transcript path is
-  known before the agent starts, and `--name` it per § The session name. `--name`
+  known before the agent starts, and `--name` it `campaign-<N>-executor-<n>` per
+  § The session name -- a delegate is always the executor role. `--name`
   sets the harness name only; set the herdr pane name too, because the two do not
   propagate. `scripts/campaign-name-session.py` does both.
 - Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to the container's pool. A memory pool

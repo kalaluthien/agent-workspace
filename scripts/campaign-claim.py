@@ -583,7 +583,7 @@ def name_verdict(name, campaign_issue, pattern):
         return None
     m = pattern.match(name)
     if not m:
-        return (f"--name {name} is not campaign-<campaign issue>-executor-<n>; "
+        return (f"--name {name} is not campaign-<campaign issue>-<role>-<n>; "
                 f"scripts/campaign-name-session.py refuses it too")
     if m.group(1) != str(campaign_issue):
         return (f"--name {name} belongs to campaign {m.group(1)}, and this "

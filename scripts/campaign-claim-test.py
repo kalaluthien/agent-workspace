@@ -276,6 +276,15 @@ case("...and says what to do about it",
 case("take accepts a --name of this campaign",
      ["take", "--local", "1", "7", "x", "--name", "campaign-1-executor-2"],
      want="name campaign-1-executor-2", code=0)
+# A planner claims only when it executes a sub-issue itself; the name it
+# already carries must pass the same reader, with no second spelling of the
+# pattern anywhere in this script.
+case("take accepts a planner's --name of this campaign",
+     ["take", "--local", "1", "7", "x", "--name", "campaign-1-planner-1"],
+     want="name campaign-1-planner-1", code=0)
+case("take refuses a role the pattern does not admit",
+     ["take", "--local", "1", "7", "x", "--name", "campaign-1-reviewer-1"],
+     want="not campaign-<campaign issue>-<role>-<n>", code=1)
 # The binding read at its call site, against the gh shim: with the gate in
 # place the shim's BOUND comment is what refuses; with the gate removed the
 # first ref call reaches the shim and is refused as an escape instead.
@@ -295,7 +304,7 @@ case("...and the cause the command gave",
      want="set the GH_TOKEN environment variable")
 case("take refuses a --name that is not the shape at all",
      ["take", "--local", "1", "7", "x", "--name", "campaign-1-oops"],
-     want="not campaign-<campaign issue>-executor-<n>", code=1)
+     want="not campaign-<campaign issue>-<role>-<n>", code=1)
 
 # `stood-down`: refused while a claim is held, refused with no session, posted
 # through the gh shim otherwise (its arguments land in gh-comment.log).
@@ -453,6 +462,10 @@ def pure_cases(m):
     if naming is not None:
         c("a name of this campaign is admitted",
           m.name_verdict("campaign-1-executor-2", "1", naming.NAME) is None)
+        c("a planner's name of this campaign is admitted",
+          m.name_verdict("campaign-1-planner-1", "1", naming.NAME) is None)
+        c("a role outside the pattern is refused",
+          "not campaign-<campaign issue>" in (m.name_verdict("campaign-1-reviewer-1", "1", naming.NAME) or ""))
         c("no name is admitted, the record may carry unknown",
           m.name_verdict(None, "1", naming.NAME) is None)
         c("another campaign's name is refused naming both numbers",

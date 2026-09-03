@@ -102,7 +102,10 @@ pred noDeleteUnderAddressableAgent {
 }
 
 /* Empty for a sub-issue a session did with its own hands, which is what makes
-   `mergedOnCurrentReview`'s second conjunct vacuous there -- see A18/A18b. */
+   `mergedOnCurrentReview`'s second conjunct vacuous there -- see A18/A18b. A
+   planner atom on the issue is in it: `confirm` needs only `a not in
+   LocalOnly`, which a planner always satisfies, so the discipline is reachable
+   unweakened and keeps its co-location conjunct over the planner too. */
 fun agentsOf[i: Issue]: set Agent { task.i }
 
 /* A MERGE REQUIRES A CURRENT REVIEW, and the author may then merge as anyone
@@ -549,7 +552,38 @@ pred A17_PaneSeesWhatTheRecordLost {
   }
 }
 
+/* =================== the planner =================== */
+
+/* P1. THE ONE-EXECUTOR SHAPE: a request of one sub-issue is filed and worked by
+   one session, and settles with no Planner atom anywhere. Requiring a planner
+   of every launch, not only a delegate's, turns this UNSAT. */
+pred P1_SimpleRequestSettlesWithoutPlanner {
+  no role.Planner
+  some s: Session, a: Agent {
+    a.peer = s
+    eventually (Now.event = Work and Target.agent = a)
+    eventually settled[a.task]
+  }
+}
+
+/* P2. THE TWO-ROLE SHAPE, admitted: a planner launches a delegate onto a
+   sub-issue and that delegate works it. Control for DelegateLaunchedByPlanner,
+   whose UNSAT could otherwise mean delegates are forbidden altogether. */
+pred P2_PlannerLaunchesDelegate {
+  some p, a: Agent {
+    p.role = Planner and no a.peer
+    p.peer = a.launcher and p.task = a.task
+    eventually (Now.event = Launch and Target.agent = a and p in Live)
+    eventually (Now.event = Work and Target.agent = a)
+  }
+}
+
 /* ---------------- commands ---------------- */
+
+-- one sub-issue, one session, no planner
+run P1_SimpleRequestSettlesWithoutPlanner for 3 Issue, 1 PullRequest, 1 Campaign, exactly 1 Session, exactly 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+-- a planner's delegate does work
+run P2_PlannerLaunchesDelegate           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 
 -- the whole retirement procedure runs
 run Sanity                          for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
