@@ -92,7 +92,7 @@ that does not exist yet is bound to nobody: if two campaign issues appear anyway
 one as `not planned` and say which survived.
 
 ```sh
-"$CONTAINER"/scripts/campaign-tracker.py campaign issues
+"$CONTAINER"/scripts/campaign-tracker.py campaign-issues
 gh issue create -R kalaluthien/agent-workspace \
   --label campaign --title "<title>" --body-file <path>
 ```

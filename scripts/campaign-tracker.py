@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read the campaign plane: its campaign issues, its binding, its index, its settlement.
 
-    campaign-tracker.py campaign issues [--repo owner/repo] [--limit N]
+    campaign-tracker.py campaign-issues [--repo owner/repo] [--limit N]
     campaign-tracker.py bound <N> [owner/repo]
     campaign-tracker.py index <N> [owner/repo]
     campaign-tracker.py settlement <N> [owner/repo] [--dir CAMPAIGN]
@@ -20,7 +20,7 @@ a campaign another machine is working.
 
 WHAT EACH SUBCOMMAND OWNS
 
-campaign issues     The open-campaign issue survey, and the two ways its readings disagree.
+campaign-issues     The open-campaign issue survey, and the two ways its readings disagree.
             Both readings come off ONE listing: an earlier version made two `gh`
             calls and inferred a property from *absence* in the other, which
             denounced a real campaign issue as a sub-issue wearing the label. `--limit` is
@@ -71,7 +71,7 @@ It catches a pasted copy, not a re-implementation that names nothing.
 
 EXIT
 
-campaign issues, index, settlement  0 when the reading was made, 1 when it was not.
+campaign-issues, index, settlement  0 when the reading was made, 1 when it was not.
 bound                       0 for any verdict, 2 when the reading itself failed.
 """
 import argparse
@@ -145,7 +145,7 @@ def rows(title, items, note=""):
 def cmd_campaign_issues(args):
     issues, why = listing(args.repo, args.limit)
     if why:
-        print(f"campaign-tracker campaign issues: could not read {args.repo} -- {why}\n"
+        print(f"campaign-tracker campaign-issues: could not read {args.repo} -- {why}\n"
               f"  A reading that did not happen is not an empty tracker.",
               file=sys.stderr)
         return 1
@@ -519,7 +519,7 @@ def main():
     a.set_defaults(fn=cmd_campaign_issues)
 
     # The optional positional repository is the override seam these three share.
-    # One spelling across all three: `campaign issues` takes `--repo` because it takes
+    # One spelling across all three: `campaign-issues` takes `--repo` because it takes
     # `--limit` beside it, and a positional there would read as the campaign issue.
     for name, fn, help_text in (
             ("bound", cmd_bound, "here | elsewhere <machine> | unbound"),

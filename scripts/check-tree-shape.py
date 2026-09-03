@@ -112,7 +112,7 @@ RETIRED = [
     # writes them into fixtures. Banning the bare word would refuse the table
     # that is the authoritative record of those tokens. What a reintroduction
     # actually looks like is a call, and a call names the path.
-    (re.compile(r"\bscripts/campaign-(campaign issues|bound|subtasks|settlement)\b"),
+    (re.compile(r"\bscripts/campaign-(anchors|bound|subtasks|settlement)\b"),
      "#105 -- merged into scripts/campaign-tracker.py <subcommand>"),
     (re.compile(r"\bscripts/campaign-(live|session-alive)\b"),
      "#105 -- merged into scripts/campaign-claim.py live | alive"),

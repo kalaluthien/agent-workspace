@@ -26,7 +26,7 @@ match it among the open campaign issues and say which.
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-"$CONTAINER"/scripts/campaign-tracker.py campaign issues
+"$CONTAINER"/scripts/campaign-tracker.py campaign-issues
 "$CONTAINER"/scripts/campaign-tracker.py bound "$N"   # here | elsewhere <machine> | unbound
 ```
 

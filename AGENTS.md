@@ -28,7 +28,7 @@ Settle this before anything else. Most of what arrives here loads no skill.
 
 Otherwise, two readings, in this order.
 
-**One: does any open campaign's Scope cover the request?** `scripts/campaign-tracker.py campaign issues`
+**One: does any open campaign's Scope cover the request?** `scripts/campaign-tracker.py campaign-issues`
 lists the open campaign issues — **never survey the tracker unfiltered**, since it holds
 three kinds of issue and only structure classifies them; where structure cannot
 answer, both templates are in `.claude/skills/opening-campaign/assets/`, and **an

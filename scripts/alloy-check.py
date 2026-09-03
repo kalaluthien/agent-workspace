@@ -195,7 +195,7 @@ VARYING = [
     ("StoodDown", "stoodDown"),
     ("Retired", "retired"),
 ]
-STATIC = ["Issue<:home", "Campaign<:campaign issue", "Req<:covers",
+STATIC = ["Issue<:home", "Campaign<:campaignIssue", "Req<:covers",
           "Tree<:camp", "Tree<:mach", "Session<:smach",
           "Agent<:task", "Agent<:host", "Agent<:launcher", "Agent<:topic"]
 

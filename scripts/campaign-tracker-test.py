@@ -6,7 +6,7 @@ carry the rule that made the prose fragile: a listing that stops early reads
 exactly like a complete one, and a reading that did not happen reads exactly
 like an empty tracker.
 
-`campaign issues`, `bound` and `index` are covered as pure readings plus a shimmed `gh`;
+`campaign-issues`, `bound` and `index` are covered as pure readings plus a shimmed `gh`;
 no case reaches the network. `settlement` runs the installed script behind a `gh`
 on PATH that answers from a fixture, so the request shapes and the exit codes are
 the ones a person gets. The case that matters most there is the one with no
