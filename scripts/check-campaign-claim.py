@@ -181,7 +181,8 @@ QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
 # A quoted span the shell still executes: it holds a command substitution, or
 # it is the argument of `eval` or of a `-c` (bash -c, sh -c, python -c).
 EXECUTED_INSIDE = re.compile(r"\$\(|`")
-EXECUTES_NEXT = re.compile(r"(?:\beval|\s-[a-zA-Z]*c)\s*$")
+# `c` anywhere in the cluster: bash runs `-cx` and `-Ecx` like `-xc`.
+EXECUTES_NEXT = re.compile(r"(?:\beval|\s-[a-zA-Z]*c[a-zA-Z]*)\s*$")
 
 
 def outside_quotes(command):

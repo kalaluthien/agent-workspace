@@ -152,7 +152,8 @@ def main():
                  "a backtick substitution inside quotes is still a change"),
                 ('eval "git mv a b"', "an eval'd string is still a change"),
                 ('bash -c "git mv a b"', "a -c string is still a change"),
-                ("bash -lc 'git mv a b'", "a -c in a flag cluster, single-quoted, is still a change")):
+                ("bash -lc 'git mv a b'", "a -c in a flag cluster, single-quoted, is still a change"),
+                ('bash -cx "git mv a b"', "a -c anywhere in the cluster is still a change")):
             r = ask(root, tool="Bash", command=command)
             check(why, r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 
