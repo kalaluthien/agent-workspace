@@ -369,20 +369,48 @@ def main():
         check("an attached script value supplies one, so the file operand is kept",
               "`sed -i` operand 'AGENTS.md'" in out(r),
               f"exit {r.returncode}: {out(r)[:400]}")
-        # The other half of operands()'s own rule: an attached value that
-        # says nothing about being a path is UNREAD, named for what it is
-        # rather than folded into "no operand" the way a dropped file reads.
+        # A second PR #162 fix round, finding 2: `--expression`'s value is a
+        # SCRIPT, never a file, whatever it looks like -- unlike every other
+        # `--flag=value`, its shape says nothing about a write target, so
+        # `foo.sed` (no `/`) supplies exactly as `/tmp/x.sed` did above rather
+        # than being read for its shape and refused as unreadable.
         r = ask(root, tool="Bash",
                 command="sed -i --expression=foo.sed AGENTS.md")
-        check("an attached script value that is not path-shaped is unread",
-              "'--expression=foo.sed' attaches a value" in out(r),
+        check("an attached script value supplies one whatever its shape",
+              "`sed -i` operand 'AGENTS.md'" in out(r),
               f"exit {r.returncode}: {out(r)[:400]}")
+        # The finding's own example: a script that HAPPENS to contain a `/`
+        # (`s/a/b/`) used to be misread as a path-shaped write target by
+        # `looks_like_path`, refusing as inside a container the script never
+        # touches. The real, sole target is `/tmp/out.txt`, outside.
+        r = ask(root, tool="Bash",
+                command=f"sed -i --expression=s/a/b/ {OUT}")
+        check("a script's own slash is not read as a path",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:400]}")
         # A SHORT option's own `=` is the same ambiguity operands() refuses
         # for `-t=/tmp/d`: sed has no `=` syntax for a short option either.
         r = ask(root, tool="Bash", command="sed -i -e=foo AGENTS.md")
         check("a short option's `=`-attached value is unread here too",
               "may be an option's attached value" in out(r),
               f"exit {r.returncode}: {out(r)[:400]}")
+
+        # PR #162's second fix round, finding 1: the dispatch that routes a
+        # command into sed_files() at all only matched the SHORT `-i`
+        # spelling, so `--in-place` bypassed the whole guard as "not a
+        # changing call" -- a false ALLOW on a real in-place edit, not a
+        # message-quality gap. `--in-place=.bak` inside the container is now
+        # read the same as `-i.bak` would be.
+        r = ask(root, tool="Bash",
+                command="sed --in-place=.bak s/a/b/ AGENTS.md")
+        check("sed's long in-place spelling is not a bypass",
+              "`sed -i` operand 'AGENTS.md'" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        # ...and still allows when its real target is outside, so the fix is
+        # a dispatch widening, not a new blanket refusal of `--in-place`.
+        r = ask(root, tool="Bash",
+                command=f"sed --in-place=.bak s/a/b/ {OUT}")
+        check("...and a long in-place edit outside every campaign still allows",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:400]}")
 
         # A git write's target is the repository. Every path in the command is
         # a log or a message file, so none of them may carry an allow -- this
