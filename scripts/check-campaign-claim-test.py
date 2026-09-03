@@ -421,6 +421,45 @@ def main():
         check("...and a purely alphabetic cluster is still read as flags",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
 
+        # #154, both halves. Each refuses either way, so the exit status pins
+        # neither: what the two cases pin is that the sentence names what was
+        # actually read. A `--` word is never a cluster, and the cluster
+        # sentence sent the reader to rule out a reading nothing here made.
+        r = ask(root, tool="Bash", command="cp --no-clobber /tmp/a AGENTS.md")
+        check("a long option is read as a flag, and its command's operands are read",
+              "`cp` operand 'AGENTS.md'" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        check("...and the flag-cluster sentence, which is about short words, is absent",
+              "flag cluster" not in out(r), out(r)[:400])
+        # The ALLOW the misread was withholding, and the only new exit 0 on
+        # this branch. Asserted on its own because a refusal and an allow share
+        # no sentence: the cases above pass while this one is broken.
+        r = ask(root, tool="Bash", command="cp --no-clobber /tmp/a /tmp/b")
+        check("a long option with every operand outside allows",
+              r.returncode == 0 and "REFUSED" not in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        check("...saying it read both operands and found them outside",
+              "'/tmp/a' ->" in out(r) and "'/tmp/b' ->" in out(r), out(r)[:400])
+        # The other half: an attached value that says nothing about being a
+        # path was resolved against the container anyway, so the refusal named
+        # a location the command never asked for.
+        r = ask(root, tool="Bash", command="rm --interactive=never /tmp/x")
+        check("an attached value that does not look like a path is unread",
+              "'--interactive=never' attaches a value" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        check("...and no resolved location is claimed for a word never resolved",
+              "resolves to" not in out(r), out(r)[:400])
+        # An EMPTY attached value used to append '', which the trailing filter
+        # dropped, so the call was allowed on its OTHER operand -- the one
+        # false allow this branch closes, and the one a regression reopens
+        # silently, since nothing about the output would say a word was lost.
+        r = ask(root, tool="Bash", command="cp --target-directory= /tmp/a")
+        check("an empty attached value is unread, not dropped for the next operand",
+              "'--target-directory=' attaches a value" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        check("...and the allow its other operand used to supply is not printed",
+              "allowed, target outside" not in out(r), out(r)[:400])
+
         # A segment the guard cannot parse must answer for ITSELF. Appending a
         # redirect to somewhere harmless used to supply the allow for it, which
         # is finding 1's shape in the operand reading: a write the guard cannot

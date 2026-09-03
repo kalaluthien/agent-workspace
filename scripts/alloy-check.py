@@ -38,8 +38,7 @@ lockfile holds the module, the kind and the name, and deliberately NOT the
 scope, which is tuned often, nor the `expect` value, which would put a verdict
 back in a file for a script to read. The module key is the path relative to
 <dir> -- `orchestration/checks.als` -- so a command moving between entities
-reads as one
-line gone and one line new, naming itself at both ends.
+reads as one line gone and one line new, naming itself at both ends.
 
 Its ceiling, stated rather than hidden: it does not stop a commit that deletes a
 command and regenerates in one go, any more than a hand-kept count stops one
