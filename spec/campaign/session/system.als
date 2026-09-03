@@ -7,10 +7,9 @@
  * and the thing a campaign session name names. That name's shape is not
  * restated here: `scripts/campaign-name-session.py` owns it, and a second
  * statement of it would admit names that script refuses. An agent sits ABOVE
- * it, because an
- * agent is a session working its own claim or a delegate a session launched, so
- * the dependency runs orchestration -> session and cannot be nested the other
- * way.
+ * it, because an agent is a session working its own claim or a delegate a
+ * session launched, so the dependency runs orchestration -> session and
+ * cannot be nested the other way.
  *
  *   Request   the one request being routed, and which campaigns cover it.
  *   Session   a campaign session: its machine, the campaign it works on, what
