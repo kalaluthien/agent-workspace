@@ -204,15 +204,23 @@ def outside_quotes(command):
     double-quoted one, which the shell does run: `--body "$(cat <<'EOF'"` keeps
     `cat <<'EOF'`, `--body "$(git mv a b)"` keeps `git mv a b`. Inside single
     quotes `$(` is literal and the span is blanked whole."""
-    def keep_or_blank(m):
+    # Built left to right, and the sink scan reads the OUTPUT so far: an
+    # earlier prose span already blanked cannot hide the `gh` segment with a
+    # `&` or `|` of its own (`--title "R&D" --body "..."`).
+    out, pos = [], 0
+    for m in QUOTED.finditer(command):
+        out.append(command[pos:m.start()])
         span = m.group(0)
-        if not PROSE_SINK.search(command[:m.start()]):
-            return span
-        if span[0] == "'":
-            return "''"
-        heads = [a or b for a, b in SUBST_HEAD.findall(span)]
-        return '"' + " ; ".join(heads) + '"'
-    return QUOTED.sub(keep_or_blank, command)
+        if not PROSE_SINK.search("".join(out)):
+            out.append(span)
+        elif span[0] == "'":
+            out.append("''")
+        else:
+            heads = [a or b for a, b in SUBST_HEAD.findall(span)]
+            out.append('"' + " ; ".join(heads) + '"')
+        pos = m.end()
+    out.append(command[pos:])
+    return "".join(out)
 
 
 def changing(payload, changing_command):

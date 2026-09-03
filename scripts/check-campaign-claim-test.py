@@ -133,7 +133,9 @@ def main():
                 ("Bash", 'gh issue create -R o/r --body "$(cat <<\'EOF\'\nrun git mv a b\nEOF\n)"',
                  "a heredoc read into a body keeps only `cat`, not a change"),
                 ("Bash", 'gh pr create --title "mv the file" --body-file x.md',
-                 "a title is prose, not a change")):
+                 "a title is prose, not a change"),
+                ("Bash", 'gh issue create -R o/r --title "R&D notes" --body "run git mv x y"',
+                 "an & in an earlier title does not unblank a later body")):
             r = ask(root, tool=tool, command=command)
             check(f"{why}", r.returncode == 0,
                   f"exit {r.returncode}: {out(r)[:200]}")
