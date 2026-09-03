@@ -193,6 +193,18 @@ case("take accepts a --name of this campaign",
      ["take", "--local", "1", "7", "x", "--name", "campaign-1-executor-2"],
      want="name campaign-1-executor-2", code=0)
 
+# `stood-down`: refused while a claim is held, refused with no session, posted
+# through the gh shim otherwise (its arguments land in gh-comment.log).
+case("stood-down refuses while this session holds an unreleased claim",
+     ["stood-down", "1", "--session", "mine"], {"7": LOCAL_REC},
+     want="still holds claim(s) #7", code=1)
+case("stood-down refuses with no session id to name",
+     ["stood-down", "1"], env={"CLAUDE_CODE_SESSION_ID": ""},
+     want="names no session", code=1)
+case("stood-down posts once every claim here is released",
+     ["stood-down", "1", "--session", "mine", "--name", "campaign-1-executor-2"],
+     {"7": RELEASED_REC}, want="posted on", code=0, stub_gh=True)
+
 case("release --session marks a local claim released, deleting no ref",
      ["release", "7", "--session", "mine"], {"7": LOCAL_REC},
      want="marked", code=0)
@@ -370,17 +382,40 @@ echo '{"result":{"agents":[]}}'
 """
 
 
-def with_herdr(d):
+# A `gh` for the third reading: the comments endpoint answers from
+# $HOME/comments.json (slurp shape: a list of pages), `issue comment` records
+# its arguments in $HOME/gh-comment.log and succeeds, anything else fails.
+GH_LIVE_SHIM = """#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    */comments) cat "$HOME/comments.json"; exit 0 ;;
+  esac
+done
+if [ "$1" = issue ] && [ "$2" = comment ]; then echo "$@" >> "$HOME/gh-comment.log"; exit 0; fi
+echo "gh shim: unexpected call: $*" >&2
+exit 1
+"""
+
+
+def with_herdr(d, agents=None, comments=None):
+    """PATH with a herdr and a gh shim. `agents` is a list of herdr rows
+    (default none); `comments` a list of comment bodies on the campaign issue
+    (default none)."""
     shim = Path(d) / "bin"
     shim.mkdir(exist_ok=True)
-    (shim / "herdr").write_text(HERDR_SHIM)
+    (Path(d) / "listing.json").write_text(listing(*(agents or [])))
+    (shim / "herdr").write_text('#!/bin/sh\ncat "$HOME/listing.json"\n')
     (shim / "herdr").chmod(0o755)
+    (Path(d) / "comments.json").write_text(
+        json.dumps([[{"body": b} for b in (comments or [])]]))
+    (shim / "gh").write_text(GH_LIVE_SHIM)
+    (shim / "gh").chmod(0o755)
     return {"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(d)}
 
 
-def agent(sid, name=None, pane="w1:p1"):
+def agent(sid, name=None, pane="w1:p1", cwd="/x"):
     a = {"agent_session": {"value": sid} if sid else None,
-         "agent_status": "working", "cwd": "/x", "pane_id": pane}
+         "agent_status": "working", "cwd": cwd, "pane_id": pane}
     if name:
         a["name"] = name
     return a
@@ -451,6 +486,20 @@ def live(m):
     c("anchor 1 does not swallow anchor 11",
       len(m.stray_branches({"7": {"branch": "campaign-11/7-x"}}, "1")) == 1)
 
+    # The STOOD DOWN parse, one case per shape.
+    c("a STOOD DOWN first line yields its session id",
+      m.stood_down_sessions(["STOOD DOWN campaign-1-executor-2 S1\nprose"]) == {"S1"})
+    c("a STOOD DOWN with no session id yields nothing",
+      m.stood_down_sessions(["STOOD DOWN S1"]) == set())
+    c("a STOOD DOWN below the first line is prose, not a record",
+      m.stood_down_sessions(["hello\nSTOOD DOWN n S1"]) == set())
+    c("the name may be unknown", m.stood_down_sessions([m.stood_down_line(None, "S1")]) == {"S1"})
+    c("a released record is not an unreleased claim",
+      m.unreleased_claims_of({"7": {"session": "S1", "released": "x"}}, "S1") == [])
+    c("an unreleased record is", m.unreleased_claims_of({"7": {"session": "S1"}}, "S1") == ["7"])
+    c("under_tree compares whole segments", m.under_tree("/a/demo-1/x", "/a/demo") is False
+      and m.under_tree("/a/demo/x", "/a/demo") is True)
+
     got, why = m.parse_agents("not json")
     c("unparseable output is a why, not an empty listing", got is None and why)
     got, why = m.parse_agents(json.dumps({"result": {}}))
@@ -470,8 +519,59 @@ def live(m):
         out_text = r.stdout + r.stderr
     c("an empty claims directory is read, not refused",
       r.returncode == 0 and "0 claim(s)" in out_text)
-    c("and it still says both readings were made",
-      "both readings were made" in out_text)
+    c("and it still says all three readings were made",
+      "all three readings were made" in out_text)
+
+    # The third reading and the gate it feeds, one case per branch. A peer
+    # under the tree with no claim: refused until its STOOD DOWN comment is
+    # on the campaign issue; a live claim is refused whatever it posted; a
+    # released claim attributes nothing. Each row's absence is asserted too,
+    # since a `want` cannot see a row that should not be there.
+    def peer_run(d, claims_body=None, comments=None, cwd=None):
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True, exist_ok=True)
+        if claims_body is not None:
+            (claims / "7").write_text(claims_body)
+        env = with_herdr(d, [agent("S1", "campaign-1-executor-2",
+                                   cwd=cwd or str(Path(d) / "repos"))],
+                         comments)
+        r = run_live(d, env)
+        return r, r.stdout + r.stderr
+
+    with tempfile.TemporaryDirectory() as d:
+        r, out_text = peer_run(d)
+    c("a peer under the tree with no claim and no STOOD DOWN is listed as pending",
+      r.returncode == 0 and "(1)" in out_text.split("neither a claim nor a STOOD DOWN")[1][:5]
+      and "not stood down" in out_text)
+    with tempfile.TemporaryDirectory() as d:
+        r, out_text = peer_run(d, comments=["STOOD DOWN campaign-1-executor-2 S1\nprose"])
+    c("...and with its STOOD DOWN comment it is not",
+      r.returncode == 0 and "(0)" in out_text.split("neither a claim nor a STOOD DOWN")[1][:5]
+      and "not stood down" not in out_text and "1 session(s) stood down" in out_text)
+    with tempfile.TemporaryDirectory() as d:
+        r, out_text = peer_run(d, claims_body="session S1\nbranch campaign-1/7-x\n",
+                               comments=["STOOD DOWN campaign-1-executor-2 S1"])
+    c("a live claim is still answered, whatever was posted",
+      "claims answered by a live session (1)" in out_text)
+    with tempfile.TemporaryDirectory() as d:
+        r, out_text = peer_run(d, claims_body="session S1\nbranch campaign-1/7-x\n"
+                                              "released 2026-09-03T00:00:00+0900 by S1\n",
+                               comments=["STOOD DOWN campaign-1-executor-2 S1"])
+    c("a released claim attributes nothing, so the peer reads as stood down",
+      "claims answered by a live session (0)" in out_text
+      and "(0)" in out_text.split("neither a claim nor a STOOD DOWN")[1][:5])
+    with tempfile.TemporaryDirectory() as d:
+        r, out_text = peer_run(d, cwd="/elsewhere")
+    c("a peer outside the tree is not the close's business",
+      "(0)" in out_text.split("neither a claim nor a STOOD DOWN")[1][:5])
+    with tempfile.TemporaryDirectory() as d:
+        env = with_herdr(d)
+        (Path(d) / "comments.json").write_text("not json")
+        (Path(d) / "runtime" / "claims").mkdir(parents=True)
+        r = run_live(d, env)
+        out_text = r.stdout + r.stderr
+    c("a comments read that failed denies the clean verdict",
+      r.returncode == 1 and "did not parse" in out_text)
 
     # A run that asserted nothing is not a pass either.
     # The wire from cmd_live into stray_branches, which the pure cases above
