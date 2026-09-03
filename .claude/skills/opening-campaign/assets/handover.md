@@ -5,7 +5,7 @@ sub-issue #<issue> in the checkout you were started in. The session that
 launched you is `<ListAgents name>`; reach it with SendMessage. If that name stops resolving,
 re-read `ListAgents` and use the name that is there now — a session's name
 changes across a restart, and this campaign lost a REPORT to a name that had
-moved. You do not write the anchor issue's body: it is written at a scope
+moved. You do not write the campaign issue's body: it is written at a scope
 change and at the close, and your sub-issue is neither. You may land your own work
 when three conditions hold — a review read at the sha being merged, written by
 an agent that did not write the commits, and a branch containing the current

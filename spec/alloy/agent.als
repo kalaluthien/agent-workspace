@@ -64,7 +64,7 @@ var sig Reviewed in PR {}
 one sig Target { var agent: lone Agent }
 
 fact AgentWellFormed {
-  all c: Campaign | c.anchor not in Agent.task
+  all c: Campaign | c.campaignIssue not in Agent.task
   all a: Agent | some a.peer implies (a.launcher = a.peer and a.host = a.peer.smach)
   always Live in Launched
   always Retired in Launched
@@ -440,13 +440,13 @@ pred claimBeforeWork {
 /* The rule as written, the honest local reading, and the reading a session
    can actually perform. */
 pred closeDisciplineFull[c: Campaign] {
-  always ((Now.ev = CloseIssue and Now.issue = c.anchor) implies closableWithAgents[c])
+  always ((Now.ev = CloseIssue and Now.issue = c.campaignIssue) implies closableWithAgents[c])
 }
 pred closeDisciplineLocal[c: Campaign] {
-  always ((Now.ev = CloseIssue and Now.issue = c.anchor) implies closableLocally[By.actor, c])
+  always ((Now.ev = CloseIssue and Now.issue = c.campaignIssue) implies closableLocally[By.actor, c])
 }
 pred closeDisciplineAsRead[c: Campaign] {
-  always ((Now.ev = CloseIssue and Now.issue = c.anchor) implies closableAsRead[By.actor, c])
+  always ((Now.ev = CloseIssue and Now.issue = c.campaignIssue) implies closableAsRead[By.actor, c])
 }
 
 /* Where session.als's R3 is answered: keyed on the record, which is the thing
@@ -600,7 +600,7 @@ pred R3b_CloseFromAnotherMachine {
     s1.smach != s2.smach
     a.launcher = s1
     closeDisciplineLocal[c]
-    eventually (Now.ev = CloseIssue and By.actor = s2 and Now.issue = c.anchor
+    eventually (Now.ev = CloseIssue and By.actor = s2 and Now.issue = c.campaignIssue
                 and a in Live and not closableWithAgents[c])
   }
 }
@@ -615,7 +615,7 @@ pred R3c_GlobalCloseRuleBlocks {
     a.launcher = s1
     always Now.ev != RemoveMember
     closeDisciplineFull[c]
-    eventually (Now.ev = CloseIssue and Now.issue = c.anchor and By.actor = s2 and a in Live)
+    eventually (Now.ev = CloseIssue and Now.issue = c.campaignIssue and By.actor = s2 and a in Live)
   }
 }
 
@@ -733,7 +733,7 @@ pred A1_UnrecordedExecutorAtTheClose {
     always a not in Addressed                   -- a claim with no record
     closeDisciplineAsRead[c]                    -- s1 obeys the gate it can read
     eventually (a in Live and a.task in Claimed
-                and Now.ev = CloseIssue and Now.issue = c.anchor and By.actor = s1
+                and Now.ev = CloseIssue and Now.issue = c.campaignIssue and By.actor = s1
                 and liveUnderLocally[c, s1.smach])
   }
 }

@@ -9,7 +9,7 @@ resolves and a peer addresses. Renaming one leaves the session answering to two
 different names depending on who is asking, so this sets both and reports each.
 
 It is also the naming rule's owner. `AGENTS.md` § The session name states
-`campaign-<anchor>-<role>-<n>`; a name that does not match is refused here
+`campaign-<campaign issue>-<role>-<n>`; a name that does not match is refused here
 rather than half-applied, because a rule nothing must consume is a rule that
 drifts. `NAME` below is the one pattern: scripts/campaign-claim.py loads this
 file by path and reads it there, so `take` can refuse a name from another
@@ -45,7 +45,7 @@ import sys
 # sharing a campaign and a role.
 # `executor` is the only role: a review runs as a subagent of the session that
 # wants the merge, so it has no session to name. AGENTS.md, "Naming a session".
-NAME = re.compile(r"^campaign-([0-9]+)-executor-[0-9]+$")   # group 1: the anchor
+NAME = re.compile(r"^campaign-([0-9]+)-executor-[0-9]+$")   # group 1: the campaign issue
 
 
 def refuse(why):
@@ -76,7 +76,7 @@ def main():
     # not leave the first session renamed on one path and not the other.
     for pane, name in pairs:
         if not NAME.match(name):
-            refuse(f"{name!r} is not campaign-<anchor>-<role>-<n> "
+            refuse(f"{name!r} is not campaign-<campaign issue>-<role>-<n> "
                    "(role: executor, the only one); nothing was applied")
 
     failed = False

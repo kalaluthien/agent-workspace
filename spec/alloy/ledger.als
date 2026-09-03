@@ -6,7 +6,7 @@
  * Four layers, each opening the one below, so the composed model is the top
  * file and there is no fifth integration file:
  *
- *   ledger.als    issues, the sub-issue index, settlement, the anchor body
+ *   ledger.als    issues, the sub-issue index, settlement, the campaign issue body
  *   repos.als     a member repository from one machine and on its remote
  *   session.als   a campaign session: one role, bound to one machine
  *   agent.als     the executor: launch, the four messages, retirement
@@ -64,10 +64,10 @@ sig Issue {
 }
 
 sig Campaign {
-  anchor:      one Issue,       -- the anchor issue; its number is the campaign ID
+  campaignIssue:      one Issue,       -- the campaign issue; its number is the campaign ID
   var members: set Issue,       -- ground truth
   var sub:     set Issue,       -- the index: GitHub's native sub-issue link
-  var body:    set Repo         -- the anchor body's `## Repos` list
+  var body:    set Repo         -- the campaign issue body's `## Repos` list
 }
 
 var sig Open   in Issue {}
@@ -75,11 +75,11 @@ var sig Merged in PR {}
 var sig Filed  in Campaign {}
 
 fact WellFormed {
-  all c: Campaign | c.anchor.home = Container
-  all disj c1, c2: Campaign | c1.anchor != c2.anchor
+  all c: Campaign | c.campaignIssue.home = Container
+  all disj c1, c2: Campaign | c1.campaignIssue != c2.campaignIssue
   always all p: PR | lone pr.p
   always all i: Issue | some i.pr implies i.pr' = i.pr    -- a PR link is never undone
-  always all c: Campaign | c.anchor not in c.members
+  always all c: Campaign | c.campaignIssue not in c.members
   always all disj c1, c2: Campaign | no c1.members & c2.members
   always all p: PR | p in Merged implies some pr.p
 }
@@ -96,11 +96,11 @@ pred settled[i: Issue] { complete[i] or dropped[i] }
 /* The GitHub half. The other -- no agent live under the tree -- is
    agent.als's. */
 pred closable[c: Campaign]       { all i: c.members | settled[i] }
-pred campaignClosed[c: Campaign] { c.anchor not in Open }
+pred campaignClosed[c: Campaign] { c.campaignIssue not in Open }
 
 /* S8 is what happens without it. */
 pred closeDiscipline[c: Campaign] {
-  always ((Now.ev = CloseIssue and Now.issue = c.anchor) implies closable[c])
+  always ((Now.ev = CloseIssue and Now.issue = c.campaignIssue) implies closable[c])
 }
 
 /* A trace that closes first and merges later satisfies `settled` the whole
@@ -113,20 +113,20 @@ pred mergeClosed[s: set Issue] {
 /* Not a fact: the container's tracker holds THREE kinds of issue, and a
    global fact admitting the third says nothing. S18/S18a are why. */
 pred containerIssuesAreCampaignIssues {
-  all i: Issue | i.home = Container implies (i in Campaign.anchor or eventually i in Campaign.members)
+  all i: Issue | i.home = Container implies (i in Campaign.campaignIssue or eventually i in Campaign.members)
 }
 
 /* The narrower reading, kept runnable beside it. */
-pred containerIsAnchorOnly { always all i: Issue | i.home = Container implies i in Campaign.anchor }
+pred containerIsCampaignIssueOnly { always all i: Issue | i.home = Container implies i in Campaign.campaignIssue }
 
 fun campaignOf[i: Issue]: lone Campaign { members.i }
-fun anchorOf[i: Issue]: lone Campaign { anchor.i }
+fun campaignIssueOf[i: Issue]: lone Campaign { campaignIssue.i }
 fun idx[c: Campaign]: set Issue { c.sub }
 
 /* ---------------- observable events ---------------- */
 
 abstract sig Event {}
-one sig Stutter, FileAnchor, AddMember, RemoveMember,
+one sig Stutter, FileCampaignIssue, AddMember, RemoveMember,
         OpenPR, MergePR, CloseIssue, WriteBody extends Event {}
 
 one sig Now {
@@ -135,7 +135,7 @@ one sig Now {
 }
 
 fun ledgerEvents: set Event {
-  FileAnchor + AddMember + RemoveMember + OpenPR + MergePR + CloseIssue + WriteBody
+  FileCampaignIssue + AddMember + RemoveMember + OpenPR + MergePR + CloseIssue + WriteBody
 }
 
 pred ledgerFrame {
@@ -143,14 +143,14 @@ pred ledgerFrame {
   and members' = members and sub' = sub and body' = body and Filed' = Filed
 }
 
-pred fileAnchor[c: Campaign] {
+pred fileCampaignIssue[c: Campaign] {
   c not in Filed
   no c.members and no c.sub and no c.body
   Filed' = Filed + c
-  Open'  = Open + c.anchor
+  Open'  = Open + c.campaignIssue
   members' = members and sub' = sub and body' = body
   Merged' = Merged and pr' = pr
-  Now.ev = FileAnchor and Now.issue = c.anchor
+  Now.ev = FileCampaignIssue and Now.issue = c.campaignIssue
 }
 
 /* The issue and its index entry are one write. Deliberately no actor, machine
@@ -160,7 +160,7 @@ pred fileAnchor[c: Campaign] {
    and the claim script, not here. */
 pred addMember[c: Campaign, i: Issue] {
   c in Filed
-  i not in Campaign.members and i not in Campaign.anchor
+  i not in Campaign.members and i not in Campaign.campaignIssue
   i not in Open and no i.pr
   members' = members + c->i
   sub'     = sub + c->i
@@ -220,19 +220,19 @@ pred stutter {
 }
 
 /* Admits a campaign already in flight, an unfiled one, or any mixture:
-   session.als has to be able to file an anchor, and the scenarios have to be
+   session.als has to be able to file a campaign issue, and the scenarios have to be
    able to start with one already filed. */
 pred init {
   no Merged
   no pr
   all c: Campaign - Filed | no c.members and no c.sub and no c.body
-  Open = Filed.anchor + Campaign.members
+  Open = Filed.campaignIssue + Campaign.members
   all c: Campaign | c.sub = c.members
 }
 
 pred ledgerStep {
   stutter
-  or (some c: Campaign | fileAnchor[c] or writeBody[c])
+  or (some c: Campaign | fileCampaignIssue[c] or writeBody[c])
   or (some c: Campaign, i: Issue | addMember[c,i] or removeMember[c,i])
   or (some i: Issue | openPR[i] or mergePR[i] or closeIssue[i])
   or (Now.ev not in Stutter + ledgerEvents and ledgerFrame)
@@ -253,7 +253,7 @@ assert ClosedImpliesComplete {
    sub-issue write reddens it, and so does any index that is a second write. */
 assert IndexExact { always all c: Campaign | c.members = idx[c] }
 
-/* From the anchor alone, member repositories and open sub-issues are
+/* From the campaign issue alone, member repositories and open sub-issues are
    recoverable. */
 assert Reconstitution {
   always all c: Campaign |
@@ -270,7 +270,7 @@ pred progressEnabled {
 }
 pred weakFairness { always (progressEnabled implies eventually Now.ev in OpenPR + MergePR + CloseIssue) }
 
-/* `init` also admits the empty world an anchor is filed from, where the
+/* `init` also admits the empty world a campaign issue is filed from, where the
    conclusion is vacuously true at time zero. */
 pred hasWork { some Campaign.members }
 
@@ -342,10 +342,10 @@ pred S2_SubIssueDropped {
 pred S5_FollowUpAfterSettled {
   one c: Campaign {
     #c.members = 1
-    mergeClosed[Issue - c.anchor]
+    mergeClosed[Issue - c.campaignIssue]
     always Now.ev != RemoveMember          -- no emptying the campaign to fake "all settled"
-    some i1: c.members, i2: Issue - c.members - c.anchor {
-      eventually (complete[i1] and c.anchor in Open
+    some i1: c.members, i2: Issue - c.members - c.campaignIssue {
+      eventually (complete[i1] and c.campaignIssue in Open
                   and Now.ev = AddMember and Now.issue = i2)
       eventually (i2 in c.members and not settled[i2])
       eventually complete[i2]
@@ -360,7 +360,7 @@ pred S6_RepoJoinsMidFlight {
   one c: Campaign {
     #c.members = 1
     #(c.members.home) = 1
-    mergeClosed[Issue - c.anchor]
+    mergeClosed[Issue - c.campaignIssue]
     always Now.ev != RemoveMember
     eventually (Now.ev = AddMember
                 and Now.issue not in c.members
@@ -370,14 +370,14 @@ pred S6_RepoJoinsMidFlight {
   }
 }
 
-/* Nothing guards the anchor's close, so a real run must report it. */
+/* Nothing guards the campaign issue's close, so a real run must report it. */
 pred S8_CloseWithOpenSubIssue {
   one c: Campaign {
     #c.members = 2
     always Now.ev not in AddMember + RemoveMember
     mergeClosed[c.members]
     some disj i1, i2: c.members |
-      eventually (Now.ev = CloseIssue and Now.issue = c.anchor
+      eventually (Now.ev = CloseIssue and Now.issue = c.campaignIssue
                   and complete[i1] and i2 in Open)
     eventually (campaignClosed[c] and (some i: c.members | i in Open))
   }
@@ -451,14 +451,14 @@ pred S13b_ReopenAnyClosed  {
 }
 pred S13c_ReopenWithPR     { some i: Issue | eventually (some i.pr and i not in Open and after (i in Open)) }
 
-/* Nothing in the design guards a closed anchor against later sub-issues. */
+/* Nothing in the design guards a closed campaign issue against later sub-issues. */
 pred S14_FollowUpAfterClose {
   one c: Campaign {
     #c.members = 1
-    mergeClosed[Issue - c.anchor]
+    mergeClosed[Issue - c.campaignIssue]
     always Now.ev != RemoveMember
     closeDiscipline[c]
-    some i2: Issue - c.members - c.anchor {
+    some i2: Issue - c.members - c.campaignIssue {
       eventually (campaignClosed[c] and Now.ev = AddMember and Now.issue = i2)
       eventually (campaignClosed[c] and i2 in c.members and i2 in Open and not settled[i2])
     }
@@ -468,14 +468,14 @@ pred S14_FollowUpAfterClose {
 /* Under the narrow reading the container cannot be a member of its own
    campaign at all: the model forbade what was about to happen for real. */
 pred S16a_ContainerMemberUnderNarrowReading {
-  containerIsAnchorOnly
+  containerIsCampaignIssueOnly
   some c: Campaign, i: c.members | i.home = Container
 }
 
 /* The tracker's third kind. It was UNSAT at any bound while
    `containerIssuesAreCampaignIssues` was a fact, and no verdict said so. */
 pred S18_PlainContainerIssue {
-  some i: Issue | i.home = Container and always (i not in Campaign.anchor + Campaign.members)
+  some i: Issue | i.home = Container and always (i not in Campaign.campaignIssue + Campaign.members)
 }
 
 /* Why the clause is kept rather than deleted: as a predicate it still says
@@ -489,7 +489,7 @@ pred S18a_PlainContainerIssueUnderClosedWorld {
  * commands above, and an over-tight frame is the cheapest way to cause it
  * without any command turning red.
  */
-pred Cov_FileAnchor   { eventually Now.ev = FileAnchor }
+pred Cov_FileCampaignIssue   { eventually Now.ev = FileCampaignIssue }
 pred Cov_AddMember    { eventually Now.ev = AddMember }
 pred Cov_RemoveMember { eventually Now.ev = RemoveMember }
 pred Cov_OpenPR       { eventually Now.ev = OpenPR }
@@ -503,7 +503,7 @@ pred Cov_WriteBody    { eventually Now.ev = WriteBody }
 check ClosedImpliesComplete      for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps expect 1
 -- the index is exactly the membership
 check IndexExact                 for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps expect 0
--- the anchor alone recovers the campaign
+-- the campaign issue alone recovers the campaign
 check Reconstitution             for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps expect 0
 -- closed-and-merged cannot say "dropped"
 check TerminationUnderFairness     for 3 Issue, 2 PR, 1 Campaign, 2 Repo, 10 steps expect 1
@@ -537,7 +537,7 @@ run S18_PlainContainerIssue              for exactly 2 Issue, 1 PR, exactly 1 Ca
 run S18a_PlainContainerIssueUnderClosedWorld for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 0
 
 -- every own event fires in some trace
-run Cov_FileAnchor   for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1
+run Cov_FileCampaignIssue   for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1
 run Cov_AddMember    for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1
 run Cov_RemoveMember for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1
 run Cov_OpenPR       for 4 Issue, 2 PR, 2 Campaign, 3 Repo, 8 steps expect 1

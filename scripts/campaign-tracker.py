@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Read the campaign plane: its anchors, its binding, its index, its settlement.
+"""Read the campaign plane: its campaign issues, its binding, its index, its settlement.
 
-    campaign-tracker.py anchors [--repo owner/repo] [--limit N]
+    campaign-tracker.py campaign-issues [--repo owner/repo] [--limit N]
     campaign-tracker.py bound <N> [owner/repo]
     campaign-tracker.py index <N> [owner/repo]
     campaign-tracker.py settlement <N> [owner/repo] [--dir CAMPAIGN]
@@ -20,11 +20,11 @@ a campaign another machine is working.
 
 WHAT EACH SUBCOMMAND OWNS
 
-anchors     The open-anchor survey, and the two ways its readings disagree.
+campaign-issues     The open-campaign issue survey, and the two ways its readings disagree.
             Both readings come off ONE listing: an earlier version made two `gh`
             calls and inferred a property from *absence* in the other, which
-            denounced a real anchor as a sub-issue wearing the label. `--limit` is
-            raised past `gh`'s default of thirty because anchors are the oldest
+            denounced a real campaign issue as a sub-issue wearing the label. `--limit` is
+            raised past `gh`'s default of thirty because campaign issues are the oldest
             issues here, and a listing that comes back *at* the limit refuses
             rather than printing rows that are wrong rather than merely short.
 
@@ -65,13 +65,13 @@ verdict from "NOT closable" into "closable" with fourteen sub-issues silently go
 and nothing red.
 
 scripts/check-rule-readers.py is the second reader that keeps these claims true: it
-refuses a commit that stages a hand-rolled copy of the anchor survey, the index
+refuses a commit that stages a hand-rolled copy of the campaign issue survey, the index
 read, or the settlement verdict as code in any tracked markdown outside scripts/.
 It catches a pasted copy, not a re-implementation that names nothing.
 
 EXIT
 
-anchors, index, settlement  0 when the reading was made, 1 when it was not.
+campaign-issues, index, settlement  0 when the reading was made, 1 when it was not.
 bound                       0 for any verdict, 2 when the reading itself failed.
 """
 import argparse
@@ -105,7 +105,7 @@ def gh_read(cmd):
     return r.stdout, None
 
 
-# --------------------------------------------------------------------- anchors
+# --------------------------------------------------------------------- campaign issues
 
 
 def listing(repo, limit):
@@ -124,16 +124,16 @@ def listing(repo, limit):
 
 
 def classify(issues):
-    """Split one listing by its two readings. Returns (anchors, stray, bare).
+    """Split one listing by its two readings. Returns (campaign issues, stray, bare).
 
     Every issue carries both properties, so each row is decided by what that
     issue itself says -- never by its absence from somewhere else."""
     def labelled(i):
         return any(l.get("name") == CAMPAIGN_LABEL for l in i.get("labels") or [])
-    anchors = [i for i in issues if labelled(i) and not i.get("parent")]
+    campaign_issues = [i for i in issues if labelled(i) and not i.get("parent")]
     stray = [i for i in issues if labelled(i) and i.get("parent")]
     bare = [i for i in issues if not labelled(i) and not i.get("parent")]
-    return anchors, stray, bare
+    return campaign_issues, stray, bare
 
 
 def rows(title, items, note=""):
@@ -142,10 +142,10 @@ def rows(title, items, note=""):
         print(f"  #{i['number']:<5} {i['title'][:88]}")
 
 
-def cmd_anchors(args):
+def cmd_campaign_issues(args):
     issues, why = listing(args.repo, args.limit)
     if why:
-        print(f"campaign-tracker anchors: could not read {args.repo} -- {why}\n"
+        print(f"campaign-tracker campaign-issues: could not read {args.repo} -- {why}\n"
               f"  A reading that did not happen is not an empty tracker.",
               file=sys.stderr)
         return 1
@@ -156,17 +156,17 @@ def cmd_anchors(args):
               f"a complete one. Raise --limit and re-run.", file=sys.stderr)
         return 1
 
-    anchors, stray, bare = classify(issues)
-    rows("open anchors", anchors, "labelled `campaign`, and with no parent")
-    if not anchors:
+    campaign_issues, stray, bare = classify(issues)
+    rows("open campaign issues", campaign_issues, "labelled `campaign`, and with no parent")
+    if not campaign_issues:
         print("  (none: this is a reading, not a failed one)")
     if stray:
         rows("!! labelled but has a parent", stray,
              "a sub-issue wearing the label; say so rather than joining it")
     if bare:
         rows("!! no parent and not labelled", bare,
-             "an anchor whose label was forgotten, or the third kind of issue "
-             "this\n   tracker holds. Read the body against the anchor template")
+             "a campaign issue whose label was forgotten, or the third kind of issue "
+             "this\n   tracker holds. Read the body against the campaign issue template")
     return 0
 
 
@@ -190,7 +190,7 @@ def run_or_refuse(*args):
 
 
 def bodies(repo, number):
-    """Every comment body on the anchor, oldest first.
+    """Every comment body on the campaign issue, oldest first.
 
     `--paginate --slurp` is what makes one JSON document out of the pages;
     without `--slurp` gh concatenates one array per page and json.loads sees
@@ -229,7 +229,7 @@ def this_machine():
 
 
 def cmd_bound(args):
-    machine = binding_of(bodies(args.repo, args.anchor))
+    machine = binding_of(bodies(args.repo, args.campaign_issue))
     if machine is None:
         print("unbound")
     elif machine == this_machine():
@@ -264,22 +264,22 @@ def parse_index(text):
     return items, None
 
 
-def fetch_index(repo, anchor):
+def fetch_index(repo, campaign_issue):
     """Ask GitHub for a campaign's members. Returns (items, why_unreadable).
 
     The request and the parse are one call on purpose: a caller that got only
     the parse would hand-write `--paginate`, and dropping it there is invisible.
     `settlement` below is that caller."""
     text, why = gh_read(["gh", "api", "--paginate",
-                         f"repos/{repo}/issues/{anchor}/sub_issues"])
+                         f"repos/{repo}/issues/{campaign_issue}/sub_issues"])
     if why:
         return None, why
     return parse_index(text)
 
 
 def cmd_index(args):
-    print(f"read repos/{args.repo}/issues/{args.anchor}/sub_issues --paginate")
-    items, why = fetch_index(args.repo, args.anchor)
+    print(f"read repos/{args.repo}/issues/{args.campaign_issue}/sub_issues --paginate")
+    items, why = fetch_index(args.repo, args.campaign_issue)
     if why:
         print(f"FAILED -- {why}. {NOT_EMPTY}", file=sys.stderr)
         return 1
@@ -414,35 +414,35 @@ def claim_column(directory):
     return word, note
 
 
-def anchor_reports(head):
-    """What says the number handed in is not an anchor. Costs no extra call.
+def campaign_issue_reports(head):
+    """What says the number handed in is not a campaign issue. Costs no extra call.
 
-    The anchor repository is a member of its own campaigns, so the number handed
-    in may be a sub-issue and a sub-issue may be an anchor. Neither is visible in a
+    The campaign issue repository is a member of its own campaigns, so the number handed
+    in may be a sub-issue and a sub-issue may be a campaign issue. Neither is visible in a
     settlement table. These reports read labels and the parent relation, never
     the body: prose is editable and the parent relation is not."""
     if CAMPAIGN_LABEL not in [l["name"] for l in head["labels"]]:
         yield (f"REPORT: no `{CAMPAIGN_LABEL}` label, so this may be a sub-issue read"
-               " as an anchor")
+               " as a campaign issue")
     if head["parent"]:
-        yield (f"REPORT: this anchor is itself a sub-issue of #{head['parent']['number']}"
+        yield (f"REPORT: this campaign issue is itself a sub-issue of #{head['parent']['number']}"
                " -- closing that campaign will not settle this one")
 
 
 def cmd_settlement(args):
-    head, why = gh_json("issue", "view", args.anchor, "-R", args.repo,
+    head, why = gh_json("issue", "view", args.campaign_issue, "-R", args.repo,
                         "--json", "state,title,labels,parent")
     if why:
-        sys.exit(f"campaign-tracker settlement: could not read the anchor "
-                 f"{args.repo}#{args.anchor} -- {why}\n  No verdict was reached "
+        sys.exit(f"campaign-tracker settlement: could not read the campaign issue "
+                 f"{args.repo}#{args.campaign_issue} -- {why}\n  No verdict was reached "
                  f"for any sub-issue.")
-    subs, why = fetch_index(args.repo, args.anchor)
+    subs, why = fetch_index(args.repo, args.campaign_issue)
     if why:
         sys.exit(f"campaign-tracker settlement: could not read the sub-issue "
                  f"index -- {why}\n  {NOT_EMPTY}")
 
-    print(f"anchor {args.repo}#{args.anchor}  [{head['state']}]  {head['title']}")
-    for line in anchor_reports(head):
+    print(f"campaign issue {args.repo}#{args.campaign_issue}  [{head['state']}]  {head['title']}")
+    for line in campaign_issue_reports(head):
         print(f"  -- {line}")
     if not subs:
         print("  (no sub-issues: the index is empty)")
@@ -464,7 +464,7 @@ def cmd_settlement(args):
         rows_out.append((f"{repo}#{s['number']}", v, title[:44],
                          "; ".join(x for x in (note, held) if x)))
         # sub_issues is not recursive (probed), so a sub-issue that is itself an
-        # anchor hides its own members from this table.
+        # campaign issue hides its own members from this table.
         if s["sub_issues_summary"]["total"]:
             nested.append((f"{repo}#{s['number']}", s["sub_issues_summary"]["total"]))
 
@@ -490,15 +490,15 @@ def cmd_settlement(args):
           + (f", {unread} unread" if unread else "") + "; "
           + ("closable" if closable else "NOT closable: " + "; ".join(blockers)))
     if head["state"] == "CLOSED" and not closable:
-        print("  -- REPORT: the anchor is closed with sub-issues still open")
+        print("  -- REPORT: the campaign issue is closed with sub-issues still open")
     return 0
 
 
 # ------------------------------------------------------------------------ main
 
 
-def anchor_number(text):
-    """The anchor as `bound` validates it: a bare positive issue number.
+def campaign_issue_number(text):
+    """The campaign issue as `bound` validates it: a bare positive issue number.
 
     Only `bound` refuses a malformed one before spending a request, because it
     is the reading whose caller acts on a printed word and would otherwise read
@@ -513,20 +513,20 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    a = sub.add_parser("anchors", help="the open-anchor survey")
+    a = sub.add_parser("campaign-issues", help="the open-campaign issue survey")
     a.add_argument("--repo", default=DEFAULT_REPO)
     a.add_argument("--limit", type=int, default=200)
-    a.set_defaults(fn=cmd_anchors)
+    a.set_defaults(fn=cmd_campaign_issues)
 
     # The optional positional repository is the override seam these three share.
-    # One spelling across all three: `anchors` takes `--repo` because it takes
-    # `--limit` beside it, and a positional there would read as the anchor.
+    # One spelling across all three: `campaign-issues` takes `--repo` because it takes
+    # `--limit` beside it, and a positional there would read as the campaign issue.
     for name, fn, help_text in (
             ("bound", cmd_bound, "here | elsewhere <machine> | unbound"),
             ("index", cmd_index, "the sub-issue index"),
             ("settlement", cmd_settlement, "every sub-issue's verdict")):
         p = sub.add_parser(name, help=help_text)
-        p.add_argument("anchor")
+        p.add_argument("campaign_issue")
         p.add_argument("repo", nargs="?", default=DEFAULT_REPO)
         # Only settlement reads it, and only settlement is given it: a flag the
         # other two accept and ignore reads as though naming a directory
@@ -539,7 +539,7 @@ def main():
 
     args = ap.parse_args()
     if args.cmd == "bound":
-        args.anchor = anchor_number(args.anchor)
+        args.campaign_issue = campaign_issue_number(args.campaign_issue)
     return args.fn(args)
 
 

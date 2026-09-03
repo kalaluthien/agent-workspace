@@ -48,34 +48,34 @@ FORM_CASES = [
     # ...and the boundary the narrowed claim now names, so widening the form
     # later has to move this row rather than pass silently.
     ("session-alive: another field first is outside the claim", fence("ps -o pid,ucomm -p 1"), 0),
-    # Two spellings of the open-anchor survey campaign-anchors owns.
-    ("anchors: the open-anchor survey by label",
+    # Two spellings of the open-campaign issue survey campaign-anchors owns.
+    ("campaign issues: the open-campaign issue survey by label",
      fence("gh issue list -R o/r --label campaign --state open --limit 200"), 1),
-    ("anchors: the same survey by the parent field",
+    ("campaign issues: the same survey by the parent field",
      fence("gh issue list -R o/r --state open --json number,title,parent"), 1),
     # The wrapped form: a continuation line a line-at-a-time scan would read past.
-    ("anchors: the survey wrapped across a backslash continuation",
+    ("campaign issues: the survey wrapped across a backslash continuation",
      fence("gh issue list -R o/r --state open \\\n  --json number,title,parent"), 1),
-    ("anchors: the short flag spelling", fence("gh issue list -l campaign -R o/r"), 1),
-    ("anchors: the quoted label spelling", fence('gh issue list --label "campaign" -R o/r'), 1),
-    ("anchors: a continuation that never completes the form stays quiet",
+    ("campaign issues: the short flag spelling", fence("gh issue list -l campaign -R o/r"), 1),
+    ("campaign issues: the quoted label spelling", fence('gh issue list --label "campaign" -R o/r'), 1),
+    ("campaign issues: a continuation that never completes the form stays quiet",
      fence("gh issue list -R o/r \\\n  --state closed"), 0),
     # A backslash on the last line of a block is a typo, not an exemption: the
     # carried text is scanned when the run ends rather than dropped unread.
-    ("anchors: a continuation left open at the end of a fence is still scanned",
+    ("campaign issues: a continuation left open at the end of a fence is still scanned",
      fence("gh issue list -R o/r --state open --json number,title,parent \\"), 1),
-    ("anchors: a continuation left open when prose resumes is still scanned",
+    ("campaign issues: a continuation left open when prose resumes is still scanned",
      "# t\n\n    gh issue list -R o/r --state open --json number,title,parent \\\n\nprose.\n", 1),
     # ...and it does not reach across the close into the next block, which would
     # let two harmless blocks report a form neither of them holds.
-    ("anchors: a continuation does not join across a fence close",
+    ("campaign issues: a continuation does not join across a fence close",
      fence("gh issue list -R o/r --state open \\") + fence("--json number,title,parent"), 0),
-    ("anchors: an issue list that reads neither is outside the claim",
+    ("campaign issues: an issue list that reads neither is outside the claim",
      fence("gh issue list -R o/r --state closed --json number,title"), 0),
     ("sub-issues: the index read", fence("gh api --paginate repos/o/r/issues/1/sub_issues"), 1),
     ("sub-issues: the endpoint named in prose is a mention",
      "# t\n\nRead it back from `sub_issues`.\n", 0),
-    # The binding reading: the anchor's comments filtered for BOUND, and the
+    # The binding reading: the campaign issue's comments filtered for BOUND, and the
     # machine comparison. One case per alternation, and then the two shapes
     # that are the *write* of a binding rather than a reading of one -- both
     # already in this tree, both of which a bare `hostname` form would refuse.
@@ -186,7 +186,7 @@ EXEMPTION_CASES = [
 
 # Three forms now live in one script, `campaign-tracker`. `EXEMPT` takes
 # `[\w-]+` with no spaces, so had the exemption token been merged along with the
-# scripts, one `<!-- unguarded: campaign-tracker -->` would silence the anchor
+# scripts, one `<!-- unguarded: campaign-tracker -->` would silence the campaign issue
 # survey, the index read and the settlement verdict at once -- two more forms
 # than the author named, with nothing reporting it. Each case below holds two
 # forms of that one script in a single fence and exempts one; the surviving
@@ -200,12 +200,12 @@ BOTH_TRACKER_FORMS = ("gh issue list -R o/r --state open --json number,title,par
                       "gh api --paginate repos/o/r/issues/1/sub_issues")
 
 GRANULARITY_CASES = [
-    ("tracker: exempting the anchor survey leaves the index read reported",
+    ("tracker: exempting the campaign issue survey leaves the index read reported",
      f"# t\n\n<!-- unguarded: campaign-anchors -- x -->\n\n```sh\n{BOTH_TRACKER_FORMS}\n```\n",
-     1, "the sub-issue index read", "the open-anchor survey"),
-    ("tracker: ...and exempting the index read leaves the anchor survey reported",
+     1, "the sub-issue index read", "the open-campaign issue survey"),
+    ("tracker: ...and exempting the index read leaves the campaign issue survey reported",
      f"# t\n\n<!-- unguarded: campaign-subtasks -- x -->\n\n```sh\n{BOTH_TRACKER_FORMS}\n```\n",
-     1, "the open-anchor survey", "the sub-issue index read"),
+     1, "the open-campaign issue survey", "the sub-issue index read"),
     # Named separately, both are silenced -- so the split did not simply make
     # the exemption unusable.
     ("tracker: two tokens of one script, named separately, silence both",

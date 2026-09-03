@@ -80,7 +80,7 @@ four-space indent, reading the index rather than the working tree. It catches
 a pasted copy, not a re-implementation that names nothing; see its header.
 Removing the guard returns this line to being a hope.
 
-Usage: scripts/campaign-local-work.py <anchor-issue-number> [campaign-dir]
+Usage: scripts/campaign-local-work.py <campaign-issue-number> [campaign-dir]
 
 `campaign-dir` may be relative or absolute; the script resolves it. Callers do
 not have to know, which is the point -- the caller who would have got it wrong

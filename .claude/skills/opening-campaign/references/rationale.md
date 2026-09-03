@@ -19,7 +19,7 @@ its two readings are shaped the way they are.
 **Read an unplaced issue for shape.** Which shape means which kind, and that the
 third kind is left alone rather than surveyed, joined, or edited, is `AGENTS.md`
 § The container as its own member. What that section leaves
-implicit for this step: every anchor is in the no-parent listing whether or not
+implicit for this step: every campaign issue is in the no-parent listing whether or not
 it was labelled, which is what makes the two readings cross-check each other.
 
 **Testing is a follow-up, and it is decided here.** The deliverable is not
@@ -27,15 +27,15 @@ finished until it is shown to work, and the fixes land on the artifacts that
 campaign already owns. Scope is written in artifacts and cannot separate "build
 X" from "validate X", so this one cannot be read off the body.
 
-## Step 3 — filing the anchor
+## Step 3 — filing the campaign issue
 
 **The re-survey narrows the window, it does not close it.** The read and the
 create are two calls and nothing makes them one, so two sessions can still
 interleave between them. What the re-read buys is that the window is seconds
 instead of however long steps 2 and 3 took.
 
-**Why the label is read back.** `--label campaign` is what makes the anchor
-findable at all, and an anchor filed without it is invisible to every later
+**Why the label is read back.** `--label campaign` is what makes the campaign issue
+findable at all, and a campaign issue filed without it is invisible to every later
 survey, so the next session opens a second campaign over the same scope and
 nothing reports it (probed: an unlabelled parent issue does not appear in step
 1's labelled listing).
@@ -59,7 +59,7 @@ only after a successful read is what makes a failed read loud; piping the reader
 straight into `while read` would swallow its exit status and run the loop zero
 times, which is what a legitimate `- none` also does.
 
-**`runtime/anchor-body-derived.md`'s lifetime.** It is scratch, like everything
+**`runtime/campaign-issue-body-derived.md`'s lifetime.** It is scratch, like everything
 else under `runtime/`, and dies with the directory — the right lifetime, because
 it is only ever compared against by a session working in this tree.
 
@@ -83,7 +83,7 @@ under a delegate already working in it. Without it,
 apart, and why the branch's existence is the claim — are the Branch bullet of
 `AGENTS.md` § ID, directory, branch.
 
-**Why the addition syncs immediately** is `AGENTS.md` § The anchor body:
+**Why the addition syncs immediately** is `AGENTS.md` § The campaign issue body:
 adding a repository is a scope change, and holding it back to the close loses
 exactly what the delay was meant to protect. What that leaves implicit here: the
 session that opens the campaign on another machine clones the `## Repos` list and

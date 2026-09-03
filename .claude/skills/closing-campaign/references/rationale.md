@@ -27,7 +27,7 @@ in `<campaign>/runtime/claims/`, and both need a directory that did not exist �
 so a campaign never worked on this machine can have no local executor to miss.
 The residue is the one case that breaks the premise: a directory that existed
 here and was deleted by hand without a close, leaving agents alive with their
-tree gone. Nothing local can see that, and step 5's announcement on the anchor
+tree gone. Nothing local can see that, and step 5's announcement on the campaign issue
 is what covers it. Step 1 reports "not applicable" on this path rather than
 "passed", so a reader is never told a vacuous gate held.
 
@@ -57,7 +57,7 @@ session's tree costs its work.
 
 **Do not match `ListAgents` names against the branch.** A name and a branch are
 two strings on purpose (`AGENTS.md` § The session name, which states the rule): a
-session is named `campaign-<anchor>-<role>-<n>`, which carries no sub-issue at all,
+session is named `campaign-<campaign issue>-<role>-<n>`, which carries no sub-issue at all,
 and it can be changed while the claim cannot. So a test built on the branch
 string finds whatever happens to match and misses what `runtime/claims/` exists
 to catch. This is where that bites.
@@ -66,7 +66,7 @@ to catch. This is where that bites.
 
 Step 1's two unenumerable cases land here: an agent herdr has forgotten and an
 executor nothing recorded both still leave their work in a checkout. The delete
-spares the container checkout, but step 5 closes the anchor indexing it, so it is
+spares the container checkout, but step 5 closes the campaign issue indexing it, so it is
 read here too.
 
 **Why the reading is a script and not the nine commands it replaced.** Absent
@@ -93,7 +93,7 @@ either of them.
 sessions on the one bound machine are both sessions of the campaign, so the
 binding never serialized the body and this comparison is what does. The three
 causes of a silent overwrite it catches are the table below; when the body may be
-written at all is `AGENTS.md` § The anchor body.
+written at all is `AGENTS.md` § The campaign issue body.
 
 ## Step 5 — announce, close, delete
 
@@ -139,7 +139,7 @@ times and says nothing.
 directory of its own**: a stale cache, untouched by this delete, with nothing
 durable in it.
 
-## A moved anchor body has three causes, and they look identical
+## A moved campaign issue body has three causes, and they look identical
 
 Step 4's compare-then-write refuses when the body has moved since the `README.md`
 was derived from it. Read the binding first: `campaign-tracker bound` saying anything but
@@ -149,9 +149,9 @@ and three things produce it:
 
 | cause | how to tell | what it wants |
 | --- | --- | --- |
-| a session on this machine wrote it | ask the peers: `ListAgents`, then `SendMessage` to each | ask what it meant, then fold. Moving a sub-issue between campaigns writes *two* anchors, and one of them is never the writer's own campaign |
+| a session on this machine wrote it | ask the peers: `ListAgents`, then `SendMessage` to each | ask what it meant, then fold. Moving a sub-issue between campaigns writes *two* campaign issues, and one of them is never the writer's own campaign |
 | a person edited the charter on GitHub | no peer claims the write | their words win: fold them into the `README.md`, refresh the derived copy, re-run |
-| a session on a machine the anchor is not `BOUND` to wrote it | nothing on this machine can see it — one `gh` account signs a person's edit and a session's alike | ask the person. The fold is the same; what differs is that the binding was broken and the other machine has to be told |
+| a session on a machine the campaign issue is not `BOUND` to wrote it | nothing on this machine can see it — one `gh` account signs a person's edit and a session's alike | ask the person. The fold is the same; what differs is that the binding was broken and the other machine has to be told |
 
 **The last two are not separable from here, and the refusal says so** rather than
 picking one. Naming all three is still worth it: a session meeting the refusal

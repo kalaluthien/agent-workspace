@@ -6,7 +6,7 @@ carry the rule that made the prose fragile: a listing that stops early reads
 exactly like a complete one, and a reading that did not happen reads exactly
 like an empty tracker.
 
-`anchors`, `bound` and `index` are covered as pure readings plus a shimmed `gh`;
+`campaign-issues`, `bound` and `index` are covered as pure readings plus a shimmed `gh`;
 no case reaches the network. `settlement` runs the installed script behind a `gh`
 on PATH that answers from a fixture, so the request shapes and the exit codes are
 the ones a person gets. The case that matters most there is the one with no
@@ -111,7 +111,7 @@ def main():
         if not cond:
             fails.append(name)
 
-    # ------------------------------------------------- anchors: two readings
+    # ------------------------------------------------- campaign issues: two readings
     def iss(n, label=False, parent=False):
         return {"number": n, "title": f"t{n}",
                 "labels": [{"name": "campaign"}] if label else [],
@@ -119,17 +119,17 @@ def main():
 
     listing = [iss(1, label=True), iss(9, label=True, parent=True),
                iss(7), iss(8, parent=True)]
-    anchors, stray, bare = m.classify(listing)
-    check("an anchor is labelled and parentless",
-          [i["number"] for i in anchors] == [1])
+    campaign_issues, stray, bare = m.classify(listing)
+    check("a campaign issue is labelled and parentless",
+          [i["number"] for i in campaign_issues] == [1])
     check("a labelled issue with a parent is a sub-issue wearing the label",
           [i["number"] for i in stray] == [9])
-    check("an unlabelled issue with no parent is reported, not silently an anchor",
+    check("an unlabelled issue with no parent is reported, not silently a campaign issue",
           [i["number"] for i in bare] == [7])
     check("an ordinary sub-issue is in no list",
-          8 not in [i["number"] for i in anchors + stray + bare])
+          8 not in [i["number"] for i in campaign_issues + stray + bare])
     check("the three lists partition nothing twice",
-          len(anchors) + len(stray) + len(bare) == 3)
+          len(campaign_issues) + len(stray) + len(bare) == 3)
 
     # The blocking defect and its sibling: every row must be decided by what the
     # issue itself carries. Deriving either reading from membership in a second
@@ -173,7 +173,7 @@ def main():
           m.binding_of(["BOUND "]) is None)
     # The three printed words are the whole contract; a caller reads the word.
     r = tracker("bound", "not-a-number")
-    check("bound refuses a malformed anchor with exit 2, never a verdict",
+    check("bound refuses a malformed campaign issue with exit 2, never a verdict",
           r.returncode == 2 and "not an issue number" in r.stderr
           and r.stdout.strip() == "")
 
@@ -189,9 +189,9 @@ def main():
             "case \"$*\" in *sub_issues*) echo '[]' ;; *) echo '[]' ;; esac\n")
         (shim / "gh").chmod(0o755)
         env = {"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(d)}
-        tracker("anchors", env=env)
+        tracker("campaign-issues", env=env)
         argv = log.read_text()
-        check("anchors passes --limit, since gh's default is thirty",
+        check("campaign issues passes --limit, since gh's default is thirty",
               "--limit" in argv)
         check("...and reads labels and parent from the one listing",
               "number,title,labels,parent" in argv)
@@ -206,10 +206,10 @@ def main():
             "#!/bin/sh\necho '[{\"number\":1,\"title\":\"t\",\"labels\":[],"
             "\"parent\":null}]'\n")
         (shim / "gh").chmod(0o755)
-        r = tracker("anchors", "--limit", "1", env=env)
+        r = tracker("campaign-issues", "--limit", "1", env=env)
         check("a listing at the limit refuses rather than printing wrong rows",
               r.returncode == 1 and "REFUSING" in r.stdout + r.stderr)
-        r = tracker("anchors", "--limit", "9", env=env)
+        r = tracker("campaign-issues", "--limit", "9", env=env)
         check("...and a listing under the limit does not", r.returncode == 0)
 
         (shim / "gh").write_text(
@@ -237,7 +237,7 @@ def main():
               r.returncode == 0 and r.stdout.strip() == "unbound")
 
     # ----------------------------------------------- the end-to-end refusals
-    # A tracker that cannot be read must never print "open anchors (0)".
+    # A tracker that cannot be read must never print "open campaign issues (0)".
     with tempfile.TemporaryDirectory() as d:
         shim = Path(d) / "bin"
         shim.mkdir()
@@ -253,11 +253,11 @@ def main():
                             ("#!/bin/sh\necho '{}'\n", "an object instead of a list")):
             (shim / "gh").write_text(body)
             (shim / "gh").chmod(0o755)
-            r = tracker("anchors",
+            r = tracker("campaign-issues",
                         env={"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(d)})
             out = r.stdout + r.stderr
             check(f"{label} refuses rather than printing an empty tracker",
-                  r.returncode == 1 and "open anchors" not in out)
+                  r.returncode == 1 and "open campaign issues" not in out)
 
     # The same branch on the index reader.
     with tempfile.TemporaryDirectory() as d:
@@ -270,7 +270,7 @@ def main():
         check("a gh that fails but prints valid output is not an empty index",
               r.returncode == 1 and "0 sub-issue(s)" not in r.stdout)
 
-    for args in (("anchors",), ("index", "1")):
+    for args in (("campaign-issues",), ("index", "1")):
         r = tracker(*args, env={"PATH": "/nonexistent", "HOME": "/tmp"})
         out = r.stdout + r.stderr
         check(f"`{args[0]}` refuses when gh cannot be run",
@@ -358,11 +358,11 @@ def main():
             check(f"...and the refusal names the reading, not open work -- {what}",
                   "could not be read" in out and "open sub-issues remain" not in out)
 
-        # The other end of the same rule: the anchor read is one call too, and
+        # The other end of the same rule: the campaign issue read is one call too, and
         # its failure must not come back as a table with nothing in it.
         code, out, err = settlement(dict(base, head={"exit": 1, "stderr": "HTTP 404"}), tmp)
-        check("an anchor that did not read refuses, saying no verdict was reached",
-              code != 0 and "could not read the anchor" in err
+        check("a campaign issue that did not read refuses, saying no verdict was reached",
+              code != 0 and "could not read the campaign issue" in err
               and "No verdict was reached" in err and "Traceback" not in err)
 
         code, out, err = settlement(dict(base, head=head(labels=())), tmp)
@@ -370,7 +370,7 @@ def main():
               code == 0 and "may be a sub-issue" in out)
 
         code, out, err = settlement(dict(base, head=head(parent={"number": 7})), tmp)
-        check("an anchor that is itself a sub-issue is reported",
+        check("a campaign issue that is itself a sub-issue is reported",
               code == 0 and "sub-issue of #7" in out)
 
         code, out, err = settlement(dict(base, index=[sub(10), sub(11, nested=3)]), tmp)
@@ -379,8 +379,8 @@ def main():
 
         code, out, err = settlement(dict(base, head=head(state="CLOSED"), **{
             "issue:kalaluthien/agent-workspace#11": issue("OPEN")}), tmp)
-        check("an anchor closed over an open sub-issue is reported",
-              code == 0 and "the anchor is closed with sub-issues still open" in out)
+        check("a campaign issue closed over an open sub-issue is reported",
+              code == 0 and "the campaign issue is closed with sub-issues still open" in out)
 
         # A sub-issue filed on another repository is read there, not here.
         code, out, err = settlement(dict(base, index=[sub(10), sub(5, repo="o/other")],

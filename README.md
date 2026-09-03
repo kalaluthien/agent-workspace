@@ -21,7 +21,7 @@ agent-workspace/
   spec/  docs/  scripts/
   auth-refactor-260828/          a campaign, git-ignored
     AGENTS.md CLAUDE.md          engineering principles for this campaign
-    README.md                    the anchor issue body, section for section
+    README.md                    the campaign issue body, section for section
     runtime/                     data, state, artifacts, handover briefs
     scripts/                     scripts built for this campaign; scratch,
                                  listed at the close and deleted with the directory
@@ -40,13 +40,13 @@ so a campaign can never be committed into the wrong repository by accident.
 | the code being changed | each member repository's own remote |
 | what a campaign is and how far along it is | GitHub issues |
 
-A campaign's identity is its **anchor issue** in this repository. Sub-issues are
+A campaign's identity is its **campaign issue** in this repository. Sub-issues are
 issues on the repositories whose code changes — the container's own tracker when
-none does — each filed as a sub-issue of that anchor, and the link the creating
+none does — each filed as a sub-issue of that campaign issue, and the link the creating
 command makes is the whole index. That makes
 GitHub the single record: a campaign can move from one machine to another, and a
 phone can read it, without anything local having to agree. It runs on one
-machine at a time, and the anchor's latest `BOUND` comment says which.
+machine at a time, and the campaign issue's latest `BOUND` comment says which.
 
 ## Setup
 
