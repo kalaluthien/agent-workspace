@@ -60,7 +60,7 @@ pred S5_FollowUpAfterSettled {
   }
 }
 
-/* The added sub-issue's home is a repository no existing member lives in. */
+/* The added sub-issue's work lands in a repository no existing member's does. */
 pred S6_RepoJoinsMidFlight {
   one c: Campaign {
     #c.memberIssues = 1

@@ -213,7 +213,7 @@
 gh issue create -R kalaluthien/agent-workspace --parent &lt;campaign-issue-url&gt;
 └──────┬──────┘ └─────────────┬──────────────┘ └─────────┬─────────┘
        │                      │                          └── 앵커 링크
-       │                      └── 대상 저장소
+       │                      └── 컨테이너 트래커 (항상 이곳)
        └── 명령
 
 gh api repos/kalaluthien/agent-workspace/git/refs \
@@ -225,7 +225,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   <figcaption>하위 과제 하나는 두 명령으로 열린다. 첫 명령이 이슈와 색인을 함께 만들고, 둘째 명령이 그 이슈 번호로 브랜치를 청구한다.</figcaption>
 </figure>
 
-<p>하위 과제 하나는 GitHub 이슈 하나다. 이슈는 코드가 바뀌는 저장소에 산다. 리뷰어가 거기서 찾고, 풀 리퀘스트가 거기서 닫을 수 있기 때문이다. 캠페인이 여러 저장소에 걸칠 수 있으므로 이슈는 흩어진 채로 시작한다. <code>--parent</code> 가 그것을 하나의 색인으로 묶는다.</p>
+<p>하위 과제 하나는 GitHub 이슈 하나다. 이슈는 코드가 어느 저장소에 있든 컨테이너 트래커에 산다. 멤버 저장소는 브랜치와 풀 리퀘스트만 받으므로 그 저장소의 이슈 관례를 건드리지 않고, 이 계정 소유가 아닌 저장소도 두 저장소를 한꺼번에 움직이는 과제도 예외가 되지 않는다. <code>--parent</code> 가 이슈를 하나의 색인으로 묶고, 풀 리퀘스트 본문의 <code>Closes kalaluthien/agent-workspace#&lt;issue&gt;</code> 가 이슈를 저장소 너머에서 닫는다. 짧은 <code>#&lt;issue&gt;</code> 는 멤버 저장소의 같은 번호 이슈를 닫는다.</p>
 
 <p>색인은 한 번의 호출로 되읽는다. <code>gh api --paginate repos/kalaluthien/agent-workspace/issues/6/sub_issues</code> 는 캠페인 <code>#6</code> 의 구성원을 정확히 돌려준다. 저장소가 비공개여도 공개 부모 아래에서 올바르게 나열된다. 이 끝점은 서른 개에서 쪽을 나누고, 잘린 색인은 온전한 색인과 똑같이 읽히므로 <code>--paginate</code> 는 선택 사항이 아니다. 본문의 <code>Campaign: kalaluthien/agent-workspace#6</code> 줄은 사람이 읽는 산문이고, 색인이 아니다. <span class="src">AGENTS.md @ 24cb850</span></p>
 
@@ -266,7 +266,7 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
 
 <p>워크트리는 클론이 틀린 물건일 때 쓴다. 대상 저장소가 컨테이너 자신이면 클론해 넣을 곳이 없다. 캠페인 디렉터리가 선택 사항이라 없을 수 있기 때문이다. 워크트리는 잘라낸 체크아웃과 <code>.git</code> 하나를 공유하므로 잘라내는 순간에 뒤처질 수 없다. 서브에이전트는 프로세스 경계를 넘지 않으므로 인수인계 파일도, 카나리아도, herdr 생존 확인도 필요 없다. <span class="src">spec/campaign/synchronization/, spec/campaign/orchestration/ @ 03643fb</span></p>
 
-<p>멤버 저장소가 없는 캠페인은 <code>## Repos</code> 에 <code>- none</code> 하나만 적고, 클론해 넣을 저장소가 없으므로 앞의 두 방식만 가지며, 하위 과제는 유일한 트래커인 컨테이너에 올려 컨테이너의 <code>campaign-&lt;N&gt;/&lt;issue&gt;-&lt;topic&gt;</code> ref로 청구한다. <span class="src">AGENTS.md, spec/campaign/session/ @ 03643fb (PR #46)</span></p>
+<p>멤버 저장소가 없는 캠페인은 <code>## Repos</code> 에 <code>- none</code> 하나만 적고, 클론해 넣을 저장소가 없으므로 앞의 두 방식만 가지며, 하위 과제는 ref를 자를 유일한 저장소인 컨테이너의 <code>campaign-&lt;N&gt;/&lt;issue&gt;-&lt;topic&gt;</code> ref로 청구한다. <span class="src">AGENTS.md, spec/campaign/session/ @ 03643fb (PR #46)</span></p>
 
 <div class="pair">
   <div class="do">

@@ -196,9 +196,9 @@ pred R3_DeleteUnderWorkingSession {
 /* =================== 4. a campaign with no member repository =================== */
 
 /* R4. `- none` is encoded as `always no c.reposInBody`. Note what the predicate does
-   NOT say: the container IS in `c.memberIssues`, as the home of the sub-issue, since
-   a repo-less campaign files on the container tracker -- "no member
-   repository" is a claim about the list, not about where an issue is homed.
+   NOT say: the sub-issue's `repo` IS the container, since with no member
+   repository the only place a claim can cut a ref is the container -- "no
+   member repository" is a claim about the list, not about where a ref goes.
 
    Checked WITH the disciplines rather than instead of them, and the claim is
    required: the branch is the claim before it is a workspace. */
@@ -207,7 +207,7 @@ pred R4_RepolessCampaign {
   some s: Session, c: Campaign, i: Issue {
     closeDiscipline[c]
     always no c.reposInBody
-    i.repo = Container            -- the only tracker there is
+    i.repo = Container            -- the only repository a ref can be cut on
     eventually (Now.event = FileCampaignIssue and Who.session = s and Now.issue = c.campaignIssue)
     eventually (Now.event = AddMember and Who.session = s and Now.issue = i)
     eventually (Now.event = Claim and Who.session = s and Now.issue = i)
