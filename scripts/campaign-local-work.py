@@ -48,14 +48,14 @@ error (all probed; the evidence is in
   Only --ignored is evidence.
 
   After a squash merge, ancestry is the wrong test. Squash is the default merge
-  here, and it writes a new commit onto the base, so `branch --no-merged` calls
-  a landed topic branch unmerged forever; paired with --delete-branch it is
+  here, and it writes a new commit onto the upstream, so `branch --no-merged`
+  calls a landed topic branch unmerged forever; paired with --delete-branch it is
   absent from the remote too, which is the exact signature of work that exists
   only on this machine. The discriminator is content: a branch whose own paths
-  carry nothing beyond the base is noted as landed and not counted, and one
+  carry nothing beyond the upstream is noted as landed and not counted, and one
   already on the remote is noted as pushed and not counted. The comparison is
   scoped to the paths the branch itself touched, because a branch cut before
-  the base moved on differs on files it never edited.
+  the upstream moved on differs on files it never edited.
 
   A place that could not be read denies `clear`. Two REPORT lines say a check
   never ran -- a directory under repos/ that is not a checkout, and a repository
@@ -163,22 +163,22 @@ class Report:
 
 def default_branch(repo, name, rep):
     """origin/HEAD, or the remote's own symref when this checkout never set it."""
-    base = git(repo, "symbolic-ref", "--quiet", "--short",
+    upstream = git(repo, "symbolic-ref", "--quiet", "--short",
                "refs/remotes/origin/HEAD", check=False)
-    if not base:
+    if not upstream:
         head = git(repo, "ls-remote", "--symref", "origin", "HEAD", check=False)
         ref = [l for l in head.splitlines() if l.startswith("ref:")]
-        base = "origin/" + ref[0].split()[1].removeprefix("refs/heads/") if ref else ""
-    if not base:
+        upstream = "origin/" + ref[0].split()[1].removeprefix("refs/heads/") if ref else ""
+    if not upstream:
         # unread, not report: its own message says no branch could be judged,
         # which is a check that did not run. The sibling case one function down
         # already denies `clear` for that reason and this one is the same kind.
         rep.unread(f"REPORT: {name}: cannot resolve the default branch, so no "
                    "branch could be judged merged or landed -- read it by hand")
-    return base
+    return upstream
 
 
-def read_branches(repo, name, rep, base, refspec="refs/heads/"):
+def read_branches(repo, name, rep, upstream, refspec="refs/heads/"):
     """One row per branch, from both readings of "has this left the machine?".
 
     Unpushed commits and `--no-merged` overlap on purpose: a branch can be both,
@@ -186,9 +186,9 @@ def read_branches(repo, name, rep, base, refspec="refs/heads/"):
     says what clears it.
     """
     unmerged = set()
-    if base:
+    if upstream:
         unmerged = {b.strip().lstrip("* +").strip()
-                    for b in git(repo, "branch", "--no-merged", base).splitlines()
+                    for b in git(repo, "branch", "--no-merged", upstream).splitlines()
                     if b.strip() and not b.strip().startswith("(")}
     for br in run(repo, "git", "-C", repo, "for-each-ref",
                   "--format=%(refname:short)", refspec).splitlines():
@@ -199,7 +199,7 @@ def read_branches(repo, name, rep, base, refspec="refs/heads/"):
         if commits:
             checks.append(f"git log {br} --not --remotes")
         if br in unmerged:
-            checks.append(f"git branch --no-merged {base}")
+            checks.append(f"git branch --no-merged {upstream}")
         kind = "unpushed commit" if commits else "unmerged branch"
         clears = "push" if commits else "merge"
 
@@ -207,10 +207,10 @@ def read_branches(repo, name, rep, base, refspec="refs/heads/"):
         remote = git(repo, "rev-parse", "--verify", f"origin/{br}", check=False)
         if local and local == remote:
             note, counted = "pushed", False
-        elif base:
-            note, counted = landed(repo, br, base, name, rep)
+        elif upstream:
+            note, counted = landed(repo, br, upstream, name, rep)
         else:
-            note, counted = "no base to compare against", True
+            note, counted = "no upstream to compare against", True
         # An uncounted row is not work to move: saying "clears by push" over a
         # branch already pushed or already landed sends the reader to do it again.
         if not counted:
@@ -219,36 +219,38 @@ def read_branches(repo, name, rep, base, refspec="refs/heads/"):
             rep.add(name, kind, br, check, clears, note=note, counted=counted)
 
 
-def landed(repo, br, base, name, rep):
+def landed(repo, br, upstream, name, rep):
     """Content, not ancestry -- the squash discriminator, scoped to the branch's own paths.
 
-    Two-dot `diff <base>..<branch>` alone answers "no" for every branch cut
-    before the base moved on, since the base's later work reads as removals. So
-    the comparison is restricted to the paths the branch itself touched, and
-    what is left over is reported with its file count and how far behind the
-    branch is -- a count the reader judges, not a verdict the script invents.
+    Two-dot `diff <upstream>..<branch>` alone answers "no" for every branch cut
+    before the upstream moved on, since the upstream's later work reads as
+    removals. So the comparison is restricted to the paths the branch itself
+    touched, and what is left over is reported with its file count and how far
+    behind the branch is -- a count the reader judges, not a verdict the script
+    invents.
 
-    With no merge base -- an orphan branch, a checkout whose base ref is gone --
-    there is nothing to scope the comparison to, and the count that came out was
-    `0 files differ`: the campaign's own defect, a measurement never taken
-    printed as a clean result. That goes to `unread`, which denies `clear`.
+    With no merge base -- an orphan branch, a checkout whose upstream ref is
+    gone -- there is nothing to scope the comparison to, and the count that came
+    out was `0 files differ`: the campaign's own defect, a measurement never
+    taken printed as a clean result. That goes to `unread`, which denies `clear`.
     """
-    mb = git(repo, "merge-base", base, br, check=False)
+    mb = git(repo, "merge-base", upstream, br, check=False)
     if not mb:
-        rep.unread(f"REPORT: {name}: {br} and {base} share no merge base, so "
+        rep.unread(f"REPORT: {name}: {br} and {upstream} share no merge base, so "
                    f"nothing of {br}'s content could be compared -- read it by hand")
-        return f"could not be compared against {base}: no merge base", True
+        return f"could not be compared against {upstream}: no merge base", True
     paths = git(repo, "diff", "--name-only", mb, br, check=False).splitlines()
     if not paths:
-        return f"landed: nothing of its own beyond {base}", False
-    files = git(repo, "diff", "--name-only", f"{base}..{br}", "--", *paths,
+        return f"landed: nothing of its own beyond {upstream}", False
+    files = git(repo, "diff", "--name-only", f"{upstream}..{br}", "--", *paths,
                 check=False).splitlines()
     if not files:
-        return f"landed: its own paths carry nothing beyond {base}", False
-    behind = git(repo, "rev-list", "--count", f"{br}..{base}", check=False)
-    note = f"{len(files)} of its own file(s) differ from {base}"
+        return f"landed: its own paths carry nothing beyond {upstream}", False
+    behind = git(repo, "rev-list", "--count", f"{br}..{upstream}", check=False)
+    note = f"{len(files)} of its own file(s) differ from {upstream}"
     if behind and behind != "0":
-        note += f"; {behind} commit(s) behind {base}, so some of that is the base's own"
+        note += (f"; {behind} commit(s) behind {upstream}, so some of that is "
+                 "the upstream's own")
     return note, True
 
 
@@ -279,8 +281,8 @@ def read_worktrees(repo, name, rep, prefix=None):
 
 def read_container(cont, n, rep):
     name = slug(cont)
-    base = default_branch(cont, name, rep)
-    read_branches(cont, name, rep, base, refspec=f"refs/heads/campaign-{n}/")
+    upstream = default_branch(cont, name, rep)
+    read_branches(cont, name, rep, upstream, refspec=f"refs/heads/campaign-{n}/")
     read_worktrees(cont, name, rep, prefix=f"campaign-{n}/")
     # The container's single working tree carries no campaign, so it cannot be
     # scoped and is not a blocker on this close -- but a person deciding to
