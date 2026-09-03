@@ -65,6 +65,15 @@ exit 1
 """
 
 
+# A `gh` that fails the way an unauthenticated one does: several lines, the
+# cause on the first. The binding read's failure branch must carry both which
+# command failed and why, so neither end of that message may be cut.
+GH_FAILS = """#!/bin/sh
+printf 'gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable. Example:\\n  env:\\n    GH_TOKEN: x\\n' >&2
+exit 4
+"""
+
+
 def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
     with tempfile.TemporaryDirectory() as d:
         claims = Path(d) / "runtime" / "claims"
@@ -83,7 +92,9 @@ def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
         if stub_ps or stub_gh:
             shim = Path(d) / "shim"
             shim.mkdir()
-            for name, body, on in (("ps", PS_SHIM, stub_ps), ("gh", GH_SHIM, stub_gh)):
+            for name, body, on in (("ps", PS_SHIM, stub_ps),
+                                   ("gh", GH_FAILS if stub_gh == "fails"
+                                    else GH_SHIM, stub_gh)):
                 if on:
                     (shim / name).write_text(body)
                     (shim / name).chmod(0o755)
@@ -219,6 +230,14 @@ case("take reads the binding before cutting a ref, and `elsewhere` refuses",
 case("...and a `#`-prefixed anchor reads the same number the tracker read",
      ["take", "#1", "7", "x", "--name", "campaign-1-executor-1"],
      want="bound elsewhere", code=1, stub_gh=True, absent="belongs to campaign")
+# A binding read that failed is the "I could not look" branch: it must name
+# the command that failed AND the cause, so each end has its own case.
+case("a failed binding read names the command that failed",
+     ["take", "1", "7", "x"], stub_gh="fails", code=1,
+     want="campaign-tracker bound: gh api")
+case("...and the cause the command gave",
+     ["take", "1", "7", "x"], stub_gh="fails", code=1,
+     want="set the GH_TOKEN environment variable")
 case("take refuses a --name that is not the shape at all",
      ["take", "--local", "1", "7", "x", "--name", "campaign-1-oops"],
      want="not campaign-<anchor>-executor-<n>", code=1)
