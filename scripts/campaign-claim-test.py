@@ -80,8 +80,10 @@ CASES = []
 
 
 def case(name, args, files=None, mtime=None, env=None, want=None, code=None,
-         stub_ps=False):
-    CASES.append((name, args, files, mtime, env, want, code, stub_ps))
+         stub_ps=False, absent=None):
+    """`absent` is a string the output must NOT contain: a false warning is
+    invisible to `want`, which only asks that the right line is present."""
+    CASES.append((name, args, files, mtime, env, want, code, stub_ps, absent))
 
 
 # The reading that says nothing is here, which must not read like a refusal.
@@ -163,6 +165,21 @@ case("take on an undecodable record refuses without concluding",
 case("take re-takes a released record and says why it may",
      ["take", "--local", "1", "7", "x"], {"7": RELEASED_REC},
      want="marked released", code=0)
+
+# The launch-time path: a record written for another session carries no pid,
+# or `status` reads the launcher's liveness as the delegate's.
+case("take --session for another session writes pid unknown",
+     ["take", "--local", "1", "7", "x", "--session", "theirs"],
+     env={"CLAUDE_CODE_SESSION_ID": "mine", "CLAUDE_PID": "1"},
+     want="pid unknown", code=0)
+case("...and no CLAUDE_PID warning fires, since no pid was wanted",
+     ["take", "--local", "1", "7", "x", "--session", "theirs"],
+     env={"CLAUDE_CODE_SESSION_ID": "mine", "CLAUDE_PID": "1"},
+     want="pid unknown", code=0, absent="CLAUDE_PID not set")
+case("...and the caller's own session keeps its pid",
+     ["take", "--local", "1", "7", "x", "--session", "mine"],
+     env={"CLAUDE_CODE_SESSION_ID": "mine", "CLAUDE_PID": "1"},
+     want="pid 1", code=0)
 
 # A name from another campaign is a stale name about to become durable: the
 # refusal names both numbers, and fires before any ref or record is written.
@@ -521,7 +538,7 @@ def main():
     for name in pure_failed:
         print(f"FAIL  {name}")
     failed += len(pure_failed)
-    for name, args, files, mtime, env, want, code, stub_ps in CASES:
+    for name, args, files, mtime, env, want, code, stub_ps, absent in CASES:
         if name.startswith("a missing claims directory"):
             with tempfile.TemporaryDirectory() as d:
                 r = subprocess.run([sys.executable, str(CLAIM), "list", "--dir", d],
@@ -534,7 +551,8 @@ def main():
             continue
         r = run(args, files, mtime, env, stub_ps)
         out = r.stdout + r.stderr
-        ok = (want is None or want in out) and (code is None or r.returncode == code)
+        ok = ((want is None or want in out) and (code is None or r.returncode == code)
+              and (absent is None or absent not in out))
         if not ok:
             failed += 1
             print(f"FAIL  {name}\n      wanted {want!r} and exit {code}, got "
