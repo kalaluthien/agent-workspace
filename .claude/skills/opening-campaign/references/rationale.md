@@ -77,7 +77,7 @@ every reader of a campaign tree expect.
 under a delegate already working in it. Without it,
 `acquire-repo` re-runs as a fetch and touches no branch.
 
-## Filing a sub-issue issue
+## Filing a sub-issue
 
 **The branch name's parts** — what each of `campaign-<N>/<issue>-<topic>` keeps
 apart, and why the branch's existence is the claim — are the Branch bullet of

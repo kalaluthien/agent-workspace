@@ -319,7 +319,7 @@ def gh_json(*args):
 
 
 def verdict(repo, number):
-    """(verdict, note, title) for one sub-issue issue.
+    """(verdict, note, title) for one sub-issue.
 
     Four verdicts, not three. `unread` is a sub-issue whose issue, or whose
     closing pull request, this account cannot see -- a repository since made

@@ -19,7 +19,7 @@ Finished when all of these hold:
   not byte-stable (a body sent with one trailing newline comes back with two).
 - Every line `scripts/campaign-repos.py` prints resolves to a checkout at
   `<campaign>/repos/<name>/` — vacuous under `- none`, where it prints nothing.
-- At least one sub-issue is filed as a sub-issue of the anchor, and the reply names
+- At least one sub-issue of the anchor is filed, and the reply names
   it along with the campaign ID, the directory and the anchor issue URL.
 
 ## Procedure
@@ -224,7 +224,7 @@ sub-issue filing one. Then report the campaign ID, the directory path, the ancho
 issue URL, and the sub-issues filed, saying of the first whether you are doing it
 here or handing it to a repository agent.
 
-### Filing a sub-issue issue
+### Filing a sub-issue
 
 Step 6's sub-issues and one the routing gate sent here to join are filed and
 claimed the same way. File it as `AGENTS.md` § Sub-issues says. **Filing needs no

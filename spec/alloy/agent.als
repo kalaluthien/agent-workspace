@@ -99,7 +99,7 @@ pred closableLocally[s: Session, c: Campaign] { closable[c] and not liveUnderLoc
 pred closableAsRead[s: Session, c: Campaign]  { closable[c] and not liveAndReadable[c, s.smach] }
 
 /* campaign-<N>/<issue>-<topic>: two executors share a branch only when
-   campaign, sub-issue and topic all match. That it separates two SUBTASKS is
+   campaign, sub-issue and topic all match. That it separates two SUB-ISSUES is
    definitional and is not run; R4e is what it leaves. */
 pred sameBranch[a1, a2: Agent] {
   campaignOf[a1.task] = campaignOf[a2.task]

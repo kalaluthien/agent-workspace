@@ -1,6 +1,6 @@
 ---
 name: closing-campaign
-description: Closes a campaign in the agent-workspace container and deletes its directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory — gating the close on the binding, on live agents, on work that exists only on this machine, and on every open sub-issue having a disposition, then syncing the README into the anchor issue. Not for closing a single sub-issue issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
+description: Closes a campaign in the agent-workspace container and deletes its directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory — gating the close on the binding, on live agents, on work that exists only on this machine, and on every open sub-issue having a disposition, then syncing the README into the anchor issue. Not for closing a single sub-issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
 ---
 
 # Closing a campaign
