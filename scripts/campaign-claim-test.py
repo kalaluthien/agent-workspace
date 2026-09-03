@@ -50,7 +50,22 @@ exit 1
 """
 
 
-def run(args, files=None, mtime=None, env=None, stub_ps=False):
+# A stand-in `gh`, so the binding read inside `take` has a case without a
+# network. It answers the comments endpoint with one BOUND comment naming a
+# machine that is not this one, and refuses everything else -- so a ref call
+# that escaped the binding gate is visible as a different refusal.
+GH_SHIM = """#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    */comments) echo '[[{"body":"BOUND some-other-machine"}]]'; exit 0 ;;
+  esac
+done
+echo "gh shim: a ref call escaped the binding gate: $*" >&2
+exit 1
+"""
+
+
+def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
     with tempfile.TemporaryDirectory() as d:
         claims = Path(d) / "runtime" / "claims"
         claims.mkdir(parents=True)
@@ -65,11 +80,13 @@ def run(args, files=None, mtime=None, env=None, stub_ps=False):
             if mtime is not None:
                 os.utime(claims / name, (mtime, mtime))
         e = dict(os.environ, **(env or {}))
-        if stub_ps:
+        if stub_ps or stub_gh:
             shim = Path(d) / "shim"
             shim.mkdir()
-            (shim / "ps").write_text(PS_SHIM)
-            (shim / "ps").chmod(0o755)
+            for name, body, on in (("ps", PS_SHIM, stub_ps), ("gh", GH_SHIM, stub_gh)):
+                if on:
+                    (shim / name).write_text(body)
+                    (shim / name).chmod(0o755)
             e["PATH"] = f"{shim}:{e.get('PATH', '')}"
         return subprocess.run([sys.executable, str(CLAIM), *args, "--dir", d],
                               capture_output=True, text=True, env=e)
@@ -80,10 +97,11 @@ CASES = []
 
 
 def case(name, args, files=None, mtime=None, env=None, want=None, code=None,
-         stub_ps=False, absent=None):
+         stub_ps=False, absent=None, stub_gh=False):
     """`absent` is a string the output must NOT contain: a false warning is
     invisible to `want`, which only asks that the right line is present."""
-    CASES.append((name, args, files, mtime, env, want, code, stub_ps, absent))
+    CASES.append((name, args, files, mtime, env, want, code, stub_ps, absent,
+                  stub_gh))
 
 
 # The reading that says nothing is here, which must not read like a refusal.
@@ -192,6 +210,15 @@ case("...and says what to do about it",
 case("take accepts a --name of this campaign",
      ["take", "--local", "1", "7", "x", "--name", "campaign-1-executor-2"],
      want="name campaign-1-executor-2", code=0)
+# The binding read at its call site, against the gh shim: with the gate in
+# place the shim's BOUND comment is what refuses; with the gate removed the
+# first ref call reaches the shim and is refused as an escape instead.
+case("take reads the binding before cutting a ref, and `elsewhere` refuses",
+     ["take", "1", "7", "x"], want="bound elsewhere", code=1, stub_gh=True,
+     absent="escaped the binding gate")
+case("...and a `#`-prefixed anchor reads the same number the tracker read",
+     ["take", "#1", "7", "x", "--name", "campaign-1-executor-1"],
+     want="bound elsewhere", code=1, stub_gh=True, absent="belongs to campaign")
 case("take refuses a --name that is not the shape at all",
      ["take", "--local", "1", "7", "x", "--name", "campaign-1-oops"],
      want="not campaign-<anchor>-executor-<n>", code=1)
@@ -562,7 +589,7 @@ def main():
     for name in pure_failed:
         print(f"FAIL  {name}")
     failed += len(pure_failed)
-    for name, args, files, mtime, env, want, code, stub_ps, absent in CASES:
+    for name, args, files, mtime, env, want, code, stub_ps, absent, stub_gh in CASES:
         if name.startswith("a missing claims directory"):
             with tempfile.TemporaryDirectory() as d:
                 r = subprocess.run([sys.executable, str(CLAIM), "list", "--dir", d],
@@ -573,7 +600,7 @@ def main():
                 print(f"FAIL  {name}\n      got exit {r.returncode}: "
                       f"{(r.stdout + r.stderr).strip()[:160]}")
             continue
-        r = run(args, files, mtime, env, stub_ps)
+        r = run(args, files, mtime, env, stub_ps, stub_gh)
         out = r.stdout + r.stderr
         ok = ((want is None or want in out) and (code is None or r.returncode == code)
               and (absent is None or absent not in out))

@@ -567,6 +567,10 @@ def binding_verdict(word):
 
 def cmd_take(args):
     _, claims = campaign_dir(args.dir)
+    # One shape for the anchor everywhere below: campaign-tracker `bound`
+    # strips a leading `#`, and the branch and the name comparison must read
+    # the same number it read.
+    args.anchor = str(args.anchor).lstrip("#")
     branch = f"campaign-{args.anchor}/{args.issue}-{args.topic}"
     naming, why = load_sibling("campaign-name-session.py", "campaign_name_session")
     if why:
@@ -618,8 +622,11 @@ def cmd_take(args):
     b = run(sys.executable, str(HERE / "campaign-tracker.py"), "bound",
             str(args.anchor))
     word = (b.stdout.strip().split() or [""])[0]
+    # The tracker's own refusal prefix is over a hundred characters, so the
+    # last line is kept whole rather than the first hundred cut short.
+    why = (b.stderr.strip().splitlines() or [""])[-1]
     refusal = binding_verdict(word if b.returncode == 0 else
-                              f"exit {b.returncode}: {b.stderr.strip()[:120]}")
+                              f"exit {b.returncode}: {why}")
     if refusal:
         print(f"refusing: {refusal}", file=sys.stderr)
         return 1
