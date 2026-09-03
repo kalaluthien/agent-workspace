@@ -109,6 +109,7 @@ FORM_CASES = [
     ("local-work: for-each-ref over campaign refs", fence("git for-each-ref refs/heads/campaign-1/"), 1),
     ("name-session: the herdr pane call", fence("herdr agent rename p1 campaign-1-executor-1"), 1),
     ("name-session: the harness call", fence('herdr agent prompt p1 "/rename campaign-1-executor-1"'), 1),
+    ("name-session: a planner name is the same shape", fence("herdr agent rename p1 campaign-1-planner-1"), 1),
 ]
 
 # How far the pinning goes, stated because a reader would otherwise infer more:

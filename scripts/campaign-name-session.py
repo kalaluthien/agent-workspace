@@ -43,9 +43,12 @@ import sys
 # several sub-issues, in parallel or one after another, and a name that tracked
 # the work in hand would go false at every handover. <n> distinguishes sessions
 # sharing a campaign and a role.
-# `executor` is the only role: a review runs as a subagent of the session that
-# wants the merge, so it has no session to name. AGENTS.md, "Naming a session".
-NAME = re.compile(r"^campaign-([0-9]+)-executor-[0-9]+$")   # group 1: the campaign issue
+# Two roles: a planner files the sub-issues and distributes them, an executor
+# works one. A review has no session to name -- it runs as a subagent of the
+# session that wants the merge. <n> is ONE counter across both roles, since it
+# exists only to keep two sessions from both picking `-1`. AGENTS.md,
+# "The session name".
+NAME = re.compile(r"^campaign-([0-9]+)-(?:planner|executor)-[0-9]+$")   # group 1: the campaign issue
 
 
 def refuse(why):
@@ -77,7 +80,7 @@ def main():
     for pane, name in pairs:
         if not NAME.match(name):
             refuse(f"{name!r} is not campaign-<campaign issue>-<role>-<n> "
-                   "(role: executor, the only one); nothing was applied")
+                   "(role: planner or executor); nothing was applied")
 
     failed = False
     for pane, name in pairs:
