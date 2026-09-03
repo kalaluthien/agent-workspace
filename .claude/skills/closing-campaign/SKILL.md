@@ -1,6 +1,6 @@
 ---
 name: closing-campaign
-description: Closes a campaign in the agent-workspace container and deletes its directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory — gating the close on the binding, on live agents, on work that exists only on this machine, and on every open sub-issue having a disposition, then syncing the README into the anchor issue. Not for closing a single sub-issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
+description: Closes a campaign in the agent-workspace container and deletes its directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory — gating the close on the binding, on live agents, on work that exists only on this machine, and on every open sub-issue having a disposition, then syncing the README into the campaign issue. Not for closing a single sub-issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
 ---
 
 # Closing a campaign
@@ -22,11 +22,11 @@ this way: `references/rationale.md`.
 ### 0. Bind the campaign, once
 
 **The ID first**: every step from 3 on reads `$N`. Take it from the person, or
-match it among the open anchors and say which.
+match it among the open campaign issues and say which.
 
 ```sh
 CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-"$CONTAINER"/scripts/campaign-tracker.py anchors
+"$CONTAINER"/scripts/campaign-tracker.py campaign issues
 "$CONTAINER"/scripts/campaign-tracker.py bound "$N"   # here | elsewhere <machine> | unbound
 ```
 
@@ -52,7 +52,7 @@ esac
 
 Stop on either.
 
-Holds when: the anchor's latest `BOUND` comment names this machine, and
+Holds when: the campaign issue's latest `BOUND` comment names this machine, and
 `$CAMPAIGN_DIR` is absolute, a direct child of the container, and named
 `<slug>-<YYMMDD>`.
 
@@ -120,7 +120,7 @@ could not reach: reach them, never read past the verdict.
 
 ### 3. Settle or dispose of every open sub-issue
 
-**First, confirm `$N` is an anchor**, so step 5 does not close somebody's sub-issue.
+**First, confirm `$N` is a campaign issue**, so step 5 does not close somebody's sub-issue.
 Want `campaign` among the labels and `-` for the parent; anything else, stop and
 say which issue `$N` actually is.
 
@@ -142,7 +142,7 @@ three per row, the person's choice:
 | --- | --- | --- |
 | `finish` | do the work, land the pull request, close the issue | `complete` |
 | `not-planned` | `gh issue close <issue> -R <repo> --reason "not planned" --comment "<why>"` | `dropped` |
-| `reparent` | `gh issue edit <issue> -R <repo> --parent <URL of the inheriting anchor>` | gone from this index — the sub-issue link is prunable |
+| `reparent` | `gh issue edit <issue> -R <repo> --parent <URL of the inheriting campaign issue>` | gone from this index — the sub-issue link is prunable |
 
 Write one line per open row — `<owner/repo>#<issue>  <verb>  <reason or target>`
 — then validate it against the settlement output by machine. A `<` line is an
@@ -159,7 +159,7 @@ awk 'NF && $2 != "finish" && NF < 3 { print "REFUSE: no reason or target: " $0 }
 
 The refusal says nothing was closed, gives the count, lists `<owner/repo>#<issue>
 <title>` per undisposed row, and says each needs `finish`, `not-planned` with a
-reason, or `reparent` with the anchor that inherits it.
+reason, or `reparent` with the campaign issue that inherits it.
 
 **Carry them out, then read the same script again** — the dispositions are claims
 until GitHub shows them.
@@ -178,16 +178,16 @@ sub-issues remain` is work to finish, while `N sub-issue(s) could not be read` i
 reading to get back, an `unread` row whose issue or whose closing pull request
 this account cannot see. Neither settles anything. The empty-index line is the
 other accepted reading. A `-- REPORT:` line
-about nested sub-issues isn't covered here: a sub-issue that is itself an anchor
+about nested sub-issues isn't covered here: a sub-issue that is itself a campaign issue
 hides its own members, so run the script on it too.
 
-Holds when: `campaign-tracker settlement` reads every sub-issue in the anchor's
-index as settled or moved to another anchor, each open one having been given a
+Holds when: `campaign-tracker settlement` reads every sub-issue in the campaign issue's
+index as settled or moved to another campaign issue, each open one having been given a
 named disposition and had that act carried out first.
 
-### 4. Validate the README, compare, then overwrite the anchor issue body
+### 4. Validate the README, compare, then overwrite the campaign issue body
 
-This is the only sanctioned write of the anchor body, and it runs mid-campaign
+This is the only sanctioned write of the campaign issue body, and it runs mid-campaign
 too, when a repository is added to `## Repos`; nothing in step 3 edits the body.
 The README and the body are the same template filled in
 (`.claude/skills/opening-campaign/assets/README.md`), so the sync is an overwrite
@@ -208,13 +208,13 @@ read empty output as a repo-less campaign, not a failure. Keep the
 `.tmp`-then-`mv` and the leading `rm -f`, or a failed read leaves what a
 legitimate `- none` leaves.
 
-**Then compare before you write** — `runtime/anchor-body-derived.md` is the body
+**Then compare before you write** — `runtime/campaign-issue-body-derived.md` is the body
 as it read when this README was derived; re-read the body now and require the two
 to match, because without the comparison one write silently discards another.
 
 ```sh
-DERIVED="$CAMPAIGN_DIR/runtime/anchor-body-derived.md"
-[ -f "$DERIVED" ] || echo "REFUSE: no runtime/anchor-body-derived.md to compare against"
+DERIVED="$CAMPAIGN_DIR/runtime/campaign-issue-body-derived.md"
+[ -f "$DERIVED" ] || echo "REFUSE: no runtime/campaign-issue-body-derived.md to compare against"
 gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/body-now
 command diff -u "$DERIVED" /tmp/body-now && echo "the body has not moved; safe to write"
 ```
@@ -250,14 +250,14 @@ exists. `"$(cat ...)"` drops every trailing newline and `printf` puts one back,
 which is the whole normalisation; anything else that differs was lost in the
 write.
 
-Holds when: the anchor issue body is this campaign's README, `## Repos` list
-included, compared against `runtime/anchor-body-derived.md` before it was written
+Holds when: the campaign issue body is this campaign's README, `## Repos` list
+included, compared against `runtime/campaign-issue-body-derived.md` before it was written
 and read back through `campaign-repos` after.
 
 ### 5. Say you are closing, then close, then delete the directory
 
-Only after the person confirms. **Say it on the anchor issue first, and read who
-answers** — the anchor is the one place a machine working this campaign against
+Only after the person confirms. **Say it on the campaign issue first, and read who
+answers** — the campaign issue is the one place a machine working this campaign against
 its `BOUND` could answer. Say what the delete will destroy in the same comment.
 
 ```sh

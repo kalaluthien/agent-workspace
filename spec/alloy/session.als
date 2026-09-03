@@ -26,12 +26,12 @@ sig Session {
   var holds:      lone Campaign,
   var surveyResult: set Campaign,  -- what its new-versus-follow-up survey returned
   var readme:     set Repo,        -- its campaign README's `## Repos` list
-  var bodyAsRead: set Repo,        -- the anchor body's list as it last read it
+  var bodyAsRead: set Repo,        -- the campaign issue body's list as it last read it
   var claims:     set Issue        -- sub-issue branches it created on the remote
 }
 var sig Surveyed in Session {}
 
-/* The anchor's latest `BOUND <machine>` comment. A GitHub fact, so the
+/* The campaign issue's latest `BOUND <machine>` comment. A GitHub fact, so the
    layering rule would put it in ledger.als -- but its value is a Machine and
    its source is the filing session's own `smach`, and this is the lowest layer
    that has either. The placement follows from that, not from the binding being
@@ -59,7 +59,7 @@ fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme }
    is somebody's act, and naming whose is what lets agent.als's
    `mergedOnCurrentReview` hold the merger to a current review. */
 fun sessionActed: set Event {
-  sessionOwn + FileAnchor + AddMember + CloseIssue + WriteBody + MergePR
+  sessionOwn + FileCampaignIssue + AddMember + CloseIssue + WriteBody + MergePR
   + CreateDir + DeleteDir + Acquire + Claim + Release + Launch
 }
 
@@ -78,7 +78,7 @@ pred sessionFrame {
 
 /* The result is remembered; nothing keeps it fresh. */
 pred survey[s: Session] {
-  let X = { c: Campaign | c in Filed and c.anchor in Open and c in Req.covers } |
+  let X = { c: Campaign | c in Filed and c.campaignIssue in Open and c in Req.covers } |
     surveyResult' = surveyResult - s->Campaign + s->X
   Surveyed' = Surveyed + s
   holds' = holds and readme' = readme and bodyAsRead' = bodyAsRead and claims' = claims
@@ -90,7 +90,7 @@ pred survey[s: Session] {
    Unguarded here, so the unrepaired scenarios stay measurable against the same
    trace space; `boundOnly` is the membership rule applied per command. */
 pred adopt[s: Session, c: Campaign] {
-  c in Filed and c.anchor in Open
+  c in Filed and c.campaignIssue in Open
   no s.holds
   holds'      = holds  - s->Campaign + s->c
   readme'     = readme - s->Repo + s->(c.body)
@@ -123,14 +123,14 @@ pred editReadme[s: Session, r: Repo] {
 
 /* The binding is posted in the same step, because everything after it is a
    write or a launch and both are gated on it. */
-pred sFileAnchor[s: Session] {
-  Now.ev = FileAnchor
+pred sFileCampaignIssue[s: Session] {
+  Now.ev = FileCampaignIssue
   s in Surveyed
   no s.surveyResult             -- the survey found no campaign covering the request
   no s.holds
-  holds' = holds - s->Campaign + s->anchorOf[Now.issue]
-  bound' = bound - Binding->anchorOf[Now.issue]->Machine
-           + Binding->anchorOf[Now.issue]->s.smach
+  holds' = holds - s->Campaign + s->campaignIssueOf[Now.issue]
+  bound' = bound - Binding->campaignIssueOf[Now.issue]->Machine
+           + Binding->campaignIssueOf[Now.issue]->s.smach
   surveyResult' = surveyResult and readme' = readme and bodyAsRead' = bodyAsRead
   and Surveyed' = Surveyed and claims' = claims
   By.actor = s
@@ -147,7 +147,7 @@ pred sAddMember[s: Session] {
 /* Any other issue is an ordinary sub-issue close and needs no such tie. */
 pred sCloseIssue[s: Session] {
   Now.ev = CloseIssue
-  Now.issue in Campaign.anchor implies s.holds = anchorOf[Now.issue]
+  Now.issue in Campaign.campaignIssue implies s.holds = campaignIssueOf[Now.issue]
   sessionFrame
   By.actor = s
 }
@@ -260,7 +260,7 @@ pred sessionInit {
 pred sessionStep {
   (Now.ev = Stutter and sessionFrame and no By.actor)
   or (some s: Session | survey[s] or readBody[s] or sync[s]
-        or sFileAnchor[s] or sAddMember[s] or sCloseIssue[s]
+        or sFileCampaignIssue[s] or sAddMember[s] or sCloseIssue[s]
         or sCreateDir[s] or sDeleteDir[s] or sAcquire[s]
         or sClaim[s] or sRelease[s] or sLaunch[s] or sMergePR[s])
   or (some s: Session, c: Campaign | adopt[s,c])
@@ -301,8 +301,8 @@ pred boundOnly {
   always (Now.ev = Adopt implies Binding.bound[By.actor.holds'] = By.actor.smach)
   always (Now.ev in WriteBody + CreateDir + DeleteDir implies
             Binding.bound[By.actor.holds] = By.actor.smach)
-  always ((Now.ev = CloseIssue and Now.issue in Campaign.anchor) implies
-            Binding.bound[anchorOf[Now.issue]] = By.actor.smach)
+  always ((Now.ev = CloseIssue and Now.issue in Campaign.campaignIssue) implies
+            Binding.bound[campaignIssueOf[Now.issue]] = By.actor.smach)
   /* The claim and the launch: `campaign-claim take` reads the binding before
      it cuts a ref, so the claim is mechanically gated; the launch is gated by
      AGENTS.md § The binding as a rule, stated here so the model and the prose
@@ -314,15 +314,15 @@ pred boundOnly {
 /* NARROWS the window rather than closing it: read and create are not atomic,
    and this model has no clock. */
 pred surveyAtFile {
-  always (Now.ev = FileAnchor implies
-            (no c: Campaign | c in Filed and c.anchor in Open and c in Req.covers))
+  always (Now.ev = FileCampaignIssue implies
+            (no c: Campaign | c in Filed and c.campaignIssue in Open and c in Req.covers))
 }
 
 /* So a repository leaving the list is the write that lost it, and not a
    campaign being torn down. */
 pred noCloseNoDelete {
   always (Now.ev != DeleteDir
-          and (Now.ev = CloseIssue implies Now.issue not in Campaign.anchor))
+          and (Now.ev = CloseIssue implies Now.issue not in Campaign.campaignIssue))
 }
 
 /* =================== 1. two sessions sync the body =================== */
@@ -333,7 +333,7 @@ pred noCloseNoDelete {
    repository". */
 pred R1_LostBodyUpdate {
   some c: Campaign, disj s1, s2: Session, r: Repo {
-    eventually (Now.ev = FileAnchor and By.actor = s1 and Now.issue = c.anchor)
+    eventually (Now.ev = FileCampaignIssue and By.actor = s1 and Now.issue = c.campaignIssue)
     eventually (Now.ev = Adopt and By.actor = s2)
     eventually (Now.ev = WriteBody and By.actor = s1)
     eventually (Now.ev = WriteBody and By.actor = s2)
@@ -364,7 +364,7 @@ pred R1c_CASBlocksLoss { syncCAS and R1_LostBodyUpdate }
 pred R1d_CASAdmitsBothSyncs {
   syncCAS
   some c: Campaign, disj s1, s2: Session, disj r1, r2: Repo {
-    eventually (Now.ev = FileAnchor and By.actor = s1 and Now.issue = c.anchor)
+    eventually (Now.ev = FileCampaignIssue and By.actor = s1 and Now.issue = c.campaignIssue)
     eventually (Now.ev = Adopt and By.actor = s2)
     eventually (Now.ev = WriteBody and By.actor = s1)
     eventually (Now.ev = WriteBody and By.actor = s2)
@@ -378,7 +378,7 @@ pred R1d_CASAdmitsBothSyncs {
 pred R1e_CloseOnlyStillLoses {
   syncAtCloseOnly
   some c: Campaign, disj s1, s2: Session, i: Issue, r: Repo {
-    eventually (Now.ev = FileAnchor and By.actor = s1 and Now.issue = c.anchor)
+    eventually (Now.ev = FileCampaignIssue and By.actor = s1 and Now.issue = c.campaignIssue)
     eventually (Now.ev = AddMember and By.actor = s1 and Now.issue = i)
     eventually (Now.ev = Adopt and By.actor = s2)
     eventually (Now.ev = WriteBody and By.actor = s1 and i in c.members and settled[i])
@@ -424,13 +424,13 @@ pred R1k_TwoMomentAdmitsScopeSync {
 
 /* =================== 2. duplicate campaigns =================== */
 
-/* R2. Two anchors, one scope. */
+/* R2. Two campaign issues, one scope. */
 pred R2_DuplicateCampaign {
   some disj s1, s2: Session, disj c1, c2: Campaign {
     c1 in Req.covers and c2 in Req.covers
-    eventually (Now.ev = FileAnchor and By.actor = s1 and Now.issue = c1.anchor)
-    eventually (Now.ev = FileAnchor and By.actor = s2 and Now.issue = c2.anchor)
-    eventually (c1 + c2 in Filed and c1.anchor in Open and c2.anchor in Open)
+    eventually (Now.ev = FileCampaignIssue and By.actor = s1 and Now.issue = c1.campaignIssue)
+    eventually (Now.ev = FileCampaignIssue and By.actor = s2 and Now.issue = c2.campaignIssue)
+    eventually (c1 + c2 in Filed and c1.campaignIssue in Open and c2.campaignIssue in Open)
   }
 }
 
@@ -441,7 +441,7 @@ pred R2c_SurveyAtFileAdmitsOne {
   surveyAtFile
   some s: Session, c: Campaign {
     c in Req.covers
-    eventually (Now.ev = FileAnchor and By.actor = s and Now.issue = c.anchor)
+    eventually (Now.ev = FileCampaignIssue and By.actor = s and Now.issue = c.campaignIssue)
   }
 }
 
@@ -476,11 +476,11 @@ pred R4_RepolessCampaign {
     closeDiscipline[c]
     always no c.body
     i.home = Container            -- the only tracker there is
-    eventually (Now.ev = FileAnchor and By.actor = s and Now.issue = c.anchor)
+    eventually (Now.ev = FileCampaignIssue and By.actor = s and Now.issue = c.campaignIssue)
     eventually (Now.ev = AddMember and By.actor = s and Now.issue = i)
     eventually (Now.ev = Claim and By.actor = s and Now.issue = i)
     eventually (Now.ev = CloseIssue and Now.issue = i and no i.pr)
-    eventually (Now.ev = CloseIssue and Now.issue = c.anchor)
+    eventually (Now.ev = CloseIssue and Now.issue = c.campaignIssue)
     eventually (campaignClosed[c] and i in c.members and dropped[i])
   }
 }
@@ -489,7 +489,7 @@ pred R4_RepolessCampaign {
  * The four events this layer introduces, and every refinement it adds to a
  * lower layer's event. A refinement that cannot be satisfied would make its
  * event unreachable from here upward while the lower layer's own floor stayed
- * green. `Cov_Bound` pins `FileAnchor` rather than reading `some
+ * green. `Cov_Bound` pins `FileCampaignIssue` rather than reading `some
  * Binding.bound`, which `init` alone satisfies at step 0.
  */
 pred Cov_Survey            { eventually Now.ev = Survey }
@@ -497,8 +497,8 @@ pred Cov_Adopt             { eventually Now.ev = Adopt }
 pred Cov_ReadBody          { eventually Now.ev = ReadBody }
 pred Cov_EditReadme        { eventually Now.ev = EditReadme }
 pred Cov_Sync              { eventually (Now.ev = WriteBody and some By.actor) }
-pred Cov_CloseAnchor       { eventually (Now.ev = CloseIssue and Now.issue in Campaign.anchor) }
-pred Cov_FiledBySession    { eventually (Now.ev = FileAnchor and some By.actor) }
+pred Cov_CloseCampaignIssue       { eventually (Now.ev = CloseIssue and Now.issue in Campaign.campaignIssue) }
+pred Cov_FiledBySession    { eventually (Now.ev = FileCampaignIssue and some By.actor) }
 pred Cov_MemberBySession   { eventually (Now.ev = AddMember and some By.actor) }
 pred Cov_DirBySession      { eventually (Now.ev = CreateDir and some By.actor) }
 pred Cov_DeleteBySession   { eventually (Now.ev = DeleteDir and some By.actor) }
@@ -507,7 +507,7 @@ pred Cov_ClaimBySession    { eventually (Now.ev = Claim and some By.actor) }
 pred Cov_ReleaseBySession  { eventually (Now.ev = Release and some By.actor) }
 pred Cov_LaunchBySession   { eventually (Now.ev = Launch and some By.actor) }
 pred Cov_MergeBySession    { eventually (Now.ev = MergePR and some By.actor) }
-pred Cov_Bound             { eventually (Now.ev = FileAnchor and some Binding.bound') }
+pred Cov_Bound             { eventually (Now.ev = FileCampaignIssue and some Binding.bound') }
 
 /* ---------------- commands ---------------- */
 
@@ -530,7 +530,7 @@ run R1j_TwoMomentStillLoses      for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Mac
 -- control, and the close-only difference
 run R1k_TwoMomentAdmitsScopeSync for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 12 steps expect 1
 
--- two anchors, one scope
+-- two campaign issues, one scope
 run R2_DuplicateCampaign         for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
 -- the same shape repairs it
 run R2b_SurveyAtFileBlocks       for 3 Issue, 1 PR, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 0
@@ -549,7 +549,7 @@ run Cov_Adopt             for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3
 run Cov_ReadBody          for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps expect 1
 run Cov_EditReadme        for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps expect 1
 run Cov_Sync              for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps expect 1
-run Cov_CloseAnchor       for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps expect 1
+run Cov_CloseCampaignIssue       for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps expect 1
 run Cov_FiledBySession    for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps expect 1
 run Cov_MemberBySession   for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps expect 1
 run Cov_DirBySession      for 3 Issue, 1 PR, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Topic, 4 Tree, 12 steps expect 1

@@ -44,9 +44,9 @@ BASE = {
         "\n"
         "Text.\n"
         "\n"
-        "## The anchor body\n"
+        "## The campaign issue body\n"
         "\n"
-        "**Compare then write the anchor issue body.** This is prose, not a\n"
+        "**Compare then write the campaign issue body.** This is prose, not a\n"
         "heading, and citing it is a shape the guard has no rule for.\n"
         "\n"
         "```sh\n"
@@ -69,7 +69,7 @@ CASES = [
     ("S1 a citation closed by a bracket",
      {"a.md": "See (`AGENTS.md` § The binding), so this step asks.\n"}, None),
     ("S1 a citation closed by a full stop",
-     {"a.md": "It is `AGENTS.md` § The anchor body.\n"}, None),
+     {"a.md": "It is `AGENTS.md` § The campaign issue body.\n"}, None),
     ("S1 a citation followed by a word",
      {"a.md": "File it as `AGENTS.md` § The binding says.\n"}, None),
     ("S1 a heading holding commas is not cut at the first one",
@@ -105,7 +105,7 @@ CASES = [
 
     # ---- S1 undecided. The two branches that must not read as dangling.
     ("U1 a citation naming bold prose, not a heading",
-     {"a.md": "See `AGENTS.md` § Compare then write the anchor issue body.\n"},
+     {"a.md": "See `AGENTS.md` § Compare then write the campaign issue body.\n"},
      ("UNDECIDED", "U1")),
     ("U3 a citation whose target file is not there",
      {"a.md": "See `MISSING.md` § The binding here.\n"},

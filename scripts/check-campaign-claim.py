@@ -356,7 +356,7 @@ def pre(payload, claim_module, changing_command):
         *unread,
         f"this session is {session_id}",
         "Take the claim first, on the sub-issue's own issue:",
-        "  scripts/campaign-claim.py take --local <anchor> <issue> <topic> "
+        "  scripts/campaign-claim.py take --local <campaign issue> <issue> <topic> "
         "--dir <campaign>",
         "A sub-issue worked without one is unreadable as in-progress by every "
         "peer, which is what this refuses.",

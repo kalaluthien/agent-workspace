@@ -21,7 +21,7 @@ nothing to copy: a delegate runs `take`, a close or a sweep runs `list`,
 `--local`: THE RECORD ALONE, AND WHY IT IS STILL ATOMIC
 
 Work that lands nothing in any repository -- a scaffold under `<campaign>/`, a
-sweep, a decision written into the anchor -- has no commits for a branch to
+sweep, a decision written into the campaign issue -- has no commits for a branch to
 carry, and cutting one costs a create-ref, a compare and a delete for a ref that
 only ever held `main`. `take --local` writes the record and cuts nothing.
 
@@ -82,7 +82,7 @@ something sets it, and the record is where a stale name does lasting damage:
 `list` prints `name` as the address to reach the holder. So `take` reads the
 name against campaign-name-session.py's NAME -- loaded from that file, the
 rule's one spelling -- and refuses a name that does not match it or whose
-anchor is another campaign's, naming both numbers. The name is set at the
+campaign issue is another campaign's, naming both numbers. The name is set at the
 start of every session of a campaign (AGENTS.md § The session name); this is
 the reader that catches one that was not.
 
@@ -561,20 +561,20 @@ def load_sibling(filename, modname):
     return module, None
 
 
-def name_verdict(name, anchor, pattern):
+def name_verdict(name, campaign_issue, pattern):
     """Why a --name may not enter this campaign's record, or None. Pure, so
     each refusal has a case. `pattern` is campaign-name-session.py's NAME, the
-    rule's one spelling, loaded by the caller; its group 1 is the anchor. No
+    rule's one spelling, loaded by the caller; its group 1 is the campaign issue. No
     name at all is admitted, since a record may honestly carry `unknown`."""
     if not name:
         return None
     m = pattern.match(name)
     if not m:
-        return (f"--name {name} is not campaign-<anchor>-executor-<n>; "
+        return (f"--name {name} is not campaign-<campaign issue>-executor-<n>; "
                 f"scripts/campaign-name-session.py refuses it too")
-    if m.group(1) != str(anchor):
+    if m.group(1) != str(campaign_issue):
         return (f"--name {name} belongs to campaign {m.group(1)}, and this "
-                f"claim is on campaign {anchor}. A stale name written into a "
+                f"claim is on campaign {campaign_issue}. A stale name written into a "
                 f"record sends every later reader to the wrong session; "
                 f"rename first with scripts/campaign-name-session.py.")
     return None
@@ -596,11 +596,11 @@ def binding_verdict(word):
     return f"the binding could not be read (campaign-tracker bound said {word!r})"
 
 
-def binding_refusal(anchor):
+def binding_refusal(campaign_issue):
     """Read the binding through its one reader and say why it refuses, or
     None. Shared by every write here that the binding gates."""
     b = run(sys.executable, str(HERE / "campaign-tracker.py"), "bound",
-            str(anchor))
+            str(campaign_issue))
     word = (b.stdout.strip().split() or [""])[0]
     # Whole, on one line: the tracker's prefix is over a hundred characters
     # and gh's auth failure is several lines with the cause on the first, so
@@ -612,13 +612,13 @@ def binding_refusal(anchor):
 
 def cmd_take(args):
     _, claims = campaign_dir(args.dir)
-    branch = f"campaign-{args.anchor}/{args.issue}-{args.topic}"
+    branch = f"campaign-{args.campaign_issue}/{args.issue}-{args.topic}"
     naming, why = load_sibling("campaign-name-session.py", "campaign_name_session")
     if why:
         print(f"refusing: the name rule could not be loaded ({why}); a --name "
               f"cannot be checked, so none is written.", file=sys.stderr)
         return 1
-    refusal = name_verdict(args.name, args.anchor, naming.NAME)
+    refusal = name_verdict(args.name, args.campaign_issue, naming.NAME)
     if refusal:
         print(f"refusing: {refusal}", file=sys.stderr)
         return 1
@@ -660,7 +660,7 @@ def cmd_take(args):
     # the bound machine makes. Read from the one reader, never re-derived. A
     # --local claim lands no ref and stays off the network, so it is gated by
     # the rule alone.
-    refusal = binding_refusal(args.anchor)
+    refusal = binding_refusal(args.campaign_issue)
     if refusal:
         print(f"refusing: {refusal}", file=sys.stderr)
         return 1
@@ -1017,13 +1017,13 @@ def classify(recs, sessions):
     return answered, orphan, idle
 
 
-def stray_branches(recs, anchor):
+def stray_branches(recs, campaign_issue):
     """Records in this directory naming a branch outside this campaign. Pure,
     so the check has a case; a record with no branch counts as stray, since a
     record that cannot say what it claims is not evidence that it claims
     something of ours."""
     return [(i, r) for i, r in sorted(recs.items())
-            if not r.get("branch", "").startswith(f"campaign-{anchor}/")]
+            if not r.get("branch", "").startswith(f"campaign-{campaign_issue}/")]
 
 
 STOOD_DOWN_PREFIX = "STOOD DOWN "
@@ -1130,18 +1130,18 @@ def cmd_stood_down(args):
               f"the work is still attributed.", file=sys.stderr)
         return 1
     # A comment on the campaign issue is a write the binding gates.
-    refusal = binding_refusal(args.anchor)
+    refusal = binding_refusal(args.campaign_issue)
     if refusal:
         print(f"refusing: {refusal}", file=sys.stderr)
         return 1
     line = stood_down_line(args.name, session)
-    r = run("gh", "issue", "comment", str(args.anchor), "-R", args.repo,
+    r = run("gh", "issue", "comment", str(args.campaign_issue), "-R", args.repo,
             "--body", line)
     if r.returncode != 0:
         print(f"refusing: the comment was not posted.\n  "
               f"{' '.join(r.stderr.split())[:200]}", file=sys.stderr)
         return 1
-    print(f"posted on {args.repo}#{args.anchor}: {line}")
+    print(f"posted on {args.repo}#{args.campaign_issue}: {line}")
     return 0
 
 
@@ -1167,17 +1167,17 @@ def cmd_live(args):
           f"{len(odd)} unread")
     for note in odd:
         print(f"           !! {note}")
-    bodies, why3 = issue_comments(args.repo, args.anchor)
+    bodies, why3 = issue_comments(args.repo, args.campaign_issue)
     stood = stood_down_sessions(bodies or [])
-    print(f"reading 3  {args.repo}#{args.anchor} comments -- "
+    print(f"reading 3  {args.repo}#{args.campaign_issue} comments -- "
           f"{'FAILED: ' + why3 if why3 else str(len(stood)) + ' session(s) stood down'}")
     # Before the herdr gate: a record naming another campaign's branch is a
     # defect in this directory, and surfacing it must not depend on the other
     # reading having worked.
-    stray = stray_branches(recs, args.anchor)
+    stray = stray_branches(recs, args.campaign_issue)
     if stray:
         print(f"\n!! {len(stray)} record(s) here name a branch outside "
-              f"campaign-{args.anchor}:")
+              f"campaign-{args.campaign_issue}:")
         for i, r in stray:
             print(f"  #{i:<6} {r.get('branch', '<no branch>')}")
         print("  Either this directory is holding another campaign's records, "
@@ -1261,9 +1261,9 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     t = sub.add_parser("take", parents=[where, against])
-    # One shape for the anchor, as campaign-tracker `bound` reads it: `#1`
+    # One shape for the campaign issue, as campaign-tracker `bound` reads it: `#1`
     # and `1` are the same campaign in the branch, the name check and `live`.
-    t.add_argument("anchor", type=lambda s: s.lstrip("#"))
+    t.add_argument("campaign_issue", type=lambda s: s.lstrip("#"))
     t.add_argument("issue")
     t.add_argument("topic")
     t.add_argument("--name", help="this session's ListAgents name")
@@ -1296,11 +1296,11 @@ def main():
     r.set_defaults(fn=cmd_release)
 
     v = sub.add_parser("live", parents=[where, against])
-    v.add_argument("anchor", type=lambda s: s.lstrip("#"))
+    v.add_argument("campaign_issue", type=lambda s: s.lstrip("#"))
     v.set_defaults(fn=cmd_live)
 
     sd = sub.add_parser("stood-down", parents=[where, against])
-    sd.add_argument("anchor", type=lambda s: s.lstrip("#"))
+    sd.add_argument("campaign_issue", type=lambda s: s.lstrip("#"))
     sd.add_argument("--name", help="this session's ListAgents name")
     sd.add_argument("--session", help="the session id to record (default "
                     "$CLAUDE_CODE_SESSION_ID)")

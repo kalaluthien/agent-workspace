@@ -17,7 +17,7 @@ comments carry the rest.
 
 The gate's survey (`AGENTS.md` § Routing an arriving request) is what this
 procedure rests on; skipping it produces a second campaign over the same scope,
-and nothing errors — you get two anchor issues that both look right. Two sessions
+and nothing errors — you get two campaign issues that both look right. Two sessions
 each running that survey honestly produce the same pair, which is why step 3
 surveys a second time.
 
@@ -29,13 +29,13 @@ asks whose directory this is: every session of a bound campaign shares the one
 tree, and the only files in it that belong to a single session are its claim
 records. Everything durable is written
 as read-then-write against GitHub rather than as "mine because I made it": the
-anchor body is compared before it is overwritten, the directory may already
+campaign issue body is compared before it is overwritten, the directory may already
 exist, and the shared checkout is left on its default branch so a re-run cannot
 move it under somebody's delegate.
 
-## Order: the anchor issue before the directory
+## Order: the campaign issue before the directory
 
-Filing the anchor after scaffolding gives the directory a slug with no ID behind
+Filing the campaign issue after scaffolding gives the directory a slug with no ID behind
 it and branches named for a number you have not got yet. Order matters here and
 nowhere else in the procedure.
 

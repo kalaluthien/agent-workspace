@@ -243,7 +243,7 @@ case("take accepts a --name of this campaign",
 case("take reads the binding before cutting a ref, and `elsewhere` refuses",
      ["take", "1", "7", "x"], want="bound elsewhere", code=1, stub_gh=True,
      absent="escaped the binding gate")
-case("...and a `#`-prefixed anchor reads the same number the tracker read",
+case("...and a `#`-prefixed campaign issue reads the same number the tracker read",
      ["take", "#1", "7", "x", "--name", "campaign-1-executor-1"],
      want="bound elsewhere", code=1, stub_gh=True, absent="belongs to campaign")
 # A binding read that failed is the "I could not look" branch: it must name
@@ -256,7 +256,7 @@ case("...and the cause the command gave",
      want="set the GH_TOKEN environment variable")
 case("take refuses a --name that is not the shape at all",
      ["take", "--local", "1", "7", "x", "--name", "campaign-1-oops"],
-     want="not campaign-<anchor>-executor-<n>", code=1)
+     want="not campaign-<campaign issue>-executor-<n>", code=1)
 
 # `stood-down`: refused while a claim is held, refused with no session, posted
 # through the gh shim otherwise (its arguments land in gh-comment.log).
@@ -407,7 +407,7 @@ def pure_cases(m):
         c("another campaign's name is refused naming both numbers",
           "campaign 116" in (m.name_verdict("campaign-116-executor-2", "1", naming.NAME) or ""))
         c("a malformed name is refused, not read as no campaign",
-          "not campaign-<anchor>" in (m.name_verdict("campaign-1-oops", "1", naming.NAME) or ""))
+          "not campaign-<campaign issue>" in (m.name_verdict("campaign-1-oops", "1", naming.NAME) or ""))
 
     # The gone-ref path, one case per branch it can take. A ref present is the
     # ahead_verdict cases above; these are the two readings of a 404.
@@ -535,21 +535,21 @@ def live(m):
         if not cond:
             out.append(name)
 
-    def run_live(d, env=None, anchor="1"):
-        return subprocess.run([sys.executable, str(CLAIM), "live", anchor,
+    def run_live(d, env=None, campaign_issue="1"):
+        return subprocess.run([sys.executable, str(CLAIM), "live", campaign_issue,
                                "--dir", d],
                               capture_output=True, text=True, env=env)
 
     # `#1` and `1` are the same campaign at the `live` parser too. Unstripped,
-    # the anchor never matches a branch and every record here reads stray --
+    # the campaign issue never matches a branch and every record here reads stray --
     # a warning that is invisible to a `want`, so it is asserted as absent.
     with tempfile.TemporaryDirectory() as d:
         claims = Path(d) / "runtime" / "claims"
         claims.mkdir(parents=True)
         (claims / "7").write_text("session S1\nbranch campaign-1/7-x\n")
-        r = run_live(d, {"PATH": "/nonexistent"}, anchor="#1")
+        r = run_live(d, {"PATH": "/nonexistent"}, campaign_issue="#1")
         out_text = r.stdout + r.stderr
-    c("a `#`-prefixed anchor does not make this campaign's own record stray",
+    c("a `#`-prefixed campaign issue does not make this campaign's own record stray",
       "outside campaign" not in out_text)
 
     got, why = m.parse_agents(listing(agent("S1", "campaign-1-executor-1")))
@@ -587,7 +587,7 @@ def live(m):
       not a and len(o) == 1)
     c("...and that live session is then reported as holding no claim", len(i) == 1)
 
-    # The anchor argument: pins that it is actually read, not merely declared.
+    # The campaign issue argument: pins that it is actually read, not merely declared.
     mine = {"7": {"session": "S1", "branch": "campaign-1/7-x"}}
     theirs = {"9": {"session": "S2", "branch": "campaign-2/9-y"}}
     c("a record naming this campaign's branch is not stray",
@@ -596,7 +596,7 @@ def live(m):
       len(m.stray_branches(theirs, "1")) == 1)
     c("a record with no branch cannot vouch for itself and is stray",
       len(m.stray_branches({"7": {"session": "S1"}}, "1")) == 1)
-    c("anchor 1 does not swallow anchor 11",
+    c("campaign issue 1 does not swallow campaign issue 11",
       len(m.stray_branches({"7": {"branch": "campaign-11/7-x"}}, "1")) == 1)
 
     # The STOOD DOWN parse, one case per shape.

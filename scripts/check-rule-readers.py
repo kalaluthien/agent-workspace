@@ -93,7 +93,7 @@ from pathlib import Path
 # They were one field while every form had a script to itself. Merging three
 # readers into `campaign-tracker` would have collapsed three tokens into one --
 # and `EXEMPT` matches `[\w-]+` with no spaces, so a single
-# `<!-- unguarded: campaign-tracker -->` would then have silenced the anchor
+# `<!-- unguarded: campaign-tracker -->` would then have silenced the campaign issue
 # survey, the index read and the settlement verdict together, with nothing
 # reporting that two more forms had been exempted than the author named.
 # Splitting the fields keeps the exemption as granular as the form, and keeps
@@ -126,16 +126,16 @@ FORMS = [
     (
         "campaign-anchors",
         "campaign-tracker.py",
-        # The open-anchor survey: a `gh issue list` on this tracker asking for
+        # The open-campaign issue survey: a `gh issue list` on this tracker asking for
         # the fields the classification reads.
         re.compile(r"\bgh\b[^|;&]*\bissue\s+list\b[^|;&]*"
                    r"(-l\s+[\"']?campaign|--label\s+[\"']?campaign|--json[^|;&]*parent)"),
-        "the open-anchor survey",
+        "the open-campaign issue survey",
     ),
     (
         "campaign-bound",
         "campaign-tracker.py",
-        # The binding reading: the anchor's comments filtered for `BOUND`, and
+        # The binding reading: the campaign issue's comments filtered for `BOUND`, and
         # the last one's machine compared against this one's.
         #
         # `hostname` alone is not the form, and deliberately. Two blocks in this

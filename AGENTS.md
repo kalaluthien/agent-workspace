@@ -28,12 +28,12 @@ Settle this before anything else. Most of what arrives here loads no skill.
 
 Otherwise, two readings, in this order.
 
-**One: does any open campaign's Scope cover the request?** `scripts/campaign-tracker.py anchors`
-lists the open anchors — **never survey the tracker unfiltered**, since it holds
+**One: does any open campaign's Scope cover the request?** `scripts/campaign-tracker.py campaign issues`
+lists the open campaign issues — **never survey the tracker unfiltered**, since it holds
 three kinds of issue and only structure classifies them; where structure cannot
 answer, both templates are in `.claude/skills/opening-campaign/assets/`, and **an
 issue matching neither is the third kind, which every reader leaves alone**. Read
-the body of each anchor that could plausibly cover the request — the title does
+the body of each campaign issue that could plausibly cover the request — the title does
 not carry the Scope. Match on Scope, never on `## Repos`, and treat testing or
 fixing a campaign's own deliverable as covered by it.
 
@@ -69,7 +69,7 @@ reader of a rule a script owns**: two of them drift.
 
 The campaign directory holds no plane of its own: git-ignored scratch, and
 **nothing durable may live only there** — a repo-less campaign lands its results
-in the anchor issue and its sub-issues, the memory pool, or a repository by hand.
+in the campaign issue and its sub-issues, the memory pool, or a repository by hand.
 
 **Resolve the container root one way, everywhere:**
 
@@ -107,7 +107,7 @@ never the exit status**, as for `campaign-local-work` and `campaign-claim alive`
 | `elsewhere` | **not in this campaign.** Stop before any write and any launch, and name the machine. |
 | `unbound` | **not bound yet.** Only a person's word binds an existing campaign. |
 
-**The binding gates four things**: the anchor body, a `BOUND` comment, a claim,
+**The binding gates four things**: the campaign issue body, a `BOUND` comment, a claim,
 and a launch. Read it before each of those. Only one of the four has a machine
 behind it: `campaign-claim take` reads the binding before it cuts a ref and
 refuses on anything but `here`. The body write, the `BOUND` comment, a launch,
@@ -119,9 +119,9 @@ atomic gate stays `campaign-claim take`'s create-ref, and the model's `addMember
 (`spec/alloy/ledger.als`) has no actor, machine, or binding precondition. What the
 filer still owes: file on the repository whose code changes, from the template,
 and leave adding that repository to `## Repos` to a bound session, since that is
-a scope change (`opening-campaign`, "A repository the anchor's `## Repos` list does not name").
+a scope change (`opening-campaign`, "A repository the campaign issue's `## Repos` list does not name").
 
-**`BOUND <machine>` is a comment on the anchor, and the latest one wins.** Its
+**`BOUND <machine>` is a comment on the campaign issue, and the latest one wins.** Its
 first line is `BOUND <machine>` from `hostname -s`; anything after is prose.
 
 **A session posts `BOUND` in exactly two cases**: for a campaign it has just filed
@@ -140,7 +140,7 @@ delegate's does not exist yet; `live` joins on the session id and reads it fine.
 
 ## The session name
 
-**`campaign-<anchor>-executor-<n>`**, for every session on this machine; `<n>` is
+**`campaign-<campaign issue>-executor-<n>`**, for every session on this machine; `<n>` is
 assigned in the order sessions appear, so two do not both pick `-1`. **Set it at
 the start of every session of a campaign, whichever path started it** — the
 `here` reading above, `opening-campaign` step 3, or a delegate launch — because a
@@ -162,11 +162,11 @@ resolves the harness name a claim record holds. `herdr agent list` shows the pan
 
 ## ID, directory, branch
 
-- **ID** — the anchor issue's number in `kalaluthien/agent-workspace`, typed `#N`.
-  The anchor carries the `campaign` label; every survey lists by it, so an anchor
+- **ID** — the campaign issue's number in `kalaluthien/agent-workspace`, typed `#N`.
+  The campaign issue carries the `campaign` label; every survey lists by it, so a campaign issue
   filed without it is in nobody's listing.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, optional
-  off the bound machine. A campaign *is* its anchor issue; the directory is one
+  off the bound machine. A campaign *is* its campaign issue; the directory is one
   machine's cache, and holds the claim records, which live nowhere else.
 - **Branch** — `campaign-<N>/<issue>-<topic>`, the sub-issue's claim as well as its
   workspace. `campaign-claim` cuts it from the remote and writes the record;
@@ -184,7 +184,7 @@ person decides a close.
 ## Sub-issues
 
 One sub-issue is one GitHub issue, filed on the repository whose code changes, and
-created **as a sub-issue of the anchor**:
+created **as a sub-issue of the campaign issue**:
 
 ```sh
 gh issue create -R <owner/repo> --parent https://github.com/kalaluthien/agent-workspace/issues/<N> ...
@@ -246,9 +246,9 @@ hook has already pushed the branch, so a late pull request only keeps published
 work out of sight. An open one is where a review writes its findings, and it is
 what survives the session that opened it.
 
-## The anchor body
+## The campaign issue body
 
-**The anchor body is a charter, not a status board.** Intent, Scope and
+**The campaign issue body is a charter, not a status board.** Intent, Scope and
 Requirements say what a person signed up for and change only when the scope
 genuinely changes; the sub-issue index is the decomposition, and
 `campaign-tracker settlement <N>` derives progress from it. So the body is written
@@ -416,7 +416,7 @@ sub-issues.
 
 One campaign, one machine settles the hard half: no lock is ever judged stale
 across a network. It does not settle the campaign's own writes — the binding
-serializes neither the anchor body nor the shared directory.
+serializes neither the campaign issue body nor the shared directory.
 
 **Two open pull requests over the same normative files are normal, and the second
 to land reconciles**, and **containment buys attention from nobody**: a clean
@@ -427,6 +427,6 @@ condition 3**.
 
 **The named cost: no concurrent cross-machine or cloud work on one campaign.**
 Another machine may read a campaign, may file a sub-issue of it, and may open a
-different one; none may write this one's anchor body or `BOUND`, claim, or launch
+different one; none may write this one's campaign issue body or `BOUND`, claim, or launch
 into it. A campaign reaches another machine only by
 migration — the price of a staleness check that is a local `kill -0`.

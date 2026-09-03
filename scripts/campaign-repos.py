@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read the `## Repos` list of a campaign README or anchor issue body.
+"""Read the `## Repos` list of a campaign README or campaign issue body.
 
     scripts/campaign-repos.py <path>
 

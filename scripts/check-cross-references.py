@@ -56,7 +56,7 @@ THE THREE VERDICTS, AND WHY THE THIRD EXISTS
               not open the file it would have to read.         -> exit 3
 
 The third is the whole point. `closing-campaign/references/rationale.md` once
-cited `§ Compare then write the anchor issue body`, which named BOLD INLINE
+cited `§ Compare then write the campaign issue body`, which named BOLD INLINE
 PROSE in AGENTS.md rather than a heading. A guard that scans `^#` lines, fails
 to find it, and calls it dangling has folded together two different facts --
 *this citation is broken* and *I do not have a rule for this shape* -- and a
@@ -314,7 +314,7 @@ def longest_prefix(after, candidates):
     `The bindings say`, so a bare startswith resolves a broken citation onto a
     section it does not name; requiring the next character to be a non-word
     character rejects that while still accepting `The binding), so this step`
-    and `The anchor body.` and `ID, directory, branch`.
+    and `The campaign issue body.` and `ID, directory, branch`.
     """
     best = None
     for c in candidates:

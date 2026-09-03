@@ -1,6 +1,6 @@
 ---
 name: opening-campaign
-description: Opens a campaign in the agent-workspace container, or joins one already open. Use when a person says to open, start, kick off, set up, or join a campaign, or when a request will outlive the session it arrived in — files the anchor issue, binds it to this machine, scaffolds its directory, acquires the member repositories, and files the first sub-issues. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for a later sub-issue of a campaign already scaffolded here.
+description: Opens a campaign in the agent-workspace container, or joins one already open. Use when a person says to open, start, kick off, set up, or join a campaign, or when a request will outlive the session it arrived in — files the campaign issue, binds it to this machine, scaffolds its directory, acquires the member repositories, and files the first sub-issues. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for a later sub-issue of a campaign already scaffolded here.
 ---
 
 # Opening a campaign
@@ -8,23 +8,23 @@ description: Opens a campaign in the agent-workspace container, or joins one alr
 Finished when all of these hold:
 
 - An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
-  no parent, and the sections of the anchor template `assets/README.md`, with a
+  no parent, and the sections of the campaign issue template `assets/README.md`, with a
   `## Repos` list that `scripts/campaign-repos.py` reads and exits 0 on.
-- The anchor's latest `BOUND` comment names this machine.
+- The campaign issue's latest `BOUND` comment names this machine.
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
   `CLAUDE.md`, `scripts/`, `runtime/handover/`, `runtime/claims/`,
-  `runtime/repos`, and a `README.md` and `runtime/anchor-body-derived.md` that
-  each hold the anchor issue body as `gh issue view --json body` returns it --
+  `runtime/repos`, and a `README.md` and `runtime/campaign-issue-body-derived.md` that
+  each hold the campaign issue body as `gh issue view --json body` returns it --
   the read-back is the canonical form, because the round trip through `gh` is
   not byte-stable (a body sent with one trailing newline comes back with two).
 - Every line `scripts/campaign-repos.py` prints resolves to a checkout at
   `<campaign>/repos/<name>/` — vacuous under `- none`, where it prints nothing.
-- At least one sub-issue of the anchor is filed, and the reply names
-  it along with the campaign ID, the directory and the anchor issue URL.
+- At least one sub-issue of the campaign issue is filed, and the reply names
+  it along with the campaign ID, the directory and the campaign issue URL.
 
 ## Procedure
 
-Ordered: the anchor issue number is the campaign ID, so nothing that needs the ID
+Ordered: the campaign issue number is the campaign ID, so nothing that needs the ID
 runs before step 3. Why each guard is shaped this way: `references/rationale.md`.
 
 ### 1. Read the binding, then find the directory
@@ -58,8 +58,8 @@ scaffolded before that directory existed has none, and a missing one leaves the
 close gate unable to enumerate at all.
 
 **No directory at all** — name this session first (the last block of step 3,
-with the ID the anchor already has), then run steps 2, 4 and 5 with the ID and
-body from the anchor issue, and skip the rest of step 3, which exists only to
+with the ID the campaign issue already has), then run steps 2, 4 and 5 with the ID and
+body from the campaign issue, and skip the rest of step 3, which exists only to
 mint an ID it already has. Do it before launching or receiving anything: until
 the directory exists a claim record has nowhere to be written (`AGENTS.md` § ID,
 directory, branch). Step 2 still runs, because neither the slug nor the kind is
@@ -83,26 +83,26 @@ from a handover brief with nobody waiting, read all three from the brief. Either
 way state them in the reply, so each costs one line to veto — an unstated kind is
 a wrong set of principles for every delegate.
 
-### 3. File the anchor issue
+### 3. File the campaign issue
 
 **Survey again, in the same breath as the create.** The routing gate's survey is
 minutes old, and two sessions that each surveyed before either filed both file,
 so one scope gets two campaigns. Nothing closes that window, because a campaign
-that does not exist yet is bound to nobody: if two anchors appear anyway, close
+that does not exist yet is bound to nobody: if two campaign issues appear anyway, close
 one as `not planned` and say which survived.
 
 ```sh
-"$CONTAINER"/scripts/campaign-tracker.py anchors
+"$CONTAINER"/scripts/campaign-tracker.py campaign issues
 gh issue create -R kalaluthien/agent-workspace \
   --label campaign --title "<title>" --body-file <path>
 ```
 
-**Fill the anchor template** for the body, `assets/README.md` in this skill — its
+**Fill the campaign issue template** for the body, `assets/README.md` in this skill — its
 sections, each placeholder replaced, and no others. Write Scope to be matched
 against a request by the routing gate. The body carries no decomposition
-(`AGENTS.md` § The anchor body); step 6 files the first sub-issues instead.
+(`AGENTS.md` § The campaign issue body); step 6 files the first sub-issues instead.
 
-**Read the label back before scaffolding anything**, because an anchor filed
+**Read the label back before scaffolding anything**, because a campaign issue filed
 without it is invisible to every later survey and the next session opens a second
 campaign over the same scope.
 
@@ -111,7 +111,7 @@ gh issue view <N> -R kalaluthien/agent-workspace --json labels,parent
 ```
 
 Want `campaign` among `labels` and `parent` null. A non-null `parent` means you
-filed a sub-issue, not an anchor — `gh issue edit <N> --remove-parent` first.
+filed a sub-issue, not a campaign issue — `gh issue edit <N> --remove-parent` first.
 
 **Then bind it to this machine, in the same step** — everything after is a write
 or a launch, both gated on the binding. One of the two occasions a session posts
@@ -175,13 +175,13 @@ Then finish it:
   could be filled long after.
 - Everything else the copy brought stays. Confirm `runtime/claims/` arrived,
   because `closing-campaign` refuses a close when it is missing.
-- Overwrite `README.md` with the anchor issue body, which replaces every
+- Overwrite `README.md` with the campaign issue body, which replaces every
   placeholder at once — the close-time sync run backwards:
 
   ```sh
   gh issue view <N> -R kalaluthien/agent-workspace --json body --jq .body \
     >| "$CAMPAIGN/README.md"
-  cp "$CAMPAIGN/README.md" "$CAMPAIGN/runtime/anchor-body-derived.md"
+  cp "$CAMPAIGN/README.md" "$CAMPAIGN/runtime/campaign-issue-body-derived.md"
   "$CONTAINER/scripts/campaign-repos.py" "$CAMPAIGN/README.md" \
     >| "$CAMPAIGN/runtime/repos.tmp" &&
     mv "$CAMPAIGN/runtime/repos.tmp" "$CAMPAIGN/runtime/repos" ||
@@ -193,7 +193,7 @@ Then finish it:
   and fix the body. Keep the `.tmp`-then-`mv`, and keep step 5 reading that file
   rather than a pipe, so a failed read cannot look like a deliberate `- none`.
   `>|`, not `>`.
-- **Keep `runtime/anchor-body-derived.md`**, refreshed after every re-derivation
+- **Keep `runtime/campaign-issue-body-derived.md`**, refreshed after every re-derivation
   and every sync — the only thing that can later answer "has the body moved?",
   and `closing-campaign` step 4 refuses without it.
 
@@ -221,7 +221,7 @@ checkout under a delegate already working in it.
 ### 6. File the first sub-issues, then report
 
 File the sub-issues the opening already implies, a campaign whose scope is one
-sub-issue filing one. Then report the campaign ID, the directory path, the anchor
+sub-issue filing one. Then report the campaign ID, the directory path, the campaign issue
 issue URL, and the sub-issues filed, saying of the first whether you are doing it
 here or handing it to a repository agent.
 
@@ -257,7 +257,7 @@ git -C "$CAMPAIGN/repos/<name>" fetch origin "$B" &&
   git -C "$CAMPAIGN/repos/<name>" switch -c "$B" --track "origin/$B"
 ```
 
-**A repository the anchor's `## Repos` list does not name** is a scope change, so
+**A repository the campaign issue's `## Repos` list does not name** is a scope change, so
 it syncs at that moment rather than at the close: edit the campaign `README.md`,
 re-run the reader over it as step 4 does, sync with `closing-campaign` step 4's
 compare-then-write in full, then acquire it as in step 5. The first repository
