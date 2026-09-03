@@ -61,11 +61,14 @@ sig Agent {
    is a session's own atom (`some peer`, pinned by PlannerIsASession) on a
    sub-issue it filed and distributes: it never takes `work` or `report`, so of
    the state below it does not share LocalOnly, PushedToRemote and Reported
-   (PlannerNeverLocalOnly, PlannerNeverReports), and it shares the rest -- the
-   four messages, Confirmed, the shutdown bits, and `branch`. What it executes
-   itself is an Executor atom of the same session. A delegate launch is the
-   planner's act, and `launch` says so. A third kind is added here the same
-   way, and takes whatever of the state below it turns out not to share. */
+   (PlannerNeverLocalOnly, PlannerNeverReports), and it shares the rest --
+   Asked, Answered and Waiting, three of the four messages with REPORT's own bit
+   the one it does not take; Confirmed; the shutdown bits, StandDownTaken among
+   them, so the fourth message is counted there and not twice; Addressable; and
+   `branch`. What it executes itself is an Executor atom of the same session. A
+   delegate launch is the planner's act, and `launch` says so. A third kind is
+   added here the same way, and takes whatever of the state below it turns out
+   not to share. */
 abstract sig Role {}
 one sig Executor extends Role {}
 one sig Planner  extends Role {}

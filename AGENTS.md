@@ -108,7 +108,7 @@ never the exit status**, as for `campaign-local-work` and `campaign-claim alive`
 
 | the word | this session is |
 | --- | --- |
-| `here` | **a session of this campaign.** Name this session first (§ The session name), then work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4), and take a sub-issue. |
+| `here` | **a session of this campaign.** Name this session first (§ The session name), then work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4), and take the shape the request calls for — an executor takes a sub-issue, a planner files them and distributes. |
 | `elsewhere` | **not in this campaign.** Stop before any write and any launch, and name the machine. |
 | `unbound` | **not bound yet.** Only a person's word binds an existing campaign. |
 
@@ -140,10 +140,11 @@ which shape it takes.** A simple request has an executor only: the session files
 the sub-issue and works it. A request that needs decomposition has a **planner**,
 which takes the request, files the sub-issues and distributes them, and separate
 **executors**, each **a session of its own on this machine**: another session
-that takes a sub-issue, or a herdr delegate the planner launches when the work
-must run in a member repository's checkout (§ Execution mode says which, and a
-repo-less campaign has the first form and not the second; the launch itself is
-`.claude/skills/opening-campaign/references/launching.md`). A
+that takes a sub-issue, or a herdr delegate the planner launches (§ Execution
+mode chooses between them, by the repository first and then by cost — a delegate
+is the ordinary shape for a member repository and the mode of last resort for the
+base, and a repo-less campaign has the first form and not the second; the launch
+itself is `.claude/skills/opening-campaign/references/launching.md`). A
 separate executor is never the planner's subagent — a subagent shares the
 planner's pane and dies with it, and a claim record needs a session id of its
 own. The planner's own hands, and an in-process subagent it starts *on a

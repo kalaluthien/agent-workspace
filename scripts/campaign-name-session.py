@@ -42,7 +42,7 @@ import sys
 # One shape, no branches. The sub-issue is deliberately absent: a session works
 # several sub-issues, in parallel or one after another, and a name that tracked
 # the work in hand would go false at every handover. <n> distinguishes sessions
-# sharing a campaign and a role.
+# sharing a campaign.
 # Two roles: a planner files the sub-issues and distributes them, an executor
 # works one. A review has no session to name -- it runs as a subagent of the
 # session that wants the merge. How <n> is counted across the two roles is
