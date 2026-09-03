@@ -801,9 +801,9 @@ def ahead_count(returncode, out):
     return int(ahead)
 
 
-def ahead_verdict(returncode, out, err, repo, branch):
-    """Read the comparison. Returns (ok, refusal)."""
-    n = ahead_count(returncode, out)
+def ahead_verdict(n, out, err, repo, branch):
+    """Read the comparison, already reduced to `n` by ahead_count so the
+    caller parses it once and passes it through. Returns (ok, refusal)."""
     if n is None:
         ahead = (out or "").strip()
         return False, (f"could not ask {repo} how far {branch} is ahead of "
@@ -946,10 +946,9 @@ def cmd_release(args):
             path.unlink()
             print(f"deleted {path}")
         return 0
-    ok, refusal = ahead_verdict(r.returncode, r.stdout, r.stderr, args.repo,
-                                branch)
+    n = ahead_count(r.returncode, r.stdout)
+    ok, refusal = ahead_verdict(n, r.stdout, r.stderr, args.repo, branch)
     if not ok:
-        n = ahead_count(r.returncode, r.stdout)
         if not mine and n and rec:
             # A confirmed absence releases the claim, not the branch: the ref
             # is the pull request's head and stays commits and all, but the
