@@ -29,7 +29,11 @@
  * differs between them.
  *
  * NOT MODELLED: whether an agent is any good; that an agent answers about
- * itself only; that STAND DOWN is a request a peer may refuse; and two of the
+ * itself only; that STAND DOWN is a request a peer may refuse; which session a
+ * claim's RECORD names -- `claimedIssues` is attributed to the acting session,
+ * so at a delegate launch the planner's session holds the claim here, where
+ * AGENTS.md's "a planner holds no claim of its own" speaks of the record's
+ * `session` field, which no atom carries; and two of the
  * three merge conditions in AGENTS.md -- that the reviewer did not write the
  * commits, because nothing here records who set `Reviewed`, and that the branch
  * contains the current main, because this model has one pull request per issue
@@ -53,13 +57,14 @@ sig Agent {
   peer:     lone Session
 }
 
-/* What an agent is FOR. An Executor works a sub-issue on the branch it or its
-   launcher claimed. A Planner is a session's own atom (`some peer`) on a
-   sub-issue it filed and distributes: it never takes `work` or `report`, so it
-   is never LocalOnly and holds no claim -- what it executes itself is an
-   Executor atom of the same session. A delegate launch is the planner's act,
-   and `launch` says so. Of the state below, a planner does not share
-   LocalOnly, PushedToRemote and Reported. A third kind is added here the same
+/* What an agent is FOR. An Executor works a sub-issue on its branch. A Planner
+   is a session's own atom (`some peer`, pinned by PlannerIsASession) on a
+   sub-issue it filed and distributes: it never takes `work` or `report`, so of
+   the state below it does not share LocalOnly, PushedToRemote and Reported
+   (PlannerNeverLocalOnly, PlannerNeverReports), and it shares the rest -- the
+   four messages, Confirmed, the shutdown bits, and `branch`. What it executes
+   itself is an Executor atom of the same session. A delegate launch is the
+   planner's act, and `launch` says so. A third kind is added here the same
    way, and takes whatever of the state below it turns out not to share. */
 abstract sig Role {}
 one sig Executor extends Role {}

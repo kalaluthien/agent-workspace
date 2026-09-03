@@ -51,13 +51,13 @@ assert SilenceResolutionStaysSafe {
   (resolveSilenceExternally and coLocatedShutdown) implies noWorkDestroyed
 }
 
-/* A planner holds no claim, so the only branch it may hold local-only work on
-   is one it claimed -- and the model reaches no such state at all, because
-   `work` is the executor's edge. Dropping `a.role = Executor` from `work`
-   reddens it. */
-assert PlannerNeverLocalOnlyUnclaimed {
-  always all a: role.Planner | a in LocalOnly implies a.task in a.peer.claimedIssues
-}
+/* The three claims the Role docstring makes, one command each, since a fact
+   or a guard deleted is invisible to the lockfile. Dropping `a.role = Executor`
+   from `work` reddens the first, from `report` the second; deleting the
+   `some a.peer` fact in AgentWellFormed reddens the third. */
+assert PlannerNeverLocalOnly { always no role.Planner & LocalOnly }
+assert PlannerNeverReports   { always no role.Planner & Reported }
+assert PlannerIsASession     { all a: role.Planner | some a.peer }
 
 /* Every delegate was launched by its planner: the launching session holds a
    Planner atom on the delegate's sub-issue. Dropping the planner conjunct from
@@ -106,8 +106,10 @@ check TwoStepCoLocatedSuffices   for 2 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
 -- rule 3's repair reopens nothing
 check SilenceResolutionStaysSafe for 2 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0
 
--- a planner never holds local-only work on a branch it did not claim
-check PlannerNeverLocalOnlyUnclaimed for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+-- what a planner does not share: the work bit, the REPORT, and being a delegate
+check PlannerNeverLocalOnly for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+check PlannerNeverReports   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+check PlannerIsASession     for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 -- every delegate has a planner behind its launch
 check DelegateLaunchedByPlanner       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 

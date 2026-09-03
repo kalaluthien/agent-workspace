@@ -471,7 +471,7 @@ scripts/alloy-check.py --commands spec/campaign</pre>
     <li><span class="k">1</span><p><strong><code>Agent</code></strong> — 하위 이슈 하나를 붙든 참가자 하나. 세션이 자기 청구를 직접 하는 경우이거나, 그 세션이 띄운 위임이다. <code>peer</code> 는 앞쪽에서만 채워진다. 위임은 띄울 때 이름을 받지만, 세션 자신의 청구는 남이 고른 이름이 없어 기록이 필요하기 때문이다.</p></li>
     <li><span class="k">2</span><p><strong><code>Role</code></strong> — 에이전트가 무엇을 위한 것인가. <code>abstract</code> 이므로 자기 원자를 갖지 않는다.</p></li>
     <li><span class="k">3</span><p><strong><code>Executor</code></strong> — 하위 이슈 하나를 그 브랜치 위에서 작업하는 종류. <code>work</code> 와 <code>report</code> 는 이 역할만 밟는다.</p></li>
-    <li><span class="k">4</span><p><strong><code>Planner</code></strong> — 요청을 받아 하위 이슈를 파일하고 나누어 주는 종류. 세션 자신의 원자이므로 <code>peer</code> 가 늘 채워지고, <code>work</code> 를 밟지 않으니 <code>LocalOnly</code>·<code>PushedToRemote</code>·<code>Reported</code> 를 나누어 갖지 않으며 청구도 들지 않는다. 위임 하나를 띄우는 <code>Launch</code> 는 띄우는 세션에 그 하위 이슈의 살아 있는 <code>Planner</code> 원자가 있어야 하고, 세션이 자기 청구를 직접 하는 한 실행자 모양에는 <code>Planner</code> 원자가 하나도 없다. <span class="src">spec/campaign/orchestration/system.als</span></p></li>
+    <li><span class="k">4</span><p><strong><code>Planner</code></strong> — 요청을 받아 하위 이슈를 파일하고 나누어 주는 종류. 세션 자신의 원자이므로 <code>peer</code> 가 늘 채워지고, <code>work</code> 를 밟지 않으니 <code>LocalOnly</code>·<code>PushedToRemote</code>·<code>Reported</code> 를 나누어 갖지 않고 나머지 상태는 나누어 갖는다. 위임 하나를 띄우는 <code>Launch</code> 는 띄우는 세션에 그 하위 이슈의 살아 있는 <code>Planner</code> 원자가 있어야 하고, 세션이 자기 청구를 직접 하는 한 실행자 모양에는 <code>Planner</code> 원자가 하나도 없다. <span class="src">spec/campaign/orchestration/system.als</span></p></li>
   </ol>
 </figure>
 

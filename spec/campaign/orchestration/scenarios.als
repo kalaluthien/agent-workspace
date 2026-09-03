@@ -103,8 +103,10 @@ pred noDeleteUnderAddressableAgent {
 
 /* Empty for a sub-issue a session did with its own hands, which is what makes
    `mergedOnCurrentReview`'s second conjunct vacuous there -- see A18/A18b. A
-   planner is left out: it is never LocalOnly, so there is nothing to confirm. */
-fun agentsOf[i: Issue]: set Agent { task.i - role.Planner }
+   planner atom on the issue is in it: `confirm` needs only `a not in
+   LocalOnly`, which a planner always satisfies, so the discipline is reachable
+   unweakened and keeps its co-location conjunct over the planner too. */
+fun agentsOf[i: Issue]: set Agent { task.i }
 
 /* A MERGE REQUIRES A CURRENT REVIEW, and the author may then merge as anyone
    else may: an identity rule would make the one-session landing unreachable
