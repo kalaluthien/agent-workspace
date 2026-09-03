@@ -85,6 +85,21 @@ exit 97
 """
 
 
+# A compare that answers "3 commits ahead of main", for the case that proves
+# a confirmed absence deletes the record and leaves an ahead ref alone. Any
+# other call -- the ref delete included -- is an escape from that branch, and
+# is refused loudly rather than silently taking effect.
+GH_AHEAD3 = """#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    *compare/main*) echo "3"; exit 0 ;;
+  esac
+done
+echo "gh shim: this case reached an endpoint it did not stub: $*" >&2
+exit 97
+"""
+
+
 def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
     with tempfile.TemporaryDirectory() as d:
         claims = Path(d) / "runtime" / "claims"
@@ -109,6 +124,7 @@ def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
         shim.mkdir()
         gh_body = (GH_FAILS if stub_gh == "fails"
                    else GH_SHIM.replace("some-other-machine", HOSTNAME) if stub_gh == "here"
+                   else GH_AHEAD3 if stub_gh == "ahead3"
                    else GH_SHIM if stub_gh else GH_DENIED)
         for name, body, on in (("ps", PS_SHIM, stub_ps), ("gh", gh_body, True)):
             if on:
@@ -158,6 +174,29 @@ case("release refuses a dead pid with no confirmation",
 case("release names the restart evidence when it refuses",
      ["release", "7"], {"7": DEAD_REC}, OLD, want="a restart is likely", code=1,
      stub_ps=True)
+
+# A confirmed absence on a branch still ahead of main: the ref (the pull
+# request's head) is never touched, but the record is the claim, and the
+# absence is what makes deleting it safe -- a successor can then `take` the
+# sub-issue. `stub_ps=True` because the record is dead, so cmd_release's
+# restart note still runs and must not reach the real `ps`.
+case("a confirmed absence on a branch ahead of main keeps the ref and says so",
+     ["release", "7", "--confirmed-absent", "asked the peer"], {"7": DEAD_REC},
+     OLD, want="commit(s) ahead of main: the ref is kept", code=0,
+     stub_ps=True, stub_gh="ahead3", absent="deleted campaign-1/7-x")
+case("...and it deletes the record, naming the path, on the confirmed absence",
+     ["release", "7", "--confirmed-absent", "asked the peer"], {"7": DEAD_REC},
+     OLD, want="the confirmed absence retires the claim, not the branch it "
+               "points at", code=0, stub_ps=True, stub_gh="ahead3")
+
+# The holder's own release gets no such split: it asked to release, so a ref
+# not yet safe to delete is still a plain refusal, record and all.
+MINE_BRANCH_REC = "session mine\nname n1\npid 1\nbranch campaign-1/7-x\n"
+case("the holder's own release still refuses a branch ahead of main, "
+     "keeping the record",
+     ["release", "7", "--session", "mine"], {"7": MINE_BRANCH_REC},
+     want="never deleted", code=1, stub_gh="ahead3",
+     absent="retires the claim")
 
 # A missing directory is not an empty one.
 case("a missing claims directory refuses rather than reading empty",
@@ -368,23 +407,35 @@ def pure_cases(m):
     c("a member repository is never compared against the container",
       "agent-workspace" not in m.compare_path("owner/web", "campaign-1/7-x"))
 
-    ok, why = m.ahead_verdict(1, "", "boom", "a/b", "x")
-    c("a comparison that failed is not an empty branch", not ok and "did not happen" in why)
-    ok, why = m.ahead_verdict(0, "", "", "a/b", "x")
-    c("an empty answer is not zero either", not ok)
-    ok, why = m.ahead_verdict(0, "3", "", "a/b", "x")
-    c("a branch ahead of main is reported, never deleted", not ok and "never deleted" in why)
-    ok, why = m.ahead_verdict(0, "0", "", "a/b", "x")
-    c("a branch at main is releasable", ok and why is None)
+    # ahead_count reduces the raw comparison to a known N, or None when the
+    # question was not answered -- the returncode-vs-output cases belong to
+    # it now, since ahead_verdict only shapes a message from what this
+    # already decided (cmd_release parses once and passes the result to
+    # both).
+    c("a comparison that failed is not an empty branch",
+      m.ahead_count(1, "") is None)
+    c("an empty answer is not zero either", m.ahead_count(0, "") is None)
+    c("a branch ahead of main is read as its count", m.ahead_count(0, "3") == 3)
+    c("a branch at main is read as zero", m.ahead_count(0, "0") == 0)
     # The two halves of the guard overlap, so each needs a case that only it
     # catches: a failed call whose stdout happens to read "0" is caught by the
     # returncode half alone.
-    ok, why = m.ahead_verdict(1, "0", "boom", "a/b", "x")
-    c("a failed call is not empty even when its output says 0", not ok)
-    # The two halves change the same verdict, so only the *message* separates
-    # them: an answer that is not a number means the question was not answered,
-    # and reporting it as "N commits ahead" sends the reader to the wrong repair.
-    ok, why = m.ahead_verdict(0, "not a number", "", "a/b", "x")
+    c("a failed call is not empty even when its output says 0",
+      m.ahead_count(1, "0") is None)
+    # An answer that is not a number is a failed question, not a count.
+    c("an answer that is not a number is unanswered, not a count",
+      m.ahead_count(0, "not a number") is None)
+
+    ok, why = m.ahead_verdict(None, "", "boom", "a/b", "x")
+    c("an unanswered comparison is not an empty branch", not ok and "did not happen" in why)
+    ok, why = m.ahead_verdict(3, "3", "", "a/b", "x")
+    c("a branch ahead of main is reported, never deleted", not ok and "never deleted" in why)
+    ok, why = m.ahead_verdict(0, "0", "", "a/b", "x")
+    c("a branch at main is releasable", ok and why is None)
+    # The message separates the two None cases: an answer that is not a
+    # number means the question was not answered, and reporting it as "N
+    # commits ahead" sends the reader to the wrong repair.
+    ok, why = m.ahead_verdict(None, "not a number", "", "a/b", "x")
     c("an answer that is not a number is a failed question, not a count",
       not ok and "did not happen" in why and "commit(s) ahead" not in why)
 
