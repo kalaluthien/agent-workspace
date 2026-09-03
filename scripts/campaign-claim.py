@@ -190,7 +190,7 @@ Two residuals stay, and stay stated here rather than in a caller:
     recycled onto anything else reads `other`. Either way a caller refuses a
     takeover it should have been allowed, which is the safe direction. This
     paragraph is the only record of either form: the Alloy verdict that held
-    the first was retired with the holder role, and no model in `spec/alloy/`
+    the first was retired with the holder role, and no model in `spec/campaign/`
     represents a pid at all, so there is no longer a spec to defer to.
   * `alive` means a claude holds this pid, not that it is *this campaign's*
     session. The record carries a `session` name that nothing here compares,

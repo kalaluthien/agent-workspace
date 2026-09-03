@@ -48,7 +48,7 @@ work is on GitHub (`campaign-claim stood-down` refuses while the session holds
 an unreleased claim), and is joined to herdr's row on the session id — the one
 field a restart and a rename both leave alone. So a stood-down peer passes
 whatever its cwd, a live claim refuses whatever was posted, and a peer that has
-neither is asked. `spec/alloy/agent.als` carries it as `StoodDownPosted`, never
+neither is asked. `spec/campaign/role/system.als` carries it as `StoodDownPosted`, never
 over local-only work.
 
 A live PID that is some other `claude` reads as held. That is the safe direction

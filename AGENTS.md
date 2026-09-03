@@ -2,7 +2,8 @@
 
 A container for running **campaigns**: units of work across the repositories they
 need, on repositories that live elsewhere. `README.md` says what the container is
-and `spec/alloy/*.als` why these rules are what they are; this is how to work here.
+and `spec/campaign/*/*.als` why these rules are what they are; this is how to work
+here.
 
 **Much of what used to be written here is now enforced.** `scripts/campaign-primitives.py`
 lists this repository's scripts and hooks; run it in full for what each decides. It
@@ -61,8 +62,9 @@ and whether it survives the machine. Identify the plane before any git command.
 | **member repository** | the code and its history | each repository's own remote |
 | **campaign** | which repositories, what for, how far along | GitHub issues |
 
-`spec/` is normative and is Alloy whose comments are the spec; `docs/` is views
-drawn for a reader, as HTML. Two `pre-commit` guards refuse a commit that breaks
+`spec/` is normative and is Alloy whose comments are the spec -- with one
+exception, the `diagram.html` a module may keep beside its own model; `docs/` is
+views drawn for a reader, as HTML. Two `pre-commit` guards refuse a commit that breaks
 either — `check-tree-shape` and `check-rule-readers`, whose header gives the
 syntax exempting a block that must hold a guarded form. **Do not write a second
 reader of a rule a script owns**: two of them drift.
@@ -111,12 +113,14 @@ never the exit status**, as for `campaign-local-work` and `campaign-claim alive`
 and a launch. Read it before each of those. Only one of the four has a machine
 behind it: `campaign-claim take` reads the binding before it cuts a ref and
 refuses on anything but `here`. The body write, the `BOUND` comment, a launch,
-and a `--local` claim are gated by this rule and the model (`spec/alloy/session.als`,
-`boundOnly`) alone, so read the word yourself before each. **The sub-issue link is outside it**:
+and a `--local` claim are gated by this rule and the model alone
+(`spec/campaign/session/scenarios.als`, `boundOnly`), so read the word yourself
+before each. **The sub-issue link is outside it**:
 any session on any machine may file a sub-issue of any campaign, one it is not a
 session of included, because a sub-issue is a record and not a claim — the
 atomic gate stays `campaign-claim take`'s create-ref, and the model's `addMember`
-(`spec/alloy/ledger.als`) has no actor, machine, or binding precondition. What the
+(`spec/campaign/github/system.als`) has no actor, machine, or binding
+precondition. What the
 filer still owes: file on the repository whose code changes, from the template,
 and leave adding that repository to `## Repos` to a bound session, since that is
 a scope change (`opening-campaign`, "A repository the campaign issue's `## Repos` list does not name").
@@ -302,7 +306,7 @@ Three readings, and never answer one with another.
 
 ## The four messages
 
-`spec/alloy/agent.als` is the contract; this is the short form. `ListAgents`
+`spec/campaign/role/system.als` is the contract; this is the short form. `ListAgents`
 resolves the address; herdr's pane label is not one.
 
 | message | direction | carries |

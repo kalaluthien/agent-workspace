@@ -67,10 +67,13 @@ Requires `git`, `gh` (authenticated), `herdr`, `uv`, and Python 3.
 
 ## Reading order
 
-`AGENTS.md` for the rules. `spec/alloy/ledger.als` for why they are those rules,
-what was rejected, and which risks are still open — it is the entry point to
-`spec/`, which is Alloy models and nothing else, each one's comments carrying the
-part of the spec it checks. The four are layers, each `open`ing the one below —
-`ledger`, `repos`, `session`, `agent` — so one file is one conceptual module and
-the top one is the whole composed model. `spec/alloy/agent.als` for how a
-campaign session and its executors talk.
+`AGENTS.md` for the rules. `spec/campaign/github/system.als` for why they are
+those rules, what was rejected, and which risks are still open — it is the entry
+point to `spec/`, which is Alloy models and, beside a module, the one
+`diagram.html` drawn of it; each model's comments carry the part of the spec it
+checks. `spec/campaign/` is one module in five entities, each `open`ing the one
+below — `github`, `directory`, `checkout`, `session`, `role` — so the top one is
+the whole composed model. Each entity is three files: `system.als` is the
+signatures, events and trace, `scenarios.als` the witnesses, `checks.als` the
+assertions. `spec/campaign/role/system.als` for how a campaign session and its
+executors talk.
