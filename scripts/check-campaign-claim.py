@@ -49,12 +49,13 @@ session in the container makes.
 The target is read from the tool: the path field for a file tool, and for
 `Bash` the OPERANDS OF THE CHANGING FORMS THAT MATCHED -- the word a redirect
 writes to, the files of `tee` and `sed -i`, the non-option arguments of `mv`,
-`rm`, `cp`, `mkdir`, `touch` and `install`, an attached `--flag=value`
-included -- resolved against the payload's cwd, slashless ones included. Never the set of words that merely look like
-paths: a command's slashed words include its remote, its sed script and the
-file its stderr goes to, and none of those is what it changes, so reading them
-as the target allows `cp /tmp/x.md AGENTS.md` on the strength of the operand it
-is not writing to.
+`rm`, `cp`, `mkdir`, `touch` and `install`, slashless ones included, and an
+attached `--flag=value` when the value SAYS it is a path, a value that says
+nothing being unread rather than resolved -- resolved against the payload's
+cwd. Never the set of words that merely look like paths: a command's slashed
+words include its remote, its sed script and the file its stderr goes to, and
+none of those is what it changes, so reading them as the target allows `cp
+/tmp/x.md AGENTS.md` on the strength of the operand it is not writing to.
 
 Three writes have no filesystem target at all and are never read for one: a
 `SERVICE_DOORS` `gh` call, because the campaign plane is GitHub issues; a `git
