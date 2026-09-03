@@ -113,7 +113,7 @@ a process started outside any pane carried neither. The first plain-terminal or
 
 ## The container as a member of its own campaign
 
-The container gets cloned into `<campaign>/repos/agent-workspace/`, so one
+The container gets cloned into `<campaign>/repos/campaign-base/`, so one
 repository has two checkouts. Read both hazards with one command — **before
 launching a delegate, right after merging its pull request, and before the outer
 session next edits anything**:

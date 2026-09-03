@@ -1,4 +1,4 @@
-# agent-workspace
+# campaign-base
 
 A container for running **campaigns** — units of work across the repositories
 they need — on repositories that live elsewhere.
@@ -14,7 +14,7 @@ everything durable was already somewhere else.
 ## Shape
 
 ```
-agent-workspace/
+campaign-base/
   AGENTS.md CLAUDE.md README.md .gitignore    tracked here
   .claude/skills/opening-campaign
   .claude/skills/closing-campaign

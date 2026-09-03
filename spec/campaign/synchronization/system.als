@@ -1,7 +1,7 @@
 /*
  * How far behind origin a machine's two container checkouts are: the OUTER one
  * a campaign session runs from, and the INNER clone under
- * `<campaign>/repos/agent-workspace/` a delegate is launched in. It opens
+ * `<campaign>/repos/campaign-base/` a delegate is launched in. It opens
  * directory/system because a clone lives in a campaign directory and a launch
  * happens in one.
  *
@@ -24,7 +24,7 @@ open directory/system
 /* The OUTER container checkout a campaign session runs from. */
 var sig ContainerBehind   in Machine {}
 var sig ContainerUnpushed in Machine {}
-/* The INNER clone under <campaign>/repos/agent-workspace/. A separate bit
+/* The INNER clone under <campaign>/repos/campaign-base/. A separate bit
    because the two are cleared by different acts: a clone is cut fresh from
    origin/main, which says nothing about the outer checkout it sits inside. */
 var sig CloneBehind in Machine {}

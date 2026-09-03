@@ -1,13 +1,13 @@
 ---
 name: opening-campaign
-description: Opens a campaign in the agent-workspace container, or joins one already open. Use when a person says to open, start, kick off, set up, or join a campaign, or when a request will outlive the session it arrived in — files the campaign issue, binds it to this machine, scaffolds its directory, acquires the member repositories, and files the first sub-issues. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for a later sub-issue of a campaign already scaffolded here.
+description: Opens a campaign in the campaign-base container, or joins one already open. Use when a person says to open, start, kick off, set up, or join a campaign, or when a request will outlive the session it arrived in — files the campaign issue, binds it to this machine, scaffolds its directory, acquires the member repositories, and files the first sub-issues. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for a later sub-issue of a campaign already scaffolded here.
 ---
 
 # Opening a campaign
 
 Finished when all of these hold:
 
-- An open issue in `kalaluthien/agent-workspace` carries the label `campaign`,
+- An open issue in `kalaluthien/campaign-base` carries the label `campaign`,
   no parent, and the sections of the campaign issue template `assets/README.md`, with a
   `## Repos` list that `scripts/campaign-repos.py` reads and exits 0 on.
 - The campaign issue's latest `BOUND` comment names this machine.
@@ -93,7 +93,7 @@ one as `not planned` and say which survived.
 
 ```sh
 "$CONTAINER"/scripts/campaign-tracker.py campaign-issues
-gh issue create -R kalaluthien/agent-workspace \
+gh issue create -R kalaluthien/campaign-base \
   --label campaign --title "<title>" --body-file <path>
 ```
 
@@ -107,7 +107,7 @@ without it is invisible to every later survey and the next session opens a secon
 campaign over the same scope.
 
 ```sh
-gh issue view <N> -R kalaluthien/agent-workspace --json labels,parent
+gh issue view <N> -R kalaluthien/campaign-base --json labels,parent
 ```
 
 Want `campaign` among `labels` and `parent` null. A non-null `parent` means you
@@ -118,7 +118,7 @@ or a launch, both gated on the binding. One of the two occasions a session posts
 `BOUND`, read back as `AGENTS.md` § The binding says.
 
 ```sh
-gh issue comment <N> -R kalaluthien/agent-workspace --body "BOUND $(hostname -s)"
+gh issue comment <N> -R kalaluthien/campaign-base --body "BOUND $(hostname -s)"
 ```
 
 **Then name this session, now that the number exists.** A session that opened
@@ -182,7 +182,7 @@ Then finish it:
   placeholder at once — the close-time sync run backwards:
 
   ```sh
-  gh issue view <N> -R kalaluthien/agent-workspace --json body --jq .body \
+  gh issue view <N> -R kalaluthien/campaign-base --json body --jq .body \
     >| "$CAMPAIGN/README.md"
   cp "$CAMPAIGN/README.md" "$CAMPAIGN/runtime/campaign-issue-body-derived.md"
   "$CONTAINER/scripts/campaign-repos.py" "$CAMPAIGN/README.md" \

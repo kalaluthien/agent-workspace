@@ -110,7 +110,7 @@
     <tr><th>평면</th><th>담는 것</th><th>저장 위치</th></tr>
   </thead>
   <tbody>
-    <tr><td>컨테이너</td><td>캠페인을 운영하는 방법</td><td><code>agent-workspace</code> 저장소</td></tr>
+    <tr><td>컨테이너</td><td>캠페인을 운영하는 방법</td><td><code>campaign-base</code> 저장소</td></tr>
     <tr><td>멤버 저장소</td><td>코드와 그 이력</td><td>각 저장소의 원격</td></tr>
     <tr><td>캠페인</td><td>어느 저장소를, 무엇을 위해, 어디까지</td><td>GitHub 이슈</td></tr>
   </tbody>
@@ -197,7 +197,7 @@
   <ol class="keys">
     <li><span class="k">1</span><p><strong>요청 도착</strong> — 단계. 사람이 컨테이너 루트에 문장 하나, 이슈 번호, 또는 스크린샷을 들고 온다. <span class="hum">사람만 캠페인을 시작한다</span></p></li>
     <li><span class="k">2</span><p><strong>앵커 확인</strong> — 판단. 열린 앵커 이슈를 먼저 읽는다. 세 갈래로 갈린다. 어느 열린 캠페인의 범위가 덮으면 그 캠페인의 후속 하위 과제다. 아무것도 덮지 않고 이 세션으로 끝나는 일이면 캠페인이 아니라 그냥 여기서 한다. 아무것도 덮지 않고 이 세션보다 오래 갈 일일 때만 새 캠페인이다. 크기는 판단 항목이 아니다.</p></li>
-    <li><span class="k">3</span><p><strong>앵커 이슈 발행</strong> — 단계. <code>kalaluthien/agent-workspace</code> 에 앵커 이슈를 만들고 <span class="chip">campaign</span> 라벨을 단다. 그 이슈 번호가 캠페인 ID다. 앵커 이슈가 <code>#6</code> 이면 캠페인 ID는 <code>#6</code> 이다. 모든 조사가 그 라벨로 나열하므로, 라벨 없는 앵커는 아무 목록에도 없다.</p></li>
+    <li><span class="k">3</span><p><strong>앵커 이슈 발행</strong> — 단계. <code>kalaluthien/campaign-base</code> 에 앵커 이슈를 만들고 <span class="chip">campaign</span> 라벨을 단다. 그 이슈 번호가 캠페인 ID다. 앵커 이슈가 <code>#6</code> 이면 캠페인 ID는 <code>#6</code> 이다. 모든 조사가 그 라벨로 나열하므로, 라벨 없는 앵커는 아무 목록에도 없다.</p></li>
     <li><span class="k">4</span><p><strong>디렉터리와 클론</strong> — 단계, 그리고 선택 사항. 컨테이너 루트에 <code>&lt;slug&gt;-&lt;YYMMDD&gt;/</code> 를 만들고 멤버 저장소를 그 아래 <code>repos/</code> 로 가져온다. 캠페인 <code>#6</code> 의 디렉터리는 <code>lifecycle-drill-260828/</code> 이다. 묶인 기계는 누구든 그 캠페인을 한 번 작업한 순간부터 디렉터리를 가진다. 청구 기록이 거기 말고는 살 곳이 없기 때문이다.</p></li>
   </ol>
 </figure>
@@ -210,13 +210,13 @@
 
 <figure id="fig-subissue">
 <pre>
-gh issue create -R kalaluthien/agent-workspace --parent &lt;campaign-issue-url&gt;
+gh issue create -R kalaluthien/campaign-base --parent &lt;campaign-issue-url&gt;
 └──────┬──────┘ └─────────────┬──────────────┘ └─────────┬─────────┘
        │                      │                          └── 앵커 링크
        │                      └── 컨테이너 트래커 (항상 이곳)
        └── 명령
 
-gh api repos/kalaluthien/agent-workspace/git/refs \
+gh api repos/kalaluthien/campaign-base/git/refs \
   -f sha=$(git rev-parse origin/main) \
   -f ref=refs/heads/campaign-1/33-docs-refresh
          └─────────────────┬─────────────────┘
@@ -225,9 +225,9 @@ gh api repos/kalaluthien/agent-workspace/git/refs \
   <figcaption>하위 과제 하나는 두 명령으로 열린다. 첫 명령이 이슈와 색인을 함께 만들고, 둘째 명령이 그 이슈 번호로 브랜치를 청구한다.</figcaption>
 </figure>
 
-<p>하위 과제 하나는 GitHub 이슈 하나다. 이슈는 코드가 어느 저장소에 있든 컨테이너 트래커에 산다. 멤버 저장소는 브랜치와 풀 리퀘스트만 받으므로 그 저장소의 이슈 관례를 건드리지 않고, 이 계정 소유가 아닌 저장소도 두 저장소를 한꺼번에 움직이는 과제도 예외가 되지 않는다. <code>--parent</code> 가 이슈를 하나의 색인으로 묶고, 풀 리퀘스트 본문의 <code>Closes kalaluthien/agent-workspace#&lt;issue&gt;</code> 가 이슈를 저장소 너머에서 닫는다. 짧은 <code>#&lt;issue&gt;</code> 는 멤버 저장소의 같은 번호 이슈를 닫는다.</p>
+<p>하위 과제 하나는 GitHub 이슈 하나다. 이슈는 코드가 어느 저장소에 있든 컨테이너 트래커에 산다. 멤버 저장소는 브랜치와 풀 리퀘스트만 받으므로 그 저장소의 이슈 관례를 건드리지 않고, 이 계정 소유가 아닌 저장소도 두 저장소를 한꺼번에 움직이는 과제도 예외가 되지 않는다. <code>--parent</code> 가 이슈를 하나의 색인으로 묶고, 풀 리퀘스트 본문의 <code>Closes kalaluthien/campaign-base#&lt;issue&gt;</code> 가 이슈를 저장소 너머에서 닫는다. 짧은 <code>#&lt;issue&gt;</code> 는 멤버 저장소의 같은 번호 이슈를 닫는다.</p>
 
-<p>색인은 한 번의 호출로 되읽는다. <code>gh api --paginate repos/kalaluthien/agent-workspace/issues/6/sub_issues</code> 는 캠페인 <code>#6</code> 의 구성원을 정확히 돌려준다. 저장소가 비공개여도 공개 부모 아래에서 올바르게 나열된다. 이 끝점은 서른 개에서 쪽을 나누고, 잘린 색인은 온전한 색인과 똑같이 읽히므로 <code>--paginate</code> 는 선택 사항이 아니다. 본문의 <code>Campaign: kalaluthien/agent-workspace#6</code> 줄은 사람이 읽는 산문이고, 색인이 아니다. <span class="src">AGENTS.md @ 24cb850</span></p>
+<p>색인은 한 번의 호출로 되읽는다. <code>gh api --paginate repos/kalaluthien/campaign-base/issues/6/sub_issues</code> 는 캠페인 <code>#6</code> 의 구성원을 정확히 돌려준다. 저장소가 비공개여도 공개 부모 아래에서 올바르게 나열된다. 이 끝점은 서른 개에서 쪽을 나누고, 잘린 색인은 온전한 색인과 똑같이 읽히므로 <code>--paginate</code> 는 선택 사항이 아니다. 본문의 <code>Campaign: kalaluthien/campaign-base#6</code> 줄은 사람이 읽는 산문이고, 색인이 아니다. <span class="src">AGENTS.md @ 24cb850</span></p>
 
 <details>
   <summary><span class="ct">4&times; 색인 방식</span> 중 서브이슈 링크만 도달 가능한 모든 상태에서 색인과 실제 구성원이 같았다</summary>

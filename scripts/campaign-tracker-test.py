@@ -72,7 +72,7 @@ def head(state="OPEN", labels=("campaign",), parent=None):
             "labels": [{"name": n} for n in labels], "parent": parent}
 
 
-def sub(n, repo="kalaluthien/agent-workspace", nested=0):
+def sub(n, repo="kalaluthien/campaign-base", nested=0):
     return {"number": n, "sub_issues_summary": {"total": nested},
             "repository_url": f"https://api.github.com/repos/{repo}"}
 
@@ -85,7 +85,7 @@ def issue(state, reason=None, prs=(), title="a sub-issue", homeless=False):
                 {"number": n, "url": f"https://x/{n}",
                  "repository": None if homeless else
                  {"owner": {"login": "kalaluthien"},
-                  "name": "agent-workspace"}} for n in prs]}
+                  "name": "campaign-base"}} for n in prs]}
 
 
 def settlement(fixture, tmp):
@@ -288,12 +288,12 @@ def main():
         merged = {"state": "MERGED"}
         base = {"head": head(),
                 "index": [sub(10), sub(11)],
-                "issue:kalaluthien/agent-workspace#10":
+                "issue:kalaluthien/campaign-base#10":
                     issue("CLOSED", "COMPLETED", prs=[90]),
-                "issue:kalaluthien/agent-workspace#11":
+                "issue:kalaluthien/campaign-base#11":
                     issue("CLOSED", "COMPLETED", prs=[91]),
-                "pr:kalaluthien/agent-workspace#90": merged,
-                "pr:kalaluthien/agent-workspace#91": merged}
+                "pr:kalaluthien/campaign-base#90": merged,
+                "pr:kalaluthien/campaign-base#91": merged}
 
         # The whole reason this section exists: no verdict is not a clean verdict.
         for what, index in (("gh exits non-zero", {"exit": 1, "stderr": "HTTP 404"}),
@@ -314,7 +314,7 @@ def main():
               code == 0 and "2/2 settled; closable" in out)
 
         code, out, err = settlement(dict(base, **{
-            "issue:kalaluthien/agent-workspace#11": issue("OPEN")}), tmp)
+            "issue:kalaluthien/campaign-base#11": issue("OPEN")}), tmp)
         check("one open sub-issue refuses the close",
               code == 0 and "1/2 settled; NOT closable" in out
               and "#11" in out and " open " in out)
@@ -322,20 +322,20 @@ def main():
         # A sub-issue closed on purpose is settled; the note says which kind, and
         # AGENTS.md tells a reader to quote the note rather than the word.
         code, out, err = settlement(dict(base, **{
-            "issue:kalaluthien/agent-workspace#11":
+            "issue:kalaluthien/campaign-base#11":
                 issue("CLOSED", "NOT_PLANNED")}), tmp)
         check("a sub-issue dropped as not planned still settles",
               code == 0 and "2/2 settled; closable" in out
               and "[not planned]" in out)
 
         code, out, err = settlement(dict(base, **{
-            "issue:kalaluthien/agent-workspace#11":
+            "issue:kalaluthien/campaign-base#11":
                 issue("CLOSED", "COMPLETED")}), tmp)
         check("closed as completed with nothing to merge names its note",
               code == 0 and "[completed, no merged pull request]" in out)
 
         code, out, err = settlement(dict(base, **{
-            "pr:kalaluthien/agent-workspace#91": {"state": "CLOSED"}}), tmp)
+            "pr:kalaluthien/campaign-base#91": {"state": "CLOSED"}}), tmp)
         check("a closing pull request that never merged is dropped, not complete",
               code == 0 and "dropped" in out and "2/2 settled" in out)
 
@@ -344,11 +344,11 @@ def main():
         # asked for a settlement and got a message about `gh`, or a traceback.
         for what, fixture in (
                 ("its closing pull request is in a repository gone private",
-                 {"pr:kalaluthien/agent-workspace#91": {"exit": 1, "stderr": "HTTP 404"}}),
+                 {"pr:kalaluthien/campaign-base#91": {"exit": 1, "stderr": "HTTP 404"}}),
                 ("its own issue cannot be read",
-                 {"issue:kalaluthien/agent-workspace#11": {"exit": 1, "stderr": "HTTP 404"}}),
+                 {"issue:kalaluthien/campaign-base#11": {"exit": 1, "stderr": "HTTP 404"}}),
                 ("the API places its pull request in no repository",
-                 {"issue:kalaluthien/agent-workspace#11":
+                 {"issue:kalaluthien/campaign-base#11":
                   issue("CLOSED", "COMPLETED", prs=[91], homeless=True)})):
             code, out, err = settlement(dict(base, **fixture), tmp)
             check(f"a sub-issue reads unread when {what}",
@@ -378,7 +378,7 @@ def main():
               code == 0 and "3 sub-issue(s) of its own" in out)
 
         code, out, err = settlement(dict(base, head=head(state="CLOSED"), **{
-            "issue:kalaluthien/agent-workspace#11": issue("OPEN")}), tmp)
+            "issue:kalaluthien/campaign-base#11": issue("OPEN")}), tmp)
         check("a campaign issue closed over an open sub-issue is reported",
               code == 0 and "the campaign issue is closed with sub-issues still open" in out)
 

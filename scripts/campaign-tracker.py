@@ -83,7 +83,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_REPO = "kalaluthien/agent-workspace"
+DEFAULT_REPO = "kalaluthien/campaign-base"
 CAMPAIGN_LABEL = "campaign"
 BOUND_PREFIX = "BOUND "
 

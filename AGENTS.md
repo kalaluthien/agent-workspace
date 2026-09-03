@@ -1,4 +1,4 @@
-# agent-workspace
+# campaign-base
 
 A container for running **campaigns**: units of work across the repositories they
 need, on repositories that live elsewhere. `README.md` says what the container is
@@ -88,7 +88,7 @@ Never run one git command across member repositories.
 
 ### The container as its own member
 
-The container gets cloned into `<campaign>/repos/agent-workspace/`, so one
+The container gets cloned into `<campaign>/repos/campaign-base/`, so one
 repository has two checkouts. **Behind is a merged pull request you have not
 caught up to**, and editing from the outer one can silently revert it; **the clone
 must not be behind at launch**; and **a skill edited inside the clone does not
@@ -198,7 +198,7 @@ resolves the harness name a claim record holds. `herdr agent list` shows the pan
 
 ## ID, directory, branch
 
-- **ID** — the campaign issue's number in `kalaluthien/agent-workspace`, typed `#N`.
+- **ID** — the campaign issue's number in `kalaluthien/campaign-base`, typed `#N`.
   The campaign issue carries the `campaign` label; every survey lists by it, so a campaign issue
   filed without it is in nobody's listing.
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, optional
@@ -223,7 +223,7 @@ One sub-issue is one GitHub issue, **filed on this container's tracker whatever
 repository its code lives in**, and created **as a sub-issue of the campaign issue**:
 
 ```sh
-gh issue create -R kalaluthien/agent-workspace --parent https://github.com/kalaluthien/agent-workspace/issues/<N> ...
+gh issue create -R kalaluthien/campaign-base --parent https://github.com/kalaluthien/campaign-base/issues/<N> ...
 ```
 
 That one flag is the whole index, and `campaign-tracker index <N>` reads it
@@ -232,7 +232,7 @@ back. Fill the body from `.claude/skills/opening-campaign/assets/sub-issue.md`.
 own issue conventions are never touched, and a repository this account does not
 own, or a sub-issue moving two repositories at once, needs no special case. The
 pull request body closes the sub-issue with the keyword and the full name,
-`Closes kalaluthien/agent-workspace#<issue>`: `campaign-tracker settlement`
+`Closes kalaluthien/campaign-base#<issue>`: `campaign-tracker settlement`
 reads `closedByPullRequestsReferences`, which a keyword populates and a bare
 mention does not, and the short `#<issue>` closes the member repository's own
 issue of that number instead. Which repository the work lands in is the

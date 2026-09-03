@@ -1,6 +1,6 @@
 ---
 name: closing-campaign
-description: Closes a campaign in the agent-workspace container and deletes its directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory — gating the close on the binding, on live agents, on work that exists only on this machine, and on every open sub-issue having a disposition, then syncing the README into the campaign issue. Not for closing a single sub-issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
+description: Closes a campaign in the campaign-base container and deletes its directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory — gating the close on the binding, on live agents, on work that exists only on this machine, and on every open sub-issue having a disposition, then syncing the README into the campaign issue. Not for closing a single sub-issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
 ---
 
 # Closing a campaign
@@ -8,7 +8,7 @@ description: Closes a campaign in the agent-workspace container and deletes its 
 Delete a campaign directory only after everything in it also exists somewhere
 else.
 
-Finished when `gh issue view <N> -R kalaluthien/agent-workspace --json state`
+Finished when `gh issue view <N> -R kalaluthien/campaign-base --json state`
 reports `CLOSED`, `$CAMPAIGN_DIR` does not exist, and every step's `Holds when`
 line held when that step ran — `grep '^Holds when' SKILL.md` is the whole list.
 
@@ -125,7 +125,7 @@ Want `campaign` among the labels and `-` for the parent; anything else, stop and
 say which issue `$N` actually is.
 
 ```sh
-gh issue view "$N" -R kalaluthien/agent-workspace --json labels,parent \
+gh issue view "$N" -R kalaluthien/campaign-base --json labels,parent \
   -q '"\([.labels[].name] | join(","))\t\(.parent.number // "-")"'
 "$CONTAINER/scripts/campaign-tracker.py" settlement "$N" >| /tmp/settlement-$N
 cat /tmp/settlement-$N
@@ -215,7 +215,7 @@ to match, because without the comparison one write silently discards another.
 ```sh
 DERIVED="$CAMPAIGN_DIR/runtime/campaign-issue-body-derived.md"
 [ -f "$DERIVED" ] || echo "REFUSE: no runtime/campaign-issue-body-derived.md to compare against"
-gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/body-now
+gh issue view "$N" -R kalaluthien/campaign-base --json body -q .body >| /tmp/body-now
 command diff -u "$DERIVED" /tmp/body-now && echo "the body has not moved; safe to write"
 ```
 
@@ -232,8 +232,8 @@ two -- so the body compare below strips trailing newlines on both sides; `gh
 issue view --json body` is the canonical form, never the file that was sent.
 
 ```sh
-gh issue edit "$N" -R kalaluthien/agent-workspace --body-file "$README"
-gh issue view "$N" -R kalaluthien/agent-workspace --json body -q .body >| /tmp/body-after
+gh issue edit "$N" -R kalaluthien/campaign-base --body-file "$README"
+gh issue view "$N" -R kalaluthien/campaign-base --json body -q .body >| /tmp/body-after
 "$CONTAINER/scripts/campaign-repos.py" /tmp/body-after >| /tmp/repos-after.tmp &&
   mv /tmp/repos-after.tmp /tmp/repos-after ||
   { rm -f /tmp/repos-after.tmp
@@ -272,8 +272,8 @@ LEFTOVERS=$(find "$CAMPAIGN_DIR" -mindepth 1 \
   | grep . || echo "no entries outside runtime/ and repos/")
 BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these entries under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
   "$N" "$HOST" "$LEFTOVERS")
-gh issue comment "$N" -R kalaluthien/agent-workspace --body "$BODY"
-gh issue view "$N" -R kalaluthien/agent-workspace --comments
+gh issue comment "$N" -R kalaluthien/campaign-base --body "$BODY"
+gh issue view "$N" -R kalaluthien/campaign-base --comments
 ```
 
 **A directory and the file inside it both appear, and that is correct** —
@@ -288,12 +288,12 @@ stop and name it.
 leaves its branch outliving the campaign; step 3 makes this sighted.
 
 ```sh
-gh api "repos/kalaluthien/agent-workspace/git/matching-refs/heads/campaign-$N/" \
+gh api "repos/kalaluthien/campaign-base/git/matching-refs/heads/campaign-$N/" \
   --jq '.[] | "\(.ref)\t\(.object.sha)"' |
 while IFS="$(printf '\t')" read -r REF SHA; do
-  AHEAD=$(gh api "repos/kalaluthien/agent-workspace/compare/main...$SHA" --jq .ahead_by) || exit 1
+  AHEAD=$(gh api "repos/kalaluthien/campaign-base/compare/main...$SHA" --jq .ahead_by) || exit 1
   if [ "$AHEAD" = 0 ]; then
-    gh api -X DELETE "repos/kalaluthien/agent-workspace/git/$REF" && echo "released $REF"
+    gh api -X DELETE "repos/kalaluthien/campaign-base/git/$REF" && echo "released $REF"
   else
     echo "REFUSE-ROW: $REF holds $AHEAD commit(s) beyond main — push a PR or say to discard"
   fi
@@ -311,7 +311,7 @@ this machine is in the directory, then the delete of the bound path itself, not 
 path retyped here, not its parent, not a wildcard.
 
 ```sh
-gh issue close "$N" -R kalaluthien/agent-workspace --comment "Campaign closed."
+gh issue close "$N" -R kalaluthien/campaign-base --comment "Campaign closed."
 lsof +D "$CAMPAIGN_DIR" 2>/dev/null | tail -n +2
 ls -A "$CAMPAIGN_DIR"
 rm -rf -- "$CAMPAIGN_DIR"

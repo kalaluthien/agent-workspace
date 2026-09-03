@@ -1,6 +1,6 @@
 # Brief: sub-issue #<issue> — <title>
 
-You are an executor of campaign #<N> (kalaluthien/agent-workspace#<N>), working
+You are an executor of campaign #<N> (kalaluthien/campaign-base#<N>), working
 sub-issue #<issue> in the checkout you were started in. The session that
 launched you is `<ListAgents name>`; reach it with SendMessage. If that name stops resolving,
 re-read `ListAgents` and use the name that is there now — a session's name
