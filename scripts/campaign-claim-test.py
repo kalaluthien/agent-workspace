@@ -470,9 +470,22 @@ def live(m):
         if not cond:
             out.append(name)
 
-    def run_live(d, env=None):
-        return subprocess.run([sys.executable, str(CLAIM), "live", "1", "--dir", d],
+    def run_live(d, env=None, anchor="1"):
+        return subprocess.run([sys.executable, str(CLAIM), "live", anchor,
+                               "--dir", d],
                               capture_output=True, text=True, env=env)
+
+    # `#1` and `1` are the same campaign at the `live` parser too. Unstripped,
+    # the anchor never matches a branch and every record here reads stray --
+    # a warning that is invisible to a `want`, so it is asserted as absent.
+    with tempfile.TemporaryDirectory() as d:
+        claims = Path(d) / "runtime" / "claims"
+        claims.mkdir(parents=True)
+        (claims / "7").write_text("session S1\nbranch campaign-1/7-x\n")
+        r = run_live(d, {"PATH": "/nonexistent"}, anchor="#1")
+        out_text = r.stdout + r.stderr
+    c("a `#`-prefixed anchor does not make this campaign's own record stray",
+      "outside campaign" not in out_text)
 
     got, why = m.parse_agents(listing(agent("S1", "campaign-1-executor-1")))
     c("a listed session is keyed by its session id", why is None and "S1" in got)
