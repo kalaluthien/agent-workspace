@@ -32,7 +32,10 @@ visible, because the sinks that execute text cannot be listed.
 That pattern has no opinion about service doors, because a takeaway check does
 not need one. The three `gh` writes a claim actually gates -- closing, editing
 and commenting on an issue, and merging a pull request -- are added here, in
-SERVICE_DOORS, and are this script's own.
+SERVICE_DOORS, and are this script's own. Nor does it know `sed`'s long
+`--in-place` spelling, which a takeaway check can miss and a claim guard
+cannot, since this is the exact word write_targets() reads its target from --
+added here too, in IN_PLACE_SED.
 
 An import that fails is a refusal, not a pass: a guard that cannot read the
 pattern it guards by has permitted nothing.
@@ -138,6 +141,14 @@ SERVICE_DOORS = re.compile(
 
 # `gh issue close <n>`, with the number wherever the flags leave it.
 CLOSE_TARGET = re.compile(r"\bgh\b[^|;&]*\bissue\s+close\b([^|;&]*)")
+
+# `sed`'s own long in-place spelling: this script's own, layered on the
+# imported pattern the same way SERVICE_DOORS is. `changing_command` only
+# knows the short `sed -i`; a takeaway check can tolerate missing the long
+# one, but a claim guard that reads its target from exactly this word cannot
+# -- `sed --in-place=...` used to bypass it entirely, read as "not a changing
+# call" before target_reading ever ran.
+IN_PLACE_SED = re.compile(r"\bsed\b[^|;&]*--in-place\b")
 
 FILE_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 PATH_KEYS = ("file_path", "notebook_path", "path")
@@ -276,6 +287,8 @@ def changing(payload, changing_command):
         return False, "the command runs campaign-claim.py"
     if SERVICE_DOORS.search(command):
         return True, "the command writes to the campaign plane through gh"
+    if IN_PLACE_SED.search(command):
+        return True, "the command runs sed's long in-place spelling"
     if changing_command.search(command):
         return True, "the command matches the changing-command pattern"
     return False, "the command matches no changing form, outside quoted text"
@@ -323,6 +336,15 @@ FILE_COMMANDS = {"mv", "rm", "cp", "mkdir", "touch", "install"}
 OPT_WITH_ARG = {"-e", "-f", "--expression", "--file"}
 
 
+def is_sed_in_place(word):
+    """Whether a `sed` argument is the in-place flag itself: short
+    `-i[SUFFIX]` attached, or long `--in-place` bare or `--in-place=SUFFIX`
+    attached. Read by both the dispatch in write_targets() and sed_files()
+    itself, so the two agree on what the flag looks like."""
+    return (word.startswith("-i") or word == "--in-place"
+            or word.startswith("--in-place="))
+
+
 def resolve_target(token, cwd):
     """(absolute path, why_unreadable) for one path token."""
     try:
@@ -366,20 +388,26 @@ def operands(args):
 
     An option's own SEPARATE argument is kept as an operand: reading it as a
     path resolves a word that is not one, and that direction is the refusing
-    one. An ATTACHED one is the write target itself in `--target-directory=.`,
-    so a `=` option contributes its value -- but only a value that looks like a
-    path, because `--interactive=never` contributes `never`, and resolving that
-    against the container names a location nothing in the command asked for.
-    A value that does not look like a path is UNREAD, which still refuses; it
-    just refuses for what was read.
+    one. An ATTACHED one on a LONG option is the write target itself in
+    `--target-directory=.`, so a `--x=value` word contributes its value -- but
+    only a value that looks like a path, because `--interactive=never`
+    contributes `never`, and resolving that against the container names a
+    location nothing in the command asked for. A value that does not look like
+    a path is UNREAD, which still refuses; it just refuses for what was read.
 
     A SHORT option's attached value cannot be told from a flag cluster without
     a table per command -- `-rf` is two flags and `-t.` is a target -- so a
     short word whose tail is not purely alphabetic is UNREAD rather than
     guessed either way. That keeps `-p`, `-rf`, `-r` and `-a` reading as flags
     and refuses `-t.`, `-m755` and anything else carrying a value, at the cost
-    of never allowing those. A `--` word is never a cluster, so the test does
-    not reach one: `--no-clobber` is a flag and contributes no operand."""
+    of never allowing those. The `=` split is a LONG-option syntax only: a
+    short option has no `=` separator, so GNU tools read `-t=/tmp/d` as `-t`
+    with the attached value `=/tmp/d`, `=` included -- splitting on it first
+    reads the value as `/tmp/d` instead, one directory level up from the
+    target `cp` really writes to. A short word's tail is checked whole, `=`
+    included, which is exactly what makes it non-alphabetic and UNREAD. A `--`
+    word is never a cluster, so the test does not reach one: `--no-clobber` is
+    a flag and contributes no operand."""
     out, rest = [], False
     for word in args:
         if rest or not word.startswith("-"):
@@ -388,16 +416,16 @@ def operands(args):
         if word == "--":
             rest = True
             continue
-        if "=" in word:
-            value = word.split("=", 1)[1]
-            if not looks_like_path(value):
-                return None, (f"word {word!r} attaches a value that does not "
-                              f"say it is a path, so whether that value is a "
-                              f"write target is not readable")
-            out.append(value)
-            continue
         if word.startswith("--"):
-            continue                            # a long flag, never a cluster
+            if "=" in word:
+                value = word.split("=", 1)[1]
+                if not looks_like_path(value):
+                    return None, (f"word {word!r} attaches a value that does "
+                                  f"not say it is a path, so whether that "
+                                  f"value is a write target is not readable")
+                out.append(value)
+            continue      # never a flag cluster; a value it carried, if any,
+                          # was already appended above
         tail = word.lstrip("-")
         if tail and not tail.isalpha():
             return None, (f"word {word!r} may be an option's attached value, "
@@ -407,21 +435,73 @@ def operands(args):
 
 
 def sed_files(args):
-    """The file operands of `sed -i`. The script is an operand too until an
-    `-e` puts it elsewhere, and BSD's `-i ''` suffix is the empty word."""
-    files, skip = [], False
+    """(the file operands of `sed -i`, why one of them could not be read).
+
+    The script is a file operand too until an `-e` or `-f` puts it elsewhere
+    -- separate (skipped as that option's own following word) or attached
+    long (`--expression=script`) -- and BSD's `-i ''` suffix is the empty
+    word, dropped below with every other empty one.
+
+    The in-place flag ITSELF, whatever spelling dispatched here
+    (`is_sed_in_place`), contributes nothing: `--in-place=SUFFIX` is not a
+    `--flag=value` word whose value might be a target, and reading it as one
+    would run `looks_like_path` on a backup suffix like `.bak`, refusing the
+    call for a value that was never a candidate.
+
+    Every OTHER long option's `=`-attached value follows operands()'s own
+    rule: a value that looks like a path is kept as a file operand, one that
+    says nothing about being a path is UNREAD, which refuses the whole call
+    rather than guess which it is -- EXCEPT `--expression`, whose value is a
+    sed SCRIPT and never a file, path-shaped or not: `s/a/b/` has a `/` and
+    would otherwise be misread as the write target `looks_like_path` exists
+    to recognise. Before the `=`-aware rule existed, none of `--in-place=`,
+    `--expression=` or `--file=` were recognised as supplying anything either
+    way: the whole word was excluded for starting with `-`, and with no
+    signal that a script had been supplied, the guess below took the one
+    remaining file operand for the script and dropped it too -- `sed -i
+    --expression=foo.sed file.txt` lost `file.txt` silently rather than
+    reading it.
+
+    A short word carrying its own `=` -- `-e=text` and the like -- is UNREAD
+    for the reason operands() refuses `-t=/tmp/d`: sed has no `=` syntax for
+    a short option, so this cannot be told from a flag cluster. Every OTHER
+    short word is untouched, `-i.bak`'s attached suffix included: sed's own
+    attached-suffix convention for `-i` is not the ambiguity this closes, and
+    refusing it would break the ordinary call this function exists to read."""
+    files, skip, supplied = [], False, False
     for word in args:
         if skip:
             skip = False
             continue
-        if word.startswith("-"):
-            skip = word in OPT_WITH_ARG
+        if not word.startswith("-"):
+            files.append(word)
             continue
-        files.append(word)
+        if is_sed_in_place(word):
+            continue                            # the flag itself, no value
+        if word.startswith("--"):
+            if "=" in word:
+                flag, value = word.split("=", 1)
+                if flag == "--expression":
+                    supplied = True             # a script, never a file
+                elif not looks_like_path(value):
+                    return None, (f"word {word!r} attaches a value that does "
+                                  f"not say it is a path, so whether that "
+                                  f"value is a write target is not readable")
+                else:
+                    files.append(value)
+                    supplied = supplied or flag in OPT_WITH_ARG
+            continue
+        tail = word.lstrip("-")
+        if "=" in tail:
+            return None, (f"word {word!r} may be an option's attached value, "
+                          f"which this guard cannot tell from a flag cluster, "
+                          f"so its operands are not readable")
+        skip = word in OPT_WITH_ARG
+        supplied = supplied or skip
     files = [f for f in files if f]
-    if not any(a in OPT_WITH_ARG for a in args) and files:
+    if not supplied and files:
         files = files[1:]                       # the first word is the script
-    return files
+    return files, None
 
 
 def write_targets(command, changing_command):
@@ -469,8 +549,8 @@ def write_targets(command, changing_command):
             form, (ops, unreadable) = head, operands(args)
         elif head == "tee":
             form, (ops, unreadable) = "tee", operands(args)
-        elif head == "sed" and any(a.startswith("-i") for a in args):
-            form, ops = "sed -i", sed_files(args)
+        elif head == "sed" and any(is_sed_in_place(a) for a in args):
+            form, (ops, unreadable) = "sed -i", sed_files(args)
         else:
             if changing_command.search(body):
                 return None, (f"the segment {segment.strip()!r} is a changing "
