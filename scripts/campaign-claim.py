@@ -44,6 +44,15 @@ and does not block a re-take -- an idempotency key naming what was asked for
 rather than which attempt is the shape that refuses a repeat of work that has
 returned to its starting state.
 
+`--name` FROM ANOTHER CAMPAIGN IS REFUSED
+
+A session that moved from one campaign to another keeps its old name unless
+something sets it, and the record is where a stale name does lasting damage:
+`list` prints `name` as the address to reach the holder. So `take` compares the
+`campaign-<M>-` a name carries against the anchor and refuses when they differ,
+naming both numbers. opening-campaign step 3 is the step that sets the name;
+this is its second reader.
+
 `--session` IS THE HOLDER'S OWN PROOF
 
 `--confirmed-absent` exists because a THIRD party cannot tell a dead session
@@ -477,9 +486,28 @@ def cmd_list(args):
     return 0
 
 
+def foreign_name(name, anchor):
+    """The campaign number a `campaign-<M>-...` name carries when it is not
+    this campaign's, else None. Pure, so the refusal has a case. A name of any
+    other shape is not judged here: campaign-name-session.py owns the shape,
+    and a record may honestly carry `unknown`."""
+    m = re.match(r"campaign-([0-9]+)-", name or "")
+    if m and m.group(1) != str(anchor):
+        return m.group(1)
+    return None
+
+
 def cmd_take(args):
     _, claims = campaign_dir(args.dir)
     branch = f"campaign-{args.anchor}/{args.issue}-{args.topic}"
+    other = foreign_name(args.name, args.anchor)
+    if other:
+        print(f"refusing: --name {args.name} belongs to campaign {other}, and "
+              f"this claim is on campaign {args.anchor}. A stale name written "
+              f"into a record sends every later reader to the wrong session; "
+              f"rename first with scripts/campaign-name-session.py.",
+              file=sys.stderr)
+        return 1
     path = record_path(claims, args.issue)
     existing = read_record(path)
     if existing and "unreadable" in existing:
