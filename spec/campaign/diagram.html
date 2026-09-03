@@ -164,8 +164,8 @@
   <ol class="keys">
     <li><span class="k">1</span><p><strong>github</strong> — GitHub이 캠페인에 대해 기록하는 것. 이슈, 풀 리퀘스트, 하위 이슈 색인, 캠페인 이슈 본문, 청구. 아무것도 <code>open</code> 하지 않는 맨 아래 엔티티다.</p></li>
     <li><span class="k">2</span><p><strong>directory</strong> — 한 캠페인의 기계 위 디렉터리와 그 안의 체크아웃. 디렉터리는 캠페인의 일을 담고 체크아웃은 저장소의 것이므로 <code>github</code> 을 <code>open</code> 한다.</p></li>
-    <li><span class="k">3</span><p><strong>synchronization</strong> — 컨테이너 체크아웃 둘이 origin 에서 얼마나 뒤처졌는가. 클론은 캠페인 디렉터리 안에 있으므로 <code>directory</code> 를 <code>open</code> 한다.</p></li>
-    <li><span class="k">4</span><p><strong>session</strong> — 캠페인 세션 하나. 세션은 컨테이너 체크아웃에서 돌고 그 거리를 신경 쓰므로 <code>synchronization</code> 을 <code>open</code> 한다.</p></li>
+    <li><span class="k">3</span><p><strong>synchronization</strong> — 베이스 체크아웃 둘이 origin 에서 얼마나 뒤처졌는가. 클론은 캠페인 디렉터리 안에 있으므로 <code>directory</code> 를 <code>open</code> 한다.</p></li>
+    <li><span class="k">4</span><p><strong>session</strong> — 캠페인 세션 하나. 세션은 베이스 체크아웃에서 돌고 그 거리를 신경 쓰므로 <code>synchronization</code> 을 <code>open</code> 한다.</p></li>
     <li><span class="k">5</span><p><strong>orchestration</strong> — 에이전트와 조율. 모든 에이전트에 띄운 세션이 있으므로 <code>session</code> 을 <code>open</code> 한다. 의존 방향은 뒤집을 수 없다.</p></li>
   </ol>
 </figure>
@@ -245,7 +245,7 @@ scripts/alloy-check.py --commands spec/campaign</pre>
       <dd>없음. 맨 아래 엔티티이자 <code>spec/</code> 의 진입점이다.</dd>
       <dt>sigs</dt>
       <dd><ul>
-        <li><code>Repo</code>, 그리고 <code>one sig Container extends Repo</code></li>
+        <li><code>Repo</code>, 그리고 <code>one sig Base extends Repo</code></li>
         <li><code>PullRequest</code></li>
         <li><code>Issue { repo, var pullRequest }</code></li>
         <li><code>Campaign { campaignIssue, var memberIssues, var subIssues, var reposInBody }</code></li>
@@ -282,9 +282,9 @@ scripts/alloy-check.py --commands spec/campaign</pre>
       <dt>sigs</dt>
       <dd>자기 시그니처가 없다. 이 엔티티는 아래 엔티티의 <code>Machine</code> 에 부분집합 셋을 더한다.</dd>
       <dt>var</dt>
-      <dd><code>ContainerBehind in Machine</code> · <code>ContainerUnpushed in Machine</code> · <code>CloneBehind in Machine</code></dd>
+      <dd><code>BaseBehind in Machine</code> · <code>BaseUnpushed in Machine</code> · <code>CloneBehind in Machine</code></dd>
       <dt>events</dt>
-      <dd><code>PullContainer</code> <code>PullClone</code> <code>CommitLocal</code> <code>Launch</code></dd>
+      <dd><code>PullBase</code> <code>PullClone</code> <code>CommitLocal</code> <code>Launch</code></dd>
     </dl>
   </div>
   <div class="rec">
@@ -409,7 +409,7 @@ scripts/alloy-check.py --commands spec/campaign</pre>
 
 <p>규칙 하나가 자리를 정한다. 어떤 엔티티도 자기가 소유하지 않은 시그니처에 필드를 선언하지 않는다. 그래서 관찰할 것이 새로 생긴 엔티티는 자기 관찰자 시그니처를 따로 세운다. <code>synchronization</code> 은 새로 세울 것이 없다. 자기 시그니처가 없고, 자기 이벤트가 건드리는 기계는 <code>directory</code> 의 <code>Machine</code> 이며, 그 기계를 담을 <code>Where.machine</code> 은 이미 있다. <span class="src">spec/campaign/github/system.als:74-77, spec/campaign/synchronization/system.als:16-19 @ 03643fb</span></p>
 
-<p><code>synchronization</code> 은 프레임 술어도 쓰지 않는다. 세 부분집합을 가장 크게 움직이는 것은 이 엔티티가 소유하지 않은 <code>MergePullRequest</code> 이고, 그 셋은 <code>ContainerCheckoutFrame</code> 과 <code>CloneCheckoutFrame</code> 이 처음부터 끝까지 다스린다. 그래서 <code>step</code> 의 갈래에는 고정할 것이 남지 않고, 관찰자 제약만 남는다. <span class="src">spec/campaign/synchronization/system.als:40-44, 96-107 @ 03643fb</span></p>
+<p><code>synchronization</code> 은 프레임 술어도 쓰지 않는다. 세 부분집합을 가장 크게 움직이는 것은 이 엔티티가 소유하지 않은 <code>MergePullRequest</code> 이고, 그 셋은 <code>BaseCheckoutFrame</code> 과 <code>CloneCheckoutFrame</code> 이 처음부터 끝까지 다스린다. 그래서 <code>step</code> 의 갈래에는 고정할 것이 남지 않고, 관찰자 제약만 남는다. <span class="src">spec/campaign/synchronization/system.als:40-44, 96-107 @ 03643fb</span></p>
 
 <h2>Agent 와 Role 의 분리</h2>
 

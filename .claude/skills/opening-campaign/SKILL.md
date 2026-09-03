@@ -1,6 +1,6 @@
 ---
 name: opening-campaign
-description: Opens a campaign in the campaign-base container, or joins one already open. Use when a person says to open, start, kick off, set up, or join a campaign, or when a request will outlive the session it arrived in — files the campaign issue, binds it to this machine, scaffolds its directory, acquires the member repositories, and files the first sub-issues. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for a later sub-issue of a campaign already scaffolded here.
+description: Opens a campaign in the campaign-base repository, or joins one already open. Use when a person says to open, start, kick off, set up, or join a campaign, or when a request will outlive the session it arrived in — files the campaign issue, binds it to this machine, scaffolds its directory, acquires the member repositories, and files the first sub-issues. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for a later sub-issue of a campaign already scaffolded here.
 ---
 
 # Opening a campaign
@@ -11,7 +11,7 @@ Finished when all of these hold:
   no parent, and the sections of the campaign issue template `assets/README.md`, with a
   `## Repos` list that `scripts/campaign-repos.py` reads and exits 0 on.
 - The campaign issue's latest `BOUND` comment names this machine.
-- `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
+- `<slug>-<YYMMDD>/` exists at the base root and holds `AGENTS.md`,
   `CLAUDE.md`, `scripts/`, `runtime/handover/`, `runtime/claims/`,
   `runtime/repos`, and a `README.md` and `runtime/campaign-issue-body-derived.md` that
   each hold the campaign issue body as `gh issue view --json body` returns it --
@@ -34,8 +34,8 @@ binding before anything else about it, because joining one bound elsewhere is th
 mistake this read exists to stop.
 
 ```sh
-CONTAINER=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
-"$CONTAINER"/scripts/campaign-tracker.py bound <N>    # here | elsewhere <machine> | unbound
+BASE=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
+"$BASE"/scripts/campaign-tracker.py bound <N>    # here | elsewhere <machine> | unbound
 ```
 
 `here` — carry on, and that one read is the whole membership question. Anything
@@ -47,8 +47,8 @@ Then find out whether this machine has a directory. "Already scaffolded" is a
 fact about a directory, not about the campaign.
 
 ```sh
-ls -d "$CONTAINER"/*-[0-9][0-9][0-9][0-9][0-9][0-9]/ 2>/dev/null
-CAMPAIGN=$(cd "$CONTAINER/<the directory that matched>" && pwd -P)
+ls -d "$BASE"/*-[0-9][0-9][0-9][0-9][0-9][0-9]/ 2>/dev/null
+CAMPAIGN=$(cd "$BASE/<the directory that matched>" && pwd -P)
 mkdir -p "$CAMPAIGN/runtime/claims"
 ```
 
@@ -92,7 +92,7 @@ that does not exist yet is bound to nobody: if two campaign issues appear anyway
 one as `not planned` and say which survived.
 
 ```sh
-"$CONTAINER"/scripts/campaign-tracker.py campaign-issues
+"$BASE"/scripts/campaign-tracker.py campaign-issues
 gh issue create -R kalaluthien/campaign-base \
   --label campaign --title "<title>" --body-file <path>
 ```
@@ -132,7 +132,7 @@ sessions `herdr agent list` shows for this campaign, counted as `AGENTS.md`
 
 ```sh
 test "${HERDR_ENV:-}" = 1 &&
-  "$CONTAINER/scripts/campaign-name-session.py" "$HERDR_PANE_ID" campaign-<N>-<role>-<n>
+  "$BASE/scripts/campaign-name-session.py" "$HERDR_PANE_ID" campaign-<N>-<role>-<n>
 ```
 
 Read what it reports applied, then confirm with `ListAgents` that the harness
@@ -145,14 +145,14 @@ the close.
 
 ### 4. Scaffold the directory
 
-Address every path below through `$CONTAINER` from step 1: a later step runs with
+Address every path below through `$BASE` from step 1: a later step runs with
 a different working directory. Reject a slug that is not plain kebab-case before
 it reaches a path — a slug comes from a person and lands in a `cp` destination,
-so one containing `../` writes outside the container.
+so one containing `../` writes outside the base.
 
 ```sh
 printf '%s' "<slug>" | grep -Eq '^[a-z0-9]+(-[a-z0-9]+)*$'
-CAMPAIGN="$CONTAINER/<slug>-$(date +%y%m%d)"
+CAMPAIGN="$BASE/<slug>-$(date +%y%m%d)"
 if mkdir "$CAMPAIGN" 2>/dev/null; then
   cp -R <skill>/assets/. "$CAMPAIGN"/
 else
@@ -185,7 +185,7 @@ Then finish it:
   gh issue view <N> -R kalaluthien/campaign-base --json body --jq .body \
     >| "$CAMPAIGN/README.md"
   cp "$CAMPAIGN/README.md" "$CAMPAIGN/runtime/campaign-issue-body-derived.md"
-  "$CONTAINER/scripts/campaign-repos.py" "$CAMPAIGN/README.md" \
+  "$BASE/scripts/campaign-repos.py" "$CAMPAIGN/README.md" \
     >| "$CAMPAIGN/runtime/repos.tmp" &&
     mv "$CAMPAIGN/runtime/repos.tmp" "$CAMPAIGN/runtime/repos" ||
     { rm -f "$CAMPAIGN/runtime/repos.tmp"
@@ -207,7 +207,7 @@ printed in step 4, by absolute path — step 4 has just created an empty
 `$CAMPAIGN/scripts/`, so a relative path resolves there and fails.
 
 ```sh
-ACQUIRE="$CONTAINER/.claude/skills/opening-campaign/scripts/acquire-repo.sh"
+ACQUIRE="$BASE/.claude/skills/opening-campaign/scripts/acquire-repo.sh"
 while read -r REPO; do
   "$ACQUIRE" "$REPO" "$CAMPAIGN/repos/${REPO##*/}"
 done < "$CAMPAIGN/runtime/repos"
@@ -239,7 +239,7 @@ is half the branch name, and the branch is the claim**, so the claim cannot be
 cut until the issue exists and this is the step that mints it.
 
 ```sh
-"$CONTAINER/scripts/campaign-claim.py" take <N> <issue> <topic> \
+"$BASE/scripts/campaign-claim.py" take <N> <issue> <topic> \
   --dir "$CAMPAIGN" --repo <owner/repo> --name "<this session's ListAgents name>"
 ```
 
@@ -250,7 +250,7 @@ must be the delegate's, not the launcher's: choose the delegate's session UUID
 and name first (`references/launching.md`) and pass them as
 `--session <uuid> --name campaign-<N>-executor-<n>`, so the branch is claimed
 before the launch and the planner holds no record of its own
-(`AGENTS.md` § The claim record). A repo-less campaign claims on the container all the
+(`AGENTS.md` § The claim record). A repo-less campaign claims on the base all the
 same — `--repo` defaults there. Give the branch a local checkout only where the
 sub-issue has one, then put the branch name in the handover brief:
 

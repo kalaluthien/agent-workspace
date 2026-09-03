@@ -36,7 +36,7 @@ rather than one alphabetical list.
 
 A reader's subject is one of AGENTS.md's three planes, so `campaign-` prefixes a
 reading of the campaign plane and nothing else. By that, `campaign-primitives`
-is misnamed: it reads the container plane. It stays, because renaming it means
+is misnamed: it reads the base plane. It stays, because renaming it means
 editing the SessionStart hook path in .claude/settings.json, whose failure mode
 is silent -- the announcement simply stops appearing and nothing says so.
 

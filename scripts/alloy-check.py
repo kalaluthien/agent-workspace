@@ -198,8 +198,8 @@ VARYING = [
     ("OnDisk", "dirs"),
     ("CampaignDir<:checkedOut", "co"),
     # synchronization
-    ("ContainerBehind", "behind"),
-    ("ContainerUnpushed", "unpushed"),
+    ("BaseBehind", "behind"),
+    ("BaseUnpushed", "unpushed"),
     ("CloneBehind", "cloneBehind"),
     # session
     ("Session<:worksOn", "holds"),
@@ -253,8 +253,8 @@ def short(text):
         name, idx = m.group(1), m.group(2)
         if name in LETTER:
             return LETTER[name] + idx
-        if name == "Container":
-            return "Container"
+        if name == "Base":
+            return "Base"
         return name
     return ATOM.sub(rep, unqualify(text))
 

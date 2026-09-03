@@ -11,9 +11,9 @@ one implementation, `campaign-tracker settlement`.
 
 It reads two places, and the second only when it is handed one:
 
-  the container   this campaign's own campaign-<N>/ branches and the worktrees
-                  on them -- a container sub-issue is worked there, never under
-                  repos/ -- plus the container's single working tree, which
+  the base        this campaign's own campaign-<N>/ branches and the
+                  worktrees on them -- a base sub-issue is worked there, never
+                  under repos/ -- plus the base's single working tree, which
                   cannot be scoped to a campaign and so is reported without
                   being counted
   the directory   every checkout under <campaign-dir>/repos/, one at a time,
@@ -64,7 +64,7 @@ error (all probed; the evidence is in
   absence of findings: while those lines only informed, a run that skipped every
   member checkout still summarised `clear`, which is what licenses the delete.
   Such a run now says NOT clear and counts the unread places separately from the
-  found ones. The other REPORT lines -- the container's own working tree, the
+  found ones. The other REPORT lines -- the base's own working tree, the
   handover briefs -- are findings the script chose not to count, not places it
   failed to look, and they still do not block.
 
@@ -111,7 +111,7 @@ def git(repo, *args, check=True):
     return run(repo, "git", "-C", repo, *args, check=check)
 
 
-def container():
+def base_root():
     """The main checkout, resolved the one sanctioned way (AGENTS.md § The three planes)."""
     here = os.path.dirname(os.path.abspath(__file__))
     common = git(here, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -255,7 +255,7 @@ def landed(repo, br, upstream, name, rep):
 
 
 def read_worktrees(repo, name, rep, prefix=None):
-    """Worktrees other than the main one; scoped to this campaign in the container."""
+    """Worktrees other than the main one; scoped to this campaign in the base."""
     entries = run(repo, "git", "-C", repo, "worktree",
                   "list", "--porcelain").split("\n\n")
     for entry in entries[1:]:
@@ -279,19 +279,19 @@ def read_worktrees(repo, name, rep, prefix=None):
                 counted=bool(dirty))
 
 
-def read_container(cont, n, rep):
-    name = slug(cont)
-    upstream = default_branch(cont, name, rep)
-    read_branches(cont, name, rep, upstream, refspec=f"refs/heads/campaign-{n}/")
-    read_worktrees(cont, name, rep, prefix=f"campaign-{n}/")
-    # The container's single working tree carries no campaign, so it cannot be
+def read_base(base, n, rep):
+    name = slug(base)
+    upstream = default_branch(base, name, rep)
+    read_branches(base, name, rep, upstream, refspec=f"refs/heads/campaign-{n}/")
+    read_worktrees(base, name, rep, prefix=f"campaign-{n}/")
+    # The base's single working tree carries no campaign, so it cannot be
     # scoped and is not a blocker on this close -- but a person deciding to
-    # delete wants to see it. No --ignored here: the container ignores every
+    # delete wants to see it. No --ignored here: the base ignores every
     # campaign directory.
-    dirty = git(cont, "status", "--porcelain").splitlines()
+    dirty = git(base, "status", "--porcelain").splitlines()
     if dirty:
-        rep.report(f"REPORT: {len(dirty)} uncommitted path(s) in {cont}, "
-                   "unattributed: the container has one working tree and an edit "
+        rep.report(f"REPORT: {len(dirty)} uncommitted path(s) in {base}, "
+                   "unattributed: the base has one working tree and an edit "
                    "in it carries no campaign, so it is not counted")
 
 
@@ -366,12 +366,12 @@ def main():
     if campaign_dir:
         campaign_dir = os.path.realpath(campaign_dir)
 
-    cont = container()
+    base = base_root()
     rep = Report()
-    print(f"campaign #{n}  container {cont}"
+    print(f"campaign #{n}  base {base}"
           + (f"  directory {campaign_dir}" if campaign_dir
              else "  (no directory on this machine)"))
-    read_container(cont, n, rep)
+    read_base(base, n, rep)
     if campaign_dir:
         read_checkouts(campaign_dir, rep)
 

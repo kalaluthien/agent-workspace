@@ -8,7 +8,7 @@
 # <campaign>/repos/<repo>/, and that is a different git repository with its own
 # settings. Probed rather than assumed: a PreToolUse hook declared in this
 # repository's .claude/settings.json fired for a `claude -p` run at the
-# container root and did NOT fire for one whose cwd was
+# base root and did NOT fire for one whose cwd was
 # retire-workspace-board-260902/repos/dotclaude/. So it is registered in
 # ~/.claude/settings.json, where every session on this machine reads it, and
 # the script no-ops when cwd resolves to no campaign directory -- which is what

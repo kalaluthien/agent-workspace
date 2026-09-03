@@ -131,7 +131,7 @@ pred addressable[a: Agent] { a in Addressable }
 /* What a close gate can read AND ATTRIBUTE, a strictly smaller set than what
    it can see. Liveness is readable for BOTH kinds of agent without any
    record -- a session working its own claim holds a pane and is listed too --
-   but a pane gives a name and a campaign session's cwd is the container root,
+   but a pane gives a name and a campaign session's cwd is the base root,
    so only the record ties the name to a claim. The split's subject is
    attribution, and A17 is the residual gap measured. */
 pred liveAndAddressable[c: Campaign, m: Machine] {

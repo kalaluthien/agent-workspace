@@ -91,7 +91,7 @@ implied:
             `*/runtime*` prune pattern would hide. It is backticked exactly like
             the other eleven, so no lexical rule separates them, and an
             existence check over this shape reports a false dangling. Renaming a
-            container script is also self-correcting in a way these four shapes
+            base script is also self-correcting in a way these four shapes
             are not: campaign-primitives derives its inventory from the
             filesystem, so a rename shows up there without anyone editing prose.
 

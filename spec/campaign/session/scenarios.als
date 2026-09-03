@@ -80,7 +80,7 @@ pred R1_LostBodyUpdate {
    unordered it reads SAT on the ordinary window between filing and syncing. */
 pred R1b_IndexOutlivesRepoList {
   some c: Campaign, disj s1, s2: Session, i: Issue, r: Repo {
-    r != Container and i.repo = r
+    r != Base and i.repo = r
     eventually (Now.event = WriteBody and Who.session = s1)
     eventually (Now.event = WriteBody and Who.session = s2)
     eventually (i in indexOf[c] and r in c.reposInBody
@@ -196,8 +196,8 @@ pred R3_DeleteUnderWorkingSession {
 /* =================== 4. a campaign with no member repository =================== */
 
 /* R4. `- none` is encoded as `always no c.reposInBody`. Note what the predicate does
-   NOT say: the sub-issue's `repo` IS the container, since with no member
-   repository the only place a claim can cut a ref is the container -- "no
+   NOT say: the sub-issue's `repo` IS the base, since with no member
+   repository the only place a claim can cut a ref is the base -- "no
    member repository" is a claim about the list, not about where a ref goes.
 
    Checked WITH the disciplines rather than instead of them, and the claim is
@@ -207,7 +207,7 @@ pred R4_RepolessCampaign {
   some s: Session, c: Campaign, i: Issue {
     closeDiscipline[c]
     always no c.reposInBody
-    i.repo = Container            -- the only repository a ref can be cut on
+    i.repo = Base            -- the only repository a ref can be cut on
     eventually (Now.event = FileCampaignIssue and Who.session = s and Now.issue = c.campaignIssue)
     eventually (Now.event = AddMember and Who.session = s and Now.issue = i)
     eventually (Now.event = Claim and Who.session = s and Now.issue = i)

@@ -64,6 +64,6 @@ it, so a fill that never happened still reports success.
 
 ## The campaign directory is invisible to `git status`
 
-`git status` in the container root will never show it. That is the allowlist
+`git status` in the base root will never show it. That is the allowlist
 working, not a missing file. And never run one git command across `repos/*`:
 each is its own repository with its own remote.

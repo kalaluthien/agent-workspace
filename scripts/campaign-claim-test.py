@@ -413,7 +413,7 @@ def pure_cases(m):
       m.compare_path("a/b", "campaign-1/7-x").startswith("repos/a/b/"))
     c("and the delete happens in that same one",
       m.delete_path("a/b", "campaign-1/7-x").startswith("repos/a/b/"))
-    c("a member repository is never compared against the container",
+    c("a member repository is never compared against the base",
       "campaign-base" not in m.compare_path("owner/web", "campaign-1/7-x"))
 
     # ahead_count reduces the raw comparison to a known N, or None when the

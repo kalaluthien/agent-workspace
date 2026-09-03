@@ -28,7 +28,7 @@ WHAT IT CHECKS
       stop reintroduction; with a machine behind the ban they can be deleted.
 
   R4  no member-repository file is committed here.
-      Three planes, and the container is one of them. R2 catches the ordinary
+      Three planes, and the base is one of them. R2 catches the ordinary
       route in (repos/ has no allowlist line); this catches the deliberate one.
 
 WHAT IT DOES NOT CATCH
@@ -360,7 +360,7 @@ def main():
     # R4
     for p in paths:
         if p == "repos" or p.startswith("repos/") or "/repos/" in p:
-            note("R4", p, "a member repository's file in the container plane")
+            note("R4", p, "a member repository's file in the base plane")
 
     unread = sum(1 for f in findings if f.startswith("R0\t"))
     print(f"  {len(findings)} finding(s)"

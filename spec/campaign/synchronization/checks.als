@@ -25,7 +25,7 @@ assert MachineIndependence {
 
 /* ---------------- reachability floor ---------------- */
 
-pred Cov_PullContainer { eventually Now.event = PullContainer }
+pred Cov_PullBase { eventually Now.event = PullBase }
 pred Cov_PullClone     { eventually Now.event = PullClone }
 pred Cov_CommitLocal   { eventually Now.event = CommitLocal }
 pred Cov_Launch        { eventually Now.event = Launch }
@@ -36,7 +36,7 @@ pred Cov_Launch        { eventually Now.event = Launch }
 check MachineIndependence for 4 Issue, 3 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 6 steps expect 0
 
 -- every own event fires in some trace
-run Cov_PullContainer for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
+run Cov_PullBase for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_PullClone     for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_CommitLocal   for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_Launch        for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
