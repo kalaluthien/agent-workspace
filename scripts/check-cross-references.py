@@ -21,7 +21,7 @@ leaves the others live and unflagged, so all four are here.
 
   S2  a literal `.claude/skills/...` path, against the filesystem.
 
-  S3  a literal `spec/alloy/...` path, against the filesystem.
+  S3  a literal `spec/campaign/...` path, against the filesystem.
 
   S4  a relative `references/...` or `assets/...` path.
       Ambiguous on its own: it resolves against the *citing* file's skill root
@@ -78,7 +78,7 @@ Printed as counts, and listed by --list, so the boundary is visible rather than
 implied:
 
   template  a path-like run holding `<...>` or a `*` glob. `<campaign>/repos/`
-            and `spec/alloy/*.als` name a form, not a file.
+            and `spec/campaign/*/*.als` name a form, not a file.
   external  an S1 citation qualified by a path outside this repository --
             `~/.claude/CLAUDE.md § Git`. The guard cannot check it without
             making its verdict depend on the machine it runs on, and CI has no
@@ -143,7 +143,7 @@ DEFAULT_TARGET = "AGENTS.md"
 
 # Which shape a run belongs to, by prefix. Order matters only in that the two
 # absolute prefixes are tested before the two relative ones.
-ABSOLUTE_PREFIXES = (".claude/skills/", "spec/alloy/")
+ABSOLUTE_PREFIXES = (".claude/skills/", "spec/campaign/")
 RELATIVE_PREFIXES = ("references/", "assets/")
 
 
