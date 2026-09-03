@@ -49,8 +49,8 @@ session in the container makes.
 The target is read from the tool: the path field for a file tool, and for
 `Bash` the OPERANDS OF THE CHANGING FORMS THAT MATCHED -- the word a redirect
 writes to, the files of `tee` and `sed -i`, the non-option arguments of `mv`,
-`rm`, `cp`, `mkdir`, `touch` and `install` -- resolved against the payload's
-cwd, slashless ones included. Never the set of words that merely look like
+`rm`, `cp`, `mkdir`, `touch` and `install`, an attached `--flag=value`
+included -- resolved against the payload's cwd, slashless ones included. Never the set of words that merely look like
 paths: a command's slashed words include its remote, its sed script and the
 file its stderr goes to, and none of those is what it changes, so reading them
 as the target allows `cp /tmp/x.md AGENTS.md` on the strength of the operand it
@@ -351,16 +351,34 @@ def lands_outside(target: Path, root: Path, dirs):
 
 
 def operands(args):
-    """The non-option words of an argument list. An option's own separate
-    argument is kept: reading it as a path resolves a word that is not one,
-    and that direction is the refusing one."""
+    """(the non-option words, the word that could not be read).
+
+    An option's own SEPARATE argument is kept as an operand: reading it as a
+    path resolves a word that is not one, and that direction is the refusing
+    one. An ATTACHED one is the write target itself in `--target-directory=.`,
+    so a `=` option contributes its value.
+
+    A short option's attached value cannot be told from a flag cluster without
+    a table per command -- `-rf` is two flags and `-t.` is a target -- so a
+    short word whose tail is not purely alphabetic is UNREAD rather than
+    guessed either way. That keeps `-p`, `-rf`, `-r` and `-a` reading as flags
+    and refuses `-t.`, `-m755` and anything else carrying a value, at the cost
+    of never allowing those."""
     out, rest = [], False
     for word in args:
         if rest or not word.startswith("-"):
             out.append(word)
-        elif word == "--":
+            continue
+        if word == "--":
             rest = True
-    return [w for w in out if w]
+            continue
+        if "=" in word:
+            out.append(word.split("=", 1)[1])
+            continue
+        tail = word.lstrip("-")
+        if tail and not tail.isalpha():
+            return None, word
+    return [w for w in out if w], None
 
 
 def sed_files(args):
@@ -421,10 +439,11 @@ def write_targets(command, changing_command):
         if not words:
             continue
         head, args = words[0].rsplit("/", 1)[-1], words[1:]
+        unreadable = None
         if head in FILE_COMMANDS:
-            form, ops = head, operands(args)
+            form, (ops, unreadable) = head, operands(args)
         elif head == "tee":
-            form, ops = "tee", operands(args)
+            form, (ops, unreadable) = "tee", operands(args)
         elif head == "sed" and any(a.startswith("-i") for a in args):
             form, ops = "sed -i", sed_files(args)
         else:
@@ -433,6 +452,10 @@ def write_targets(command, changing_command):
                               f"command on its own, and its target is not an "
                               f"operand this guard can read")
             continue
+        if unreadable:
+            return None, (f"the `{form}` word {unreadable!r} may be an option's "
+                          f"attached value, which this guard cannot tell from a "
+                          f"flag cluster, so its operands are not readable")
         if not ops:
             return None, (f"the `{form}` form in {segment.strip()!r} names no "
                           f"operand this guard can read")

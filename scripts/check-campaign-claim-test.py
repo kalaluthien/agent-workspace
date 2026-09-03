@@ -402,6 +402,25 @@ def main():
         check("...and says which segment it could not read, not that one was outside",
               "'npm install lodash' is a changing command on its own" in out(r),
               out(r)[:400])
+        # An option's ATTACHED value can be the write target itself, and
+        # dropping the whole word discarded it -- finding 1's shape once more.
+        r = ask(root, tool="Bash", command="cp --target-directory=. /tmp/a")
+        check("an attached option value inside the container denies the call",
+              r.returncode == 2 and "`cp` operand '.'" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        r = ask(root, tool="Bash", command="cp --target-directory=/tmp/b /tmp/a")
+        check("...and an attached option value outside still allows",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        # A short cluster is not read either way: `-rf` is two flags and `-t.`
+        # is a target, and no table here tells them apart.
+        r = ask(root, tool="Bash", command="cp -t. /tmp/a")
+        check("a short option carrying an attached value is unread, not allowed",
+              r.returncode == 2 and "may be an option's attached value" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        r = ask(root, tool="Bash", command="rm -rf /tmp/check-campaign-claim-shot")
+        check("...and a purely alphabetic cluster is still read as flags",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
         # A segment the guard cannot parse must answer for ITSELF. Appending a
         # redirect to somewhere harmless used to supply the allow for it, which
         # is finding 1's shape in the operand reading: a write the guard cannot
