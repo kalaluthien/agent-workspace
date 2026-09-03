@@ -33,7 +33,7 @@ leaves the others live and unflagged, so all four are here.
 WHERE THE NAME ENDS (S1)
 
 A citation is followed by ordinary prose with no delimiter, so `§ The binding),
-so this step` and `§ Subtasks says` and `§ ID, directory, branch` all run
+so this step` and `§ Sub-issues says` and `§ ID, directory, branch` all run
 straight into their sentences. A throwaway version of this check that stopped at
 punctuation reported five false danglings on exactly those.
 

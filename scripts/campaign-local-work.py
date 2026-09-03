@@ -12,7 +12,7 @@ one implementation, `campaign-tracker settlement`.
 It reads two places, and the second only when it is handed one:
 
   the container   this campaign's own campaign-<N>/ branches and the worktrees
-                  on them -- a container subtask is worked there, never under
+                  on them -- a container sub-issue is worked there, never under
                   repos/ -- plus the container's single working tree, which
                   cannot be scoped to a campaign and so is reported without
                   being counted
@@ -341,7 +341,7 @@ def read_handover(campaign_dir, rep):
                "nothing was checked")
     if briefs:
         rep.report(f"REPORT: {len(briefs)} brief(s) in runtime/handover/ "
-                   f"({', '.join(briefs)}): say which subtask each was for")
+                   f"({', '.join(briefs)}): say which sub-issue each was for")
 
 
 def main():

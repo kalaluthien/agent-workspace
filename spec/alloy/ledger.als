@@ -253,7 +253,7 @@ assert ClosedImpliesComplete {
    sub-issue write reddens it, and so does any index that is a second write. */
 assert IndexExact { always all c: Campaign | c.members = idx[c] }
 
-/* From the anchor alone, member repositories and open subtasks are
+/* From the anchor alone, member repositories and open sub-issues are
    recoverable. */
 assert Reconstitution {
   always all c: Campaign |
@@ -323,7 +323,7 @@ pred S1_HappyPath {
 
 /* Closed as not planned, no pull request ever, and closable is still
    reached. */
-pred S2_SubtaskDropped {
+pred S2_SubIssueDropped {
   one c: Campaign {
     #c.members = 2
     always Now.ev not in AddMember + RemoveMember
@@ -355,7 +355,7 @@ pred S5_FollowUpAfterSettled {
   }
 }
 
-/* The added subtask's home is a repository no existing member lives in. */
+/* The added sub-issue's home is a repository no existing member lives in. */
 pred S6_RepoJoinsMidFlight {
   one c: Campaign {
     #c.members = 1
@@ -371,7 +371,7 @@ pred S6_RepoJoinsMidFlight {
 }
 
 /* Nothing guards the anchor's close, so a real run must report it. */
-pred S8_CloseWithOpenSubtask {
+pred S8_CloseWithOpenSubIssue {
   one c: Campaign {
     #c.members = 2
     always Now.ev not in AddMember + RemoveMember
@@ -385,7 +385,7 @@ pred S8_CloseWithOpenSubtask {
 
 /* The index prunes with it, which is what the sub-issue link buys over a
    back-reference: a mention cannot be un-said. */
-pred S10_SubtaskMovedOut {
+pred S10_SubIssueMovedOut {
   one c: Campaign {
     #c.members = 2
     mergeClosed[c.members]
@@ -515,11 +515,11 @@ check TerminationUnderSettlement   for 3 Issue, 2 PR, 1 Campaign, 2 Repo, 10 ste
 run SettledWithoutMerge  for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps expect 1
 
 run S1_HappyPath                for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
-run S2_SubtaskDropped           for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S2_SubIssueDropped           for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
 run S5_FollowUpAfterSettled     for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 2 Repo, 14 steps expect 1
 run S6_RepoJoinsMidFlight       for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 14 steps expect 1
-run S8_CloseWithOpenSubtask     for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
-run S10_SubtaskMovedOut         for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S8_CloseWithOpenSubIssue     for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S10_SubIssueMovedOut         for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
 run S11_MergedButIssueLeftOpen  for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 1
 run S12_TwoCampaignsOneRepo     for exactly 4 Issue, 2 PR, exactly 2 Campaign, exactly 2 Repo, 14 steps expect 1
 -- the finding: no reopen after a PR

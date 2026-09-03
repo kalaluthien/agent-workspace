@@ -77,7 +77,7 @@ every reader of a campaign tree expect.
 under a delegate already working in it. Without it,
 `acquire-repo` re-runs as a fetch and touches no branch.
 
-## Filing a subtask issue
+## Filing a sub-issue
 
 **The branch name's parts** — what each of `campaign-<N>/<issue>-<topic>` keeps
 apart, and why the branch's existence is the claim — are the Branch bullet of
@@ -87,4 +87,4 @@ apart, and why the branch's existence is the claim — are the Branch bullet of
 adding a repository is a scope change, and holding it back to the close loses
 exactly what the delay was meant to protect. What that leaves implicit here: the
 session that opens the campaign on another machine clones the `## Repos` list and
-would have no checkout for the subtask just filed.
+would have no checkout for the sub-issue just filed.

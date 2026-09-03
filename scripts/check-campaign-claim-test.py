@@ -156,7 +156,7 @@ def main():
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 
     # A released record is attribution, not a claim. Its own case, because
-    # treating it as one is the exact way a closed subtask's claim would keep
+    # treating it as one is the exact way a closed sub-issue's claim would keep
     # licensing writes.
     with tempfile.TemporaryDirectory() as d:
         root = container(d, {"demo-260902": {"7": RELEASED}})
@@ -194,7 +194,7 @@ def main():
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
 
     # 8. `gh issue close` is per-issue, not per-session. A claim on some other
-    # subtask must not close this one.
+    # sub-issue must not close this one.
     with tempfile.TemporaryDirectory() as d:
         root = container(d, {"demo-260902": {"7": RECORD}})
         r = ask(root, tool="Bash", command="gh issue close 7 -R a/b")

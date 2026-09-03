@@ -1,6 +1,6 @@
 ---
 name: opening-campaign
-description: Opens a campaign in the agent-workspace container, or joins one already open. Use when a person says to open, start, kick off, set up, or join a campaign, or when a request will outlive the session it arrived in — files the anchor issue, binds it to this machine, scaffolds its directory, acquires the member repositories, and files the first subtasks. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for a later subtask of a campaign already scaffolded here.
+description: Opens a campaign in the agent-workspace container, or joins one already open. Use when a person says to open, start, kick off, set up, or join a campaign, or when a request will outlive the session it arrived in — files the anchor issue, binds it to this machine, scaffolds its directory, acquires the member repositories, and files the first sub-issues. Not for a request that finishes in the session it arrived in, not for closing a campaign, and not for a later sub-issue of a campaign already scaffolded here.
 ---
 
 # Opening a campaign
@@ -19,7 +19,7 @@ Finished when all of these hold:
   not byte-stable (a body sent with one trailing newline comes back with two).
 - Every line `scripts/campaign-repos.py` prints resolves to a checkout at
   `<campaign>/repos/<name>/` — vacuous under `- none`, where it prints nothing.
-- At least one subtask is filed as a sub-issue of the anchor, and the reply names
+- At least one sub-issue of the anchor is filed, and the reply names
   it along with the campaign ID, the directory and the anchor issue URL.
 
 ## Procedure
@@ -100,7 +100,7 @@ gh issue create -R kalaluthien/agent-workspace \
 **Fill the anchor template** for the body, `assets/README.md` in this skill — its
 sections, each placeholder replaced, and no others. Write Scope to be matched
 against a request by the routing gate. The body carries no decomposition
-(`AGENTS.md` § The anchor body); step 6 files the first subtasks instead.
+(`AGENTS.md` § The anchor body); step 6 files the first sub-issues instead.
 
 **Read the label back before scaffolding anything**, because an anchor filed
 without it is invisible to every later survey and the next session opens a second
@@ -111,7 +111,7 @@ gh issue view <N> -R kalaluthien/agent-workspace --json labels,parent
 ```
 
 Want `campaign` among `labels` and `parent` null. A non-null `parent` means you
-filed a subtask, not an anchor — `gh issue edit <N> --remove-parent` first.
+filed a sub-issue, not an anchor — `gh issue edit <N> --remove-parent` first.
 
 **Then bind it to this machine, in the same step** — everything after is a write
 or a launch, both gated on the binding. One of the two occasions a session posts
@@ -169,7 +169,7 @@ campaign, or unreadable — stop and ask.
 Then finish it:
 
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
-- Delete `subtask.md` and `handover.md`. Both are filled once *per subtask* from
+- Delete `sub-issue.md` and `handover.md`. Both are filled once *per sub-issue* from
   the skill's own copy, so neither top-level copy has a reader and a stale one
   could be filled long after.
 - Everything else the copy brought stays. Confirm `runtime/claims/` arrived,
@@ -217,17 +217,17 @@ Safe to re-run; do not clone by hand, and do not read the script — its interfa
 is the contract. **No `--branch` here**: a re-run with one would switch a shared
 checkout under a delegate already working in it.
 
-### 6. File the first subtasks, then report
+### 6. File the first sub-issues, then report
 
-File the subtasks the opening already implies, a campaign whose scope is one
-subtask filing one. Then report the campaign ID, the directory path, the anchor
-issue URL, and the subtasks filed, saying of the first whether you are doing it
+File the sub-issues the opening already implies, a campaign whose scope is one
+sub-issue filing one. Then report the campaign ID, the directory path, the anchor
+issue URL, and the sub-issues filed, saying of the first whether you are doing it
 here or handing it to a repository agent.
 
-### Filing a subtask issue
+### Filing a sub-issue
 
-Step 6's subtasks and one the routing gate sent here to join are filed and
-claimed the same way. File it as `AGENTS.md` § Subtasks says. **Filing needs no
+Step 6's sub-issues and one the routing gate sent here to join are filed and
+claimed the same way. File it as `AGENTS.md` § Sub-issues says. **Filing needs no
 binding**: any session anywhere may file a sub-issue of any campaign, since the
 link is a record and not a claim (`AGENTS.md` § The binding); the claim below is
 what the binding gates. **The issue number
@@ -240,7 +240,7 @@ cut until the issue exists and this is the step that mints it.
 ```
 
 One call cuts the branch from the named remote and writes the claim record. Exit
-3 is the ref already existing, which is the subtask being taken: read who holds
+3 is the ref already existing, which is the sub-issue being taken: read who holds
 it, and do not push past it. **When a delegate will do the work**, the record
 must be the delegate's, not the launcher's: choose the delegate's session UUID
 and name first (`references/launching.md`) and pass them as
@@ -248,7 +248,7 @@ and name first (`references/launching.md`) and pass them as
 before the launch and the launcher holds no record of its own
 (`AGENTS.md` § The claim record). A repo-less campaign claims on the container all the
 same — `--repo` defaults there. Give the branch a local checkout only where the
-subtask has one, then put the branch name in the handover brief:
+sub-issue has one, then put the branch name in the handover brief:
 
 ```sh
 B=campaign-<N>/<issue>-<topic>

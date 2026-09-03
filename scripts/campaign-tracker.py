@@ -23,7 +23,7 @@ WHAT EACH SUBCOMMAND OWNS
 anchors     The open-anchor survey, and the two ways its readings disagree.
             Both readings come off ONE listing: an earlier version made two `gh`
             calls and inferred a property from *absence* in the other, which
-            denounced a real anchor as a subtask wearing the label. `--limit` is
+            denounced a real anchor as a sub-issue wearing the label. `--limit` is
             raised past `gh`'s default of thirty because anchors are the oldest
             issues here, and a listing that comes back *at* the limit refuses
             rather than printing rows that are wrong rather than merely short.
@@ -52,7 +52,7 @@ settlement  The observable spec/alloy/ scenarios are judged by. Verdicts match
             Each OPEN row also carries who holds its claim, read from
             `<campaign>/runtime/claims/` through campaign-claim's own reader:
             `claimed by <name> [<liveness>]`, or `unclaimed`. That column is
-            what an open subtask nobody had started was missing -- it read
+            what an open sub-issue nobody had started was missing -- it read
             exactly like one somebody was three hours into. Without a campaign
             directory the column is EMPTY and a note says which reading did not
             happen, because printing `unclaimed` for a directory nobody read is
@@ -61,7 +61,7 @@ settlement  The observable spec/alloy/ scenarios are judged by. Verdicts match
 `settlement` reads the index through `index`'s own reader rather than issuing its
 own request. Moving only the parse behind a script once left `--paginate`
 hand-written in the settlement path, where deleting it turned a live campaign's
-verdict from "NOT closable" into "closable" with fourteen subtasks silently gone
+verdict from "NOT closable" into "closable" with fourteen sub-issues silently gone
 and nothing red.
 
 scripts/check-rule-readers.py is the second reader that keeps these claims true: it
@@ -162,7 +162,7 @@ def cmd_anchors(args):
         print("  (none: this is a reading, not a failed one)")
     if stray:
         rows("!! labelled but has a parent", stray,
-             "a subtask wearing the label; say so rather than joining it")
+             "a sub-issue wearing the label; say so rather than joining it")
     if bare:
         rows("!! no parent and not labelled", bare,
              "an anchor whose label was forgotten, or the third kind of issue "
@@ -288,7 +288,7 @@ def cmd_index(args):
         repo = (it.get("repository") or {}).get("full_name", "?")
         print(f"  {repo}#{it.get('number', '?'):<6} {it.get('state', '?'):<7} "
               f"{(it.get('title') or '')[:70]}")
-    print(f"{len(items)} subtask(s)"
+    print(f"{len(items)} sub-issue(s)"
           + ("  (an empty index is a reading, not a failure)" if not items else ""))
     return 0
 
@@ -299,7 +299,7 @@ def cmd_index(args):
 def gh_json(*args):
     """(parsed, why_unreadable). Never raises on a reading it could not make.
 
-    This is the shape the whole file uses, and settlement is why: one subtask
+    This is the shape the whole file uses, and settlement is why: one sub-issue
     whose repository went private would otherwise abort the table before the
     reader saw any verdict at all, and a close reads that table."""
     try:
@@ -319,9 +319,9 @@ def gh_json(*args):
 
 
 def verdict(repo, number):
-    """(verdict, note, title) for one subtask issue.
+    """(verdict, note, title) for one sub-issue.
 
-    Four verdicts, not three. `unread` is a subtask whose issue, or whose
+    Four verdicts, not three. `unread` is a sub-issue whose issue, or whose
     closing pull request, this account cannot see -- a repository since made
     private, transferred, or deleted. It is neither settled nor open: an
     absence is not a pass and it is not a failure, and settlement counts it in
@@ -351,7 +351,7 @@ def verdict(repo, number):
         if pr["state"] == "MERGED":
             return "complete", ref["url"], title
     # The note says which kind of closed, because "dropped" alone reads as
-    # abandoned and a completed subtask with nothing to merge lands here too.
+    # abandoned and a completed sub-issue with nothing to merge lands here too.
     note = {"NOT_PLANNED": "not planned",
             "COMPLETED": "completed, no merged pull request",
             "DUPLICATE": "duplicate"}.get(info["stateReason"] or "",
@@ -418,11 +418,11 @@ def anchor_reports(head):
     """What says the number handed in is not an anchor. Costs no extra call.
 
     The anchor repository is a member of its own campaigns, so the number handed
-    in may be a subtask and a subtask may be an anchor. Neither is visible in a
+    in may be a sub-issue and a sub-issue may be an anchor. Neither is visible in a
     settlement table. These reports read labels and the parent relation, never
     the body: prose is editable and the parent relation is not."""
     if CAMPAIGN_LABEL not in [l["name"] for l in head["labels"]]:
-        yield (f"REPORT: no `{CAMPAIGN_LABEL}` label, so this may be a subtask read"
+        yield (f"REPORT: no `{CAMPAIGN_LABEL}` label, so this may be a sub-issue read"
                " as an anchor")
     if head["parent"]:
         yield (f"REPORT: this anchor is itself a sub-issue of #{head['parent']['number']}"
@@ -435,7 +435,7 @@ def cmd_settlement(args):
     if why:
         sys.exit(f"campaign-tracker settlement: could not read the anchor "
                  f"{args.repo}#{args.anchor} -- {why}\n  No verdict was reached "
-                 f"for any subtask.")
+                 f"for any sub-issue.")
     subs, why = fetch_index(args.repo, args.anchor)
     if why:
         sys.exit(f"campaign-tracker settlement: could not read the sub-issue "
@@ -457,13 +457,13 @@ def cmd_settlement(args):
         v, note, title = verdict(repo, s["number"])
         settled += v in ("complete", "dropped")
         unread += v == "unread"
-        # Only an open row: a settled subtask's claim answers nothing a reader
+        # Only an open row: a settled sub-issue's claim answers nothing a reader
         # is about to act on, and printing one invites a release that is not
         # needed.
         held = claim_word(s["number"]) if v == "open" else ""
         rows_out.append((f"{repo}#{s['number']}", v, title[:44],
                          "; ".join(x for x in (note, held) if x)))
-        # sub_issues is not recursive (probed), so a subtask that is itself an
+        # sub_issues is not recursive (probed), so a sub-issue that is itself an
         # anchor hides its own members from this table.
         if s["sub_issues_summary"]["total"]:
             nested.append((f"{repo}#{s['number']}", s["sub_issues_summary"]["total"]))
@@ -477,20 +477,20 @@ def cmd_settlement(args):
               " above; run this on it too")
 
     # Two ways not to be closable, named apart because they want different
-    # repairs: an open subtask is work to finish, an unread one is a reading to
+    # repairs: an open sub-issue is work to finish, an unread one is a reading to
     # get back -- an account to re-authorise, a repository to ask for.
     blockers = []
     if any(v == "open" for _, v, _, _ in rows_out):
-        blockers.append("open subtasks remain")
+        blockers.append("open sub-issues remain")
     if unread:
-        blockers.append(f"{unread} subtask(s) could not be read, which settles "
+        blockers.append(f"{unread} sub-issue(s) could not be read, which settles "
                         "nothing either way")
     closable = not blockers
     print(f"  -- {settled}/{len(rows_out)} settled"
           + (f", {unread} unread" if unread else "") + "; "
           + ("closable" if closable else "NOT closable: " + "; ".join(blockers)))
     if head["state"] == "CLOSED" and not closable:
-        print("  -- REPORT: the anchor is closed with subtasks still open")
+        print("  -- REPORT: the anchor is closed with sub-issues still open")
     return 0
 
 
@@ -524,7 +524,7 @@ def main():
     for name, fn, help_text in (
             ("bound", cmd_bound, "here | elsewhere <machine> | unbound"),
             ("index", cmd_index, "the sub-issue index"),
-            ("settlement", cmd_settlement, "every subtask's verdict")):
+            ("settlement", cmd_settlement, "every sub-issue's verdict")):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("anchor")
         p.add_argument("repo", nargs="?", default=DEFAULT_REPO)

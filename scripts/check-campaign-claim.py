@@ -2,15 +2,15 @@
 """Refuse a changing call from a session holding no claim on the campaign it is in.
 
     check-campaign-claim.py              PreToolUse: the guard
-    check-campaign-claim.py --released   PostToolUse: mark a closed subtask's
+    check-campaign-claim.py --released   PostToolUse: mark a closed sub-issue's
                                          claim released
 
 Both read the hook payload on stdin. This is the reader AGENTS.md's claim rule
 never had: `campaign-tracker settlement` reads issue state, `campaign-claim live`
-reads records that exist, and an open subtask with no record read exactly like
+reads records that exist, and an open sub-issue with no record read exactly like
 one nobody had started. Absence passed, so the rule was obeyed on the paths that
 happened to pass through a `take` and skipped on the own-hands path -- which is
-every local-only subtask.
+every local-only sub-issue.
 
 WHAT COUNTS AS A CHANGING CALL
 
@@ -304,10 +304,10 @@ def pre(payload, claim_module, changing_command):
         *detail,
         *unread,
         f"this session is {session_id}",
-        "Take the claim first, on the subtask's own issue:",
+        "Take the claim first, on the sub-issue's own issue:",
         "  scripts/campaign-claim.py take --local <anchor> <issue> <topic> "
         "--dir <campaign>",
-        "A subtask worked without one is unreadable as in-progress by every "
+        "A sub-issue worked without one is unreadable as in-progress by every "
         "peer, which is what this refuses.",
     ])
 
@@ -341,7 +341,7 @@ def closed_on_github(issue, command):
 
 
 def released(payload, claim_module):
-    """Mark a closed subtask's claim released. Always exits 0."""
+    """Mark a closed sub-issue's claim released. Always exits 0."""
     session_id = payload.get("session_id") or ""
     command = (payload.get("tool_input") or {}).get("command") or ""
     issue = close_target(command)

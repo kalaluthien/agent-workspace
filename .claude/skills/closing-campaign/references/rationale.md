@@ -22,7 +22,7 @@ seconds old: no herdr `cwd` can be under it, `runtime/claims/` is empty
 because it was just copied, and there is nothing uncommitted in it. They cannot
 fail, so they must not be reported as passed. The soundness argument is that
 they have nothing to find: an agent of this campaign is launched into
-`<campaign>/repos/<repo>/` and a session working one of its subtasks is recorded
+`<campaign>/repos/<repo>/` and a session working one of its sub-issues is recorded
 in `<campaign>/runtime/claims/`, and both need a directory that did not exist —
 so a campaign never worked on this machine can have no local executor to miss.
 The residue is the one case that breaks the premise: a directory that existed
@@ -43,7 +43,7 @@ session's tree costs its work.
 
 **Do not match `ListAgents` names against the branch.** A name and a branch are
 two strings on purpose (`AGENTS.md` § The session name, which states the rule): a
-session is named `campaign-<anchor>-<role>-<n>`, which carries no subtask at all,
+session is named `campaign-<anchor>-<role>-<n>`, which carries no sub-issue at all,
 and it can be changed while the claim cannot. So a test built on the branch
 string finds whatever happens to match and misses what `runtime/claims/` exists
 to catch. This is where that bites.
@@ -105,7 +105,7 @@ happened. That branch fires only for a directory whose scaffold was taken out by
 hand: an intact one always lists at least `AGENTS.md`, `CLAUDE.md`, `README.md`
 and `scripts/`.
 
-**What makes the claim-ref release sighted is step 3, not step 1.** Every subtask
+**What makes the claim-ref release sighted is step 3, not step 1.** Every sub-issue
 is settled or disposed of by then, so no claim ref can be an executor's live
 workspace — and step 3 runs on the no-directory path too, where step 1 was
 skipped, and it sees hands and subagent executors that no `herdr agent list` row
@@ -135,7 +135,7 @@ and three things produce it:
 
 | cause | how to tell | what it wants |
 | --- | --- | --- |
-| a session on this machine wrote it | ask the peers: `ListAgents`, then `SendMessage` to each | ask what it meant, then fold. Moving a subtask between campaigns writes *two* anchors, and one of them is never the writer's own campaign |
+| a session on this machine wrote it | ask the peers: `ListAgents`, then `SendMessage` to each | ask what it meant, then fold. Moving a sub-issue between campaigns writes *two* anchors, and one of them is never the writer's own campaign |
 | a person edited the charter on GitHub | no peer claims the write | their words win: fold them into the `README.md`, refresh the derived copy, re-run |
 | a session on a machine the anchor is not `BOUND` to wrote it | nothing on this machine can see it — one `gh` account signs a person's edit and a session's alike | ask the person. The fold is the same; what differs is that the binding was broken and the other machine has to be told |
 

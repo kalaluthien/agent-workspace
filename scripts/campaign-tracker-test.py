@@ -11,7 +11,7 @@ no case reaches the network. `settlement` runs the installed script behind a `gh
 on PATH that answers from a fixture, so the request shapes and the exit codes are
 the ones a person gets. The case that matters most there is the one with no
 verdict at all: an index that did not read must refuse, because printing "the
-index is empty" at exit 0 reads exactly like a campaign with no subtasks and
+index is empty" at exit 0 reads exactly like a campaign with no sub-issues and
 closes it.
 
 Usage: scripts/campaign-tracker-test.py
@@ -77,7 +77,7 @@ def sub(n, repo="kalaluthien/agent-workspace", nested=0):
             "repository_url": f"https://api.github.com/repos/{repo}"}
 
 
-def issue(state, reason=None, prs=(), title="a subtask", homeless=False):
+def issue(state, reason=None, prs=(), title="a sub-issue", homeless=False):
     """`homeless` is the shape GitHub returns for a pull request it will not
     place -- its repository deleted, or moved out of this account's reach."""
     return {"state": state, "stateReason": reason, "title": title,
@@ -122,11 +122,11 @@ def main():
     anchors, stray, bare = m.classify(listing)
     check("an anchor is labelled and parentless",
           [i["number"] for i in anchors] == [1])
-    check("a labelled issue with a parent is a subtask wearing the label",
+    check("a labelled issue with a parent is a sub-issue wearing the label",
           [i["number"] for i in stray] == [9])
     check("an unlabelled issue with no parent is reported, not silently an anchor",
           [i["number"] for i in bare] == [7])
-    check("an ordinary subtask is in no list",
+    check("an ordinary sub-issue is in no list",
           8 not in [i["number"] for i in anchors + stray + bare])
     check("the three lists partition nothing twice",
           len(anchors) + len(stray) + len(bare) == 3)
@@ -145,14 +145,14 @@ def main():
     # ------------------------------------------------------ index: the parse
     one = json.dumps([{"number": 1}, {"number": 2}])
     items, why = m.parse_index(one)
-    check("an array of subtasks reads", why is None and len(items) == 2)
+    check("an array of sub-issues reads", why is None and len(items) == 2)
     items, why = m.parse_index("")
     check("an empty response is an empty index, not a failure",
           why is None and items == [])
     items, why = m.parse_index("[{]")
     check("malformed output is a why, not an empty index", items is None and why)
     items, why = m.parse_index(json.dumps({"message": "Not Found"}))
-    check("an object where an array was expected is a why, not zero subtasks",
+    check("an object where an array was expected is a why, not zero sub-issues",
           items is None and why)
     items, why = m.parse_index(json.dumps([{"number": 1}]) + json.dumps([{"number": 2}]))
     check("concatenated pages are a why rather than a silently short index",
@@ -268,7 +268,7 @@ def main():
         r = tracker("index", "1",
                     env={"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(d)})
         check("a gh that fails but prints valid output is not an empty index",
-              r.returncode == 1 and "0 subtask(s)" not in r.stdout)
+              r.returncode == 1 and "0 sub-issue(s)" not in r.stdout)
 
     for args in (("anchors",), ("index", "1")):
         r = tracker(*args, env={"PATH": "/nonexistent", "HOME": "/tmp"})
@@ -306,25 +306,25 @@ def main():
                   and "Traceback" not in err)
 
         code, out, err = settlement(dict(base, index=[]), tmp)
-        check("an index that read empty is a campaign with no subtasks",
+        check("an index that read empty is a campaign with no sub-issues",
               code == 0 and "the index is empty" in out)
 
         code, out, err = settlement(base, tmp)
-        check("every subtask settled reads closable",
+        check("every sub-issue settled reads closable",
               code == 0 and "2/2 settled; closable" in out)
 
         code, out, err = settlement(dict(base, **{
             "issue:kalaluthien/agent-workspace#11": issue("OPEN")}), tmp)
-        check("one open subtask refuses the close",
+        check("one open sub-issue refuses the close",
               code == 0 and "1/2 settled; NOT closable" in out
               and "#11" in out and " open " in out)
 
-        # A subtask closed on purpose is settled; the note says which kind, and
+        # A sub-issue closed on purpose is settled; the note says which kind, and
         # AGENTS.md tells a reader to quote the note rather than the word.
         code, out, err = settlement(dict(base, **{
             "issue:kalaluthien/agent-workspace#11":
                 issue("CLOSED", "NOT_PLANNED")}), tmp)
-        check("a subtask dropped as not planned still settles",
+        check("a sub-issue dropped as not planned still settles",
               code == 0 and "2/2 settled; closable" in out
               and "[not planned]" in out)
 
@@ -351,12 +351,12 @@ def main():
                  {"issue:kalaluthien/agent-workspace#11":
                   issue("CLOSED", "COMPLETED", prs=[91], homeless=True)})):
             code, out, err = settlement(dict(base, **fixture), tmp)
-            check(f"a subtask reads unread when {what}",
+            check(f"a sub-issue reads unread when {what}",
                   code == 0 and " unread " in out and "Traceback" not in err)
             check(f"...and the count separates it from settled -- {what}",
                   "1/2 settled, 1 unread; NOT closable" in out)
             check(f"...and the refusal names the reading, not open work -- {what}",
-                  "could not be read" in out and "open subtasks remain" not in out)
+                  "could not be read" in out and "open sub-issues remain" not in out)
 
         # The other end of the same rule: the anchor read is one call too, and
         # its failure must not come back as a table with nothing in it.
@@ -366,32 +366,32 @@ def main():
               and "No verdict was reached" in err and "Traceback" not in err)
 
         code, out, err = settlement(dict(base, head=head(labels=())), tmp)
-        check("a number with no campaign label is reported as maybe a subtask",
-              code == 0 and "may be a subtask" in out)
+        check("a number with no campaign label is reported as maybe a sub-issue",
+              code == 0 and "may be a sub-issue" in out)
 
         code, out, err = settlement(dict(base, head=head(parent={"number": 7})), tmp)
         check("an anchor that is itself a sub-issue is reported",
               code == 0 and "sub-issue of #7" in out)
 
         code, out, err = settlement(dict(base, index=[sub(10), sub(11, nested=3)]), tmp)
-        check("a subtask with members of its own is reported, not counted",
+        check("a sub-issue with members of its own is reported, not counted",
               code == 0 and "3 sub-issue(s) of its own" in out)
 
         code, out, err = settlement(dict(base, head=head(state="CLOSED"), **{
             "issue:kalaluthien/agent-workspace#11": issue("OPEN")}), tmp)
-        check("an anchor closed over an open subtask is reported",
-              code == 0 and "the anchor is closed with subtasks still open" in out)
+        check("an anchor closed over an open sub-issue is reported",
+              code == 0 and "the anchor is closed with sub-issues still open" in out)
 
-        # A subtask filed on another repository is read there, not here.
+        # A sub-issue filed on another repository is read there, not here.
         code, out, err = settlement(dict(base, index=[sub(10), sub(5, repo="o/other")],
                                          **{"issue:o/other#5": issue("OPEN")}), tmp)
-        check("a subtask in another repository is read against that repository",
+        check("a sub-issue in another repository is read against that repository",
               code == 0 and "o/other#5" in out and "1/2 settled" in out)
 
         # settlement reads the index through the same function `index` prints
         # from. Moving only the parse behind a script once left `--paginate`
         # hand-written on this path, where deleting it silently dropped fourteen
-        # subtasks and turned "NOT closable" into "closable".
+        # sub-issues and turned "NOT closable" into "closable".
         check("settlement and index share one reader of the sub-issue endpoint",
               m.cmd_settlement.__code__.co_names.count("fetch_index") == 1
               and m.cmd_index.__code__.co_names.count("fetch_index") == 1)

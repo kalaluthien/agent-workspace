@@ -37,7 +37,7 @@ only the first is abandonment, so quote the note, not the word.
 ## `state_reason` case differs by command
 
 Lowercase from `gh api`, uppercase from `gh issue list --json stateReason`. A
-comparison against the wrong one matches nothing and reads every subtask as
+comparison against the wrong one matches nothing and reads every sub-issue as
 unsettled — half of why the reading lives in one script rather than in prose.
 
 ## `set -- $var` does not word-split in zsh

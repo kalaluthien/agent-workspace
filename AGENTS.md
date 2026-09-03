@@ -17,14 +17,14 @@ destructive stake. Everything else, decide and do, and report the decision.
 
 One assignment a person is responsible for, worked across the repositories it
 needs, which may be none. Bigger than a ticket, no size ceiling. It splits into
-subtasks, and follow-ups keep arriving until someone decides it is over.
+sub-issues, and follow-ups keep arriving until someone decides it is over.
 
 ## Routing an arriving request
 
 Settle this before anything else. Most of what arrives here loads no skill.
 
 **A person saying a campaign is over is routed before anything is read.** Load
-`closing-campaign` and stop, or the readings below take the close for a subtask.
+`closing-campaign` and stop, or the readings below take the close for a sub-issue.
 
 Otherwise, two readings, in this order.
 
@@ -42,13 +42,13 @@ ends?** A campaign outlives the sitting.
 
 | what the two readings say | what this is |
 | --- | --- |
-| An open campaign's Scope covers it | **A subtask of that campaign.** Read the binding first (§ The binding), then § Subtasks. Load `opening-campaign` only to *join* — this machine has no directory for the campaign yet. |
+| An open campaign's Scope covers it | **A sub-issue of that campaign.** Read the binding first (§ The binding), then § Sub-issues. Load `opening-campaign` only to *join* — this machine has no directory for the campaign yet. |
 | Two or more could cover it, or the fit is arguable | **A question for the person.** Name the candidates; do not guess. |
 | Nothing covers it, and it ends with this session | **Not campaign work.** Answer it, or make the change and land it. |
 | Nothing covers it, and it will outlive this session | **A new campaign.** Load `opening-campaign`. |
 
 **Size is not one of the readings**, and asking it first is the mistake this
-ordering prevents. A one-line edit inside a Scope is that campaign's subtask.
+ordering prevents. A one-line edit inside a Scope is that campaign's sub-issue.
 
 ## The three planes
 
@@ -103,7 +103,7 @@ never the exit status**, as for `campaign-local-work` and `campaign-claim alive`
 
 | the word | this session is |
 | --- | --- |
-| `here` | **a session of this campaign.** Work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4), and take a subtask. |
+| `here` | **a session of this campaign.** Work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4), and take a sub-issue. |
 | `elsewhere` | **not in this campaign.** Stop before any write and any launch, and name the machine. |
 | `unbound` | **not bound yet.** Only a person's word binds an existing campaign. |
 
@@ -139,7 +139,7 @@ delegate's does not exist yet; `live` joins on the session id and reads it fine.
 **`campaign-<anchor>-executor-<n>`**, for every session on this machine; `<n>` is
 assigned in the order sessions appear, so two do not both pick `-1`.
 
-**The subtask is deliberately not in the name**, because a session works several;
+**The sub-issue is deliberately not in the name**, because a session works several;
 the claim record says which one it holds. **Never test a name against a branch**:
 they are two strings on purpose, and a test treating them as one finds whatever
 happens to match and misses the rest.
@@ -157,7 +157,7 @@ resolves the harness name a claim record holds. `herdr agent list` shows the pan
 - **Directory** — `<slug>-<YYMMDD>/` at the container root, git-ignored, optional
   off the bound machine. A campaign *is* its anchor issue; the directory is one
   machine's cache, and holds the claim records, which live nowhere else.
-- **Branch** — `campaign-<N>/<issue>-<topic>`, the subtask's claim as well as its
+- **Branch** — `campaign-<N>/<issue>-<topic>`, the sub-issue's claim as well as its
   workspace. `campaign-claim` cuts it from the remote and writes the record;
   create-ref refuses an existing ref server-side, so the claim is atomic where a
   survey-then-file is not. **`take --local` writes the record and no ref**, for
@@ -170,9 +170,9 @@ resolves the harness name a claim record holds. `herdr agent list` shows the pan
 this machine has no directory for. **Close** — load `closing-campaign`; only a
 person decides a close.
 
-## Subtasks
+## Sub-issues
 
-One subtask is one GitHub issue, filed on the repository whose code changes, and
+One sub-issue is one GitHub issue, filed on the repository whose code changes, and
 created **as a sub-issue of the anchor**:
 
 ```sh
@@ -181,12 +181,12 @@ gh issue create -R <owner/repo> --parent https://github.com/kalaluthien/agent-wo
 
 That one flag is the whole index, and `campaign-tracker index <N>` reads it
 back, in any repository, public or private. Fill the body from
-`.claude/skills/opening-campaign/assets/subtask.md`.
+`.claude/skills/opening-campaign/assets/sub-issue.md`.
 
-**A discovery becomes a subtask at the moment it is found**, by whoever can file
+**A discovery becomes a sub-issue at the moment it is found**, by whoever can file
 it: one held in a session's memory dies with its pane.
 
-**A subtask whose work lives only under `<campaign>/scripts/` has no commit to
+**A sub-issue whose work lives only under `<campaign>/scripts/` has no commit to
 land**: it closes as completed with no pull request, its closing comment saying
 what was built. Quote `campaign-tracker settlement`'s note for that row, not its verdict.
 
@@ -194,7 +194,7 @@ what was built. Quote `campaign-tracker settlement`'s note for that row, not its
 
 **`## Repos`** says which repositories to clone when a campaign is opened, and
 `scripts/campaign-repos.py <path>` is its one reader; `- none` is the whole list for
-a repo-less campaign, which files its subtasks on the container tracker. **Work
+a repo-less campaign, which files its sub-issues on the container tracker. **Work
 that lands no commit is claimed all the same**, with `campaign-claim take
 --local`: the record alone, no ref. **`scripts/check-campaign-claim.py` is what
 makes that true rather than remembered** — a `PreToolUse` guard answering "does
@@ -220,7 +220,7 @@ skills of the session or directory they were *started in*, and a skill marked
 Then, within what the repository allows, choose by cost:
 
 - **your own hands** for one small edit needing nothing from the build loop;
-- **a subagent on a worktree** when several subtasks can run at once, or the work
+- **a subagent on a worktree** when several sub-issues can run at once, or the work
   would eat the session's turns;
 - **a herdr delegate in a clone** when the work needs the repository's own
   toolchain, will take many turns, or two repositories must move together.
@@ -273,9 +273,9 @@ the launch line, the outcome names, the canary and the three dialogs — is
 
 Three readings, and never answer one with another.
 
-- **Completion is a GitHub fact.** A subtask is settled when its issue is closed —
+- **Completion is a GitHub fact.** A sub-issue is settled when its issue is closed —
   as completed with its pull request merged, or as **not planned**, which is how a
-  subtask gets dropped. Both readings are needed, or a subtask dropped on purpose
+  sub-issue gets dropped. Both readings are needed, or a sub-issue dropped on purpose
   never reads settled and its campaign can never close. **Nothing on a terminal
   screen is evidence.** `campaign-tracker settlement <N>` is the one reader.
 - **Liveness and attribution are different readings, and a gate needs both.**
@@ -392,7 +392,7 @@ together, read the reset time first — an outage to schedule around, not a retr
 
 Retire finished agents as the campaign runs, not when it closes, and sweep with
 both readings. A campaign may not close while any agent is live under its tree,
-nor a repository be dropped while an agent works one of its subtasks.
+nor a repository be dropped while an agent works one of its sub-issues.
 
 # Concurrency
 

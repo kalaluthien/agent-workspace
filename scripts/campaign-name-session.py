@@ -37,8 +37,8 @@ import re
 import subprocess
 import sys
 
-# One shape, no branches. The subtask is deliberately absent: a session works
-# several subtasks, in parallel or one after another, and a name that tracked
+# One shape, no branches. The sub-issue is deliberately absent: a session works
+# several sub-issues, in parallel or one after another, and a name that tracked
 # the work in hand would go false at every handover. <n> distinguishes sessions
 # sharing a campaign and a role.
 # `executor` is the only role: a review runs as a subagent of the session that

@@ -89,7 +89,7 @@ def case(name, args, files=None, mtime=None, env=None, want=None, code=None,
 # The reading that says nothing is here, which must not read like a refusal.
 case("an empty claims directory is a reading, not an absence",
      ["list"], want="0 claim(s)", code=0)
-case("no record for this subtask says so and names the path it read",
+case("no record for this sub-issue says so and names the path it read",
      ["status", "7"], want="verdict none", code=0)
 
 # The verdict that costs work if it is wrong.
@@ -138,7 +138,7 @@ case("an undecodable record reads as unreadable, not as an absence",
 case("release refuses a record whose pid belongs to something else",
      ["release", "7"], {"7": "session s\nname n\npid 1\nbranch campaign-1/7-x\n"},
      want="reads other", code=1)
-case("take refuses a subtask this machine already has a record for",
+case("take refuses a sub-issue this machine already has a record for",
      ["take", "1", "7", "x"], {"7": DEAD_REC},
      want="already claimed", code=3)
 case("...and the refusal names the session to go and ask",
@@ -160,7 +160,7 @@ case("take --local on a live record refuses like any other take",
 case("take on an undecodable record refuses without concluding",
      ["take", "--local", "1", "7", "x"], {"7": b"\xff\xfe not text\n"},
      want="will not decode", code=1)
-# Scoped to unsettled records: a subtask that returns to its starting state
+# Scoped to unsettled records: a sub-issue that returns to its starting state
 # must be re-takeable, or a re-opened issue can never be worked again.
 case("take re-takes a released record and says why it may",
      ["take", "--local", "1", "7", "x"], {"7": RELEASED_REC},
