@@ -7,7 +7,8 @@
     campaign-claim.py list
     campaign-claim.py release <issue> [--branch B] [--confirmed-absent WHO]
                               [--session SID]
-    campaign-claim.py live <N> [--dir CAMPAIGN]
+    campaign-claim.py live <N> [--dir CAMPAIGN] [--repo owner/repo]
+    campaign-claim.py stood-down <N> [--name NAME] [--session SID]
     campaign-claim.py alive <pid>
 
 A claim is two things that must agree: a branch on the remote, which is what
@@ -48,6 +49,22 @@ a merged pull request whose head was this branch, and one found is the durable r
 branch held is on main. No ref and no merged pull request is still a refusal,
 because a branch that vanished without merging is reported, never released.
 The verdict line is printed once, after whichever check ran, never before.
+
+`stood-down` RECORDS THE AGREEMENT WHERE THE CLOSE GATE CAN READ IT
+
+STAND DOWN is a session-to-session message and leaves no record, so a close
+gate could only read presence: a peer that had finished, released its claims
+and was merely sitting in the directory blocked the close. `stood-down <N>`
+posts a comment on the campaign issue whose first line is
+`STOOD DOWN <name> <session-id>`, after refusing while this session still
+holds an unreleased claim here, refusing a `--session` that is not its own
+(the comment is the peer's word and nobody may speak it for a peer), and
+reading the binding, since a comment on the campaign issue is a gated write. `live` reads those comments as its third
+reading and lists the sessions under the tree that have neither a claim nor
+a STOOD DOWN comment; a close refuses on that list and on live claims, and
+passes a stood-down peer whatever its cwd. The comment is the evidence
+because it is durable and it is the peer's own word, posted after it verified
+its work was on GitHub; a pane is neither.
 
 RELEASED IS A MARK, NOT A DELETION
 
@@ -579,6 +596,20 @@ def binding_verdict(word):
     return f"the binding could not be read (campaign-tracker bound said {word!r})"
 
 
+def binding_refusal(anchor):
+    """Read the binding through its one reader and say why it refuses, or
+    None. Shared by every write here that the binding gates."""
+    b = run(sys.executable, str(HERE / "campaign-tracker.py"), "bound",
+            str(anchor))
+    word = (b.stdout.strip().split() or [""])[0]
+    # Whole, on one line: the tracker's prefix is over a hundred characters
+    # and gh's auth failure is several lines with the cause on the first, so
+    # neither a prefix cut nor a last-line keep carries both ends.
+    why = " ".join(b.stderr.split()) or b.stdout.strip() or "no message"
+    return binding_verdict(word if b.returncode == 0 else
+                           f"exit {b.returncode}: {why}")
+
+
 def cmd_take(args):
     _, claims = campaign_dir(args.dir)
     branch = f"campaign-{args.anchor}/{args.issue}-{args.topic}"
@@ -629,15 +660,7 @@ def cmd_take(args):
     # the bound machine makes. Read from the one reader, never re-derived. A
     # --local claim lands no ref and stays off the network, so it is gated by
     # the rule alone.
-    b = run(sys.executable, str(HERE / "campaign-tracker.py"), "bound",
-            str(args.anchor))
-    word = (b.stdout.strip().split() or [""])[0]
-    # Whole, on one line: the tracker's prefix is over a hundred characters
-    # and gh's auth failure is several lines with the cause on the first, so
-    # neither a prefix cut nor a last-line keep carries both ends.
-    why = " ".join(b.stderr.split()) or b.stdout.strip() or "no message"
-    refusal = binding_verdict(word if b.returncode == 0 else
-                              f"exit {b.returncode}: {why}")
+    refusal = binding_refusal(args.anchor)
     if refusal:
         print(f"refusing: {refusal}", file=sys.stderr)
         return 1
@@ -982,11 +1005,14 @@ def classify(recs, sessions):
     it is the one line where reaching for the name instead would look right and
     be wrong every time a session is renamed."""
     answered, orphan = [], []
-    for issue, rec in sorted(recs.items()):
+    # A released record licenses nothing and blocks nothing, so it attributes
+    # no claim to anyone here: it is neither answered nor orphaned.
+    unsettled = {i: r for i, r in recs.items() if not is_released(r)}
+    for issue, rec in sorted(unsettled.items()):
         sid = rec.get("session", "")
         s = sessions.get(sid)
         (answered if s else orphan).append((issue, rec, s))
-    held = {r.get("session") for r in recs.values()}
+    held = {r.get("session") for r in unsettled.values()}
     idle = [(sid, s) for sid, s in sessions.items() if sid not in held]
     return answered, orphan, idle
 
@@ -998,6 +1024,125 @@ def stray_branches(recs, anchor):
     something of ours."""
     return [(i, r) for i, r in sorted(recs.items())
             if not r.get("branch", "").startswith(f"campaign-{anchor}/")]
+
+
+STOOD_DOWN_PREFIX = "STOOD DOWN "
+
+
+def stood_down_line(name, session):
+    """The comment's first line. The session id is the last word, so a name
+    of `unknown` and a name with no spaces both parse back."""
+    return f"{STOOD_DOWN_PREFIX}{name or 'unknown'} {session}"
+
+
+def stood_down_sessions(comment_bodies):
+    """The session ids that have stood down, read from the campaign issue's
+    comments. Pure, so each shape has a case. Only the first line is read,
+    and only a line carrying both a name and an id counts."""
+    out = set()
+    for body in comment_bodies:
+        first = (body or "").split("\n", 1)[0]
+        if first.startswith(STOOD_DOWN_PREFIX):
+            words = first[len(STOOD_DOWN_PREFIX):].split()
+            if len(words) >= 2:
+                out.add(words[-1])
+    return out
+
+
+def parse_comment_pages(text):
+    """`gh api --paginate --slurp` on the comments endpoint: a list of pages,
+    each a list of comments. Returns (bodies, why)."""
+    try:
+        pages = json.loads(text or "[]")
+        return [c.get("body", "") for page in pages for c in page], None
+    except (ValueError, AttributeError, TypeError) as e:
+        return None, f"the comments did not parse ({e.__class__.__name__})"
+
+
+def issue_comments(repo, number):
+    r = run("gh", "api", "--paginate", "--slurp",
+            f"repos/{repo}/issues/{number}/comments")
+    if r.returncode != 0:
+        return None, (f"gh api comments exited {r.returncode}: "
+                      f"{' '.join(r.stderr.split())[:160]}")
+    return parse_comment_pages(r.stdout)
+
+
+def unreleased_claims_of(recs, session):
+    """The issues this session still holds here. Pure."""
+    return sorted(i for i, r in recs.items()
+                  if r.get("session") == session and not is_released(r))
+
+
+def under_tree(cwd, tree):
+    """Is `cwd` inside `tree`? Whole path segments, so `demo-1` is not under
+    `demo`; both resolved, because herdr reports the path a shell was opened
+    at and a close reads `pwd -P`, which differ under /var on macOS."""
+    try:
+        c, t = Path(cwd).resolve().parts, Path(tree).resolve().parts
+    except (TypeError, OSError):
+        return False
+    return c[:len(t)] == t
+
+
+def not_stood_down(idle, stood, tree):
+    """Live sessions under the tree holding no claim and having posted no
+    STOOD DOWN: the rows a close refuses on. Pure."""
+    return [(sid, s) for sid, s in idle
+            if under_tree(s.get("cwd", ""), tree) and sid not in stood]
+
+
+def cmd_stood_down(args):
+    _, claims = campaign_dir(args.dir)
+    own = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    session = args.session or own
+    if not session:
+        print("refusing: no session id (--session or $CLAUDE_CODE_SESSION_ID); "
+              "a STOOD DOWN that names no session can be matched to nobody.",
+              file=sys.stderr)
+        return 1
+    # The comment is the peer's own word, which is what makes it evidence: a
+    # session may stand itself down and nobody else. A hook is handed the
+    # session id it acts for, and that id equals the environment's.
+    if not own:
+        print("refusing: $CLAUDE_CODE_SESSION_ID is not set, so nothing proves "
+              "the caller is the session it would name. A STOOD DOWN is posted "
+              "by the session it names, never for a peer.", file=sys.stderr)
+        return 1
+    if session != own:
+        print(f"refusing: --session {session} is not this session ({own}). A "
+              f"STOOD DOWN is posted by the session it names, never for a "
+              f"peer.", file=sys.stderr)
+        return 1
+    recs, odd = claim_records(claims)
+    if odd:
+        print(f"refusing: {len(odd)} record(s) here could not be read, so "
+              f"whether this session still holds a claim is unknown:",
+              file=sys.stderr)
+        for note in odd:
+            print(f"  {note}", file=sys.stderr)
+        return 1
+    held = unreleased_claims_of(recs, session)
+    if held:
+        print(f"refusing: session {session} still holds claim(s) "
+              f"{', '.join('#' + i for i in held)} here. Release them first; "
+              f"a STOOD DOWN over a live claim would read as agreement while "
+              f"the work is still attributed.", file=sys.stderr)
+        return 1
+    # A comment on the campaign issue is a write the binding gates.
+    refusal = binding_refusal(args.anchor)
+    if refusal:
+        print(f"refusing: {refusal}", file=sys.stderr)
+        return 1
+    line = stood_down_line(args.name, session)
+    r = run("gh", "issue", "comment", str(args.anchor), "-R", args.repo,
+            "--body", line)
+    if r.returncode != 0:
+        print(f"refusing: the comment was not posted.\n  "
+              f"{' '.join(r.stderr.split())[:200]}", file=sys.stderr)
+        return 1
+    print(f"posted on {args.repo}#{args.anchor}: {line}")
+    return 0
 
 
 def cmd_live(args):
@@ -1022,6 +1167,10 @@ def cmd_live(args):
           f"{len(odd)} unread")
     for note in odd:
         print(f"           !! {note}")
+    bodies, why3 = issue_comments(args.repo, args.anchor)
+    stood = stood_down_sessions(bodies or [])
+    print(f"reading 3  {args.repo}#{args.anchor} comments -- "
+          f"{'FAILED: ' + why3 if why3 else str(len(stood)) + ' session(s) stood down'}")
     # Before the herdr gate: a record naming another campaign's branch is a
     # defect in this directory, and surfacing it must not depend on the other
     # reading having worked.
@@ -1035,14 +1184,14 @@ def cmd_live(args):
               "or a branch was\n  named wrongly. Neither is this script's to "
               "fix.")
 
-    if why or odd:
-        if odd and not why:
+    if why or odd or why3:
+        if odd and not why and not why3:
             print(f"\n{len(odd)} claim(s) could not be read, so the counts "
                   f"below are of what was\nreadable and not of what is here.",
                   file=sys.stderr)
         else:
-            print("\nOne of the two readings did not happen, so no count below "
-                  "is safe to act on.", file=sys.stderr)
+            print("\nOne of the three readings did not happen, so no count "
+                  "below is safe to act on.", file=sys.stderr)
         return 1
 
     answered, orphan, idle = classify(recs, sessions)
@@ -1067,14 +1216,28 @@ def cmd_live(args):
 
     print(f"\nlive sessions holding no claim recorded here ({len(idle)})")
     for sid, s in idle:
-        print(f"  {s['name']:<24} {s['status']:<8} {s['pane']:<10} {s['cwd']}")
+        mark = "stood down" if sid in stood else "not stood down"
+        print(f"  {s['name']:<24} {s['status']:<8} {s['pane']:<10} "
+              f"{mark:<15} {s['cwd']}")
     if idle:
         print("  A session with no claim may still be working -- a launcher, a "
               "session between\n  sub-issues, or one on another campaign. This "
               "list is not a list of idle panes.")
 
-    print(f"\nboth readings were made. {len(answered)} answered, "
-          f"{len(orphan)} unanswered, {len(idle)} unattributed.")
+    tree = str(Path(d).expanduser().resolve())
+    pending = not_stood_down(idle, stood, tree)
+    print(f"\nlive sessions under {tree} with neither a claim nor a STOOD DOWN "
+          f"({len(pending)})")
+    for sid, s in pending:
+        print(f"  {s['name']:<24} {s['status']:<8} {s['pane']:<10} {s['cwd']}")
+    if pending:
+        print("  Each is a peer that has not said it is finished. Send STATUS, "
+              "then STAND DOWN; it\n  posts STOOD DOWN itself, with "
+              "`campaign-claim stood-down`, once its work is on GitHub.")
+
+    print(f"\nall three readings were made. {len(answered)} answered, "
+          f"{len(orphan)} unanswered, {len(idle)} unattributed, "
+          f"{len(pending)} pending under the tree.")
     print("No verdict: a close reads these counts, it does not get one from "
           "here.")
     return 0
@@ -1132,9 +1295,16 @@ def main():
                         "needs no absence established by anybody.")
     r.set_defaults(fn=cmd_release)
 
-    v = sub.add_parser("live", parents=[where])
+    v = sub.add_parser("live", parents=[where, against])
     v.add_argument("anchor", type=lambda s: s.lstrip("#"))
     v.set_defaults(fn=cmd_live)
+
+    sd = sub.add_parser("stood-down", parents=[where, against])
+    sd.add_argument("anchor", type=lambda s: s.lstrip("#"))
+    sd.add_argument("--name", help="this session's ListAgents name")
+    sd.add_argument("--session", help="the session id to record (default "
+                    "$CLAUDE_CODE_SESSION_ID)")
+    sd.set_defaults(fn=cmd_stood_down)
 
     a = sub.add_parser("alive")
     a.add_argument("pid")
