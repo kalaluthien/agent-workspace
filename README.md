@@ -50,14 +50,18 @@ machine at a time, and the anchor's latest `BOUND` comment says which.
 
 ## Setup
 
-Git hooks do not clone, so install the guard that blocks direct commits to
-`main` once per clone:
+Git hooks do not clone, so run the installer once per clone:
 
 ```sh
-printf '%s\n' '#!/usr/bin/env sh' \
-  'exec "$HOME/.claude/git-hooks/no-main-commits" "$@"' > .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit
+scripts/install-hooks.sh
 ```
+
+It installs the `pre-commit` that chains the machine-wide no-commits-on-`main`
+guard with this repository's three (`check-rule-readers`, `check-tree-shape`,
+`check-cross-references`), the `post-commit` that pushes a campaign branch on
+its first commit, and the harness claim guard in `~/.claude/settings.json`. It
+refuses rather than overwrites a hook it did not write, so a hand-written
+shim in the slot is the one thing that stops it — remove that first.
 
 Requires `git`, `gh` (authenticated), `herdr`, `uv`, and Python 3.
 
