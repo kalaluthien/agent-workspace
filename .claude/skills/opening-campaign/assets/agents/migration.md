@@ -33,7 +33,7 @@ cycle of real traffic.
   merges as one unit, the change of form and the change of behaviour go in
   separate ones, or the equivalence check has nothing to compare.
 - Deleting the old path in the same change that enables the new one. Removal is
-  a later subtask, filed once the new path has carried real load.
+  a later sub-issue, filed once the new path has carried real load.
 - A cutover with no rollback, or one whose rollback needs data it destroys.
 - Silence about a difference you found and accepted. Write it down with the
   reason; it is the thing an incident will point at.

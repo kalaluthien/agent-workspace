@@ -99,7 +99,7 @@ pred closableLocally[s: Session, c: Campaign] { closable[c] and not liveUnderLoc
 pred closableAsRead[s: Session, c: Campaign]  { closable[c] and not liveAndReadable[c, s.smach] }
 
 /* campaign-<N>/<issue>-<topic>: two executors share a branch only when
-   campaign, subtask and topic all match. That it separates two SUBTASKS is
+   campaign, sub-issue and topic all match. That it separates two SUBTASKS is
    definitional and is not run; R4e is what it leaves. */
 pred sameBranch[a1, a2: Agent] {
   campaignOf[a1.task] = campaignOf[a2.task]
@@ -408,7 +408,7 @@ pred claimAtomic       { always (Now.ev = Claim  implies Now.issue not in Claime
 
 /* The gate on LAUNCH covers the executor a session starts and says nothing
    about the executor a session IS: `work` carries no `By.actor`, so a session
-   working its own claim reaches the same subtask along an edge
+   working its own claim reaches the same sub-issue along an edge
    `claimBeforeLaunch` never touches. R4h is that hole and R4i is its repair --
    scripts/check-campaign-claim.py, a PreToolUse guard refusing a changing call
    from a session holding no claim. Keyed on `a.peer` because a delegate has no
@@ -438,7 +438,7 @@ pred noDeleteUnderReadableExecutor {
                           and campaignOf[a.task] in (Present - Present').camp)
 }
 
-/* Empty for a subtask a session did with its own hands, which is what makes
+/* Empty for a sub-issue a session did with its own hands, which is what makes
    `mergedOnCurrentReview`'s second conjunct vacuous there -- see A18/A18b. */
 fun executorsOf[i: Issue]: set Agent { task.i }
 
@@ -588,7 +588,7 @@ pred R3b_CloseFromAnotherMachine {
 
 /* R3c. The global rule, if it could be read, blocks it. The RemoveMember
    scope is a finding, not a convenience: `liveUnder` reads membership OR
-   co-location, so moving the subtask out and deleting the tree turns the rule
+   co-location, so moving the sub-issue out and deleting the tree turns the rule
    permissive while the executor still runs, and nothing guards that. */
 pred R3c_GlobalCloseRuleBlocks {
   some c: Campaign, disj s1, s2: Session, a: Agent {
@@ -616,8 +616,8 @@ pred R4c_CheckoutSwitchedUnderAgent {
   }
 }
 
-/* R4e. The issue number separates two subtasks and there is only ever one of
-   it per subtask, so two sessions on the SAME subtask still share a branch. */
+/* R4e. The issue number separates two sub-issues and there is only ever one of
+   it per sub-issue, so two sessions on the SAME sub-issue still share a branch. */
 pred R4e_NumberedBranchStillShared {
   some disj a1, a2: Agent {
     a1.launcher != a2.launcher
@@ -627,7 +627,7 @@ pred R4e_NumberedBranchStillShared {
 }
 
 /* R4f. The second session's claim fails before a second executor exists. */
-pred R4f_ClaimClosesSameSubtask {
+pred R4f_ClaimClosesSameSubIssue {
   claimBeforeLaunch and claimAtomic
   R4e_NumberedBranchStillShared
 }
@@ -641,7 +641,7 @@ pred R4g_ClaimWithoutAtomicityStillShared {
 }
 
 /* R4h. THE HOLE, and the one this campaign actually fell into: a session works
-   its own subtask and no claim of it ever exists, so every peer reading the
+   its own sub-issue and no claim of it ever exists, so every peer reading the
    records sees an open sub-issue indistinguishable from one nobody started. */
 pred R4h_OwnHandsWorkWithoutClaim {
   some s: Session, a: Agent {
@@ -979,7 +979,7 @@ run R4c_CheckoutSwitchedUnderAgent for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 A
 -- what the numbered branch leaves
 run R4e_NumberedBranchStillShared for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps expect 1
 -- the claim closes it
-run R4f_ClaimClosesSameSubtask    for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps expect 0
+run R4f_ClaimClosesSameSubIssue    for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps expect 0
 -- control: the 422 is load-bearing
 run R4g_ClaimWithoutAtomicityStillShared for 4 Issue, 1 PR, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Topic, 1 Tree, 12 steps expect 1
 -- the own-hands hole, the guard that closes it, and the control

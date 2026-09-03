@@ -6,10 +6,10 @@ raises no error.
 ## Why the claim is one call to `campaign-claim take`
 
 A hand-written claim block read `git rev-parse --verify origin/main` in the
-subtask's checkout. Without that ref, `git rev-parse` exits non-zero and *still
+sub-issue's checkout. Without that ref, `git rev-parse` exits non-zero and *still
 prints* `origin/main`; inside `$(...)` nothing read the exit status, GitHub
 answered `422`, and `422` is what this skill teaches means "already claimed" — so
-a free subtask was abandoned. The script reads the sha from the remote into a
+a free sub-issue was abandoned. The script reads the sha from the remote into a
 checked variable and needs no second form for a repo-less campaign; its own
 comments carry the rest.
 

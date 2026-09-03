@@ -72,8 +72,8 @@ FORM_CASES = [
      fence("gh issue list -R o/r --state open \\") + fence("--json number,title,parent"), 0),
     ("anchors: an issue list that reads neither is outside the claim",
      fence("gh issue list -R o/r --state closed --json number,title"), 0),
-    ("subtasks: the index read", fence("gh api --paginate repos/o/r/issues/1/sub_issues"), 1),
-    ("subtasks: the endpoint named in prose is a mention",
+    ("sub-issues: the index read", fence("gh api --paginate repos/o/r/issues/1/sub_issues"), 1),
+    ("sub-issues: the endpoint named in prose is a mention",
      "# t\n\nRead it back from `sub_issues`.\n", 0),
     # The binding reading: the anchor's comments filtered for BOUND, and the
     # machine comparison. One case per alternation, and then the two shapes

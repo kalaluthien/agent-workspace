@@ -35,5 +35,5 @@ re-derived and most likely to be repeated.
 
 - A conclusion drawn from one source, one sample, or one run.
 - Changing a member repository's code beyond a scratch probe. A change your
-  findings motivate is a separate subtask: report it, do not file it yourself.
+  findings motivate is a separate sub-issue: report it, do not file it yourself.
 - Answering a question the campaign did not ask because it was nearby.

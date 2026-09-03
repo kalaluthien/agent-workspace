@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Take, read and release a subtask's claim, and say who is alive holding one.
+"""Take, read and release a sub-issue's claim, and say who is alive holding one.
 
     campaign-claim.py take <N> <issue> <topic> [--local] [--repo owner/repo]
                            [--name NAME] [--session SID]
@@ -11,7 +11,7 @@
     campaign-claim.py alive <pid>
 
 A claim is two things that must agree: a branch on the remote, which is what
-actually stops two executors working one subtask, and a record on this machine
+actually stops two executors working one sub-issue, and a record on this machine
 saying which session holds it. AGENTS.md says the record's shape is written in
 exactly one place; this is that place. One script owns both halves, so there is
 nothing to copy: a delegate runs `take`, a close or a sweep runs `list`,
@@ -38,7 +38,7 @@ is the same ceiling the binding already sets -- one campaign, one machine -- so
 RELEASED IS A MARK, NOT A DELETION
 
 A local claim is released by marking the record `released <timestamp>`, not by
-removing it: the record is the only thing that ever attributed the subtask to a
+removing it: the record is the only thing that ever attributed the sub-issue to a
 session, and a close reads it afterwards. A released record licenses no write
 and does not block a re-take -- an idempotency key naming what was asked for
 rather than which attempt is the shape that refuses a repeat of work that has
@@ -95,7 +95,7 @@ AGENTS.md says to make them both, every time, and they answer different
 questions:
 
   herdr agent list       liveness, for every session on this machine, delegate
-                         or not. It says nothing about which subtask a row holds.
+                         or not. It says nothing about which sub-issue a row holds.
   runtime/claims/        attribution, for every claim. Its pid reads dead after
                          a harness restart the session survived, so it locates a
                          session rather than proving one.
@@ -167,7 +167,7 @@ selector that puts another field first, `-o pid,ucomm`, is outside the claim.
 EXIT
 
 0 for a completed action or a clean read; 1 for a refusal or a half-made reading;
-2 for an `alive` whose reading failed; 3 for `take` when the subtask is already
+2 for an `alive` whose reading failed; 3 for `take` when the sub-issue is already
 claimed, which is news rather than an error. Every verdict is on stdout, and the
 reading that produced it is printed beside it.
 """
@@ -527,7 +527,7 @@ def cmd_take(args):
     if existing and "unreadable" in existing:
         print(f"refusing: {path} is there and will not decode "
               f"({existing['unreadable']}). That is a reading that failed, not "
-              f"a free subtask.", file=sys.stderr)
+              f"a free sub-issue.", file=sys.stderr)
         return 1
     replacing = False
     if existing:
@@ -558,7 +558,7 @@ def cmd_take(args):
 
     # Resolved and checked before the create, never written inline: a read that
     # fails and still prints goes up as the sha and comes back as the 422 that
-    # means "already claimed", so the subtask reads as taken and is abandoned.
+    # means "already claimed", so the sub-issue reads as taken and is abandoned.
     r = run("gh", "api", f"repos/{args.repo}/commits/main", "--jq", ".sha")
     sha = r.stdout.strip()
     if r.returncode != 0 or not SHA.match(sha):
@@ -706,7 +706,7 @@ def cmd_release(args):
                       f"{rec.get('session', '<absent>')}. Pass --session with "
                       f"that id, or --confirmed-absent WHO.\n"
                       f"  Deleting a claim costs the one thing keeping two "
-                      f"executors off the subtask.", file=sys.stderr)
+                      f"executors off the sub-issue.", file=sys.stderr)
                 return 1
             by = args.session if mine else args.confirmed_absent
             stamp = mark_released(path, rec, by)
@@ -743,7 +743,7 @@ def cmd_release(args):
     if refusal:
         sys.stdout.flush()
         print(f"refusing: {refusal}\n  Deleting a claim costs the one thing "
-              f"keeping two executors off the subtask.", file=sys.stderr)
+              f"keeping two executors off the sub-issue.", file=sys.stderr)
         return 1
     print("released by its own holder, session " + proof if mine
           else f"absence confirmed by: {proof}")
@@ -921,7 +921,7 @@ def cmd_live(args):
         print(f"  {s['name']:<24} {s['status']:<8} {s['pane']:<10} {s['cwd']}")
     if idle:
         print("  A session with no claim may still be working -- a launcher, a "
-              "session between\n  subtasks, or one on another campaign. This "
+              "session between\n  sub-issues, or one on another campaign. This "
               "list is not a list of idle panes.")
 
     print(f"\nboth readings were made. {len(answered)} answered, "

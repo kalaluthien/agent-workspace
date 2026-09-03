@@ -1,6 +1,6 @@
 ---
 name: closing-campaign
-description: Closes a campaign in the agent-workspace container and deletes its directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory — gating the close on the binding, on live agents, on work that exists only on this machine, and on every open subtask having a disposition, then syncing the README into the anchor issue. Not for closing a single subtask issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
+description: Closes a campaign in the agent-workspace container and deletes its directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory — gating the close on the binding, on live agents, on work that exists only on this machine, and on every open sub-issue having a disposition, then syncing the README into the anchor issue. Not for closing a single sub-issue issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
 ---
 
 # Closing a campaign
@@ -120,9 +120,9 @@ discarded on the person's word, and every unread place read by hand and either
 emptied or reported first. `NOT clear` with no counted row left names places it
 could not reach: reach them, never read past the verdict.
 
-### 3. Settle or dispose of every open subtask
+### 3. Settle or dispose of every open sub-issue
 
-**First, confirm `$N` is an anchor**, so step 5 does not close somebody's subtask.
+**First, confirm `$N` is an anchor**, so step 5 does not close somebody's sub-issue.
 Want `campaign` among the labels and `-` for the parent; anything else, stop and
 say which issue `$N` actually is.
 
@@ -133,7 +133,7 @@ gh issue view "$N" -R kalaluthien/agent-workspace --json labels,parent \
 cat /tmp/settlement-$N
 ```
 
-That prints one row per subtask, then whether the campaign is closable. Read the
+That prints one row per sub-issue, then whether the campaign is closable. Read the
 note beside a `dropped` row before repeating the word.
 
 **Every `open` row gets a disposition, and this step refuses without one** — a
@@ -148,13 +148,13 @@ three per row, the person's choice:
 
 Write one line per open row — `<owner/repo>#<issue>  <verb>  <reason or target>`
 — then validate it against the settlement output by machine. A `<` line is an
-open subtask with no disposition; a `>` line is stale, so re-run the script.
+open sub-issue with no disposition; a `>` line is stale, so re-run the script.
 
 ```sh
 DISPOSITIONS=/tmp/dispositions-$N        # write it here, one line per open row
 awk '$1 ~ /#[0-9]+$/ && $2 == "open" { print $1 }' /tmp/settlement-$N | sort >| /tmp/open-$N
 awk 'NF { print $1 }' "$DISPOSITIONS" | sort >| /tmp/disposed-$N
-command diff /tmp/open-$N /tmp/disposed-$N && echo "every open subtask has a disposition"
+command diff /tmp/open-$N /tmp/disposed-$N && echo "every open sub-issue has a disposition"
 awk 'NF && $2 !~ /^(finish|not-planned|reparent)$/ { print "REFUSE: unknown disposition: " $0 }' "$DISPOSITIONS"
 awk 'NF && $2 != "finish" && NF < 3 { print "REFUSE: no reason or target: " $0 }' "$DISPOSITIONS"
 ```
@@ -176,14 +176,14 @@ grep -q '; closable$' /tmp/settlement-after-$N ||
 
 `; closable$`, not `closable` — the failing line ends `NOT closable:` and then
 names its cause. Two are possible and they want different repairs: `open
-subtasks remain` is work to finish, while `N subtask(s) could not be read` is a
+sub-issues remain` is work to finish, while `N sub-issue(s) could not be read` is a
 reading to get back, an `unread` row whose issue or whose closing pull request
 this account cannot see. Neither settles anything. The empty-index line is the
 other accepted reading. A `-- REPORT:` line
-about nested sub-issues isn't covered here: a subtask that is itself an anchor
+about nested sub-issues isn't covered here: a sub-issue that is itself an anchor
 hides its own members, so run the script on it too.
 
-Holds when: `campaign-tracker settlement` reads every subtask in the anchor's
+Holds when: `campaign-tracker settlement` reads every sub-issue in the anchor's
 index as settled or moved to another anchor, each open one having been given a
 named disposition and had that act carried out first.
 
@@ -286,7 +286,7 @@ scaffold, so skip those rows. It is a record, not a to-do — anything wanted ou
 of the tree is saved before close. A peer's note that it is working or closing:
 stop and name it.
 
-**Release the campaign's own claim refs on the container** — an unlanded subtask
+**Release the campaign's own claim refs on the container** — an unlanded sub-issue
 leaves its branch outliving the campaign; step 3 makes this sighted.
 
 ```sh
@@ -338,7 +338,7 @@ The probes and the failures behind these: `references/gotchas.md`.
 - `dropped` covers four closes and its note says which; only `not planned` is
   abandonment, so quote the note, not the word.
 - `state_reason` is lowercase from `gh api` and uppercase from `gh issue list
-  --json stateReason`, and the wrong one reads every subtask as unsettled.
+  --json stateReason`, and the wrong one reads every sub-issue as unsettled.
 - `set -- $var` does not word-split in zsh; split with `${spec%%:*}` and
   `${spec##*:}` instead.
 - `diff` is shadowed in a Claude Code shell on this machine. Write `command diff`.

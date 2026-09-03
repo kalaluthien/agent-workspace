@@ -202,7 +202,7 @@ assert MachineIndependence {
 }
 
 /* Two machines hold the campaign; one deletes its own tree while work
-   continues, and the subtask still completes. */
+   continues, and the sub-issue still completes. */
 pred S7_TwoMachinesOneDeletes {
   one c: Campaign | some i: c.members {
     #dirsOf[c] = 2

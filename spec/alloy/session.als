@@ -27,7 +27,7 @@ sig Session {
   var surveyResult: set Campaign,  -- what its new-versus-follow-up survey returned
   var readme:     set Repo,        -- its campaign README's `## Repos` list
   var bodyAsRead: set Repo,        -- the anchor body's list as it last read it
-  var claims:     set Issue        -- subtask branches it created on the remote
+  var claims:     set Issue        -- sub-issue branches it created on the remote
 }
 var sig Surveyed in Session {}
 
@@ -63,7 +63,7 @@ fun sessionActed: set Event {
   + CreateDir + DeleteDir + Acquire + Claim + Release + Launch
 }
 
-/* `RemoveMember` is here because moving a subtask out has no sanctioned flow:
+/* `RemoveMember` is here because moving a sub-issue out has no sanctioned flow:
    it is a hand-run `gh issue edit --remove-parent`. */
 fun unattended: set Event {
   OpenPR + RemoveMember + PullContainer + PullClone + CommitLocal
@@ -144,7 +144,7 @@ pred sAddMember[s: Session] {
   By.actor = s
 }
 
-/* Any other issue is an ordinary subtask close and needs no such tie. */
+/* Any other issue is an ordinary sub-issue close and needs no such tie. */
 pred sCloseIssue[s: Session] {
   Now.ev = CloseIssue
   Now.issue in Campaign.anchor implies s.holds = anchorOf[Now.issue]
@@ -281,7 +281,7 @@ fact SessionTrace { sessionInit and always sessionStep }
    green is the comparison and not the shape of the scenario. */
 pred syncCAS { always (Now.ev = WriteBody implies By.actor.holds.body = By.actor.bodyAsRead) }
 
-/* The rejected candidate, modelled as "sync only when every subtask is
+/* The rejected candidate, modelled as "sync only when every sub-issue is
    settled". R1e is what it costs. */
 pred syncAtCloseOnly {
   always (Now.ev = WriteBody implies (all i: By.actor.holds.members | settled[i]))
@@ -337,7 +337,7 @@ pred R1_LostBodyUpdate {
 }
 
 /* R1b. A body write cannot touch a sub-issue link, so the index goes on
-   naming an open subtask homed in a repository the list has dropped -- and
+   naming an open sub-issue homed in a repository the list has dropped -- and
    closing the campaign deletes that list's last copy. Ordered on purpose:
    unordered it reads SAT on the ordinary window between filing and syncing. */
 pred R1b_IndexOutlivesRepoList {
@@ -367,7 +367,7 @@ pred R1d_CASAdmitsBothSyncs {
   }
 }
 
-/* R1e. Both syncs happen with a real settled subtask in the campaign, so
+/* R1e. Both syncs happen with a real settled sub-issue in the campaign, so
    `syncAtCloseOnly` is obeyed rather than satisfied vacuously. */
 pred R1e_CloseOnlyStillLoses {
   syncAtCloseOnly
@@ -458,7 +458,7 @@ pred R3_DeleteUnderWorkingSession {
 /* =================== 4. a campaign with no member repository =================== */
 
 /* R4. `- none` is encoded as `always no c.body`. Note what the predicate does
-   NOT say: the container IS in `c.members`, as the home of the subtask, since
+   NOT say: the container IS in `c.members`, as the home of the sub-issue, since
    a repo-less campaign files on the container tracker -- "no member
    repository" is a claim about the list, not about where an issue is homed.
 
