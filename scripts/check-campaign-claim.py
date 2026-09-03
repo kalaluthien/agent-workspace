@@ -37,6 +37,39 @@ SERVICE_DOORS, and are this script's own.
 An import that fails is a refusal, not a pass: a guard that cannot read the
 pattern it guards by has permitted nothing.
 
+WHAT IT WRITES TO, WHICH IS NOT THE SAME QUESTION AS WHERE IT SITS
+
+A claim is a record about campaign work, so the guard owns a change that lands
+on campaign work: a target inside a container tree, or inside a campaign
+directory at the root. A target in neither -- `/tmp`, `$HOME`, another
+checkout entirely -- is allowed whatever claim the session holds, because
+refusing it enforces nothing about a sub-issue and stops every scratch write a
+session in the container makes.
+
+The target is read from the tool: the path field for a file tool, and for
+`Bash` the OPERANDS OF THE CHANGING FORMS THAT MATCHED -- the word a redirect
+writes to, the files of `tee` and `sed -i`, the non-option arguments of `mv`,
+`rm`, `cp`, `mkdir`, `touch` and `install`, an attached `--flag=value`
+included -- resolved against the payload's cwd, slashless ones included. Never the set of words that merely look like
+paths: a command's slashed words include its remote, its sed script and the
+file its stderr goes to, and none of those is what it changes, so reading them
+as the target allows `cp /tmp/x.md AGENTS.md` on the strength of the operand it
+is not writing to.
+
+Three writes have no filesystem target at all and are never read for one: a
+`SERVICE_DOORS` `gh` call, because the campaign plane is GitHub issues; a `git
+commit|push|merge|tag|revert|rebase`, whose target is the repository; and an
+HTTP `POST|PATCH|PUT|DELETE`. Each falls through to the claim reading whatever
+paths it carries, `git push 2>/tmp/err.log` included.
+
+Bash's reading is all-or-nothing and its empty case is NOT an allow. Every
+operand of every matched form outside allows; one operand inside, a form whose
+operands cannot be read, or NO readable form at all falls through to the claim
+reading below. Those causes are printed apart -- the form and why it was
+unread, against the operands and what each resolved to -- because a guard that
+did not read a target has looked and found nothing, which is not the same as
+looking and finding it elsewhere.
+
 WHICH CAMPAIGN, AND WHAT IT DOES WHEN IT CANNOT TELL
 
 The container root is the topmost ancestor of `cwd` holding this repository's
@@ -258,6 +291,230 @@ def close_target(command):
     return None
 
 
+# A shell word: everything the shell's own separators leave standing.
+SHELL_WORD = re.compile(r"[^\s;|&<>()]+")
+# Where one command ends and the next begins, which is what attributes an
+# operand to the command that takes it. `&` is a separator except after `>`,
+# where it is a descriptor duplication and not a background job.
+SEGMENT = re.compile(r"\|\||&&|[;\n|]|(?<!>)&")
+# `2>&1`, `>&-`: a duplication, not a file. Removed before redirects are read.
+FD_DUP = re.compile(r"[0-9]*>&[0-9-]+")
+# A file redirect and the word it writes to, which may be absent (`>&2` after
+# the duplication strip, `> $LOG` with nothing after it).
+REDIRECT = re.compile(r"[0-9]*>>?\s*([^\s;|&<>()]*)")
+# A word whose value this cannot know: an expansion, a substitution, a glob.
+# Reading one as a literal path would resolve a name that never existed.
+UNRESOLVABLE = re.compile(r"[$*?\[\]{}`]")
+
+# The three writes with NO filesystem target. Each is a fall-through and never
+# an allow: the campaign plane is GitHub issues, a git write's target is the
+# repository, and an HTTP write's is a service -- so a path anywhere in such a
+# command is a log, a message file or a body, never what the call changes.
+GIT_WRITE = re.compile(r"\bgit\b[^|;&]*\b(?:commit|push|merge|tag|revert|rebase)\b")
+HTTP_WRITE = re.compile(r"(?:-X|--method)\s*=?\s*[\"\']?(?:POST|PATCH|PUT|DELETE)\b",
+                        re.IGNORECASE)
+
+# The changing forms whose write target IS an operand, and can therefore be
+# read. Anything else that matched the changing-command pattern -- a package
+# install, a chmod, an interpreter running a script -- is not here and falls
+# through, because a form this cannot parse is a target it did not read.
+FILE_COMMANDS = {"mv", "rm", "cp", "mkdir", "touch", "install"}
+OPT_WITH_ARG = {"-e", "-f", "--expression", "--file"}
+
+
+def resolve_target(token, cwd):
+    """(absolute path, why_unreadable) for one path token."""
+    try:
+        p = Path(os.path.expanduser(token))
+        p = p if p.is_absolute() else cwd / p
+        return p.resolve(), None
+    except (OSError, RuntimeError, ValueError) as e:
+        return None, f"{token!r} would not resolve ({e.__class__.__name__})"
+
+
+def lands_outside(target: Path, root: Path, dirs):
+    """(True, None) when the target is in no container tree and no campaign
+    directory; (False, what it is inside) otherwise.
+
+    `container_root` and not `root` alone: another checkout of this repository
+    -- the main one, seen from a worktree -- is a container tree too, and a
+    write into it is campaign work read from the wrong side."""
+    other = container_root(target)
+    if other is not None:
+        return False, f"inside the container {other}"
+    if target == root or root in target.parents:
+        return False, f"inside the container {root}"
+    for d in dirs or ():
+        if target == d or d in target.parents:
+            return False, f"inside the campaign directory {d}"
+    return True, None
+
+
+def operands(args):
+    """(the non-option words, the word that could not be read).
+
+    An option's own SEPARATE argument is kept as an operand: reading it as a
+    path resolves a word that is not one, and that direction is the refusing
+    one. An ATTACHED one is the write target itself in `--target-directory=.`,
+    so a `=` option contributes its value.
+
+    A short option's attached value cannot be told from a flag cluster without
+    a table per command -- `-rf` is two flags and `-t.` is a target -- so a
+    short word whose tail is not purely alphabetic is UNREAD rather than
+    guessed either way. That keeps `-p`, `-rf`, `-r` and `-a` reading as flags
+    and refuses `-t.`, `-m755` and anything else carrying a value, at the cost
+    of never allowing those."""
+    out, rest = [], False
+    for word in args:
+        if rest or not word.startswith("-"):
+            out.append(word)
+            continue
+        if word == "--":
+            rest = True
+            continue
+        if "=" in word:
+            out.append(word.split("=", 1)[1])
+            continue
+        tail = word.lstrip("-")
+        if tail and not tail.isalpha():
+            return None, word
+    return [w for w in out if w], None
+
+
+def sed_files(args):
+    """The file operands of `sed -i`. The script is an operand too until an
+    `-e` puts it elsewhere, and BSD's `-i ''` suffix is the empty word."""
+    files, skip = [], False
+    for word in args:
+        if skip:
+            skip = False
+            continue
+        if word.startswith("-"):
+            skip = word in OPT_WITH_ARG
+            continue
+        files.append(word)
+    files = [f for f in files if f]
+    if not any(a in OPT_WITH_ARG for a in args) and files:
+        files = files[1:]                       # the first word is the script
+    return files
+
+
+def write_targets(command, changing_command):
+    """([(form, operand)], None), or (None, why it could not be read).
+
+    The targets of the changing forms that MATCHED, never the set of words
+    that look like paths: a command's slashed words include its remote, its
+    sed script and the file its stderr goes to, none of which is what it
+    changes, and reading those as the target lets `cp /tmp/x.md AGENTS.md`
+    through on the strength of the operand it is not writing to.
+
+    Every segment answers for itself. A segment that is CHANGING ON ITS OWN --
+    read with its redirects stripped, so the redirect cannot be what makes it
+    changing -- and yields no readable form is unread for the whole command,
+    because otherwise a readable operand elsewhere answers for it and
+    `sh -c 'rm -rf scripts' > /tmp/log` reads as a write to /tmp. `echo hi >
+    /tmp/x` is what this must not catch: `echo` is not changing on its own, so
+    there the redirect genuinely is the write."""
+    if SERVICE_DOORS.search(command):
+        return None, ("the command writes to the campaign plane through gh, "
+                      "which is GitHub issues and has no filesystem target")
+    if GIT_WRITE.search(command):
+        return None, ("the command is a git write, whose target is the "
+                      "repository and not any path in the command")
+    if HTTP_WRITE.search(command):
+        return None, ("the command makes a writing HTTP request, whose target "
+                      "is a service and not any path in the command")
+    found = []
+    for segment in SEGMENT.split(command):
+        seg = FD_DUP.sub(" ", segment)
+        for m in REDIRECT.finditer(seg):
+            if not m.group(1):
+                return None, (f"a redirect in {segment.strip()!r} names no "
+                              f"word this guard can read as its target")
+            found.append(("redirect", m.group(1)))
+        body = REDIRECT.sub(" ", seg)
+        words = [w.strip("\"\'") for w in SHELL_WORD.findall(body)]
+        while words and re.match(r"^\w+=", words[0]):
+            words.pop(0)                        # a leading VAR=value
+        if not words:
+            continue
+        head, args = words[0].rsplit("/", 1)[-1], words[1:]
+        unreadable = None
+        if head in FILE_COMMANDS:
+            form, (ops, unreadable) = head, operands(args)
+        elif head == "tee":
+            form, (ops, unreadable) = "tee", operands(args)
+        elif head == "sed" and any(a.startswith("-i") for a in args):
+            form, ops = "sed -i", sed_files(args)
+        else:
+            if changing_command.search(body):
+                return None, (f"the segment {segment.strip()!r} is a changing "
+                              f"command on its own, and its target is not an "
+                              f"operand this guard can read")
+            continue
+        if unreadable:
+            return None, (f"the `{form}` word {unreadable!r} may be an option's "
+                          f"attached value, which this guard cannot tell from a "
+                          f"flag cluster, so its operands are not readable")
+        if not ops:
+            return None, (f"the `{form}` form in {segment.strip()!r} names no "
+                          f"operand this guard can read")
+        found += [(form, o) for o in ops]
+    # The residual: a changing command in which no segment is changing on its
+    # own and none yields a form -- a pattern match spanning a separator. No
+    # case here reaches it, and it stays because the alternative to saying so
+    # is an empty target set read as "everything it writes is outside".
+    if not found:
+        return None, ("no changing form whose target is an operand was found "
+                      "in the command, so what it writes to is unknown")
+    for form, word in found:
+        if UNRESOLVABLE.search(word):
+            return None, (f"the `{form}` operand {word!r} is an expansion or a "
+                          f"glob, so the path it names cannot be read here")
+    return found, None
+
+
+def target_reading(payload, cwd, root, dirs, changing_command):
+    """(verdict, line) -- what this call writes to, as far as it can be read.
+
+    "outside" allows on its own; "inside" and "unread" fall through to the
+    claim reading, and are named apart so an absent target never reads as one
+    found elsewhere."""
+    tool = payload.get("tool_name", "")
+    tool_input = payload.get("tool_input") or {}
+    if tool in FILE_TOOLS:
+        raw = next((tool_input[k] for k in PATH_KEYS if tool_input.get(k)), None)
+        if not raw:
+            return "unread", f"{tool} carries no path field, so no target was read"
+        target, why = resolve_target(str(raw), cwd)
+        if why:
+            return "unread", f"{tool} target {why}"
+        outside, where = lands_outside(target, root, dirs)
+        if outside:
+            return "outside", f"{tool} target {target} is in no container tree " \
+                              f"and no campaign directory"
+        return "inside", f"{tool} target {target} is {where}"
+    if tool != "Bash":
+        return "unread", f"{tool} names no path this guard can read"
+    targets, why = write_targets(
+        outside_quotes(tool_input.get("command") or ""), changing_command)
+    if targets is None:
+        return "unread", why
+    seen = []
+    for form, word in targets:
+        target, unreadable = resolve_target(word, cwd)
+        if unreadable:
+            return "unread", f"the `{form}` operand {unreadable}"
+        outside, where = lands_outside(target, root, dirs)
+        if not outside:
+            return "inside", (f"the `{form}` operand {word!r} resolves to "
+                              f"{target}, {where}")
+        seen.append(f"`{form}` {word!r} -> {target}")
+    return "outside", (f"every operand of every changing form read lands in no "
+                       f"container tree and no campaign directory: "
+                       f"{'; '.join(seen)}")
+
+
 def refuse(lines):
     print("check-campaign-claim: REFUSED.", file=sys.stderr)
     for line in lines:
@@ -275,26 +532,26 @@ def read_payload():
 
 
 def setting(payload):
-    """(root, dirs, note, refusal_lines) -- where this session is, or why the
-    question could not be answered."""
+    """(cwd, root, dirs, note, refusal_lines) -- where this session is, or why
+    the question could not be answered."""
     cwd = payload.get("cwd") or os.getcwd()
     try:
         cwd = Path(cwd).resolve()
     except OSError as e:
-        return None, None, None, [f"cwd {cwd!r} would not resolve "
-                                  f"({e.__class__.__name__})."]
+        return None, None, None, None, [f"cwd {cwd!r} would not resolve "
+                                        f"({e.__class__.__name__})."]
     root = container_root(cwd)
     if root is None:
-        return None, None, f"no container above {cwd}", None
+        return cwd, None, None, f"no container above {cwd}", None
     dirs, note = campaign_dirs(root, cwd)
     if dirs is None:
-        return root, None, note, [note]
-    return root, dirs, note, None
+        return cwd, root, None, note, [note]
+    return cwd, root, dirs, note, None
 
 
 def pre(payload, claim_module, changing_command):
     session_id = payload.get("session_id") or ""
-    root, dirs, note, refusal_lines = setting(payload)
+    cwd, root, dirs, note, refusal_lines = setting(payload)
     if refusal_lines:
         return refuse(refusal_lines + [
             "This guard could not read where it is, which is not the same as "
@@ -307,6 +564,14 @@ def pre(payload, claim_module, changing_command):
     is_changing, why = changing(payload, changing_command)
     if not is_changing:
         return 0
+
+    verdict, where = target_reading(payload, cwd, root, dirs,
+                                    changing_command)
+    if verdict == "outside":
+        print(f"check-campaign-claim: allowed, target outside. {where}.")
+        return 0
+    print(f"check-campaign-claim: target read as {verdict} -- {where}; "
+          f"reading the claim.")
 
     if not session_id:
         return refuse([
@@ -398,7 +663,7 @@ def released(payload, claim_module):
     issue = close_target(outside_quotes(command))
     if not issue:
         return 0
-    root, dirs, note, refusal_lines = setting(payload)
+    _cwd, root, dirs, note, refusal_lines = setting(payload)
     if root is None or not dirs or refusal_lines:
         print(f"check-campaign-claim --released: not releasing #{issue}: "
               f"{note or (refusal_lines or ['unreadable'])[0]}")
