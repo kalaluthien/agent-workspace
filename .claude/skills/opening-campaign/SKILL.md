@@ -206,7 +206,10 @@ here or handing it to a repository agent.
 ### Filing a subtask issue
 
 Step 6's subtasks and one the routing gate sent here to join are filed and
-claimed the same way. File it as `AGENTS.md` § Subtasks says. **The issue number
+claimed the same way. File it as `AGENTS.md` § Subtasks says. **Filing needs no
+binding**: any session anywhere may file a sub-issue of any campaign, since the
+link is a record and not a claim (`AGENTS.md` § The binding); the claim below is
+what the binding gates. **The issue number
 is half the branch name, and the branch is the claim**, so the claim cannot be
 cut until the issue exists and this is the step that mints it.
 

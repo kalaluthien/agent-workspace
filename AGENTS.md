@@ -104,8 +104,15 @@ never the exit status**, as for `campaign-local-work` and `campaign-claim alive`
 | `elsewhere` | **not in this campaign.** Stop before any write and any launch, and name the machine. |
 | `unbound` | **not bound yet.** Only a person's word binds an existing campaign. |
 
-Read it before every write to the anchor — body, comment, or sub-issue link — and
-before launching any executor onto one of its subtasks.
+**The binding gates four things**: the anchor body, a `BOUND` comment, a claim,
+and a launch. Read it before each of those. **The sub-issue link is outside it**:
+any session on any machine may file a sub-issue of any campaign, one it is not a
+session of included, because a sub-issue is a record and not a claim — the
+atomic gate stays `campaign-claim take`'s create-ref, and the model's `addMember`
+(`spec/alloy/ledger.als`) has no actor, machine, or binding precondition. What the
+filer still owes: file on the repository whose code changes, from the template,
+and leave adding that repository to `## Repos` to a bound session, since that is
+a scope change (`opening-campaign`, "A repository the anchor's list does not name").
 
 **`BOUND <machine>` is a comment on the anchor, and the latest one wins.** Its
 first line is `BOUND <machine>` from `hostname -s`; anything after is prose.
@@ -392,6 +399,7 @@ reconciliation reads the combination**, and its brief says so — **the gate is
 condition 3**.
 
 **The named cost: no concurrent cross-machine or cloud work on one campaign.**
-Another machine may read a campaign and may open a different one; none may write
-this one's anchor or launch into it. A campaign reaches another machine only by
+Another machine may read a campaign, may file a sub-issue of it, and may open a
+different one; none may write this one's anchor body or `BOUND`, claim, or launch
+into it. A campaign reaches another machine only by
 migration — the price of a staleness check that is a local `kill -0`.
