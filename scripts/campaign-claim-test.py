@@ -297,6 +297,22 @@ def pure_cases(m):
     c("an answer that is not a number is a failed question, not a count",
       not ok and "did not happen" in why and "commit(s) ahead" not in why)
 
+    # The gone-ref path, one case per branch it can take. A ref present is the
+    # ahead_verdict cases above; these are the two readings of a 404.
+    c("a 404 on the comparison is a gone ref",
+      m.ref_gone(1, "gh: Not Found (HTTP 404)"))
+    c("any other failure is not a gone ref, it is an unanswered question",
+      not m.ref_gone(1, "gh: boom") and not m.ref_gone(0, ""))
+    ok, text = m.merged_head_verdict(0, '[{"number": 131}]', "a/b", "x")
+    c("a gone ref with a merged pull request is nothing beyond main",
+      ok and "#131" in text)
+    ok, text = m.merged_head_verdict(0, "[]", "a/b", "x")
+    c("a gone ref with no merged pull request is refused, never released",
+      not ok and "never released" in text)
+    ok, text = m.merged_head_verdict(1, "", "a/b", "x")
+    c("a pull request question that failed is not an absence",
+      not ok and "not an absence" in text)
+
     # A command that is not installed at all: a failed run carrying its reason,
     # never a traceback. `gh` and `ps` both go through this.
     r = m.run("no-such-command-xyz")
