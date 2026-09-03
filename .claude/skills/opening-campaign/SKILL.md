@@ -136,8 +136,9 @@ Read what it reports applied, then confirm with `ListAgents` that the harness
 name is `campaign-<N>-executor-<n>` before step 4 begins. The caller's own
 rename is the one most likely to need a person, so a `FAILED` line is a stop:
 say so, and do not go on under the old name. `campaign-claim take` is the
-second reader — it refuses a `--name` from another campaign — so a name that
-was not set here is caught at the first claim, not at the close.
+second reader — it refuses a `--name` from another campaign, or of the wrong
+shape — so a name that was not set here is caught at the first claim, not at
+the close.
 
 ### 4. Scaffold the directory
 
