@@ -54,7 +54,7 @@ BASE = {
         "echo hi\n"
         "```\n"
     ),
-    "spec/campaign/role/system.als": "sig S {}\n",
+    "spec/campaign/orchestration/system.als": "sig S {}\n",
     f"{SKILL}/SKILL.md": "# demo skill\n",
     f"{SKILL}/references/gotchas.md": "# gotchas\n",
     f"{SKILL}/assets/handover.md": "# handover\n",
@@ -122,9 +122,9 @@ CASES = [
 
     # ---- S3: a spec path.
     ("S3 a spec file that is there",
-     {"a.md": "The contract is `spec/campaign/role/system.als`.\n"}, None),
+     {"a.md": "The contract is `spec/campaign/orchestration/system.als`.\n"}, None),
     ("S3 a spec file that is not there",
-     {"a.md": "The contract is `spec/campaign/role/gone.als`.\n"},
+     {"a.md": "The contract is `spec/campaign/orchestration/gone.als`.\n"},
      ("DANGLING", "S3: nothing at this path")),
 
     # ---- S4: relative, and resolved against the SKILL ROOT rather than the

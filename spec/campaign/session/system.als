@@ -1,42 +1,52 @@
 /*
- * A campaign session -- what makes a session one, and what it may do.
- * github/system.als is spec/'s entry point.
+ * A campaign session: what makes a session one, and what it may do. It opens
+ * synchronization/system because a session runs from a container checkout and
+ * cares how far behind it is.
  *
- * A SESSION is one harness session: the `claude` process a herdr pane runs,
- * the thing `campaign-<N>-<role>-<n>` names. It sits BELOW the role because a
- * role is a session working its own claim, or a delegate a session launched --
- * so the dependency runs role -> session and cannot be nested the other way.
+ * A SESSION is one harness session -- the `claude` process a herdr pane runs,
+ * the thing `campaign-<N>-<role>-<n>` names. An agent sits ABOVE it, because an
+ * agent is a session working its own claim or a delegate a session launched, so
+ * the dependency runs orchestration -> session and cannot be nested the other
+ * way.
  *
- * ONE ROLE: a session is in a campaign exactly when the campaign is BOUND to
- * its machine. What this entity does NOT know is whether anything is running,
- * so every finding below is one a campaign session reaches with no delegate
- * anywhere.
+ *   Request   the one request being routed, and which campaigns cover it.
+ *   Session   a campaign session: its machine, the campaign it works on, what
+ *             its survey returned, the repository lists in its README and in
+ *             the campaign issue body as it last read that body, and the
+ *             sub-issues it has claimed.
+ *   Surveyed  the sessions that have run the new-versus-follow-up survey.
+ *   Binding   the campaign issue's latest `BOUND <machine>` comment.
+ *   Who       the observer: which session performed the current event.
  *
- * "Covers the request" is a static bit, not a judgement over Scope prose.
- * There is no `gh` latency, so each window measured is a minimum. Migration
- * has no event, because nothing here can observe its premise.
+ * A session is in a campaign exactly when the campaign is bound to its machine.
+ * What this entity does NOT know is whether anything is running, so every
+ * finding below is one a campaign session reaches with no delegate anywhere.
+ *
+ * "Covers the request" is a fixed bit, not a judgement over the Scope prose.
+ * There is no `gh` latency here, so each window measured is a minimum.
+ * Migration has no event, because nothing here can observe its premise.
  */
 module session/system
 
-open checkout/system
+open synchronization/system
 
 /* `covers` hangs off a `one sig` because Campaign is github/system's signature and a
-   layer above it may not add a field to it. */
-one sig Req { covers: set Campaign }
+   entity above it may not add a field to it. */
+one sig Request { covers: set Campaign }
 
 sig Session {
-  smach:          one Machine,
-  var holds:      lone Campaign,
+  machine:          one Machine,
+  var worksOn:      lone Campaign,
   var surveyResult: set Campaign,  -- what its new-versus-follow-up survey returned
-  var readme:     set Repo,        -- its campaign README's `## Repos` list
-  var bodyAsRead: set Repo,        -- the campaign issue body's list as it last read it
-  var claims:     set Issue        -- sub-issue branches it created on the remote
+  var reposInReadme:     set Repo,        -- its campaign README's `## Repos` list
+  var reposInBodyAsRead: set Repo,        -- the campaign issue body's list as it last read it
+  var claimedIssues:     set Issue        -- sub-issue branches it created on the remote
 }
 var sig Surveyed in Session {}
 
 /* The campaign issue's latest `BOUND <machine>` comment. A GitHub fact, so the
    layering rule would put it in github/system.als -- but its value is a Machine and
-   its source is the filing session's own `smach`, and this is the lowest layer
+   its source is the filing session's own `machine`, and this is the lowest entity
    that has either. The placement follows from that, not from the binding being
    local. */
 one sig Binding {
@@ -47,10 +57,10 @@ fact BindingWellFormed {
   always all c: Campaign | lone Binding.bound[c]
 }
 
-one sig By { var actor: lone Session }
+one sig Who { var session: lone Session }
 
 /* Derived, so no event has to maintain it. */
-fun working: set Session { { s: Session | some s.holds and s.smach in dirsOf[s.holds] } }
+fun working: set Session { { s: Session | some s.worksOn and s.machine in machinesHolding[s.worksOn] } }
 
 /* ---------------- observable events ---------------- */
 
@@ -58,35 +68,35 @@ one sig Survey, Adopt, ReadBody, EditReadme extends Event {}
 
 fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme }
 
-/* `MergePR` is here rather than in `unattended` because landing a pull request
-   is somebody's act, and naming whose is what lets role/scenarios.als's
+/* `MergePullRequest` is here rather than in `unattended` because landing a pull request
+   is somebody's act, and naming whose is what lets orchestration/scenarios.als's
    `mergedOnCurrentReview` hold the merger to a current review. */
 fun sessionActed: set Event {
-  sessionOwn + FileCampaignIssue + AddMember + CloseIssue + WriteBody + MergePR
+  sessionOwn + FileCampaignIssue + AddMember + CloseIssue + WriteBody + MergePullRequest
   + CreateDir + DeleteDir + Acquire + Claim + Release + Launch
 }
 
 /* `RemoveMember` is here because moving a sub-issue out has no sanctioned flow:
    it is a hand-run `gh issue edit --remove-parent`. */
 fun unattended: set Event {
-  OpenPR + RemoveMember + PullContainer + PullClone + CommitLocal
+  OpenPullRequest + RemoveMember + PullContainer + PullClone + CommitLocal
 }
 
 pred sessionFrame {
-  holds' = holds and surveyResult' = surveyResult and readme' = readme
-  and bodyAsRead' = bodyAsRead
-  and claims' = claims and Surveyed' = Surveyed
+  worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
+  and reposInBodyAsRead' = reposInBodyAsRead
+  and claimedIssues' = claimedIssues and Surveyed' = Surveyed
   and bound' = bound
 }
 
 /* The result is remembered; nothing keeps it fresh. */
 pred survey[s: Session] {
-  let X = { c: Campaign | c in Filed and c.campaignIssue in Open and c in Req.covers } |
+  let X = { c: Campaign | c in Filed and c.campaignIssue in Open and c in Request.covers } |
     surveyResult' = surveyResult - s->Campaign + s->X
   Surveyed' = Surveyed + s
-  holds' = holds and readme' = readme and bodyAsRead' = bodyAsRead and claims' = claims
+  worksOn' = worksOn and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues
   bound' = bound
-  Now.ev = Survey and no Now.issue and By.actor = s
+  Now.event = Survey and no Now.issue and Who.session = s
 }
 
 /* Nothing is taken: under one role, arriving is just starting to work.
@@ -94,157 +104,157 @@ pred survey[s: Session] {
    trace space; `boundOnly` is the membership rule applied per command. */
 pred adopt[s: Session, c: Campaign] {
   c in Filed and c.campaignIssue in Open
-  no s.holds
-  holds'      = holds  - s->Campaign + s->c
-  readme'     = readme - s->Repo + s->(c.body)
-  bodyAsRead' = bodyAsRead - s->Repo + s->(c.body)
-  surveyResult' = surveyResult and Surveyed' = Surveyed and claims' = claims
+  no s.worksOn
+  worksOn'      = worksOn  - s->Campaign + s->c
+  reposInReadme'     = reposInReadme - s->Repo + s->(c.reposInBody)
+  reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(c.reposInBody)
+  surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues
   bound' = bound
-  Now.ev = Adopt and no Now.issue and By.actor = s
+  Now.event = Adopt and no Now.issue and Who.session = s
 }
 
 pred readBody[s: Session] {
-  some s.holds
-  readme'     = readme - s->Repo + s->(s.holds.body)
-  bodyAsRead' = bodyAsRead - s->Repo + s->(s.holds.body)
-  holds' = holds and surveyResult' = surveyResult and Surveyed' = Surveyed and claims' = claims
+  some s.worksOn
+  reposInReadme'     = reposInReadme - s->Repo + s->(s.worksOn.reposInBody)
+  reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(s.worksOn.reposInBody)
+  worksOn' = worksOn and surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues
   bound' = bound
-  Now.ev = ReadBody and no Now.issue and By.actor = s
+  Now.event = ReadBody and no Now.issue and Who.session = s
 }
 
 pred editReadme[s: Session, r: Repo] {
-  some s.holds
-  r not in s.readme
-  readme' = readme + s->r
-  holds' = holds and surveyResult' = surveyResult and bodyAsRead' = bodyAsRead
-  and Surveyed' = Surveyed and claims' = claims
+  some s.worksOn
+  r not in s.reposInReadme
+  reposInReadme' = reposInReadme + s->r
+  worksOn' = worksOn and surveyResult' = surveyResult and reposInBodyAsRead' = reposInBodyAsRead
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues
   bound' = bound
-  Now.ev = EditReadme and no Now.issue and By.actor = s
+  Now.event = EditReadme and no Now.issue and Who.session = s
 }
 
-/* --- refinements: the actor and the guard on a lower layer's event --- */
+/* --- refinements: the session and the guard on a lower entity's event --- */
 
 /* The binding is posted in the same step, because everything after it is a
    write or a launch and both are gated on it. */
-pred sFileCampaignIssue[s: Session] {
-  Now.ev = FileCampaignIssue
+pred sessionFileCampaignIssue[s: Session] {
+  Now.event = FileCampaignIssue
   s in Surveyed
   no s.surveyResult             -- the survey found no campaign covering the request
-  no s.holds
-  holds' = holds - s->Campaign + s->campaignIssueOf[Now.issue]
+  no s.worksOn
+  worksOn' = worksOn - s->Campaign + s->campaignIssueOf[Now.issue]
   bound' = bound - Binding->campaignIssueOf[Now.issue]->Machine
-           + Binding->campaignIssueOf[Now.issue]->s.smach
-  surveyResult' = surveyResult and readme' = readme and bodyAsRead' = bodyAsRead
-  and Surveyed' = Surveyed and claims' = claims
-  By.actor = s
+           + Binding->campaignIssueOf[Now.issue]->s.machine
+  surveyResult' = surveyResult and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues
+  Who.session = s
 }
 
-pred sAddMember[s: Session] {
-  Now.ev = AddMember
-  some s.holds
-  s.holds->Now.issue in members'
+pred sessionAddMember[s: Session] {
+  Now.event = AddMember
+  some s.worksOn
+  s.worksOn->Now.issue in memberIssues'
   sessionFrame
-  By.actor = s
+  Who.session = s
 }
 
 /* Any other issue is an ordinary sub-issue close and needs no such tie. */
-pred sCloseIssue[s: Session] {
-  Now.ev = CloseIssue
-  Now.issue in Campaign.campaignIssue implies s.holds = campaignIssueOf[Now.issue]
+pred sessionCloseIssue[s: Session] {
+  Now.event = CloseIssue
+  Now.issue in Campaign.campaignIssue implies s.worksOn = campaignIssueOf[Now.issue]
   sessionFrame
-  By.actor = s
+  Who.session = s
 }
 
 /* Where github's `writeBody` says whose README the list changed to.
-   Unguarded as written; `syncCAS` is the repair. */
-pred sync[s: Session] {
-  Now.ev = WriteBody
-  some s.holds
-  body' = body - s.holds->Repo + s.holds->(s.readme)
-  bodyAsRead' = bodyAsRead - s->Repo + s->(s.readme)
-  holds' = holds and surveyResult' = surveyResult and readme' = readme
-  and Surveyed' = Surveyed and claims' = claims
+   Unguarded as written; `compareThenWriteBody` is the repair. */
+pred sessionWriteBody[s: Session] {
+  Now.event = WriteBody
+  some s.worksOn
+  reposInBody' = reposInBody - s.worksOn->Repo + s.worksOn->(s.reposInReadme)
+  reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(s.reposInReadme)
+  worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues
   bound' = bound
-  By.actor = s
+  Who.session = s
 }
 
 /* Two sessions on one machine resolve <slug>-<YYMMDD>/ to the same path, so
    the directory is per campaign per machine, not per session. */
-pred sCreateDir[s: Session] {
-  Now.ev = CreateDir
-  some s.holds
-  Site.mach = s.smach
-  some treeAt[s.holds, s.smach] and treeAt[s.holds, s.smach] in Present'
+pred sessionCreateDir[s: Session] {
+  Now.event = CreateDir
+  some s.worksOn
+  Where.machine = s.machine
+  some campaignDirAt[s.worksOn, s.machine] and campaignDirAt[s.worksOn, s.machine] in OnDisk'
   bound' = bound
-  holds' = holds and surveyResult' = surveyResult and readme' = readme
-  and bodyAsRead' = bodyAsRead
-  and claims' = claims and Surveyed' = Surveyed
-  By.actor = s
+  worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
+  and reposInBodyAsRead' = reposInBodyAsRead
+  and claimedIssues' = claimedIssues and Surveyed' = Surveyed
+  Who.session = s
 }
 
-/* `runtime/` goes with the directory; role/system.als's `aDeleteDir` is that
+/* `runtime/` goes with the directory; orchestration/system.als's `agentDeleteDir` is that
    lifetime on the record's own bit. */
-pred sDeleteDir[s: Session] {
-  Now.ev = DeleteDir
-  some s.holds
-  Site.mach = s.smach
-  some treeAt[s.holds, s.smach] and treeAt[s.holds, s.smach] not in Present'
+pred sessionDeleteDir[s: Session] {
+  Now.event = DeleteDir
+  some s.worksOn
+  Where.machine = s.machine
+  some campaignDirAt[s.worksOn, s.machine] and campaignDirAt[s.worksOn, s.machine] not in OnDisk'
   bound' = bound
-  holds' = holds and surveyResult' = surveyResult and readme' = readme
-  and bodyAsRead' = bodyAsRead
-  and claims' = claims and Surveyed' = Surveyed
-  By.actor = s
+  worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
+  and reposInBodyAsRead' = reposInBodyAsRead
+  and claimedIssues' = claimedIssues and Surveyed' = Surveyed
+  Who.session = s
 }
 
-pred sAcquire[s: Session] {
-  Now.ev = Acquire
-  some s.holds
-  Site.mach = s.smach
+pred sessionAcquire[s: Session] {
+  Now.event = Acquire
+  some s.worksOn
+  Where.machine = s.machine
   -- the checkout that moved is in this session's campaign tree
-  checkout' - treesOf[s.holds]->Repo->Topic = checkout - treesOf[s.holds]->Repo->Topic
+  checkedOut' - campaignDirsOf[s.worksOn]->Repo->Branch = checkedOut - campaignDirsOf[s.worksOn]->Repo->Branch
   sessionFrame
-  By.actor = s
+  Who.session = s
 }
 
-/* Which session created it is what `claims` records; that the ref exists at
+/* Which session created it is what `claimedIssues` records; that the ref exists at
    all is github/system.als's `Claimed`. */
-pred sClaim[s: Session] {
-  Now.ev = Claim
-  some s.holds
-  Now.issue in s.holds.members
-  claims' = claims + s->Now.issue
-  holds' = holds and surveyResult' = surveyResult and readme' = readme
-  and bodyAsRead' = bodyAsRead and Surveyed' = Surveyed
+pred sessionClaim[s: Session] {
+  Now.event = Claim
+  some s.worksOn
+  Now.issue in s.worksOn.memberIssues
+  claimedIssues' = claimedIssues + s->Now.issue
+  worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
+  and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
   bound' = bound
-  By.actor = s
+  Who.session = s
 }
 
 /* Dropped by whoever reads the branch as dangling, not only by its maker.
-   What may be released is role/scenarios.als's guard. */
-pred sRelease[s: Session] {
-  Now.ev = Release
-  claims' = claims - Session->Now.issue
-  holds' = holds and surveyResult' = surveyResult and readme' = readme
-  and bodyAsRead' = bodyAsRead and Surveyed' = Surveyed
+   What may be released is orchestration/scenarios.als's guard. */
+pred sessionRelease[s: Session] {
+  Now.event = Release
+  claimedIssues' = claimedIssues - Session->Now.issue
+  worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
+  and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
   bound' = bound
-  By.actor = s
+  Who.session = s
 }
 
-/* Loose: this layer says only that a session did it. */
-pred sMergePR[s: Session] {
-  Now.ev = MergePR
+/* Loose: this entity says only that a session did it. */
+pred sessionMergePullRequest[s: Session] {
+  Now.event = MergePullRequest
   sessionFrame
-  By.actor = s
+  Who.session = s
 }
 
-pred sLaunch[s: Session] {
-  Now.ev = Launch
-  some s.holds
-  Site.mach = s.smach
-  s.smach in dirsOf[s.holds]
-  Now.issue in s.holds.members and Now.issue in Open
+pred sessionLaunch[s: Session] {
+  Now.event = Launch
+  some s.worksOn
+  Where.machine = s.machine
+  s.machine in machinesHolding[s.worksOn]
+  Now.issue in s.worksOn.memberIssues and Now.issue in Open
   sessionFrame
-  By.actor = s
+  Who.session = s
 }
 
 /* A session may already hold a campaign at time zero; the scenarios ABOUT
@@ -254,23 +264,23 @@ pred sLaunch[s: Session] {
 pred sessionInit {
   no Surveyed
   all s: Session {
-    s.holds in Filed
-    no s.surveyResult and no s.claims
-    s.readme = s.holds.body and s.bodyAsRead = s.holds.body
+    s.worksOn in Filed
+    no s.surveyResult and no s.claimedIssues
+    s.reposInReadme = s.worksOn.reposInBody and s.reposInBodyAsRead = s.worksOn.reposInBody
   }
 }
 
 pred sessionStep {
-  (Now.ev = Stutter and sessionFrame and no By.actor)
-  or (some s: Session | survey[s] or readBody[s] or sync[s]
-        or sFileCampaignIssue[s] or sAddMember[s] or sCloseIssue[s]
-        or sCreateDir[s] or sDeleteDir[s] or sAcquire[s]
-        or sClaim[s] or sRelease[s] or sLaunch[s] or sMergePR[s])
+  (Now.event = Stutter and sessionFrame and no Who.session)
+  or (some s: Session | survey[s] or readBody[s] or sessionWriteBody[s]
+        or sessionFileCampaignIssue[s] or sessionAddMember[s] or sessionCloseIssue[s]
+        or sessionCreateDir[s] or sessionDeleteDir[s] or sessionAcquire[s]
+        or sessionClaim[s] or sessionRelease[s] or sessionLaunch[s] or sessionMergePullRequest[s])
   or (some s: Session, c: Campaign | adopt[s,c])
   or (some s: Session, r: Repo | editReadme[s,r])
-  or (Now.ev in unattended and sessionFrame and no By.actor)
-  /* an event declared in a layer above: it names its own actor, or none */
-  or (Now.ev not in Stutter + sessionActed + unattended and sessionFrame)
+  or (Now.event in unattended and sessionFrame and no Who.session)
+  /* an event declared in an entity above: it names its own session, or none */
+  or (Now.event not in Stutter + sessionActed + unattended and sessionFrame)
 }
 
 fact SessionTrace { sessionInit and always sessionStep }

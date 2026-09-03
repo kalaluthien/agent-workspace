@@ -306,7 +306,7 @@ Three readings, and never answer one with another.
 
 ## The four messages
 
-`spec/campaign/role/system.als` is the contract; this is the short form. `ListAgents`
+`spec/campaign/orchestration/system.als` is the contract; this is the short form. `ListAgents`
 resolves the address; herdr's pane label is not one.
 
 | message | direction | carries |

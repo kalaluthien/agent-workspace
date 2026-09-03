@@ -11,16 +11,16 @@ open github/system
 
 /* Settlement is strictly weaker than completion at these bounds, so that
    assertion is an answer rather than a synonym. */
-pred SettledWithoutMerge { eventually (some i: Campaign.members | settled[i] and no i.pr) }
+pred SettledWithoutMerge { eventually (some i: Campaign.memberIssues | settled[i] and no i.pullRequest) }
 
 /* The plain path. */
 pred S1_HappyPath {
   one c: Campaign {
-    #c.members = 2
-    #(c.members.home) = 2
-    always Now.ev not in AddMember + RemoveMember
-    mergeClosed[c.members]
-    eventually (all i: c.members | complete[i])
+    #c.memberIssues = 2
+    #(c.memberIssues.repo) = 2
+    always Now.event not in AddMember + RemoveMember
+    mergeClosed[c.memberIssues]
+    eventually (all i: c.memberIssues | complete[i])
     closeDiscipline[c]
     eventually (closable[c] and campaignClosed[c])
   }
@@ -30,12 +30,12 @@ pred S1_HappyPath {
    reached. */
 pred S2_SubIssueDropped {
   one c: Campaign {
-    #c.members = 2
-    always Now.ev not in AddMember + RemoveMember
-    some disj i1, i2: c.members {
+    #c.memberIssues = 2
+    always Now.event not in AddMember + RemoveMember
+    some disj i1, i2: c.memberIssues {
       mergeClosed[i1]
       eventually complete[i1]
-      always no i2.pr
+      always no i2.pullRequest
       eventually dropped[i2]
     }
     closeDiscipline[c]
@@ -46,13 +46,13 @@ pred S2_SubIssueDropped {
 /* The campaign re-opens work instead of closing. */
 pred S5_FollowUpAfterSettled {
   one c: Campaign {
-    #c.members = 1
+    #c.memberIssues = 1
     mergeClosed[Issue - c.campaignIssue]
-    always Now.ev != RemoveMember          -- no emptying the campaign to fake "all settled"
-    some i1: c.members, i2: Issue - c.members - c.campaignIssue {
+    always Now.event != RemoveMember          -- no emptying the campaign to fake "all settled"
+    some i1: c.memberIssues, i2: Issue - c.memberIssues - c.campaignIssue {
       eventually (complete[i1] and c.campaignIssue in Open
-                  and Now.ev = AddMember and Now.issue = i2)
-      eventually (i2 in c.members and not settled[i2])
+                  and Now.event = AddMember and Now.issue = i2)
+      eventually (i2 in c.memberIssues and not settled[i2])
       eventually complete[i2]
     }
     closeDiscipline[c]
@@ -63,28 +63,28 @@ pred S5_FollowUpAfterSettled {
 /* The added sub-issue's home is a repository no existing member lives in. */
 pred S6_RepoJoinsMidFlight {
   one c: Campaign {
-    #c.members = 1
-    #(c.members.home) = 1
+    #c.memberIssues = 1
+    #(c.memberIssues.repo) = 1
     mergeClosed[Issue - c.campaignIssue]
-    always Now.ev != RemoveMember
-    eventually (Now.ev = AddMember
-                and Now.issue not in c.members
-                and Now.issue.home not in c.members.home)
-    eventually (#c.members = 2 and #(c.members.home) = 2
-                and (all i: c.members | complete[i]))
+    always Now.event != RemoveMember
+    eventually (Now.event = AddMember
+                and Now.issue not in c.memberIssues
+                and Now.issue.repo not in c.memberIssues.repo)
+    eventually (#c.memberIssues = 2 and #(c.memberIssues.repo) = 2
+                and (all i: c.memberIssues | complete[i]))
   }
 }
 
 /* Nothing guards the campaign issue's close, so a real run must report it. */
 pred S8_CloseWithOpenSubIssue {
   one c: Campaign {
-    #c.members = 2
-    always Now.ev not in AddMember + RemoveMember
-    mergeClosed[c.members]
-    some disj i1, i2: c.members |
-      eventually (Now.ev = CloseIssue and Now.issue = c.campaignIssue
+    #c.memberIssues = 2
+    always Now.event not in AddMember + RemoveMember
+    mergeClosed[c.memberIssues]
+    some disj i1, i2: c.memberIssues |
+      eventually (Now.event = CloseIssue and Now.issue = c.campaignIssue
                   and complete[i1] and i2 in Open)
-    eventually (campaignClosed[c] and (some i: c.members | i in Open))
+    eventually (campaignClosed[c] and (some i: c.memberIssues | i in Open))
   }
 }
 
@@ -92,16 +92,16 @@ pred S8_CloseWithOpenSubIssue {
    back-reference: a mention cannot be un-said. */
 pred S10_SubIssueMovedOut {
   one c: Campaign {
-    #c.members = 2
-    mergeClosed[c.members]
-    always Now.ev != AddMember
-    some disj i1, i2: c.members {
-      always (Now.ev = RemoveMember implies Now.issue = i2)
-      eventually (Now.ev = RemoveMember and Now.issue = i2)
+    #c.memberIssues = 2
+    mergeClosed[c.memberIssues]
+    always Now.event != AddMember
+    some disj i1, i2: c.memberIssues {
+      always (Now.event = RemoveMember implies Now.issue = i2)
+      eventually (Now.event = RemoveMember and Now.issue = i2)
       eventually complete[i1]
-      eventually c.members = i1
+      eventually c.memberIssues = i1
     }
-    always (all d: Campaign | d.members = idx[d])
+    always (all d: Campaign | d.memberIssues = indexOf[d])
     closeDiscipline[c]
     eventually (closable[c] and campaignClosed[c])
   }
@@ -111,10 +111,10 @@ pred S10_SubIssueMovedOut {
    says why. */
 pred S11_MergedButIssueLeftOpen {
   one c: Campaign {
-    #c.members = 1
-    always Now.ev not in AddMember + RemoveMember
-    some i: c.members {
-      eventually (some i.pr and i.pr in Merged and i in Open)
+    #c.memberIssues = 1
+    always Now.event not in AddMember + RemoveMember
+    some i: c.memberIssues {
+      eventually (some i.pullRequest and i.pullRequest in Merged and i in Open)
       eventually always (i in Open)
       always not complete[i]
     }
@@ -125,12 +125,12 @@ pred S11_MergedButIssueLeftOpen {
 /* What the campaign-<N>/ branch prefix buys. */
 pred S12_TwoCampaignsOneRepo {
   #Campaign = 2
-  all c: Campaign | #c.members = 1
-  one r: Repo - Container | Campaign.members.home = r
-  mergeClosed[Campaign.members]
-  always Now.ev not in AddMember + RemoveMember
+  all c: Campaign | #c.memberIssues = 1
+  one r: Repo - Container | Campaign.memberIssues.repo = r
+  mergeClosed[Campaign.memberIssues]
+  always Now.event not in AddMember + RemoveMember
   all c: Campaign | closeDiscipline[c]
-  eventually (all c: Campaign, i: c.members | complete[i])
+  eventually (all c: Campaign, i: c.memberIssues | complete[i])
   eventually (all c: Campaign | campaignClosed[c])
 }
 
@@ -139,7 +139,7 @@ pred S12_TwoCampaignsOneRepo {
    documents no such restriction, so if it holds it is the model, not the
    design, that needs a reopen event. */
 pred S13_ReopenAfterMerge {
-  one c: Campaign | some i: c.members {
+  one c: Campaign | some i: c.memberIssues {
     eventually complete[i]
     eventually (complete[i] and after (i in Open))
   }
@@ -147,25 +147,25 @@ pred S13_ReopenAfterMerge {
 
 /* S13a: completion is reachable at these bounds. S13b: a closed issue can
    reopen, via the re-add. S13c: one that ever had a pull request cannot --
-   `addMember` guards on `no i.pr` and `WellFormed` never undoes a pr link,
+   `addMember` guards on `no i.pullRequest` and `WellFormed` never undoes a pr link,
    which is the actual blocker. */
-pred S13a_ControlCompletes { some i: Campaign.members | eventually complete[i] }
+pred S13a_ControlCompletes { some i: Campaign.memberIssues | eventually complete[i] }
 pred S13b_ReopenAnyClosed  {
-  some i: Issue | eventually (i not in Open and Now.ev = AddMember and Now.issue = i
+  some i: Issue | eventually (i not in Open and Now.event = AddMember and Now.issue = i
                               and after (i in Open))
 }
-pred S13c_ReopenWithPR     { some i: Issue | eventually (some i.pr and i not in Open and after (i in Open)) }
+pred S13c_ReopenWithPR     { some i: Issue | eventually (some i.pullRequest and i not in Open and after (i in Open)) }
 
 /* Nothing in the design guards a closed campaign issue against later sub-issues. */
 pred S14_FollowUpAfterClose {
   one c: Campaign {
-    #c.members = 1
+    #c.memberIssues = 1
     mergeClosed[Issue - c.campaignIssue]
-    always Now.ev != RemoveMember
+    always Now.event != RemoveMember
     closeDiscipline[c]
-    some i2: Issue - c.members - c.campaignIssue {
-      eventually (campaignClosed[c] and Now.ev = AddMember and Now.issue = i2)
-      eventually (campaignClosed[c] and i2 in c.members and i2 in Open and not settled[i2])
+    some i2: Issue - c.memberIssues - c.campaignIssue {
+      eventually (campaignClosed[c] and Now.event = AddMember and Now.issue = i2)
+      eventually (campaignClosed[c] and i2 in c.memberIssues and i2 in Open and not settled[i2])
     }
   }
 }
@@ -174,13 +174,13 @@ pred S14_FollowUpAfterClose {
    campaign at all: the model forbade what was about to happen for real. */
 pred S16a_ContainerMemberUnderNarrowReading {
   containerIsCampaignIssueOnly
-  some c: Campaign, i: c.members | i.home = Container
+  some c: Campaign, i: c.memberIssues | i.repo = Container
 }
 
 /* The tracker's third kind. It was UNSAT at any bound while
    `containerIssuesAreCampaignIssues` was a fact, and no verdict said so. */
 pred S18_PlainContainerIssue {
-  some i: Issue | i.home = Container and always (i not in Campaign.campaignIssue + Campaign.members)
+  some i: Issue | i.repo = Container and always (i not in Campaign.campaignIssue + Campaign.memberIssues)
 }
 
 /* Why the clause is kept rather than deleted: as a predicate it still says
@@ -192,26 +192,26 @@ pred S18a_PlainContainerIssueUnderClosedWorld {
 /* ---------------- commands ---------------- */
 
 -- control: settlement is weaker
-run SettledWithoutMerge  for 4 Issue, 3 PR, 2 Campaign, 3 Repo, 6 steps expect 1
+run SettledWithoutMerge  for 4 Issue, 3 PullRequest, 2 Campaign, 3 Repo, 6 steps expect 1
 
-run S1_HappyPath                for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
-run S2_SubIssueDropped           for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
-run S5_FollowUpAfterSettled     for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 2 Repo, 14 steps expect 1
-run S6_RepoJoinsMidFlight       for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 14 steps expect 1
-run S8_CloseWithOpenSubIssue     for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
-run S10_SubIssueMovedOut         for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
-run S11_MergedButIssueLeftOpen  for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 1
-run S12_TwoCampaignsOneRepo     for exactly 4 Issue, 2 PR, exactly 2 Campaign, exactly 2 Repo, 14 steps expect 1
--- the finding: no reopen after a PR
-run S13_ReopenAfterMerge        for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 0
-run S13a_ControlCompletes       for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 1
-run S13b_ReopenAnyClosed        for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 1
+run S1_HappyPath                for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S2_SubIssueDropped           for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S5_FollowUpAfterSettled     for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 2 Repo, 14 steps expect 1
+run S6_RepoJoinsMidFlight       for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 14 steps expect 1
+run S8_CloseWithOpenSubIssue     for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S10_SubIssueMovedOut         for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+run S11_MergedButIssueLeftOpen  for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 1
+run S12_TwoCampaignsOneRepo     for exactly 4 Issue, 2 PullRequest, exactly 2 Campaign, exactly 2 Repo, 14 steps expect 1
+-- the finding: no reopen after a pull request
+run S13_ReopenAfterMerge        for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 0
+run S13a_ControlCompletes       for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 1
+run S13b_ReopenAnyClosed        for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 1
 -- the actual blocker
-run S13c_ReopenWithPR           for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 0
-run S14_FollowUpAfterClose      for exactly 3 Issue, 2 PR, exactly 1 Campaign, exactly 2 Repo, 14 steps expect 1
+run S13c_ReopenWithPR           for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 10 steps expect 0
+run S14_FollowUpAfterClose      for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 2 Repo, 14 steps expect 1
 -- the narrow reading forbade it
-run S16a_ContainerMemberUnderNarrowReading for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
+run S16a_ContainerMemberUnderNarrowReading for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
 -- the tracker's third kind exists
-run S18_PlainContainerIssue              for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 1
+run S18_PlainContainerIssue              for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 1
 -- control: the clause bites
-run S18a_PlainContainerIssueUnderClosedWorld for exactly 2 Issue, 1 PR, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 0
+run S18a_PlainContainerIssueUnderClosedWorld for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 0

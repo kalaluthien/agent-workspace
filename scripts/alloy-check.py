@@ -166,57 +166,58 @@ def run_alloy(path, outdir):
 # Relations worth showing, in the order a reader wants them.
 VARYING = [
     # the observers: the event and its arguments, one per layer that adds one
-    ("Now<:ev", "ev"),
-    ("By<:actor", "by"),
+    ("Now<:event", "ev"),
+    ("Who<:session", "by"),
     ("Now<:issue", "arg"),
-    ("Target<:role", "roleArg"),
-    ("Site<:mach", "on"),
-    ("Site<:repo", "repoArg"),
+    ("Target<:agent", "agentArg"),
+    ("Where<:machine", "on"),
+    ("Where<:repo", "repoArg"),
     # github
     ("Open", "open"),
     ("Merged", "merged"),
-    ("Issue<:pr", "pr"),
+    ("Issue<:pullRequest", "pr"),
     ("Filed", "filed"),
-    ("Campaign<:members", "members"),
-    ("Campaign<:sub", "sub"),
-    ("Campaign<:body", "body"),
+    ("Campaign<:memberIssues", "members"),
+    ("Campaign<:subIssues", "sub"),
+    ("Campaign<:reposInBody", "body"),
     ("Claimed", "claimed"),
     # directory
-    ("Present", "dirs"),
-    ("Tree<:checkout", "co"),
-    # checkout
-    ("Behind", "behind"),
-    ("Unpushed", "unpushed"),
+    ("OnDisk", "dirs"),
+    ("CampaignDir<:checkedOut", "co"),
+    # synchronization
+    ("ContainerBehind", "behind"),
+    ("ContainerUnpushed", "unpushed"),
     ("CloneBehind", "cloneBehind"),
     # session
-    ("Session<:holds", "holds"),
+    ("Session<:worksOn", "holds"),
     ("Surveyed", "surveyed"),
     ("Session<:surveyResult", "saw"),
-    ("Session<:readme", "readme"),
-    ("Session<:bodyAsRead", "seen"),
-    ("Session<:claims", "claims"),
-    # role
+    ("Session<:reposInReadme", "readme"),
+    ("Session<:reposInBodyAsRead", "seen"),
+    ("Session<:claimedIssues", "claims"),
+    # orchestration
     ("Launched", "launched"),
     ("Live", "live"),
-    ("Local", "local"),
-    ("Visible", "visible"),
+    ("LocalOnly", "local"),
+    ("PushedToRemote", "visible"),
     ("Reported", "reported"),
     ("Asked", "asked"),
     ("Answered", "answered"),
     ("Waiting", "waiting"),
     ("Confirmed", "confirmed"),
-    ("StoodDown", "stoodDown"),
+    ("StandDownTaken", "stoodDown"),
     ("Retired", "retired"),
 ]
-STATIC = ["Issue<:home", "Campaign<:campaignIssue", "Req<:covers",
-          "Tree<:camp", "Tree<:mach", "Session<:smach",
-          "Role<:task", "Role<:host", "Role<:launcher", "Role<:topic"]
+STATIC = ["Issue<:repo", "Campaign<:campaignIssue", "Request<:covers",
+          "CampaignDir<:campaign", "CampaignDir<:machine", "Session<:machine",
+          "Agent<:role", "Agent<:task", "Agent<:host", "Agent<:launcher",
+          "Agent<:branch"]
 
 WANTED = {key for key, _ in VARYING} | set(STATIC)
 
 # `Now->OpenPR` and `Target->A0`: the observer atom adds nothing to a cell whose
 # column already names it.
-OBSERVER = re.compile(r"\b(?:Now|Site|By|Target)->")
+OBSERVER = re.compile(r"\b(?:Now|Where|Who|Target)->")
 
 ATOM = re.compile(r"(\w+)\$(\d+)")
 # `system/system/system/system/Issue$0` -> `Issue$0`: a layered model qualifies
@@ -224,10 +225,9 @@ ATOM = re.compile(r"(\w+)\$(\d+)")
 # every cell.
 QUALIFIER = re.compile(r"[A-Za-z_]\w*(?:/[A-Za-z_]\w*)*/")
 
-# `Role` is abstract, so the atoms a trace holds are its one concrete kind's.
-LETTER = {"Issue": "I", "PR": "P", "Campaign": "C", "Machine": "M",
-          "Repo": "R", "Executor": "E", "Session": "S", "Topic": "TP",
-          "Tree": "TR"}
+LETTER = {"Issue": "I", "PullRequest": "P", "Campaign": "C", "Machine": "M",
+          "Repo": "R", "Agent": "A", "Session": "S", "Branch": "B",
+          "CampaignDir": "D"}
 
 
 def unqualify(text):

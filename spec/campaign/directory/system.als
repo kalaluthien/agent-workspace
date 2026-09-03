@@ -1,44 +1,55 @@
 /*
- * One campaign's directory on one machine, and the member checkouts inside it.
- * github/system.als is spec/'s entry point: the entity table and the
- * composition idiom are there.
+ * One campaign's directory on a machine, and the repository checkouts inside
+ * it. It opens github/system because a directory holds a campaign's work and a
+ * checkout is of a repository, and both of those are the entity below.
  *
- * The directory is a cache, not a plane of its own: it holds no fact another
- * machine reads, which is what lets it be optional and lets two machines hold
- * one campaign under directory names differing only in date. `Site` -- the
- * observer for which machine and which repository an event touched -- is
- * declared here, and the entity above sets it on its own events.
+ *   Machine       a machine a campaign can run on.
+ *   Branch        a git branch a checkout can be on.
+ *   CampaignDir   one campaign's directory on one machine: which campaign,
+ *                 which machine, and which branch each repository is on.
+ *   OnDisk        the campaign directories that currently exist.
+ *   Where         the observer: which machine and which repository the current
+ *                 event touched.
+ *
+ * A campaign directory holds no fact another machine reads, which is what lets
+ * it be optional and lets two machines hold one campaign under directory names
+ * differing only in date.
+ *
+ * CampaignDir is keyed by an atom rather than carried as two columns on a
+ * holder. Keep it that way: Kodkod cannot represent the five-column varying
+ * relation those columns would make once the composed universe passes about
+ * seventy atoms.
  */
 module directory/system
 
 open github/system
 
 sig Machine {}
-sig Topic {}
+sig Branch {}
 
 /* One campaign's directory on one machine. Keyed by an atom rather than
    carried as two columns on a holder: Kodkod cannot represent the five-ary var
    relation those columns would make once the composed universe passes about
    seventy atoms. */
-sig Tree {
-  camp:         one Campaign,
-  mach:         one Machine,
-  var checkout: Repo -> Topic
+sig CampaignDir {
+  campaign:         one Campaign,
+  machine:         one Machine,
+  var checkedOut: Repo -> Branch
 }
-var sig Present in Tree {}
+var sig OnDisk in CampaignDir {}
 
-fun treesOf[c: Campaign]: set Tree             { camp.c }
-fun treeAt[c: Campaign, m: Machine]: lone Tree { camp.c & mach.m }
-fun dirsOf[c: Campaign]: set Machine           { (Present & camp.c).mach }
+fun campaignDirsOf[c: Campaign]: set CampaignDir             { campaign.c }
+fun campaignDirAt[c: Campaign, m: Machine]: lone CampaignDir { campaign.c & machine.m }
+fun machinesHolding[c: Campaign]: set Machine           { (OnDisk & campaign.c).machine }
 
-one sig Site {
-  var mach: lone Machine,
+one sig Where {
+  var machine: lone Machine,
   var repo: lone Repo
 }
 
 fact DirectoryWellFormed {
-  all disj x, y: Tree | x.camp != y.camp or x.mach != y.mach
-  always all t: Tree, r: Repo | lone t.checkout[r]
+  all disj x, y: CampaignDir | x.campaign != y.campaign or x.machine != y.machine
+  always all t: CampaignDir, r: Repo | lone t.checkedOut[r]
 }
 
 /* ---------------- observable events ---------------- */
@@ -47,48 +58,48 @@ one sig CreateDir, DeleteDir, Acquire extends Event {}
 
 fun directoryEvents: set Event { CreateDir + DeleteDir + Acquire }
 
-pred directoryFrame { Present' = Present and checkout' = checkout }
+pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut }
 
-pred createDir[t: Tree] {
-  t not in Present
-  Present' = Present + t
-  checkout' = checkout
-  Now.ev = CreateDir and no Now.issue and Site.mach = t.mach and no Site.repo
+pred createDir[t: CampaignDir] {
+  t not in OnDisk
+  OnDisk' = OnDisk + t
+  checkedOut' = checkedOut
+  Now.event = CreateDir and no Now.issue and Where.machine = t.machine and no Where.repo
 }
 
 /* Unguarded: this entity has no role, so "no campaign closes while a role is
-   live under its tree" cannot be stated here. role/checks.als's
+   live under its tree" cannot be stated here. orchestration/checks.als's
    NoOrphanIfGuarded is that rule assumed and checked. */
-pred deleteDir[t: Tree] {
-  t in Present
-  Present'  = Present - t
-  checkout' = checkout - t->Repo->Topic
-  Now.ev = DeleteDir and no Now.issue and Site.mach = t.mach and no Site.repo
+pred deleteDir[t: CampaignDir] {
+  t in OnDisk
+  OnDisk'  = OnDisk - t
+  checkedOut' = checkedOut - t->Repo->Branch
+  Now.event = DeleteDir and no Now.issue and Where.machine = t.machine and no Where.repo
 }
 
 /* opening-campaign/scripts/acquire-repo.sh. On a re-run over an existing checkout it switches the
-   branch, which is what role/scenarios.als's R4c catches it doing under a live role. */
-pred acquire[t: Tree, r: Repo, b: Topic] {
-  t in Present
-  t.checkout[r] != b
-  checkout' = checkout - t->r->Topic + t->r->b
-  Present' = Present
-  Now.ev = Acquire and no Now.issue and Site.mach = t.mach and Site.repo = r
+   branch, which is what orchestration/scenarios.als's R4c catches it doing under a live role. */
+pred acquire[t: CampaignDir, r: Repo, b: Branch] {
+  t in OnDisk
+  t.checkedOut[r] != b
+  checkedOut' = checkedOut - t->r->Branch + t->r->b
+  OnDisk' = OnDisk
+  Now.event = Acquire and no Now.issue and Where.machine = t.machine and Where.repo = r
 }
 
 pred directoryInit {
-  all t: Tree | some t.checkout implies t in Present
+  all t: CampaignDir | some t.checkedOut implies t in OnDisk
 }
 
 pred directoryStep {
-  (Now.ev = Stutter and directoryFrame and no Site.mach and no Site.repo)
-  or (some t: Tree | createDir[t] or deleteDir[t])
-  or (some t: Tree, r: Repo, b: Topic | acquire[t,r,b])
-  or (Now.ev in githubEvents and directoryFrame and no Site.mach and no Site.repo)
-  /* An event declared in an entity above. `Site` is left to that entity: the
-     one directly above sets `Site.mach` on its own events, and constrains it
+  (Now.event = Stutter and directoryFrame and no Where.machine and no Where.repo)
+  or (some t: CampaignDir | createDir[t] or deleteDir[t])
+  or (some t: CampaignDir, r: Repo, b: Branch | acquire[t,r,b])
+  or (Now.event in githubEvents and directoryFrame and no Where.machine and no Where.repo)
+  /* An event declared in an entity above. `Where` is left to that entity: the
+     one directly above sets `Where.machine` on its own events, and constrains it
      to none on everything higher, so the observer is pinned exactly once. */
-  or (Now.ev not in Stutter + githubEvents + directoryEvents and directoryFrame)
+  or (Now.event not in Stutter + githubEvents + directoryEvents and directoryFrame)
 }
 
 fact DirectoryTrace { directoryInit and always directoryStep }
