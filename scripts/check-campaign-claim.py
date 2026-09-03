@@ -381,14 +381,22 @@ def sed_files(args):
     return files
 
 
-def write_targets(command):
+def write_targets(command, changing_command):
     """([(form, operand)], None), or (None, why it could not be read).
 
     The targets of the changing forms that MATCHED, never the set of words
     that look like paths: a command's slashed words include its remote, its
     sed script and the file its stderr goes to, none of which is what it
     changes, and reading those as the target lets `cp /tmp/x.md AGENTS.md`
-    through on the strength of the operand it is not writing to."""
+    through on the strength of the operand it is not writing to.
+
+    Every segment answers for itself. A segment that is CHANGING ON ITS OWN --
+    read with its redirects stripped, so the redirect cannot be what makes it
+    changing -- and yields no readable form is unread for the whole command,
+    because otherwise a readable operand elsewhere answers for it and
+    `sh -c 'rm -rf scripts' > /tmp/log` reads as a write to /tmp. `echo hi >
+    /tmp/x` is what this must not catch: `echo` is not changing on its own, so
+    there the redirect genuinely is the write."""
     if SERVICE_DOORS.search(command):
         return None, ("the command writes to the campaign plane through gh, "
                       "which is GitHub issues and has no filesystem target")
@@ -406,7 +414,8 @@ def write_targets(command):
                 return None, (f"a redirect in {segment.strip()!r} names no "
                               f"word this guard can read as its target")
             found.append(("redirect", m.group(1)))
-        words = [w.strip("\"\'") for w in SHELL_WORD.findall(REDIRECT.sub(" ", seg))]
+        body = REDIRECT.sub(" ", seg)
+        words = [w.strip("\"\'") for w in SHELL_WORD.findall(body)]
         while words and re.match(r"^\w+=", words[0]):
             words.pop(0)                        # a leading VAR=value
         if not words:
@@ -419,11 +428,19 @@ def write_targets(command):
         elif head == "sed" and any(a.startswith("-i") for a in args):
             form, ops = "sed -i", sed_files(args)
         else:
+            if changing_command.search(body):
+                return None, (f"the segment {segment.strip()!r} is a changing "
+                              f"command on its own, and its target is not an "
+                              f"operand this guard can read")
             continue
         if not ops:
             return None, (f"the `{form}` form in {segment.strip()!r} names no "
                           f"operand this guard can read")
         found += [(form, o) for o in ops]
+    # The residual: a changing command in which no segment is changing on its
+    # own and none yields a form -- a pattern match spanning a separator. No
+    # case here reaches it, and it stays because the alternative to saying so
+    # is an empty target set read as "everything it writes is outside".
     if not found:
         return None, ("no changing form whose target is an operand was found "
                       "in the command, so what it writes to is unknown")
@@ -434,7 +451,7 @@ def write_targets(command):
     return found, None
 
 
-def target_reading(payload, cwd, root, dirs):
+def target_reading(payload, cwd, root, dirs, changing_command):
     """(verdict, line) -- what this call writes to, as far as it can be read.
 
     "outside" allows on its own; "inside" and "unread" fall through to the
@@ -456,7 +473,8 @@ def target_reading(payload, cwd, root, dirs):
         return "inside", f"{tool} target {target} is {where}"
     if tool != "Bash":
         return "unread", f"{tool} names no path this guard can read"
-    targets, why = write_targets(outside_quotes(tool_input.get("command") or ""))
+    targets, why = write_targets(
+        outside_quotes(tool_input.get("command") or ""), changing_command)
     if targets is None:
         return "unread", why
     seen = []
@@ -524,7 +542,8 @@ def pre(payload, claim_module, changing_command):
     if not is_changing:
         return 0
 
-    verdict, where = target_reading(payload, cwd, root, dirs)
+    verdict, where = target_reading(payload, cwd, root, dirs,
+                                    changing_command)
     if verdict == "outside":
         print(f"check-campaign-claim: allowed, target outside. {where}.")
         return 0

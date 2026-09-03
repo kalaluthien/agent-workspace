@@ -399,8 +399,29 @@ def main():
         r = ask(root, tool="Bash", command="npm install lodash")
         check("a changing form whose target this cannot read is refused",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...and says no readable form was found, not that one was outside",
-              "no changing form whose target is an operand" in out(r), out(r)[:400])
+        check("...and says which segment it could not read, not that one was outside",
+              "'npm install lodash' is a changing command on its own" in out(r),
+              out(r)[:400])
+        # A segment the guard cannot parse must answer for ITSELF. Appending a
+        # redirect to somewhere harmless used to supply the allow for it, which
+        # is finding 1's shape in the operand reading: a write the guard cannot
+        # see answered for by one it can.
+        for command in ("sh -c 'rm -rf scripts' > /tmp/log",
+                        "npm install > /tmp/log",
+                        "npm install | tee /tmp/log",
+                        "npm install --prefix . 2>/tmp/e"):
+            r = ask(root, tool="Bash", command=command)
+            check(f"a redirect elsewhere does not answer for an unreadable "
+                  f"changing segment: {command}",
+                  r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and names the segment it could not read",
+              "is a changing command on its own" in out(r), out(r)[:400])
+        # ...and the case it must NOT catch: `echo` is not changing on its own,
+        # so there the redirect genuinely is the write.
+        r = ask(root, tool="Bash", command=f"echo hi > {OUT} 2>&1")
+        check("a redirect after a command that is not changing on its own allows",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
         r = ask(root, tool="Bash", command="mkdir -p $SCRATCH/x")
         check("an operand this cannot expand is refused",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")

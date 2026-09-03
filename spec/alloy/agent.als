@@ -440,7 +440,8 @@ pred claimAtomic       { always (Now.ev = Claim  implies Now.issue not in Claime
    path, and a shell's write targets, which are the operands of the changing
    forms that matched and never the words that merely look like paths -- and
    falls back to this rule where it cannot, an unread target not being a target
-   read as elsewhere. A write to the campaign plane through `gh` has no
+   read as elsewhere -- per PART of the command, since a part whose target it
+   cannot read is not answered for by a part it can. A write to the campaign plane through `gh` has no
    filesystem target at all and is always `Work`. No atom here carries a path,
    so the reading itself is the script's and is stated in its docstring; the
    model says only that a write on nothing this campaign owns is outside
