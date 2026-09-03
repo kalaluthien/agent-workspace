@@ -14,7 +14,9 @@ Finished when all of these hold:
 - `<slug>-<YYMMDD>/` exists at the container root and holds `AGENTS.md`,
   `CLAUDE.md`, `scripts/`, `runtime/handover/`, `runtime/claims/`,
   `runtime/repos`, and a `README.md` and `runtime/anchor-body-derived.md` that
-  each hold the anchor issue body byte for byte.
+  each hold the anchor issue body as `gh issue view --json body` returns it --
+  the read-back is the canonical form, because the round trip through `gh` is
+  not byte-stable (a body sent with one trailing newline comes back with two).
 - Every line `scripts/campaign-repos.py` prints resolves to a checkout at
   `<campaign>/repos/<name>/` — vacuous under `- none`, where it prints nothing.
 - At least one subtask is filed as a sub-issue of the anchor, and the reply names
@@ -217,7 +219,12 @@ cut until the issue exists and this is the step that mints it.
 
 One call cuts the branch from the named remote and writes the claim record. Exit
 3 is the ref already existing, which is the subtask being taken: read who holds
-it, and do not push past it. A repo-less campaign claims on the container all the
+it, and do not push past it. **When a delegate will do the work**, the record
+must be the delegate's, not the launcher's: choose the delegate's session UUID
+and name first (`references/launching.md`) and pass them as
+`--session <uuid> --name campaign-<N>-executor-<n>`, so the branch is claimed
+before the launch and the launcher holds no record of its own
+(`AGENTS.md` § The claim record). A repo-less campaign claims on the container all the
 same — `--repo` defaults there. Give the branch a local checkout only where the
 subtask has one, then put the branch name in the handover brief:
 

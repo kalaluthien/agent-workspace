@@ -164,6 +164,17 @@ case("take re-takes a released record and says why it may",
      ["take", "--local", "1", "7", "x"], {"7": RELEASED_REC},
      want="marked released", code=0)
 
+# The launch-time path: a record written for another session carries no pid,
+# or `status` reads the launcher's liveness as the delegate's.
+case("take --session for another session writes pid unknown",
+     ["take", "--local", "1", "7", "x", "--session", "theirs"],
+     env={"CLAUDE_CODE_SESSION_ID": "mine", "CLAUDE_PID": "1"},
+     want="pid unknown", code=0)
+case("...and the caller's own session keeps its pid",
+     ["take", "--local", "1", "7", "x", "--session", "mine"],
+     env={"CLAUDE_CODE_SESSION_ID": "mine", "CLAUDE_PID": "1"},
+     want="pid 1", code=0)
+
 case("release --session marks a local claim released, deleting no ref",
      ["release", "7", "--session", "mine"], {"7": LOCAL_REC},
      want="marked", code=0)
