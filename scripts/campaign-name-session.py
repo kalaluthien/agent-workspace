@@ -45,9 +45,8 @@ import sys
 # sharing a campaign and a role.
 # Two roles: a planner files the sub-issues and distributes them, an executor
 # works one. A review has no session to name -- it runs as a subagent of the
-# session that wants the merge. <n> is ONE counter across both roles, since it
-# exists only to keep two sessions from both picking `-1`. AGENTS.md,
-# "The session name".
+# session that wants the merge. How <n> is counted across the two roles is
+# AGENTS.md § The session name's rule, stated there and nowhere else.
 NAME = re.compile(r"^campaign-([0-9]+)-(?:planner|executor)-[0-9]+$")   # group 1: the campaign issue
 
 

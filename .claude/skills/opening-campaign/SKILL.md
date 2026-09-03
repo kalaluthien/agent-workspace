@@ -127,7 +127,8 @@ and nothing later does: every claim record, brief and peer message would then
 carry the wrong campaign's address. `<role>` is `planner` when this session
 will file the sub-issues and hand them out, `executor` when it will work the
 one it files (`AGENTS.md` § The binding); `<n>` is the next free one among the
-sessions `herdr agent list` shows for this campaign, counted across both roles.
+sessions `herdr agent list` shows for this campaign, counted as `AGENTS.md`
+§ The session name says.
 
 ```sh
 test "${HERDR_ENV:-}" = 1 &&
