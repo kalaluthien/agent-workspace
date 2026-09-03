@@ -34,7 +34,7 @@ pred progressEnabled {
 }
 pred weakFairness { always (progressEnabled implies eventually Now.event in OpenPullRequest + MergePullRequest + CloseIssue) }
 
-/* `init` also admits the empty world a campaign issue is filed from, where the
+/* `githubInit` also admits the empty world a campaign issue is filed from, where the
    conclusion is vacuously true at time zero. */
 pred hasWork { some Campaign.memberIssues }
 

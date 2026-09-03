@@ -37,11 +37,12 @@ fun synchronizationEvents: set Event {
   PullContainer + PullClone + CommitLocal + Launch
 }
 
-/* This entity writes no frame predicate. Behind, Unpushed and CloneBehind are
-   governed end to end by CheckoutFrame and CloneFrame below, because the act
-   that moves them most is a MergePR, an event this entity does not own -- so
-   there is nothing left for a step branch to frame, and the branches carry
-   only the observer constraint. */
+/* This entity writes no frame predicate. ContainerBehind, ContainerUnpushed
+   and CloneBehind are governed end to end by ContainerCheckoutFrame and
+   CloneCheckoutFrame below, because the act that moves them most is a
+   MergePullRequest, an event this entity does not own -- so there is nothing
+   left for a step branch to frame, and the branches carry only the observer
+   constraint. */
 
 pred pullContainer[m: Machine] {
   m in ContainerBehind

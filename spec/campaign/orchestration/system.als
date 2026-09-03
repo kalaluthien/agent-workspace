@@ -306,8 +306,8 @@ pred confirmElsewhere[a: Agent] {
   Now.event = ConfirmElsewhere and Now.issue = a.task and Target.agent = a
 }
 
-/* KEYED ON THE ISSUE, NOT ON A ROLE: the review reads GitHub, so keying it
-   to an Role made hands-on work unreviewable and so unmergeable. No guard on
+/* KEYED ON THE ISSUE, NOT ON AN AGENT: the review reads GitHub, so keying it
+   to an agent made hands-on work unreviewable and so unmergeable. No guard on
    who commissions it -- the property needs independence of JUDGEMENT, not of
    TASKING, and a one-session campaign has nobody else to launch it. The named
    limit: the launcher writes the reviewer's brief. */

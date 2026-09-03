@@ -37,7 +37,8 @@ regenerates the lockfile, which is how a deliberate change is recorded. The
 lockfile holds the module, the kind and the name, and deliberately NOT the
 scope, which is tuned often, nor the `expect` value, which would put a verdict
 back in a file for a script to read. The module key is the path relative to
-<dir> -- `role/checks.als` -- so a command moving between entities reads as one
+<dir> -- `orchestration/checks.als` -- so a command moving between entities
+reads as one
 line gone and one line new, naming itself at both ends.
 
 Its ceiling, stated rather than hidden: it does not stop a commit that deletes a
@@ -54,7 +55,7 @@ relations a scenario is actually about; the digest prints the event, its
 arguments, and the varying relations only, one line per state. The five entities
 in spec/campaign/ are layered and open one another, so a composed trace names
 every relation and every atom by its module path -- the chain of `system`
-modules, `system/system/system/system/system/Now<:ev`. The path is stripped:
+modules, `system/system/system/system/system/Now<:event`. The path is stripped:
 which entity declared a relation is the model's business, not a reader's. It
 reads the run's output rather than the model, so it is the same command's
 second half rather than a second script.
@@ -81,13 +82,26 @@ def inventory(directory):
     The module key is the path relative to <directory>, so the entity a command
     lives in is part of what the lockfile states.
     """
+    # Three ways this can come back empty, and they are not the same answer.
+    # `os.walk` yields nothing for all three, so each is asked before it runs:
+    # a directory that is not there and a path that is not a directory are
+    # "I could not look", and only the third is "I looked and found nothing".
+    if not os.path.exists(directory):
+        raise SystemExit(f"alloy-check --commands: {directory} does not exist, "
+                         f"so nothing was read and no command list was compared")
+    if not os.path.isdir(directory):
+        raise SystemExit(f"alloy-check --commands: {directory} is not a directory, "
+                         f"so nothing was read; name the directory holding the "
+                         f"models and {LOCK}")
     als = []
     for root, _, names in os.walk(directory):
         for name in names:
             if name.endswith(".als"):
                 als.append(os.path.relpath(os.path.join(root, name), directory))
     if not als:
-        raise SystemExit(f"alloy-check --commands: no .als files under {directory}")
+        raise SystemExit(f"alloy-check --commands: {directory} was read and holds "
+                         f"no .als file at any depth; the models are gone or this "
+                         f"is the wrong directory")
     found = []
     for key in sorted(als):
         with open(os.path.join(directory, key)) as fh:

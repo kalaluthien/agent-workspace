@@ -12,7 +12,7 @@ open session/scenarios
  * lower entity's event. A refinement that cannot be satisfied would make its
  * event unreachable from here upward while the lower entity's own floor stayed
  * green. `Cov_Bound` pins `FileCampaignIssue` rather than reading `some
- * Binding.bound`, which `init` alone satisfies at step 0.
+ * Binding.bound`, which `githubInit` alone satisfies at step 0.
  */
 pred Cov_Survey            { eventually Now.event = Survey }
 pred Cov_Adopt             { eventually Now.event = Adopt }

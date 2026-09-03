@@ -110,7 +110,7 @@ fun agentsOf[i: Issue]: set Agent { task.i }
    and call it safety. CURRENT is encoded as `Reviewed` cleared by `push`,
    which pins the revision THE REVIEW WAS READ AT rather than the merged
    commit, so a squash merge of a reviewed head stays reviewed. The second
-   conjunct is UNIVERSAL, not existential, and vacuous with no Role. */
+   conjunct is UNIVERSAL, not existential, and vacuous with no Agent. */
 pred mergedOnCurrentReview {
   always (Now.event = MergePullRequest implies
             (Now.issue.pullRequest in Reviewed
@@ -326,7 +326,7 @@ pred R6b_ReclaimAfterDeath {
    CONSTRUCTION and not by a discipline, since the claimant writes its own
    record before any agent exists. What remains outside it is the
    post-delete window: A9, gated by A10-A12, measured by A14/A15. */
-pred A1_UnrecordedExecutorAtTheClose {
+pred A1_UnrecordedAgentAtTheClose {
   some c: Campaign, disj s1, s2: Session, a: Agent {
     a.peer = s2 and a.task in c.memberIssues
     always a not in Addressable                   -- a claim with no record
@@ -339,7 +339,7 @@ pred A1_UnrecordedExecutorAtTheClose {
 
 /* A3. Control for A1: UNSAT here would mean A1 went green by forbidding the
    agent's life altogether. */
-pred A3_RecordedExecutorRunsTheWholeProtocol {
+pred A3_RecordedAgentRunsTheWholeProtocol {
   coLocatedShutdown and twoStepShutdown
   some c: Campaign, disj s1, s2: Session, a: Agent {
     a.peer = s2 and a.task in c.memberIssues
@@ -363,7 +363,7 @@ pred A13_PushAfterReviewUnReviews {
 /* A4. BUILT SO THAT ONLY ONE THING IS WRONG: the agent is confirmed and a
    REPORT preceded the merge, so A5 turns on the review conjunct alone.
    `always s2.worksOn = c` keeps the merger a campaign session. */
-pred A4_ExecutorMergesItsOwnPullRequest {
+pred A4_AgentMergesItsOwnPullRequest {
   some c: Campaign, s2: Session, a: Agent {
     a.peer = s2 and a.task in c.memberIssues
     always s2.worksOn = c
@@ -375,7 +375,7 @@ pred A4_ExecutorMergesItsOwnPullRequest {
 
 /* A5. Dropping `Now.issue.pullRequest in Reviewed` from the rule turns this SAT. */
 pred A5_ReviewRuleBlocksTheCollision {
-  mergedOnCurrentReview and A4_ExecutorMergesItsOwnPullRequest
+  mergedOnCurrentReview and A4_AgentMergesItsOwnPullRequest
 }
 
 /* =================== the record, and what it is worth =================== */
@@ -391,7 +391,7 @@ pred A9_RecordDiesWithTheDirectory {
 
 /* A10. session/scenarios.als's R3 with the missing half supplied: the record names the
    working session and nothing reads it. */
-pred A10_DeleteUnderRecordedExecutor {
+pred A10_DeleteUnderRecordedAgent {
   some c: Campaign, a: Agent {
     some a.peer                        -- a session working its own claim
     a.task in c.memberIssues
@@ -403,7 +403,7 @@ pred A10_DeleteUnderRecordedExecutor {
 /* A11. Keying the gate on `no a.peer` instead of `addressable[a]` turns it SAT
    again. */
 pred A11_AddressableGateBlocksTheDelete {
-  noDeleteUnderAddressableAgent and A10_DeleteUnderRecordedExecutor
+  noDeleteUnderAddressableAgent and A10_DeleteUnderRecordedAgent
 }
 
 /* A12. UNSAT here would mean the directory could never be deleted at all. */
@@ -456,7 +456,7 @@ pred A19_StoodDownCommentNeverOverLocalOnlyWork {
 
 /* A14. An agent whose record died is still retirable, on the confirmation
    alone. Restoring the `addressable` guard on `confirm` turns this UNSAT. */
-pred A14_UnaddressableExecutorIsRetirable {
+pred A14_UnaddressableAgentIsRetirable {
   resolveSilenceExternally and coLocatedShutdown
   some a: Agent {
     some a.peer
@@ -468,8 +468,8 @@ pred A14_UnaddressableExecutorIsRetirable {
 /* A14b. And it cannot be stood down: `standDown` carries a message and
    nothing re-creates an address after the delete. So A14's ending is a
    stand-down taken while the record stood, or `retire`'s second disjunct. */
-pred A14b_UnaddressableExecutorCannotBeStoodDown {
-  A14_UnaddressableExecutorIsRetirable
+pred A14b_UnaddressableAgentCannotBeStoodDown {
+  A14_UnaddressableAgentIsRetirable
   some a: Agent {
     some a.peer
     eventually (a not in Addressable and Now.event = StandDown and Target.agent = a)
@@ -479,7 +479,7 @@ pred A14b_UnaddressableExecutorCannotBeStoodDown {
 /* A15. And its pull request still lands. Gating `confirm` on `addressable` made
    a record-less agent's work permanently unmergeable, which `gh pullRequest merge`
    does not do. */
-pred A15_UnaddressableExecutorPullRequestLands {
+pred A15_UnaddressableAgentPullRequestLands {
   mergedOnCurrentReview
   some a: Agent {
     some a.peer
@@ -515,10 +515,10 @@ pred A16b_AuthorCannotMergeOnStaleReview {
   }
 }
 
-/* A18. Hands-on work is no Role at all. It matters because the confirm
+/* A18. Hands-on work is no Agent at all. It matters because the confirm
    conjunct ranges over `agentsOf[Now.issue]`, empty here, so it is
    VACUOUSLY true and the review half holds the rule up alone -- which A16,
-   having an Role, cannot see. */
+   having an Agent, cannot see. */
 pred A18_AgentLessLandingIsAdmitted {
   mergedOnCurrentReview
   no Agent
@@ -598,12 +598,12 @@ run R6b_ReclaimAfterDeath        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
    and A18b run at exactly ONE Session, because the absence of a second merger
    is their subject. */
 -- closed BY CONSTRUCTION: the claimant writes its own record, so no live claim is unattributable
-run A1_UnrecordedExecutorAtTheClose          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run A1_UnrecordedAgentAtTheClose          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- control: the whole run still happens
-run A3_RecordedExecutorRunsTheWholeProtocol  for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+run A3_RecordedAgentRunsTheWholeProtocol  for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 
 -- the live collision: a self-merge with NO review
-run A4_ExecutorMergesItsOwnPullRequest                for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+run A4_AgentMergesItsOwnPullRequest                for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- still caught, by what was missing
 run A5_ReviewRuleBlocksTheCollision          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 0
 -- the same merge from the other chair
@@ -616,7 +616,7 @@ run A8_ReviewRuleAdmitsTheLanding            for 3 Issue, 1 PullRequest, 1 Campa
 -- the record has the tree's lifetime
 run A9_RecordDiesWithTheDirectory            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- session/scenarios.als's R3, reached from here
-run A10_DeleteUnderRecordedExecutor          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run A10_DeleteUnderRecordedAgent          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- and closed by reading the record
 run A11_AddressableGateBlocksTheDelete          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- control
@@ -624,11 +624,11 @@ run A12_AddressableGateAdmitsTheDelete          for 3 Issue, 1 PullRequest, 1 Ca
 -- a push retires a review
 run A13_PushAfterReviewUnReviews             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- a record dead with its directory still ends in a lawful retire
-run A14_UnaddressableExecutorIsRetirable       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+run A14_UnaddressableAgentIsRetirable       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- and never a stand-down: that one carries a message, so it stays gated
-run A14b_UnaddressableExecutorCannotBeStoodDown for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 0
+run A14b_UnaddressableAgentCannotBeStoodDown for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 0
 -- and its pull request still lands
-run A15_UnaddressableExecutorPullRequestLands           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 16 steps expect 1
+run A15_UnaddressableAgentPullRequestLands           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 16 steps expect 1
 -- the one-session landing
 run A16_AuthorLandsOwnReviewedWork           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- and a push retires that permission

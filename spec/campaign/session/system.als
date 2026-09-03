@@ -4,7 +4,10 @@
  * cares how far behind it is.
  *
  * A SESSION is one harness session -- the `claude` process a herdr pane runs,
- * the thing `campaign-<N>-<role>-<n>` names. An agent sits ABOVE it, because an
+ * and the thing a campaign session name names. That name's shape is not
+ * restated here: `scripts/campaign-name-session.py` owns it, and a second
+ * statement of it would admit names that script refuses. An agent sits ABOVE
+ * it, because an
  * agent is a session working its own claim or a delegate a session launched, so
  * the dependency runs orchestration -> session and cannot be nested the other
  * way.
@@ -30,7 +33,7 @@ module session/system
 
 open synchronization/system
 
-/* `covers` hangs off a `one sig` because Campaign is github/system's signature and a
+/* `covers` hangs off a `one sig` because Campaign is github/system's signature and an
    entity above it may not add a field to it. */
 one sig Request { covers: set Campaign }
 
