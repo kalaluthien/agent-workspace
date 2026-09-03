@@ -57,12 +57,13 @@ working in it too being the normal state. `mkdir -p` because a campaign
 scaffolded before that directory existed has none, and a missing one leaves the
 close gate unable to enumerate at all.
 
-**No directory at all** — run steps 2, 4 and 5 with the ID and body from the
-anchor issue, and skip step 3, which exists only to mint an ID it already has.
-Do it before launching or receiving anything: until the directory exists a claim
-record has nowhere to be written (`AGENTS.md` § ID, directory, branch). Step 2
-still runs, because neither the slug nor the kind is recoverable from GitHub; say
-which kind you picked.
+**No directory at all** — name this session first (the last block of step 3,
+with the ID the anchor already has), then run steps 2, 4 and 5 with the ID and
+body from the anchor issue, and skip the rest of step 3, which exists only to
+mint an ID it already has. Do it before launching or receiving anything: until
+the directory exists a claim record has nowhere to be written (`AGENTS.md` § ID,
+directory, branch). Step 2 still runs, because neither the slug nor the kind is
+recoverable from GitHub; say which kind you picked.
 
 ### 2. Name it and pick its kind
 
@@ -119,6 +120,24 @@ or a launch, both gated on the binding. One of the two occasions a session posts
 ```sh
 gh issue comment <N> -R kalaluthien/agent-workspace --body "BOUND $(hostname -s)"
 ```
+
+**Then name this session, now that the number exists.** A session that opened
+this campaign while named for another keeps that name until something sets it,
+and nothing later does: every claim record, brief and peer message would then
+carry the wrong campaign's address. `<n>` is the next free one among the
+sessions `herdr agent list` shows for this campaign.
+
+```sh
+test "${HERDR_ENV:-}" = 1 &&
+  "$CONTAINER/scripts/campaign-name-session.py" "$HERDR_PANE_ID" campaign-<N>-executor-<n>
+```
+
+Read what it reports applied, then confirm with `ListAgents` that the harness
+name is `campaign-<N>-executor-<n>` before step 4 begins. The caller's own
+rename is the one most likely to need a person, so a `FAILED` line is a stop:
+say so, and do not go on under the old name. `campaign-claim take` is the
+second reader — it refuses a `--name` from another campaign — so a name that
+was not set here is caught at the first claim, not at the close.
 
 ### 4. Scaffold the directory
 

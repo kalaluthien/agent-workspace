@@ -175,6 +175,18 @@ case("...and the caller's own session keeps its pid",
      env={"CLAUDE_CODE_SESSION_ID": "mine", "CLAUDE_PID": "1"},
      want="pid 1", code=0)
 
+# A name from another campaign is a stale name about to become durable: the
+# refusal names both numbers, and fires before any ref or record is written.
+case("take refuses a --name from another campaign, naming both numbers",
+     ["take", "--local", "1", "7", "x", "--name", "campaign-116-executor-2"],
+     want="campaign 116", code=1)
+case("...and says what to do about it",
+     ["take", "--local", "1", "7", "x", "--name", "campaign-116-executor-2"],
+     want="rename first", code=1)
+case("take accepts a --name of this campaign",
+     ["take", "--local", "1", "7", "x", "--name", "campaign-1-executor-2"],
+     want="name campaign-1-executor-2", code=0)
+
 case("release --session marks a local claim released, deleting no ref",
      ["release", "7", "--session", "mine"], {"7": LOCAL_REC},
      want="marked", code=0)
