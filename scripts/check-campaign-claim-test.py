@@ -358,6 +358,32 @@ def main():
               r.returncode == 2 and "`sed -i` operand 'AGENTS.md'" in out(r),
               f"exit {r.returncode}: {out(r)[:400]}")
 
+        # #154's own gap, folded in here: `sed_files` had no notion of an
+        # ATTACHED long option's value at all, so `--expression=` supplying a
+        # script was never recognised either way. With the value outside
+        # (`/tmp/x.sed`) it is read and passed over, and the real file
+        # operand `AGENTS.md` is no longer mistaken for an unsupplied script
+        # and dropped -- it is the one this refuses on.
+        r = ask(root, tool="Bash",
+                command="sed -i --expression=/tmp/x.sed AGENTS.md")
+        check("an attached script value supplies one, so the file operand is kept",
+              "`sed -i` operand 'AGENTS.md'" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        # The other half of operands()'s own rule: an attached value that
+        # says nothing about being a path is UNREAD, named for what it is
+        # rather than folded into "no operand" the way a dropped file reads.
+        r = ask(root, tool="Bash",
+                command="sed -i --expression=foo.sed AGENTS.md")
+        check("an attached script value that is not path-shaped is unread",
+              "'--expression=foo.sed' attaches a value" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        # A SHORT option's own `=` is the same ambiguity operands() refuses
+        # for `-t=/tmp/d`: sed has no `=` syntax for a short option either.
+        r = ask(root, tool="Bash", command="sed -i -e=foo AGENTS.md")
+        check("a short option's `=`-attached value is unread here too",
+              "may be an option's attached value" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+
         # A git write's target is the repository. Every path in the command is
         # a log or a message file, so none of them may carry an allow -- this
         # is the class the guard exists for.

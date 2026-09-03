@@ -402,7 +402,8 @@ def operands(args):
                                   f"not say it is a path, so whether that "
                                   f"value is a write target is not readable")
                 out.append(value)
-            continue                            # a long flag, never a cluster
+            continue      # never a flag cluster; a value it carried, if any,
+                          # was already appended above
         tail = word.lstrip("-")
         if tail and not tail.isalpha():
             return None, (f"word {word!r} may be an option's attached value, "
@@ -412,21 +413,58 @@ def operands(args):
 
 
 def sed_files(args):
-    """The file operands of `sed -i`. The script is an operand too until an
-    `-e` puts it elsewhere, and BSD's `-i ''` suffix is the empty word."""
-    files, skip = [], False
+    """(the file operands of `sed -i`, why one of them could not be read).
+
+    The script is a file operand too until an `-e` or `-f` puts it elsewhere
+    -- separate (skipped as that option's own following word) or attached
+    long (`--expression=script`) -- and BSD's `-i ''` suffix is the empty
+    word, dropped below with every other empty one.
+
+    A long option's `=`-attached value follows operands()'s own rule: a value
+    that looks like a path is kept as a file operand, one that says nothing
+    about being a path is UNREAD, which refuses the whole call rather than
+    guess which it is. Before this rule existed, `--expression=` and
+    `--file=` were not recognised as supplying a script either way: the whole
+    word was excluded for starting with `-`, and with no signal that a script
+    had been supplied, the guess below took the one remaining file operand
+    for the script and dropped it too -- `sed -i --expression=foo.sed
+    file.txt` lost `file.txt` silently rather than reading it.
+
+    A short word carrying its own `=` -- `-e=text` and the like -- is UNREAD
+    for the reason operands() refuses `-t=/tmp/d`: sed has no `=` syntax for
+    a short option, so this cannot be told from a flag cluster. Every OTHER
+    short word is untouched, `-i.bak`'s attached suffix included: sed's own
+    attached-suffix convention for `-i` is not the ambiguity this closes, and
+    refusing it would break the ordinary call this function exists to read."""
+    files, skip, supplied = [], False, False
     for word in args:
         if skip:
             skip = False
             continue
-        if word.startswith("-"):
-            skip = word in OPT_WITH_ARG
+        if not word.startswith("-"):
+            files.append(word)
             continue
-        files.append(word)
+        if word.startswith("--"):
+            if "=" in word:
+                flag, value = word.split("=", 1)
+                if not looks_like_path(value):
+                    return None, (f"word {word!r} attaches a value that does "
+                                  f"not say it is a path, so whether that "
+                                  f"value is a write target is not readable")
+                files.append(value)
+                supplied = supplied or flag in OPT_WITH_ARG
+            continue
+        tail = word.lstrip("-")
+        if "=" in tail:
+            return None, (f"word {word!r} may be an option's attached value, "
+                          f"which this guard cannot tell from a flag cluster, "
+                          f"so its operands are not readable")
+        skip = word in OPT_WITH_ARG
+        supplied = supplied or skip
     files = [f for f in files if f]
-    if not any(a in OPT_WITH_ARG for a in args) and files:
+    if not supplied and files:
         files = files[1:]                       # the first word is the script
-    return files
+    return files, None
 
 
 def write_targets(command, changing_command):
@@ -475,7 +513,7 @@ def write_targets(command, changing_command):
         elif head == "tee":
             form, (ops, unreadable) = "tee", operands(args)
         elif head == "sed" and any(a.startswith("-i") for a in args):
-            form, ops = "sed -i", sed_files(args)
+            form, (ops, unreadable) = "sed -i", sed_files(args)
         else:
             if changing_command.search(body):
                 return None, (f"the segment {segment.strip()!r} is a changing "
