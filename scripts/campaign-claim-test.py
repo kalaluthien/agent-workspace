@@ -77,6 +77,13 @@ exit 4
 
 HOSTNAME = subprocess.run(["hostname", "-s"], capture_output=True, text=True).stdout.strip()
 
+# The default gh: a call that reached it is a case that would have reached
+# the network, and it says so rather than doing so.
+GH_DENIED = """#!/bin/sh
+echo "gh shim: this case reached gh without stubbing it: $*" >&2
+exit 97
+"""
+
 
 def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
     with tempfile.TemporaryDirectory() as d:
@@ -93,17 +100,21 @@ def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
             if mtime is not None:
                 os.utime(claims / name, (mtime, mtime))
         e = dict(os.environ, **(env or {}))
-        if stub_ps or stub_gh:
-            shim = Path(d) / "shim"
-            shim.mkdir()
-            for name, body, on in (("ps", PS_SHIM, stub_ps),
-                                   ("gh", GH_FAILS if stub_gh == "fails"
-                                    else GH_SHIM.replace("some-other-machine", HOSTNAME)
-                                    if stub_gh == "here" else GH_SHIM, stub_gh)):
-                if on:
-                    (shim / name).write_text(body)
-                    (shim / name).chmod(0o755)
-            e["PATH"] = f"{shim}:{e.get('PATH', '')}"
+        # A shim directory on PATH for every case. `gh` is ALWAYS shimmed:
+        # the real one would reach the network, and a case that did so has
+        # written to production behind a green line -- eight STOOD DOWN
+        # comments landed on a live campaign issue that way. Unstubbed, gh
+        # refuses and says so.
+        shim = Path(d) / "shim"
+        shim.mkdir()
+        gh_body = (GH_FAILS if stub_gh == "fails"
+                   else GH_SHIM.replace("some-other-machine", HOSTNAME) if stub_gh == "here"
+                   else GH_SHIM if stub_gh else GH_DENIED)
+        for name, body, on in (("ps", PS_SHIM, stub_ps), ("gh", gh_body, True)):
+            if on:
+                (shim / name).write_text(body)
+                (shim / name).chmod(0o755)
+        e["PATH"] = f"{shim}:{e.get('PATH', '')}"
         return subprocess.run([sys.executable, str(CLAIM), *args, "--dir", d],
                               capture_output=True, text=True, env=e)
 
@@ -256,6 +267,10 @@ case("stood-down refuses while this session holds an unreleased claim",
 case("stood-down refuses with no session id to name",
      ["stood-down", "1"], env={"CLAUDE_CODE_SESSION_ID": ""},
      want="names no session", code=1)
+case("stood-down refuses a --session when nothing proves the caller",
+     ["stood-down", "1", "--session", "theirs"], {"7": RELEASED_REC},
+     env={"CLAUDE_CODE_SESSION_ID": ""},
+     want="nothing proves the caller", code=1, absent="posted on")
 case("stood-down refuses to speak for a peer",
      ["stood-down", "1", "--session", "theirs"], {"7": RELEASED_REC},
      env={"CLAUDE_CODE_SESSION_ID": "mine"},

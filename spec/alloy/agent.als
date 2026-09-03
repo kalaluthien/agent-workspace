@@ -857,6 +857,12 @@ pred Cov_ConfirmElsewhere { eventually Now.ev = ConfirmElsewhere }
 pred Cov_Review           { eventually Now.ev = Review }
 pred Cov_StandDown        { eventually Now.ev = StandDown }
 pred Cov_StoodDownPosted  { eventually Now.ev = StoodDownPosted }
+/* A20. Stood is set by its event and by nothing else: unframed in any step,
+   or uncleared at init, this goes SAT. */
+pred A20_StoodOnlyByPosting {
+  eventually some Stood
+  always Now.ev != StoodDownPosted
+}
 /* The comment is never over local-only work: no trace posts it while Local. */
 pred A19_StoodDownNeverLocal {
   eventually (Now.ev = StoodDownPosted and Target.agent in Local)
@@ -1082,6 +1088,7 @@ run Cov_Review           for 3 Issue, 2 PR, 1 Campaign, 2 Session, 1 Agent, 2 Ma
 run Cov_StandDown        for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
 run Cov_StoodDownPosted  for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
 run A19_StoodDownNeverLocal for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 0
+run A20_StoodOnlyByPosting  for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 0
 run Cov_Retire           for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
 run Cov_AgentDie         for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1
 run Cov_GuardedRelease   for 3 Issue, 1 PR, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Topic, 2 Tree, 10 steps expect 1

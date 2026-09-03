@@ -1104,7 +1104,12 @@ def cmd_stood_down(args):
     # The comment is the peer's own word, which is what makes it evidence: a
     # session may stand itself down and nobody else. A hook is handed the
     # session id it acts for, and that id equals the environment's.
-    if own and session != own:
+    if not own:
+        print("refusing: $CLAUDE_CODE_SESSION_ID is not set, so nothing proves "
+              "the caller is the session it would name. A STOOD DOWN is posted "
+              "by the session it names, never for a peer.", file=sys.stderr)
+        return 1
+    if session != own:
         print(f"refusing: --session {session} is not this session ({own}). A "
               f"STOOD DOWN is posted by the session it names, never for a "
               f"peer.", file=sys.stderr)
