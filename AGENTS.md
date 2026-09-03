@@ -115,7 +115,7 @@ atomic gate stays `campaign-claim take`'s create-ref, and the model's `addMember
 (`spec/alloy/ledger.als`) has no actor, machine, or binding precondition. What the
 filer still owes: file on the repository whose code changes, from the template,
 and leave adding that repository to `## Repos` to a bound session, since that is
-a scope change (`opening-campaign`, "A repository the anchor's list does not name").
+a scope change (`opening-campaign`, "A repository the anchor's `## Repos` list does not name").
 
 **`BOUND <machine>` is a comment on the anchor, and the latest one wins.** Its
 first line is `BOUND <machine>` from `hostname -s`; anything after is prose.
