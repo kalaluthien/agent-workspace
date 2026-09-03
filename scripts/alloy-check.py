@@ -32,12 +32,12 @@ second statement that does NOT regenerate can catch it.
 
 --commands is that statement. It extracts every `check`/`run` declaration from
 the .als files under <dir>, RECURSIVELY, and compares them to
-<dir>/commands.lock.json, naming each command that appeared or went. `--write`
-regenerates the lockfile, which is how a deliberate change is recorded. The
-lockfile holds the module, the kind and the name, and deliberately NOT the
-scope, which is tuned often, nor the `expect` value, which would put a verdict
-back in a file for a script to read. The module key is the path relative to
-<dir> -- `orchestration/checks.als` -- so a command moving between entities
+<dir>/commands.snapshot.json, naming each command that appeared or went.
+`--write` regenerates the snapshot, which is how a deliberate change is
+recorded. The snapshot holds the module, the kind and the name, and deliberately
+NOT the scope, which is tuned often, nor the `expect` value, which would put a
+verdict back in a file for a script to read. The module key is the path relative
+to <dir> -- `orchestration/checks.als` -- so a command moving between entities
 reads as one line gone and one line new, naming itself at both ends.
 
 Its ceiling, stated rather than hidden: it does not stop a commit that deletes a
@@ -72,14 +72,14 @@ ALLOY = os.path.expanduser("~/.local/bin/alloy")
 RESULT = re.compile(r"^\d+\.\s+(check|run)\s+(\S+)\s+\d+\s+(?:\d+/\d+\s+)?(SAT|UNSAT)\b")
 # A command declaration, which always opens its line: `check Name for ...`.
 DECL = re.compile(r"^(check|run)\s+(\w+)\b")
-LOCK = "commands.lock.json"
+SNAPSHOT = "commands.snapshot.json"
 
 
 def inventory(directory):
     """[[module, kind, name]] over every .als under <directory>, sorted.
 
     The module key is the path relative to <directory>, so the entity a command
-    lives in is part of what the lockfile states.
+    lives in is part of what the snapshot states.
     """
     # Three ways this can come back empty, and they are not the same answer.
     # `os.walk` yields nothing for all three, so each is asked before it runs:
@@ -91,7 +91,7 @@ def inventory(directory):
     if not os.path.isdir(directory):
         raise SystemExit(f"alloy-check --commands: {directory} is not a directory, "
                          f"so nothing was read; name the directory holding the "
-                         f"models and {LOCK}")
+                         f"models and {SNAPSHOT}")
     als = []
     for root, _, names in os.walk(directory):
         for name in names:
@@ -112,9 +112,9 @@ def inventory(directory):
 
 
 def commands_mode(directory, write):
-    """Compare the models' declarations to the committed lockfile beside them."""
+    """Compare the models' declarations to the committed snapshot beside them."""
     directory = os.path.abspath(directory)
-    lock = os.path.join(directory, LOCK)
+    snapshot = os.path.join(directory, SNAPSHOT)
     found = inventory(directory)
     # Hand-rolled rather than json.dumps(indent=...), which puts every element
     # of a triple on its own line: one command per line is the whole point, so
@@ -131,17 +131,17 @@ def commands_mode(directory, write):
                       for k, v in head.items())
             + '  "commands": [\n' + rows + "\n  ]\n}\n")
     if write:
-        open(lock, "w").write(text)
-        print(f"wrote     {lock}  ({len(found)} commands)")
+        open(snapshot, "w").write(text)
+        print(f"wrote     {snapshot}  ({len(found)} commands)")
         return 0
 
     print(f"models    {directory}  ({len(found)} commands declared)")
-    if not os.path.exists(lock):
-        print(f"lockfile  ABSENT  {lock}")
+    if not os.path.exists(snapshot):
+        print(f"snapshot  ABSENT  {snapshot}")
         print("RESULT    could not compare: write it with --write")
         return 1
-    print(f"lockfile  {lock}")
-    was = [list(c) for c in json.load(open(lock))["commands"]]
+    print(f"snapshot  {snapshot}")
+    was = [list(c) for c in json.load(open(snapshot))["commands"]]
     gone = [c for c in was if c not in found]
     new = [c for c in found if c not in was]
     for mod, kind, name in gone:
@@ -150,9 +150,9 @@ def commands_mode(directory, write):
         print(f"NEW       {mod:<22} {kind:<6} {name}")
     if gone or new:
         print(f"RESULT    {len(gone)} gone, {len(new)} new; if deliberate, "
-              f"rerun with --write and commit {LOCK}")
+              f"rerun with --write and commit {SNAPSHOT}")
         return 1
-    print(f"RESULT    the lockfile names exactly the {len(found)} declared commands")
+    print(f"RESULT    the snapshot names exactly the {len(found)} declared commands")
     return 0
 
 

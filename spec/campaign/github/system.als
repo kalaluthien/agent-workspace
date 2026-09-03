@@ -54,7 +54,7 @@
  *
  * A command someone DELETES misses no expectation, having none left to miss,
  * and nothing generated from these files can see that either. So the command
- * list is stated a second time, in commands.lock.json beside them, which is
+ * list is stated a second time, in commands.snapshot.json beside them, which is
  * committed and compared rather than regenerated:
  *
  *   scripts/alloy-check.py spec/campaign/github/scenarios.als -o /tmp/alloy-github
