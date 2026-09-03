@@ -350,20 +350,35 @@ def lands_outside(target: Path, root: Path, dirs):
     return True, None
 
 
+def looks_like_path(value):
+    """Whether an attached option value says on its own that it is a path.
+
+    A value carrying no separator is indistinguishable from a mode, a keyword
+    or a name -- `--interactive=never` and `--target-directory=scripts` are the
+    same word shape -- so only a value that says it is a path is read as one.
+    Bare `.` and `..` and a `~` prefix say it without a separator."""
+    return "/" in value or value in (".", "..") or value.startswith("~")
+
+
 def operands(args):
-    """(the non-option words, the word that could not be read).
+    """(the non-option words, why one of them could not be read).
 
     An option's own SEPARATE argument is kept as an operand: reading it as a
     path resolves a word that is not one, and that direction is the refusing
     one. An ATTACHED one is the write target itself in `--target-directory=.`,
-    so a `=` option contributes its value.
+    so a `=` option contributes its value -- but only a value that looks like a
+    path, because `--interactive=never` contributes `never`, and resolving that
+    against the container names a location nothing in the command asked for.
+    A value that does not look like a path is UNREAD, which still refuses; it
+    just refuses for what was read.
 
-    A short option's attached value cannot be told from a flag cluster without
+    A SHORT option's attached value cannot be told from a flag cluster without
     a table per command -- `-rf` is two flags and `-t.` is a target -- so a
     short word whose tail is not purely alphabetic is UNREAD rather than
     guessed either way. That keeps `-p`, `-rf`, `-r` and `-a` reading as flags
     and refuses `-t.`, `-m755` and anything else carrying a value, at the cost
-    of never allowing those."""
+    of never allowing those. A `--` word is never a cluster, so the test does
+    not reach one: `--no-clobber` is a flag and contributes no operand."""
     out, rest = [], False
     for word in args:
         if rest or not word.startswith("-"):
@@ -373,11 +388,20 @@ def operands(args):
             rest = True
             continue
         if "=" in word:
-            out.append(word.split("=", 1)[1])
+            value = word.split("=", 1)[1]
+            if not looks_like_path(value):
+                return None, (f"word {word!r} attaches a value that does not "
+                              f"say it is a path, so whether that value is a "
+                              f"write target is not readable")
+            out.append(value)
             continue
+        if word.startswith("--"):
+            continue                            # a long flag, never a cluster
         tail = word.lstrip("-")
         if tail and not tail.isalpha():
-            return None, word
+            return None, (f"word {word!r} may be an option's attached value, "
+                          f"which this guard cannot tell from a flag cluster, "
+                          f"so its operands are not readable")
     return [w for w in out if w], None
 
 
@@ -453,9 +477,7 @@ def write_targets(command, changing_command):
                               f"operand this guard can read")
             continue
         if unreadable:
-            return None, (f"the `{form}` word {unreadable!r} may be an option's "
-                          f"attached value, which this guard cannot tell from a "
-                          f"flag cluster, so its operands are not readable")
+            return None, f"the `{form}` {unreadable}"
         if not ops:
             return None, (f"the `{form}` form in {segment.strip()!r} names no "
                           f"operand this guard can read")
