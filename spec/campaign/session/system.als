@@ -17,7 +17,7 @@
  *             the campaign issue body as it last read that body, and the
  *             sub-issues it has claimed.
  *   Surveyed  the sessions that have run the new-versus-follow-up survey.
- *   Binding   the campaign issue's latest `BOUND <machine>` comment.
+ *   Binding   the campaign issue's `bound:<machine>` label.
  *   Who       the observer: which session performed the current event.
  *
  * A session is in a campaign exactly when the campaign is bound to its machine.
@@ -42,15 +42,32 @@ sig Session {
   var surveyResult: set Campaign,  -- what its new-versus-follow-up survey returned
   var reposInReadme:     set Repo,        -- its campaign README's `## Repos` list
   var reposInBodyAsRead: set Repo,        -- the campaign issue body's list as it last read it
-  var claimedIssues:     set Issue        -- sub-issue branches it created on the remote
+  var claimedIssues:     set Issue,       -- sub-issue branches it created on the remote
+  /* WHICH CAMPAIGN THIS SESSION'S NAME SAYS IT IS OF, and `lone` because a
+     name may say nothing -- a session that never named itself, or one whose
+     name is not of the shape `campaign-<N>-<role>-<n>`. The name itself is not
+     modelled and must not be: `scripts/campaign-name-session.py` owns its
+     spelling, and a second statement of it here would admit names that script
+     refuses. What is modelled is only the one thing a reader does with it --
+     tell whose campaign a session claims to be of -- which is the discriminator
+     orchestration/system.als's `namedForAnother` needs and which no other field
+     can supply. It is `var` because a session renames itself. */
+  var campaignNamed:     lone Campaign
 }
 var sig Surveyed in Session {}
 
-/* The campaign issue's latest `BOUND <machine>` comment. A GitHub fact, so the
-   layering rule would put it in github/system.als -- but its value is a Machine and
-   its source is the filing session's own `machine`, and this is the lowest entity
+/* The campaign issue's `bound:<machine>` label. A GitHub fact, so the layering
+   rule would put it in github/system.als -- but its value is a Machine and its
+   source is the filing session's own `machine`, and this is the lowest entity
    that has either. The placement follows from that, not from the binding being
-   local. */
+   local.
+
+   A LABEL, NOT A COMMENT, and `lone` below is the whole difference. A comment
+   thread holds every binding a campaign ever had and a reader has to pick the
+   latest, so it parses prose and orders by time to answer one question. A
+   label set is read by exact name, and a campaign carrying two `bound:` labels
+   is a state the reader refuses rather than resolves -- which is what this
+   fact says, and why nothing here models a history. */
 one sig Binding {
   var bound: Campaign -> Machine
 }
@@ -87,7 +104,7 @@ fun unattended: set Event {
 pred sessionFrame {
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead
-  and claimedIssues' = claimedIssues and Surveyed' = Surveyed
+  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Surveyed' = Surveyed
   and bound' = bound
 }
 
@@ -96,7 +113,7 @@ pred survey[s: Session] {
   let X = { c: Campaign | c in Filed and c.campaignIssue in Open and c in Request.covers } |
     surveyResult' = surveyResult - s->Campaign + s->X
   Surveyed' = Surveyed + s
-  worksOn' = worksOn and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues
+  worksOn' = worksOn and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed
   bound' = bound
   Now.event = Survey and no Now.issue and Who.session = s
 }
@@ -110,7 +127,7 @@ pred adopt[s: Session, c: Campaign] {
   worksOn'      = worksOn  - s->Campaign + s->c
   reposInReadme'     = reposInReadme - s->Repo + s->(c.reposInBody)
   reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(c.reposInBody)
-  surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues
+  surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed
   bound' = bound
   Now.event = Adopt and no Now.issue and Who.session = s
 }
@@ -119,7 +136,7 @@ pred readBody[s: Session] {
   some s.worksOn
   reposInReadme'     = reposInReadme - s->Repo + s->(s.worksOn.reposInBody)
   reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(s.worksOn.reposInBody)
-  worksOn' = worksOn and surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues
+  worksOn' = worksOn and surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed
   bound' = bound
   Now.event = ReadBody and no Now.issue and Who.session = s
 }
@@ -129,7 +146,7 @@ pred editReadme[s: Session, r: Repo] {
   r not in s.reposInReadme
   reposInReadme' = reposInReadme + s->r
   worksOn' = worksOn and surveyResult' = surveyResult and reposInBodyAsRead' = reposInBodyAsRead
-  and Surveyed' = Surveyed and claimedIssues' = claimedIssues
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed
   bound' = bound
   Now.event = EditReadme and no Now.issue and Who.session = s
 }
@@ -147,7 +164,7 @@ pred sessionFileCampaignIssue[s: Session] {
   bound' = bound - Binding->campaignIssueOf[Now.issue]->Machine
            + Binding->campaignIssueOf[Now.issue]->s.machine
   surveyResult' = surveyResult and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead
-  and Surveyed' = Surveyed and claimedIssues' = claimedIssues
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed
   Who.session = s
 }
 
@@ -175,7 +192,7 @@ pred sessionWriteBody[s: Session] {
   reposInBody' = reposInBody - s.worksOn->Repo + s.worksOn->(s.reposInReadme)
   reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(s.reposInReadme)
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
-  and Surveyed' = Surveyed and claimedIssues' = claimedIssues
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed
   bound' = bound
   Who.session = s
 }
@@ -190,12 +207,13 @@ pred sessionCreateDir[s: Session] {
   bound' = bound
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead
-  and claimedIssues' = claimedIssues and Surveyed' = Surveyed
+  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Surveyed' = Surveyed
   Who.session = s
 }
 
-/* `runtime/` goes with the directory; orchestration/system.als's `agentDeleteDir` is that
-   lifetime on the record's own bit. */
+/* `runtime/` goes with the directory, and nothing above has a bit with that
+   lifetime any more: since the claim became a ref and attribution a checkout,
+   orchestration/system.als frames straight through a delete. */
 pred sessionDeleteDir[s: Session] {
   Now.event = DeleteDir
   some s.worksOn
@@ -204,7 +222,7 @@ pred sessionDeleteDir[s: Session] {
   bound' = bound
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead
-  and claimedIssues' = claimedIssues and Surveyed' = Surveyed
+  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Surveyed' = Surveyed
   Who.session = s
 }
 
@@ -225,6 +243,7 @@ pred sessionClaim[s: Session] {
   some s.worksOn
   Now.issue in s.worksOn.memberIssues
   claimedIssues' = claimedIssues + s->Now.issue
+  campaignNamed' = campaignNamed
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
   bound' = bound
@@ -236,6 +255,7 @@ pred sessionClaim[s: Session] {
 pred sessionRelease[s: Session] {
   Now.event = Release
   claimedIssues' = claimedIssues - Session->Now.issue
+  campaignNamed' = campaignNamed
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
   bound' = bound

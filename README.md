@@ -22,7 +22,7 @@ campaign-base/
   auth-refactor-260828/          a campaign, git-ignored
     AGENTS.md CLAUDE.md          engineering principles for this campaign
     README.md                    the campaign issue body, section for section
-    runtime/                     data, state, artifacts, handover briefs
+    runtime/                     data, state and artifacts of this campaign
     scripts/                     scripts built for this campaign; scratch,
                                  listed at the close and deleted with the directory
     repos/api/  repos/web/       member repositories, each its own git repo
@@ -47,7 +47,7 @@ makes is the whole index; a member repository receives only branches and pull
 requests. That makes
 GitHub the single record: a campaign can move from one machine to another, and a
 phone can read it, without anything local having to agree. It runs on one
-machine at a time, and the campaign issue's latest `BOUND` comment says which.
+machine at a time, and one `bound:<machine>` label on the campaign issue says which.
 
 ## Setup
 

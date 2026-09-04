@@ -104,7 +104,9 @@ own guard.
 
 One reading decides whether a session is in the campaign, and `campaign-tracker bound <N>`
 is its one reader: `here`, `elsewhere <machine>`, or `unbound`. **Read the word,
-never the exit status**, as for `campaign-local-work` and `campaign-claim alive`.
+never the exit status**, as for `campaign-local-work` and `campaign-claim live`.
+Two `bound:` labels is the one thing it refuses to answer rather than answering
+wrongly, and only `campaign-tracker bind <N>` repairs that.
 
 | the word | this session is |
 | --- | --- |
@@ -112,11 +114,11 @@ never the exit status**, as for `campaign-local-work` and `campaign-claim alive`
 | `elsewhere` | **not in this campaign.** Stop before any write and any launch, and name the machine. |
 | `unbound` | **not bound yet.** Only a person's word binds an existing campaign. |
 
-**The binding gates four things**: the campaign issue body, a `BOUND` comment, a claim,
-and a launch. Read it before each of those. Only one of the four has a machine
-behind it: `campaign-claim take` reads the binding before it cuts a ref and
-refuses on anything but `here`. The body write, the `BOUND` comment, a launch,
-and a `--local` claim are gated by this rule and the model alone
+**The binding gates four things**: the campaign issue body, the `bound:` label,
+a claim, and a launch. Read it before each of those. Only one of the four has a
+machine behind it: `campaign-claim take` reads the binding before it cuts a ref
+and refuses on anything but `here`. The body write, the label, and a launch are
+gated by this rule and the model alone
 (`spec/campaign/session/scenarios.als`, `boundOnly`), so read the word yourself
 before each. **The sub-issue link is outside it**: any session on any machine
 may file a sub-issue of any campaign, one it is not a session of included,
@@ -127,13 +129,16 @@ precondition. What the filer still owes: file from the template, and leave
 adding a repository the work needs to `## Repos` to a bound session, since that
 is a scope change (`opening-campaign`, "A repository the campaign issue's `## Repos` list does not name").
 
-**`BOUND <machine>` is a comment on the campaign issue, and the latest one wins.** Its
-first line is `BOUND <machine>` from `hostname -s`; anything after is prose.
+**The binding is one `bound:<machine>` label on the campaign issue**, from
+`hostname -s`, written by `campaign-tracker bind <N>` and by nothing else — it
+adds this machine's and removes every other in one edit, so the two-label state
+it repairs is one it cannot leave behind. A label is read by exact name and has
+no history, so there is no latest to pick and nothing to page through.
 
-**A session posts `BOUND` in exactly two cases**: for a campaign it has just filed
+**A session binds in exactly two cases**: for a campaign it has just filed
 itself, and when a person tells it to — migration, and the person's call because
-nothing here can observe its premise. Post it, then read it back; a later `BOUND`
-naming somebody else means the campaign was migrated out from under you.
+nothing here can observe its premise. Bind, then read it back with `bound`; a
+label naming somebody else means the campaign was migrated out from under you.
 
 **A session of a campaign is a planner or an executor, and the request decides
 which shape it takes.** A simple request has an executor only: the session files
@@ -146,22 +151,19 @@ is the ordinary shape for a member repository and the mode of last resort for th
 base, and a repo-less campaign has the first form and not the second; the launch
 itself is `.claude/skills/opening-campaign/references/launching.md`). A
 separate executor is never the planner's subagent — a subagent shares the
-planner's pane and dies with it, and a claim record needs a session id of its
-own. The planner's own hands, and an in-process subagent it starts *on a
-sub-issue*, are the planner executing that sub-issue itself. **A planner holds
-no claim record of its own**: the record it writes at a delegate launch is the
-delegate's, and it takes one in its own name only when it executes a sub-issue
-itself. The model is `Planner` in `spec/campaign/orchestration/system.als`, and
-it requires a planner only of a delegate launch.
+planner's pane and dies with it. The planner's own hands, and an in-process
+subagent it starts *on a sub-issue*, are the planner executing that sub-issue
+itself. **A planner holds no claim of its own**: the branch it cuts at a
+delegate launch is the delegate's workspace, and it holds one in its own name
+only when it executes a sub-issue itself. The model is `Planner` in
+`spec/campaign/orchestration/system.als`, and it requires a planner only of a
+delegate launch.
 
 **No role licenses a write, nor does asking**: a session that cannot satisfy a
 guard does not make the write. **The planner claims the branch before it
-launches onto it**, with `campaign-claim take --session <the delegate's session
-id> --name <the delegate's name>`: the branch is cut now, and the record is the
-delegate's from the start, because a record is attributed by `session` and the
-planner chose the delegate's before launching. A record written that way carries
-no pid, since the delegate's does not exist yet; `live` joins on the session id
-and reads it fine.
+launches onto it**, with `campaign-claim take <N> <issue> <topic>`: the ref is
+cut now, and the delegate checks it out when it starts, which is what makes the
+branch the delegate's.
 
 ## The session name
 
@@ -173,29 +175,28 @@ a person reading `herdr agent list`**: it says what the session is for, and the
 machine reads only `<campaign issue>` from a name. It is per-session, where the
 `role` on the model's Agent atom is per launch and records the shape one
 sub-issue was worked in; a planner working a sub-issue by its own hands or an
-in-process subagent is the planner executing it, so a claim record under a
-planner name is correct. Choose the role by what the session will do when it
-names itself; one that turns out to be the other role renames itself with the
-same script, and records already written keep the old name — `live` joins on
-the session id, and a name that no longer resolves is re-derived from `session`
-(§ The claim record). **Set it at
+in-process subagent is the planner executing it. Choose the role by what the
+session will do when it names itself; one that turns out to be the other role
+renames itself with the same script, and nothing durable carries the old name —
+a rename touches no claim, because a claim is a ref and a checkout. **Set it at
 the start of every session of a campaign, whichever path started it** — the
 `here` reading above, `opening-campaign` step 3, or a delegate launch — because a
 session that arrived from another campaign keeps that campaign's name until
-something sets it. The one pattern lives in `scripts/campaign-name-session.py`,
-and `campaign-claim take` reads it from there: a name of another campaign, or of
-the wrong shape, is refused at the first claim, which is where a stale name
-would otherwise become durable.
+something sets it. The one pattern lives in `scripts/campaign-name-session.py`.
+**Nothing now refuses a stale name at the claim**, which the record used to do
+by carrying the name into a place later readers trusted; with no record there is
+no such place, and this rule has this sentence for its only reader.
 
-**The sub-issue is deliberately not in the name**, because a session works several;
-the claim record says which one it holds. **Never test a name against a branch**:
-they are two strings on purpose, and a test treating them as one finds whatever
-happens to match and misses the rest.
+**The sub-issue is deliberately not in the name**, because a session works
+several; which one a session is in is asked, not derived. **Never test a name
+against a branch**: they are two strings on purpose, and a test treating them as
+one finds whatever happens to match and misses the rest.
 
 **A session has two names and neither propagates to the other**, so
 `scripts/campaign-name-session.py <pane> <name>` sets both and refuses a name the rule
-does not admit; read what it reports applied, and confirm with `ListAgents`, which
-resolves the harness name a claim record holds. `herdr agent list` shows the pane.
+does not admit; read what it reports applied, and confirm with `ListAgents`,
+which resolves the harness name a message is addressed to. `herdr agent list`
+shows the pane.
 
 ## ID, directory, branch
 
@@ -204,13 +205,13 @@ resolves the harness name a claim record holds. `herdr agent list` shows the pan
   filed without it is in nobody's listing.
 - **Directory** — `<slug>-<YYMMDD>/` at the base root, git-ignored, optional
   off the bound machine. A campaign *is* its campaign issue; the directory is one
-  machine's cache, and holds the claim records, which live nowhere else.
-- **Branch** — `campaign-<N>/<issue>-<topic>`, the sub-issue's claim as well as its
-  workspace. `campaign-claim` cuts it from the remote and writes the record;
-  create-ref refuses an existing ref server-side, so the claim is atomic where a
-  survey-then-file is not. **`take --local` writes the record and no ref**, for
-  work that lands no commit; there the atomicity is `O_EXCL` on the record, which
-  serializes this machine and not every machine — the ceiling the binding sets.
+  machine's cache and holds nothing that is not derivable from GitHub.
+- **Branch** — `campaign-<N>/<issue>-<topic>`, **the sub-issue's whole claim** as
+  well as its workspace. `campaign-claim take` cuts it from the remote and writes
+  nothing else; create-ref refuses an existing ref server-side, so the claim is
+  atomic across every machine, where a survey-then-file is not. **Every
+  sub-issue cuts one**, work that lands no commit included — a repo-less
+  campaign's on the base.
 
 # Campaign work
 
@@ -250,18 +251,19 @@ what was built. Quote `campaign-tracker settlement`'s note for that row, not its
 
 **`## Repos`** says which repositories to clone when a campaign is opened, and
 `scripts/campaign-repos.py <path>` is its one reader; `- none` is the whole list for
-a repo-less campaign. **Work that lands no commit is claimed all the same**, with `campaign-claim take
---local`: the record alone, no ref. **Two readers make that true rather than
-remembered, one rule read at two moments.** `scripts/check-campaign-claim.py`
-is a `PreToolUse` guard answering "is this a change to campaign work that no
-claim covers" for what has an unambiguous target — a file tool's path and a
-`gh` write — and allowing every other shell command unread, saying so.
-`scripts/check-commit-claim.py` is the `pre-commit` gate where a shell write
-lands: a commit on a base tree or under a campaign directory whose branch is
-not a claim is refused. A change landing outside every base tree and every
-campaign directory is not campaign work and neither refuses it; how each reads
-its target, and what it does when it cannot, is its docstring's.
-`install-hooks.sh` installs both — the commit gate as a git hook, the guard in
+a repo-less campaign. **Work that lands no commit is claimed all the same**,
+with `campaign-claim take`: one ref, cut on the base. **Two readers make that
+true rather than remembered, one rule read at two moments.**
+`scripts/check-campaign-claim.py` is a `PreToolUse` guard answering "is this a
+change to campaign work that no claim covers" for what has an unambiguous
+target — a file tool's path and a `gh` write — and allowing every other shell
+command unread, saying so. `scripts/check-commit-claim.py` is the `pre-commit`
+gate where a shell write lands: a commit on a base tree or under a campaign
+directory whose branch is not a claim is refused. A change landing outside every
+base tree and every campaign directory is not campaign work and neither refuses
+it; how each reads its target, and what it does when it cannot, is its
+docstring's. `install-hooks.sh` installs both — the commit gate as a git hook,
+the guard in
 `~/.claude/settings.json`, because a delegate's clone is a different repository
 and reads none of this one's settings.
 
@@ -321,15 +323,16 @@ Any `herdr` command that drives a pane, or resolves its target implicitly, is
 guarded by `test "${HERDR_ENV:-}" = 1` and names its target explicitly; the guard
 is against acting on somebody else's session, never against reading.
 
-A delegate is launched by the planner in `<campaign>/repos/<repo>/` with
-`--append-system-prompt-file <campaign>/AGENTS.md`, because ancestor instruction
-files load only behind a dialog that defaults to declining. Four invariants: the
-brief is **a file** named by a one-sentence prompt; the prompt is delivered by
-**`herdr agent prompt`**, never on the launch line; **a canary** proves the
-injection arrived, since nothing on disk records it; and **read the pane once
-after every launch**, because the dialogs that halt a fresh delegate do not all
-report `blocked`. A campaign `AGENTS.md` only ever *adds*. The full procedure —
-the launch line, the outcome names, the canary and the three dialogs — is
+A delegate is launched by the planner in `<campaign>/repos/<repo>/`. Three
+invariants: **the brief is the sub-issue**, named by a one-sentence prompt, so
+there is nothing to keep in step with it and nothing that dies with a directory;
+the prompt is delivered by **`herdr agent prompt`**, never on the launch line;
+and **read the pane once after every launch**, because the dialogs that halt a
+fresh delegate do not all report `blocked`. The campaign's principles reach the
+delegate as **`CLAUDE.local.md` written into its clone** and excluded via
+`.git/info/exclude` — a file on disk, so nothing has to prove it arrived. A
+campaign's principles only ever *add*. The full procedure — the launch line, the
+outcome names, and the three dialogs — is
 `.claude/skills/opening-campaign/references/launching.md`.
 
 # The running agent
@@ -344,13 +347,21 @@ Three readings, and never answer one with another.
   never reads settled and its campaign can never close. **Nothing on a terminal
   screen is evidence.** `campaign-tracker settlement <N>` is the one reader.
 - **Liveness and attribution are different readings, and a gate needs both.**
-  `herdr agent list` gives liveness for every session here and no attribution;
-  `runtime/claims/` gives attribution and cannot prove liveness, its `pid` reading
-  dead after a restart its session survived. `campaign-claim live <N>` makes both
-  and joins them on the harness session id, the only field *on both sides* that
-  survives a restart and a rename; it concludes nothing, a close reads its counts.
-  Read a delegate's progress from its transcript, never from `agent_status`, which
-  reports the screen and calls a mid-turn pause `idle`.
+  `herdr agent list` gives liveness for every session here; the remote's
+  `campaign-<N>/` refs give every claim; and where each is checked out gives
+  attribution. `campaign-claim live <N>` makes all three and joins the last two
+  on the branch name, which a restart and a rename both leave alone; it
+  concludes nothing, a close reads its counts.
+  **Attribution names a WORKSPACE, not a session, and that is measured rather
+  than conceded**: herdr reports where a session was *started*, an executor on
+  the base works in a worktree, and that worktree's owning repository is not
+  even the clone the session sits in — so no fact on this machine ties a session
+  to a branch. Which is fine, because the two readers ask a different question:
+  `release` must not delete a ref somebody is standing in, and a close must know
+  whether any claim is still occupied. **A session is addressed by `ListAgents`**
+  and asked which claim it holds. Read a delegate's progress from its
+  transcript, never from `agent_status`, which reports the screen and calls a
+  mid-turn pause `idle`.
 - **What exists only on this machine is the third question**, and
   `scripts/campaign-local-work.py <N> [dir]` is its one reader.
 
@@ -365,15 +376,17 @@ form. `ListAgents` resolves the address; herdr's pane label is not one.
 | `REPORT` | agent → campaign | a pull request URL and the sha it sits at, once per round, unsolicited |
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
-| `STOOD DOWN` | agent → campaign issue | a comment, first line `STOOD DOWN <name> <session-id>`, posted by `campaign-claim stood-down` after the agent's work is on GitHub and its claims are released |
 
 Four messages between sessions, carrying **only what the agent alone knows**:
 anything about finished work duplicates a GitHub fact, and the copy is what goes
-stale. **The claim is not among them** — it is a record, not an announcement.
-**`STOOD DOWN` is the one that leaves a record**, because the close gate reads
-agreement from it: `campaign-claim live` joins the comment to the session's
-herdr row, so a stood-down peer passes the close whatever its cwd, and a peer
-that has not is asked, never killed.
+stale. **The claim is not among them** — it is a ref, not an announcement.
+**A finished peer leaves the campaign by fact, not by saying so**: it stops its
+pane, or leaves the base tree. **A rename alone does not**, unless the new name
+is another campaign's — `campaign-claim live` believes a name that says whose
+work it is, and counts a name that says nothing whenever the session sits under
+the base root. There is no `STOOD DOWN` comment,
+because a close reads `herdr agent list` and a peer still listed is asked, never
+killed.
 
 **A verdict, a fix report, or a `REPORT` that does not pin its sha is
 unactionable**: verdicts and pushes race. **Between sessions, a relay is never the
@@ -383,20 +396,6 @@ durable artifact it points at, read on GitHub yourself, or in your own pane.
 **Shutdown is two steps, and both are yours.** `STATUS`, verify durability in
 GitHub, then `STAND DOWN` — on the agent's own machine, since a verification run
 from elsewhere reads *its* working tree and comes back clean regardless.
-
-## The claim record
-
-**Every claimant writes a record, and `scripts/campaign-claim.py` writes it**, so the
-shape lives in one place and a delegate runs the script rather than copying it.
-The session that *launched* a delegate writes none *of its own*: it holds no
-claim, and a second address would make the close gate count one claim twice --
-the record it writes at launch names the delegate's session, not its own. Each field answers
-one question — liveness from `pid`, addressing from `name`, and `session` when both
-have gone stale, it being the only field on **either side of the join** surviving a
-restart and a rename. A name that no longer resolves is a stale record, not a dead
-session: re-derive it by asking peers which one holds `session`. **A directory with
-no `runtime/claims/` cannot be enumerated, and that is a refusal rather than a
-pass**: an empty one says no claim was taken, a missing one says nothing.
 
 ## Merge conditions
 
@@ -461,10 +460,11 @@ agent it stopped looks exactly like one still thinking; when several go quiet
 together, read the reset time first — an outage to schedule around, not a retry.
 
 Retire finished agents as the campaign runs, not when it closes, and sweep with
-all three readings (`campaign-claim live`). A campaign may not close while any
-session holds a live claim, or sits under its tree with no `STOOD DOWN` on the
-campaign issue; nor may a repository be dropped while an agent works one of its
-sub-issues.
+all three readings (`campaign-claim live`). A campaign may not close while a
+claim is checked out somewhere on this machine, or a session of it is still
+listed; nor may a repository be dropped while an agent works one of its
+sub-issues. **A listed peer is asked, never killed** — it is the only thing that
+can say which claim it holds.
 
 # Concurrency
 
@@ -481,6 +481,7 @@ condition 3**.
 
 **The named cost: no concurrent cross-machine or cloud work on one campaign.**
 Another machine may read a campaign, may file a sub-issue of it, and may open a
-different one; none may write this one's campaign issue body or `BOUND`, claim, or launch
+different one; none may write this one's campaign issue body or its `bound:` label, claim, or launch
 into it. A campaign reaches another machine only by
-migration — the price of a staleness check that is a local `kill -0`.
+migration — the price of every staleness question being answerable from one
+machine's own disk.

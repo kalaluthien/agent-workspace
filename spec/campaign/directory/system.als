@@ -39,6 +39,17 @@ sig CampaignDir {
 var sig OnDisk in CampaignDir {}
 
 fun campaignDirsOf[c: Campaign]: set CampaignDir             { campaign.c }
+/* THE ONE WAY TO REACH A CAMPAIGN'S DIRECTORY, and every reading about a
+   campaign goes through it -- orchestration/system.als's `holder` included.
+   Stated because the base is a member of its own campaigns: a campaign
+   directory holds a CLONE of the base, so a script run from
+   `<campaign>/repos/campaign-base/` sits in a second checkout of the same
+   repository, and resolving "which base am I" from that checkout's own git
+   answers with the clone -- a base whose set of campaign directories is empty,
+   which reads as a clean sweep of nothing rather than as a failure. NOT
+   MODELLED, and it cannot be here: no atom carries a path, so this is prose
+   with a reader in `scripts/campaign-claim.py`'s `base_root`, which walks its
+   own ancestors for a campaign directory before it asks git. */
 fun campaignDirAt[c: Campaign, m: Machine]: lone CampaignDir { campaign.c & machine.m }
 fun machinesHolding[c: Campaign]: set Machine           { (OnDisk & campaign.c).machine }
 

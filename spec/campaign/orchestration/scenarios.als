@@ -50,8 +50,45 @@ pred waitForAnswer {
 /* What only a session on the agent's own machine can check. */
 pred localCheckedShutdown { always (Now.event = StandDown implies Target.agent not in LocalOnly) }
 
-/* R4g drops `claimAtomic` alone and the collision returns, so create-ref's
-   server-side refusal -- not the ritual -- is the load-bearing half. */
+/* THE FRESH CLAIM, and the hole `agentRelease` leaves. Its two guards are both
+   over AGENTS -- nothing on this issue is pushed, and nothing of it is live
+   here -- so a claim cut before any agent exists satisfies both VACUOUSLY and
+   is releasable by anyone. That is not a modelling artefact: a claim is cut
+   before the delegate that will work it is launched, so every claim passes
+   through exactly this state, and on GitHub it is indistinguishable from
+   finished work -- both are a branch level with main.
+
+   The discipline: release only what some agent has actually been launched on,
+   or what is complete. NOT MODELLED is the escape the script keeps for the
+   case a person has established the holder is gone (`--confirmed-absent`),
+   because no atom here carries a person's word; R7c is the ordinary release
+   that must stay reachable without it.
+
+   R7c IS WIDER THAN THE SCRIPT, and #187 owns the gap. `Launched` is a fact
+   about an agent, and the script has no reader for it: on GitHub R7c's state
+   -- launched, dead, nothing pushed -- is a ref 0 ahead of the base whose
+   branch was never a merged pull request's head, which is the one shape
+   `cmd_release` refuses without `--confirmed-absent WHO`. And that is the SECOND
+   refusal that state hits, not the first: `launch` checks the branch out and
+   neither `agentDie` nor `retire` undoes it, so the dead delegate's clone still
+   holds the branch and the occupant check refuses before the merge question is
+   ever asked -- a refusal `--confirmed-absent` does not lift, since removing a
+   worktree is not something a person's word stands in for. So the model's
+   "ordinary release" is, at this sha, a worktree removal and then a release
+   that asks a person. What
+   would close the gap is a durable fact saying a holder was launched at all,
+   which is what #187 is deciding. */
+pred releaseNeedsAWorker {
+  always (Now.event = Release implies
+            (complete[Now.issue]
+             or some a: Agent | a.task = Now.issue and a in Launched))
+}
+
+/* R4g drops `claimAtomic` alone and the collision returns, so the server-side
+   half -- not the ritual -- is load-bearing. `claimAtomic` is keyed on the
+   ISSUE, and create-ref is keyed on the ref NAME, which carries a topic this
+   model does not have; github/system.als's `claim` says what closes the
+   difference. */
 pred claimBeforeLaunch { always (Now.event = Launch implies Now.issue in Who.session.claimedIssues) }
 pred claimAtomic       { always (Now.event = Claim  implies Now.issue not in Claimed) }
 
@@ -93,23 +130,23 @@ pred claimBeforeCommit {
             implies Now.issue in Target.agent.peer.claimedIssues)
 }
 
-/* The rule as written, the honest local reading, and the reading a session
-   can actually perform. */
+/* The rule as written, and the honest local reading a session can perform.
+   There is no third: the close reads `herdr agent list`, which sees every
+   live session on this machine, so what it can read and what it can attribute
+   are now the same set. */
 pred closeDisciplineFull[c: Campaign] {
   always ((Now.event = CloseIssue and Now.issue = c.campaignIssue) implies closableWithAgents[c])
 }
 pred closeDisciplineLocal[c: Campaign] {
   always ((Now.event = CloseIssue and Now.issue = c.campaignIssue) implies closableLocally[Who.session, c])
 }
-pred closeDisciplineAsRead[c: Campaign] {
-  always ((Now.event = CloseIssue and Now.issue = c.campaignIssue) implies closableAsRead[Who.session, c])
-}
 
-/* Where session/scenarios.als's R3 is answered: keyed on the record, which is the thing
-   a deleting session can actually read. */
-pred noDeleteUnderAddressableAgent {
+/* Where session/scenarios.als's R3 is answered: keyed on LIVENESS, which is
+   what `herdr agent list` hands a deleting session directly. It used to be
+   keyed on a record that died with the very tree it was about to delete. */
+pred noDeleteUnderLiveAgent {
   always (Now.event = DeleteDir implies
-            no a: Agent | a in Live and a.host = Where.machine and addressable[a]
+            no a: Agent | a in Live and a.host = Where.machine
                           and campaignOf[a.task] in (OnDisk - OnDisk').campaign)
 }
 
@@ -366,26 +403,175 @@ pred R6b_ReclaimAfterDeath {
   }
 }
 
-/* =================== the claim record =================== */
-
-/* A1. Liveness was never the missing half; attribution was. Closed BY
-   CONSTRUCTION and not by a discipline, since the claimant writes its own
-   record before any agent exists. What remains outside it is the
-   post-delete window: A9, gated by A10-A12, measured by A14/A15. */
-pred A1_UnrecordedAgentAtTheClose {
-  some c: Campaign, disj s1, s2: Session, a: Agent {
-    a.peer = s2 and a.task in c.memberIssues
-    always a not in Addressable                   -- a claim with no record
-    closeDisciplineAsRead[c]                    -- s1 obeys the gate it can read
-    eventually (a in Live and a.task in Claimed
-                and Now.event = CloseIssue and Now.issue = c.campaignIssue and Who.session = s1
-                and liveUnderLocally[c, s1.machine])
+/* R7a. THE HOLE: a sub-issue is claimed, no agent is ever launched on it, and
+   the claim is released -- which on the remote is the ref deleted, so a second
+   `take` succeeds and two executors reach one sub-issue. */
+pred R7a_FreshClaimReleasedWithNoAgent {
+  some i: Issue {
+    /* NEVER LAUNCHED, not "no atom exists". An `Agent` atom on the sub-issue
+       that was never started IS the fresh claim -- the delegate the branch was
+       cut for, before `agent start` -- so this is both the truer witness and
+       the one that pins the rule's `in Launched`: written as "no atom", the
+       weakened rule still forbade the trace and the disjunct went untested. */
+    always no a: Agent | a.task = i and a in Launched
+    /* NOT complete, and this conjunct is what makes the witness the fresh
+       claim rather than hands-on work. Without it the trace closes the
+       sub-issue and merges its pull request first, which is a landing nobody
+       needed an Agent atom for and is releasable on purpose -- so R7b came
+       back SAT over a legitimate trace and pinned nothing. */
+    always not complete[i]
+    eventually (Now.event = Claim and Now.issue = i
+                and after eventually (Now.event = Release and Now.issue = i))
   }
 }
 
-/* A3. Control for A1: UNSAT here would mean A1 went green by forbidding the
-   agent's life altogether. */
-pred A3_RecordedAgentRunsTheWholeProtocol {
+/* R7b. The discipline closes it. */
+pred R7b_WorkerRuleClosesTheFreshClaim {
+  releaseNeedsAWorker and R7a_FreshClaimReleasedWithNoAgent
+}
+
+/* R7c. CONTROL FOR THE `Launched` DISJUNCT: an agent was launched on this
+   sub-issue and is gone, which is the release the sweep actually makes.
+   `always not complete` is load-bearing -- without it the solver satisfies
+   this through the OTHER disjunct, and deleting `Launched` from the rule left
+   both this and R7b green, pinning neither. */
+pred R7c_WorkerRuleAdmitsTheOrdinaryRelease {
+  releaseNeedsAWorker
+  some a: Agent {
+    always not complete[a.task]
+    eventually (a in Launched and a not in Live and a not in PushedToRemote
+                and Now.event = Release and Now.issue = a.task)
+  }
+}
+
+/* R7d. CONTROL FOR THE `complete` DISJUNCT: hands-on work is no Agent at all
+   (A18's shape), so a landed sub-issue nobody was launched on must still be
+   releasable -- otherwise the rule strands every branch a session worked with
+   its own hands. Deleting `complete` from the rule turns this UNSAT. */
+pred R7d_WorkerRuleAdmitsTheAgentLessLanding {
+  releaseNeedsAWorker
+  no Agent
+  some i: Issue |
+    eventually (complete[i] and Now.event = Release and Now.issue = i)
+}
+
+/* =================== whose session is that =================== */
+
+/* N1. A session named for ANOTHER campaign, live on the machine that holds
+   this one, does not block this campaign's close. Machine-wide alone made the
+   peer set identical for every campaign here, so closing one asked another's
+   sessions to stand down. */
+pred N1_ForeignNamedSessionDoesNotBlock {
+  some disj c1, c2: Campaign, s: Session, a: Agent, m: Machine {
+    a.peer = s and a.host = m and s.machine = m
+    always s.campaignNamed = c2
+    /* BOTH INSIDE THE `eventually`, and that is what makes this pin the
+       exemption. `machinesHolding` is derived from `OnDisk`, which is var, so a
+       membership stated outside is read at time zero and the witness can
+       satisfy `not liveUnderLocally` at an instant when the directory is simply
+       not on disk -- a trace the exemption plays no part in. Deleting the
+       exemption then left this green. */
+    eventually (a in Live and m in machinesHolding[c1]
+                and a.task not in c1.memberIssues
+                and not liveUnderLocally[c1, m])
+  }
+}
+
+/* N2. CONTROL, and the direction that must NOT be exempted: a session whose
+   name says nothing is not evidence, so it still blocks. Making the absent
+   name exempt too would empty the gate. */
+pred N2_UnnamedSessionStillBlocks {
+  some c: Campaign, s: Session, a: Agent, m: Machine {
+    a.peer = s and a.host = m and s.machine = m
+    always no s.campaignNamed
+    /* `a.task not in c.memberIssues` is load-bearing: without it the witness
+       blocks through the FIRST disjunct -- an agent on a sub-issue of this
+       campaign blocks whatever it is called -- and says nothing about whether
+       an absent name exempts the machine-wide one. Making the absent name
+       exempt then left this green. */
+    eventually (a in Live and m in machinesHolding[c]
+                and a.task not in c.memberIssues
+                and liveUnderLocally[c, m])
+  }
+}
+
+/* N3. CONTROL for N1: an agent on a sub-issue OF THIS CAMPAIGN blocks whatever
+   its session is called. The name exempts the machine-wide disjunct and
+   nothing else -- otherwise a misnamed executor could close over its own work. */
+pred N3_ForeignNameDoesNotExemptOwnSubIssue {
+  some disj c1, c2: Campaign, s: Session, a: Agent, m: Machine {
+    a.peer = s and a.host = m and s.machine = m
+    a.task in c1.memberIssues
+    always s.campaignNamed = c2
+    eventually (a in Live and liveUnderLocally[c1, m])
+  }
+}
+
+/* =================== the refs a close leaves behind =================== */
+
+/* github's `closable` reads `settled` and nothing else, so a campaign whose
+   sub-issues are all closed is closable with claim refs still standing on the
+   remote. Most are harmless -- a merged pull request's head outlives it here,
+   `delete_branch_on_merge` being off -- and the rest are a claim nobody
+   retired, which the next `take` on that sub-issue then refuses forever. */
+pred noStrayClaims[c: Campaign] {
+  all i: c.memberIssues | i in Claimed implies complete[i]
+}
+
+/* N4. THE STRAY: every sub-issue settled, one of them dropped rather than
+   completed, and its ref still on the remote at the close. */
+pred N4_DroppedSubIssueLeavesItsRef {
+  some c: Campaign, i: Issue |
+    /* MEMBERSHIP READ AT THE CLOSE, not at time zero. `memberIssues` is `var`,
+       so a witness stated outside the `eventually` can satisfy this by having
+       the sub-issue removed from the campaign before the close -- and then the
+       rule, which ranges over members, never sees it. That trace is
+       `RemoveMember`'s hole and not this one's. */
+    eventually (Now.event = CloseIssue and Now.issue = c.campaignIssue
+                and i in c.memberIssues
+                and closable[c] and dropped[i] and i in Claimed)
+}
+
+/* N5. The rule closes it. */
+pred N5_NoStrayClaimsClosesIt {
+  (always all c: Campaign |
+     (Now.event = CloseIssue and Now.issue = c.campaignIssue)
+       implies noStrayClaims[c])
+  and N4_DroppedSubIssueLeavesItsRef
+}
+
+/* N6. CONTROL: a ref left by a MERGED pull request is the ordinary residue and
+   blocks nothing, so the rule must still admit a close over one. UNSAT here
+   would mean it demanded every ref be deleted before any campaign could end. */
+pred N6_NoStrayClaimsAdmitsAMergedResidue {
+  (always all c: Campaign |
+     (Now.event = CloseIssue and Now.issue = c.campaignIssue)
+       implies noStrayClaims[c])
+  some c: Campaign, i: Issue |
+    eventually (Now.event = CloseIssue and Now.issue = c.campaignIssue
+                and i in c.memberIssues
+                and complete[i] and i in Claimed)
+}
+
+/* =================== attribution, derived =================== */
+
+/* A1. WHO HOLDS THE CLAIM, read with no record anywhere: the agent is live
+   and the checkout in its campaign directory is on the claim's branch. Two
+   sessions, so `holder` is picking one of them out and not answering
+   vacuously. */
+pred A1_HolderReadFromTheCheckout {
+  some c: Campaign, disj s1, s2: Session, a: Agent {
+    a.peer = s2 and a.task in c.memberIssues
+    s1.machine = s2.machine
+    eventually (a in Live and a in holder[a.task]
+                and Now.event = Status and Who.session = s1 and Target.agent = a)
+  }
+}
+
+/* A3. Control for A1: the derived reading did not buy itself by making the
+   agent unable to run. UNSAT here would mean the whole protocol went with the
+   record. */
+pred A3_HolderRunsTheWholeProtocol {
   coLocatedShutdown and twoStepShutdown
   some c: Campaign, disj s1, s2: Session, a: Agent {
     a.peer = s2 and a.task in c.memberIssues
@@ -424,40 +610,32 @@ pred A5_ReviewRuleBlocksTheCollision {
   mergedOnCurrentReview and A4_AgentMergesItsOwnPullRequest
 }
 
-/* =================== the record, and what it is worth =================== */
+/* =================== deleting a tree under an agent =================== */
 
-/* A9. The lifetime exercised rather than asserted. Its cost is A10. */
-pred A9_RecordDiesWithTheDirectory {
-  some a: Agent {
-    some a.peer                        -- a delegate's address is its --name
-    eventually (addressable[a] and Now.event = DeleteDir and Where.machine = a.host
-                and after not addressable[a])
-  }
-}
-
-/* A10. session/scenarios.als's R3 with the missing half supplied: the record names the
-   working session and nothing reads it. */
-pred A10_DeleteUnderRecordedAgent {
+/* A10. session/scenarios.als's R3 reached from here: a directory is deleted
+   while a live agent on that machine still holds local-only work. */
+pred A10_DeleteUnderLiveAgent {
   some c: Campaign, a: Agent {
     some a.peer                        -- a session working its own claim
     a.task in c.memberIssues
-    eventually (a in Live and addressable[a] and a in LocalOnly
+    eventually (a in Live and a in LocalOnly
                 and Now.event = DeleteDir and Where.machine = a.host)
   }
 }
 
-/* A11. Keying the gate on `no a.peer` instead of `addressable[a]` turns it SAT
-   again. */
-pred A11_AddressableGateBlocksTheDelete {
-  noDeleteUnderAddressableAgent and A10_DeleteUnderRecordedAgent
+/* A11. The liveness gate closes it. Keying the gate on `some a.peer` instead
+   of on `a in Live` turns it SAT again, which is the reading that would let a
+   delegate's tree go. */
+pred A11_LiveGateBlocksTheDelete {
+  noDeleteUnderLiveAgent and A10_DeleteUnderLiveAgent
 }
 
 /* A12. UNSAT here would mean the directory could never be deleted at all. */
-pred A12_AddressableGateAdmitsTheDelete {
-  noDeleteUnderAddressableAgent
+pred A12_LiveGateAdmitsTheDelete {
+  noDeleteUnderLiveAgent
   some a: Agent |
-    eventually (addressable[a] and eventually (a not in Live and Now.event = DeleteDir
-                                             and Where.machine = a.host))
+    eventually (a in Live and eventually (a not in Live and Now.event = DeleteDir
+                                          and Where.machine = a.host))
 }
 
 /* A6. The other chair. A confirmation checks that the work EXISTS, never that
@@ -484,53 +662,6 @@ pred A8_ReviewRuleAdmitsTheLanding {
     eventually (Now.event = Confirm and Who.session = s1 and Target.agent = a)
     eventually (Now.event = Review and Who.session = s1 and Now.issue = a.task)
     eventually (Now.event = MergePullRequest and Who.session = s1 and Now.issue = a.task)
-  }
-}
-
-/* A20. StoodDownCommentPosted is set by its event and by nothing else:
-   unframed in any step,
-   or uncleared at init, this goes SAT. */
-pred A20_StoodDownCommentOnlyByPosting {
-  eventually some StoodDownCommentPosted
-  always Now.event != StoodDownPosted
-}
-/* The comment is never over local-only work: no trace posts it while the
-   agent is LocalOnly. */
-pred A19_StoodDownCommentNeverOverLocalOnlyWork {
-  eventually (Now.event = StoodDownPosted and Target.agent in LocalOnly)
-}
-
-/* A14. An agent whose record died is still retirable, on the confirmation
-   alone. Restoring the `addressable` guard on `confirm` turns this UNSAT. */
-pred A14_UnaddressableAgentIsRetirable {
-  resolveSilenceExternally and coLocatedShutdown
-  some a: Agent {
-    some a.peer
-    eventually (a not in Addressable and Now.event = Confirm and Target.agent = a)
-    eventually (a not in Addressable and Now.event = Retire and Target.agent = a)
-  }
-}
-
-/* A14b. And it cannot be stood down: `standDown` carries a message and
-   nothing re-creates an address after the delete. So A14's ending is a
-   stand-down taken while the record stood, or `retire`'s second disjunct. */
-pred A14b_UnaddressableAgentCannotBeStoodDown {
-  A14_UnaddressableAgentIsRetirable
-  some a: Agent {
-    some a.peer
-    eventually (a not in Addressable and Now.event = StandDown and Target.agent = a)
-  }
-}
-
-/* A15. And its pull request still lands. Gating `confirm` on `addressable` made
-   a record-less agent's work permanently unmergeable, which `gh pullRequest merge`
-   does not do. */
-pred A15_UnaddressableAgentPullRequestLands {
-  mergedOnCurrentReview
-  some a: Agent {
-    some a.peer
-    eventually (a not in Addressable and Now.event = Confirm and Target.agent = a)
-    eventually (Now.event = MergePullRequest and Now.issue = a.task)
   }
 }
 
@@ -584,17 +715,17 @@ pred A18b_AgentLessUnreviewedMergeIsBlocked {
   some i: Issue | eventually (Now.event = MergePullRequest and Now.issue = i)
 }
 
-/* A17. Seen live, no longer attributable: the pane proves the agent ALIVE
-   and cannot say WHOSE CLAIM it is. */
-pred A17_PaneSeesWhatTheRecordLost {
+/* A17. THE RESIDUAL GAP OF THE DERIVED READING, and the only one: an agent
+   is live and listed, and the checkout it was attributed by has moved off its
+   branch, so `holder` no longer names it. R4c is how the checkout moves;
+   AttributionIsSound is the same fact as a property. */
+pred A17_LiveButNoLongerTheHolder {
   some c: Campaign, a: Agent {
-    some a.peer
     a.task in c.memberIssues
     eventually (a in Live and liveUnderLocally[c, a.host]
-                and not liveAndAddressable[c, a.host])
+                and a not in holder[a.task])
   }
 }
-
 /* =================== the planner =================== */
 
 /* P1. THE ONE-EXECUTOR SHAPE: a request of one sub-issue is filed and worked by
@@ -652,6 +783,28 @@ run R3c_GlobalCloseRuleBlocks    for 3 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
 run R4c_CheckoutSwitchedUnderAgent for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Branch, 1 CampaignDir, 12 steps expect 1
 -- what the numbered branch leaves
 run R4e_NumberedBranchStillShared for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- a session named for another campaign does not block this campaign's close
+run N1_ForeignNamedSessionDoesNotBlock       for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+-- control: a session whose name says nothing still blocks
+run N2_UnnamedSessionStillBlocks             for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+-- control: the name exempts the machine-wide disjunct and nothing else
+run N3_ForeignNameDoesNotExemptOwnSubIssue   for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+
+-- a dropped sub-issue's ref outlives the close, and the next take refuses forever
+run N4_DroppedSubIssueLeavesItsRef           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- the rule closes it
+run N5_NoStrayClaimsClosesIt                 for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+-- control: a merged pull request's leftover ref still admits the close
+run N6_NoStrayClaimsAdmitsAMergedResidue     for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+
+-- a claim nobody was ever launched on is released, and the ref goes with it
+run R7a_FreshClaimReleasedWithNoAgent    for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- the discipline closes it
+run R7b_WorkerRuleClosesTheFreshClaim    for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+-- control: the ordinary release still happens, through the `Launched` disjunct
+run R7c_WorkerRuleAdmitsTheOrdinaryRelease for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+-- ...and hands-on work still releases, through the `complete` one, at `0 Agent`
+run R7d_WorkerRuleAdmitsTheAgentLessLanding for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- the claim closes it
 run R4f_ClaimClosesSameSubIssue    for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- control: the 422 is load-bearing
@@ -674,15 +827,14 @@ run R6_ReleaseUnderRemoteAgent   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
 -- a dangling claim is reclaimable
 run R6b_ReclaimAfterDeath        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 14 steps expect 1
 
-/* A1 and A3 run at two roles, where the gap they measure was widest. A9-A12
-   need a CampaignDir to delete; A14-A15 need one to delete mid-trace. A16, A16b, A18
-   and A18b run at exactly ONE Session, because the absence of a second merger
-   is their subject. */
--- closed BY CONSTRUCTION: the claimant writes its own record, so no live claim is unattributable
-run A1_UnrecordedAgentAtTheClose          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+/* A1 and A3 run at two Sessions, so the derived reading is choosing between
+   them. A10-A12 need a CampaignDir to delete mid-trace. A16, A16b, A18 and
+   A18b run at exactly ONE Session, because the absence of a second merger is
+   their subject. */
+-- the holder read off the checkout, with no record anywhere
+run A1_HolderReadFromTheCheckout          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- control: the whole run still happens
-run A3_RecordedAgentRunsTheWholeProtocol  for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
-
+run A3_HolderRunsTheWholeProtocol         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- the live collision: a self-merge with NO review
 run A4_AgentMergesItsOwnPullRequest                for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- still caught, by what was missing
@@ -694,33 +846,22 @@ run A7_ReviewRuleBlocksUnreviewed            for 3 Issue, 1 PullRequest, 1 Campa
 -- control: two-session landing runs
 run A8_ReviewRuleAdmitsTheLanding            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 
--- the record has the tree's lifetime
-run A9_RecordDiesWithTheDirectory            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- session/scenarios.als's R3, reached from here
-run A10_DeleteUnderRecordedAgent          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
--- and closed by reading the record
-run A11_AddressableGateBlocksTheDelete          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run A10_DeleteUnderLiveAgent      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- and closed by reading liveness
+run A11_LiveGateBlocksTheDelete   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- control
-run A12_AddressableGateAdmitsTheDelete          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run A12_LiveGateAdmitsTheDelete   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- a push retires a review
 run A13_PushAfterReviewUnReviews             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
--- a record dead with its directory still ends in a lawful retire
-run A14_UnaddressableAgentIsRetirable       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
--- and never a stand-down: that one carries a message, so it stays gated
-run A14b_UnaddressableAgentCannotBeStoodDown for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 0
--- and its pull request still lands
-run A15_UnaddressableAgentPullRequestLands           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 16 steps expect 1
 -- the one-session landing
 run A16_AuthorLandsOwnReviewedWork           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- and a push retires that permission
 run A16b_AuthorCannotMergeOnStaleReview      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 0
--- attribution, not liveness, is the split's subject
-run A17_PaneSeesWhatTheRecordLost            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- the derived reading's one residual gap: live, listed, checkout moved off
+run A17_LiveButNoLongerTheHolder             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- hands-on work, reviewed and merged by one session, at `0 Agent`
 run A18_AgentLessLandingIsAdmitted           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- and unreviewed it does not land. The pair matters because the confirm conjunct is VACUOUS at `0 Agent`, so the review half holds the rule up alone
 run A18b_AgentLessUnreviewedMergeIsBlocked   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 
--- the floor's two negative controls
-run A19_StoodDownCommentNeverOverLocalOnlyWork for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0
-run A20_StoodDownCommentOnlyByPosting  for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0
