@@ -74,6 +74,8 @@ GH = """#!/bin/sh
 # that escaped a gate is visible as a different failure rather than as silence.
 case "$*" in
   *matching-refs*) echo '["refs/heads/campaign-9999/1-alpha","refs/heads/campaign-9999/2-beta"]'; exit 0 ;;
+  *compare/main*) echo 0; exit 0 ;;
+  *"pr list"*|*--state*merged*) echo '[]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
   *git/refs*) echo 'Reference already exists' >&2; exit 1 ;;
@@ -313,6 +315,38 @@ def take_cases(m):
         check("...and it says to read who is standing in it",
               "live 9999" in out)
 
+        # THE SUB-ISSUE IS WHAT IS CLAIMED, not the topic. create-ref alone
+        # admits this, because `1-gamma` is a name no ref has; the sweep before
+        # it is what refuses. Asserted on the sentence only this branch prints,
+        # since the create-ref refusal exits 3 too and would satisfy a weaker
+        # case without the sweep existing at all.
+        r = claim(["take", "9999", "1", "gamma"], path)
+        out = r.stdout + r.stderr
+        check("a second TOPIC on a claimed sub-issue is refused",
+              r.returncode == 3
+              and "one claim whatever the topic" in out)
+        check("...and it names the ref that already holds the sub-issue",
+              "campaign-9999/1-alpha" in out)
+
+        # ...and the sweep does not refuse a sub-issue nobody has claimed: it
+        # gets as far as the create, which the shim answers "already exists".
+        r = claim(["take", "9999", "7", "delta"], path)
+        out = r.stdout + r.stderr
+        check("an unclaimed sub-issue reaches the create-ref",
+              "cut from" in out and "one claim whatever the topic" not in out)
+
+        # A ref listing that failed is not proof the sub-issue is free.
+        blind = shims(Path(d) / "blind", gh="""#!/bin/sh
+case "$*" in
+  *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
+esac
+exit 1
+""")
+        r = claim(["take", "9999", "1", "alpha"], blind)
+        check("take refuses when the ref listing did not happen",
+              r.returncode == 1 and "not proof the sub-issue is free"
+              in r.stdout + r.stderr)
+
         # The binding, read BEFORE the ref is cut.
         elsewhere = shims(Path(d) / "elsewhere", gh=GH_ELSEWHERE)
         r = claim(["take", "9999", "1", "alpha"], elsewhere)
@@ -349,6 +383,163 @@ def release_cases(m):
         check("release refuses a sub-issue no ref names",
               r.returncode == 1 and "no ref under campaign-9999/" in r.stderr)
 
+        # THE FRESH CLAIM. `2-beta` is 0 ahead of main, was never merged, and no
+        # workspace holds it -- which is exactly a claim cut for a delegate that
+        # has not checked it out yet, and is byte-for-byte what finished work
+        # looks like. Deleting it lets a second `take` succeed.
+        empty = shims(Path(d) / "empty", herdr=listing())
+        r = claim(["release", "9999", "2"], empty)
+        out = r.stdout + r.stderr
+        check("release refuses an empty branch that was never merged",
+              r.returncode == 1 and "never merged" in out
+              and "--confirmed-absent" in out)
+        check("...and says what deleting it would cost",
+              "second `take` succeed" in out)
+        # The shim's DELETE is unhandled and exits 1, so reaching it is visible
+        # as the delete's own refusal rather than as this gate passing.
+        r = claim(["release", "9999", "2", "--confirmed-absent", "a person"],
+                  empty)
+        out = r.stdout + r.stderr
+        check("...and a confirmed absence gets past it to the delete",
+              "absence confirmed by: a person" in out)
+
+
+def sweep_cases(m):
+    """The roots, which used to be derived from who was alive."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        # A base root shaped like the real one: one campaign directory holding a
+        # member clone, and one holding none.
+        (root / "demo-260904" / "repos" / "acme").mkdir(parents=True)
+        (root / "repoless-260904" / "runtime").mkdir(parents=True)
+        (root / "not-a-campaign").mkdir()
+        clones, unread = m.campaign_clones(str(root))
+        check("a member clone under a campaign directory is a sweep root",
+              clones == [str(root / "demo-260904" / "repos" / "acme")]
+              and not unread)
+        check("...found with no session alive anywhere, which is the point",
+              not unread)
+        check("a directory that is not <slug>-<YYMMDD> is not a campaign",
+              str(root / "not-a-campaign") not in " ".join(clones))
+        check("a repo-less campaign is not a failed reading",
+              not unread)
+
+        # A `repos/` that will not enumerate is NAMED. It is the case that
+        # matters: skipping it silently is how a branch in an unswept clone
+        # reads as standing in no workspace.
+        bad = root / "locked-260904" / "repos"
+        bad.mkdir(parents=True)
+        bad.chmod(0o000)
+        real = m.base_root
+        try:
+            clones, unread = m.campaign_clones(str(root))
+            check("a repos/ that will not enumerate is reported, not skipped",
+                  len(unread) == 1 and "locked-260904" in unread[0])
+            m.base_root = lambda: (str(root), None)
+            roots, unread, why = m.sweep_roots({})
+            check("...and an unreadable repos/ comes back through sweep_roots",
+                  len(unread) == 1 and "locked-260904" in unread[0])
+        finally:
+            bad.chmod(0o755)
+            m.base_root = real
+
+        # THE WIRING, not the helper. `campaign_clones` passing on its own
+        # proves nothing about `sweep_roots` calling it, and the defect was the
+        # call site: roots derived from live herdr rows go blind exactly when a
+        # session dies. NO SESSIONS AT ALL here, so a root that appears can only
+        # have come from the campaign directories.
+        real = m.base_root
+        try:
+            m.base_root = lambda: (str(root), None)
+            roots, unread, why = m.sweep_roots({})
+            check("sweep_roots reaches a member clone with nothing alive",
+                  why is None
+                  and str(root / "demo-260904" / "repos" / "acme") in roots)
+            check("...and the base root is always among them",
+                  str(root) in roots)
+        finally:
+            m.base_root = real
+
+
+def verdict_cases(m, capsys=None):
+    """`live`'s two closing lines, which must never both print.
+
+    In-process with the three readings stubbed, because the defect is in what
+    `cmd_live` PRINTS and the unread it prints about comes from a repository
+    this suite must not have to break on the real machine to produce."""
+    import io
+    import contextlib
+
+    class Args:
+        repo, campaign_issue = "o/r", "9"
+
+    real = (m.matching_refs, m.herdr_sessions, m.sweep_roots, m.checkouts,
+            m.base_root)
+    try:
+        m.matching_refs = lambda r, n: (["campaign-9/1-a"], None)
+        m.herdr_sessions = lambda: ({}, None)
+        m.base_root = lambda: ("/nowhere", None)
+        m.sweep_roots = lambda s: (["/a"], ["/b: would not enumerate"], None)
+        m.checkouts = lambda roots: ({}, [])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = m.cmd_live(Args())
+        out = buf.getvalue()
+        check("an unread repository denies the completed verdict on STDOUT",
+              "NOT all readings were made" in out
+              and "all three readings were made" not in out)
+        check("...and it exits 1", code == 1)
+        check("...and names the repository it could not sweep",
+              "would not enumerate" in out)
+
+        m.sweep_roots = lambda s: (["/a"], [], None)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = m.cmd_live(Args())
+        out = buf.getvalue()
+        check("a complete sweep does print the verdict, and exits 0",
+              "all three readings were made" in out and code == 0
+              and "NOT all readings" not in out)
+    finally:
+        (m.matching_refs, m.herdr_sessions, m.sweep_roots, m.checkouts,
+         m.base_root) = real
+
+
+def peer_cases(m):
+    """Who a close is told to ask -- and who it is not."""
+    sessions = {
+        "me": {"name": "campaign-9-executor-1", "cwd": "/base/x", "pane": "p",
+               "status": "idle"},
+        "peer": {"name": "campaign-9-planner-2", "cwd": "/base", "pane": "p",
+                 "status": "idle"},
+        "unnamed": {"name": "<unnamed>", "cwd": "/base/y", "pane": "p",
+                    "status": "idle"},
+        "other": {"name": "campaign-3-executor-1", "cwd": "/elsewhere",
+                  "pane": "p", "status": "idle"},
+    }
+    _, _, ours = m.classify([], {}, sessions, "9", root="/base", caller="me")
+    names = sorted(sid for sid, _ in ours)
+    # THE CLOSER IS NOT ITS OWN BLOCKER: a close runs from a session of the
+    # campaign, so a gate refusing on any live session of it can never pass.
+    check("the caller is excluded from the peers a close must ask",
+          "me" not in names)
+    # AND A SESSION THAT NEVER NAMED ITSELF IS STILL A PEER. Nothing enforces
+    # the naming rule since the record went, so a prefix-only set misses it.
+    check("an unnamed session under the base root is still a peer",
+          "unnamed" in names)
+    check("a named peer of this campaign is a peer", "peer" in names)
+    check("a session of another campaign, elsewhere, is not",
+          "other" not in names)
+
+
+def robustness_cases(m):
+    rows, why = m.parse_agents('{"result": {"agents": null}}')
+    check("herdr `agents: null` is a why, not a traceback",
+          rows is None and why)
+    rows, why = m.parse_agents('{"result": {"agents": ["a string"]}}')
+    check("a herdr row that is not an object is a why, not a traceback",
+          rows is None and why)
+
 
 def main():
     import importlib.machinery
@@ -359,7 +550,8 @@ def main():
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
 
-    for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases):
+    for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
+               sweep_cases, verdict_cases, peer_cases, robustness_cases):
         fn(m)
     for name in FAILED:
         print(f"FAIL  {name}")

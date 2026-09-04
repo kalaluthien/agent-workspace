@@ -2,7 +2,8 @@
 """Take and release a sub-issue's claim, and say who is standing in one.
 
     campaign-claim.py take <N> <issue> <topic> [--repo owner/repo]
-    campaign-claim.py release <N> <issue> [--branch B] [--repo owner/repo]
+    campaign-claim.py release <N> <issue> [--branch B] [--confirmed-absent WHO]
+                                          [--repo owner/repo]
     campaign-claim.py live <N> [--repo owner/repo]
 
 THE CLAIM IS THE BRANCH, AND NOTHING ELSE
@@ -49,6 +50,18 @@ ref before it deletes it, and a close needs to know whether any claim is still
 occupied; neither needs a session id. Addressing a holder is `ListAgents` and
 the four messages, which is where it already was.
 
+WHAT create-ref SERIALISES, AND WHAT `take` HAS TO ADD
+
+The ref name carries the topic as well as the sub-issue, so create-ref's
+server-side refusal separates `7-parser` from `7-parse-fix` and admits both --
+two executors on one sub-issue, which is the thing a claim exists to stop. The
+record this replaced was keyed on the sub-issue and gave that for free. So
+`take` lists `campaign-<N>/` first and refuses on any ref already naming the
+sub-issue, whatever its topic. That is a survey before a create and is NOT
+atomic; the window is stated where the code makes it rather than hidden, and it
+is no wider than the one `O_EXCL` on a record left, since the binding already
+holds a campaign to one machine.
+
 EVERY CLAIM CUTS A REF, REPO-LESS WORK INCLUDED
 
 `take --local` used to write the record and cut nothing, for work that lands no
@@ -81,15 +94,30 @@ record that everything the branch held is on main. No ref and no merged pull
 request is still a refusal, because a branch that vanished without merging is
 reported, never released.
 
-A REF AHEAD OF MAIN IS KEPT, AND SO IS ONE SOMEBODY IS SITTING IN
+A REF AHEAD OF MAIN IS KEPT, ONE SOMEBODY IS SITTING IN IS KEPT, AND AN EMPTY
+ONE THAT WAS NEVER MERGED NEEDS A PERSON
 
-Two refusals guard the delete, and they answer different questions. A branch
-still ahead of main is the pull request's head, and deleting it would take
-commits with it. A branch a live session has checked out is somebody's
-workspace, and deleting the ref under it strands them -- that one is only
-readable now that attribution is derived, and it is the reading the record
-could not make: a record said who CLAIMED a sub-issue, never who is standing in
-it. Both are reported, never resolved, and nothing is deleted when either bites.
+Three refusals guard the delete, and they answer different questions.
+
+A branch still ahead of main is the pull request's head, and deleting it would
+take commits with it.
+
+A branch checked out in a workspace is somebody's, and deleting the ref under it
+strands them. That one is only readable now that attribution is derived, and it
+is the reading the record could not make: a record said who CLAIMED a sub-issue,
+never who is standing in it.
+
+A branch that is empty AND was never merged is the third, and it is the one that
+cost real work when it was missing. A claim is cut BEFORE its delegate is
+launched, so between the create-ref and the delegate's first checkout every
+claim looks exactly like finished work: 0 ahead of main, in no workspace. Delete
+one there and a second `take` succeeds. A merged pull request whose head was
+this branch is what tells the two apart, and with none, `--confirmed-absent WHO`
+is a person saying the holder is gone. This is the proof the record's `session`
+field carried, restored in the one place its absence destroyed work rather than
+merely losing an address.
+
+None is resolved here; nothing is deleted when any of the three bites.
 
 THE BINDING IS READ BEFORE A REF IS CUT
 
@@ -141,6 +169,7 @@ live     0 every reading made, 1 one of them did not happen.
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -264,6 +293,30 @@ def cmd_take(args):
         return 1
     print("bound here, so the claim may be cut")
 
+    # THE SUB-ISSUE IS WHAT IS CLAIMED, AND THE REF NAME CARRIES THE TOPIC TOO,
+    # so create-ref alone serialises topics rather than sub-issues: `7-parser`
+    # and `7-parse-fix` are two names and the server refuses neither. The record
+    # this replaced was keyed on the sub-issue and gave that for free; this
+    # sweep is what gives it back. It is a survey before a create and therefore
+    # NOT atomic -- two takers between the read and the create both pass -- and
+    # that is the honest ceiling, not a bug hidden here: the binding already
+    # limits a campaign to one machine, and this window is narrower than the
+    # one `O_EXCL` on a record closed only for this machine anyway.
+    existing, why = matching_refs(args.repo, args.campaign_issue)
+    if why:
+        print(f"refusing: {why}\n  A ref listing that did not happen is not "
+              f"proof the sub-issue is free.", file=sys.stderr)
+        return 1
+    siblings = refs_for_issue(existing, args.campaign_issue, args.issue)
+    if siblings:
+        print(f"already claimed: sub-issue #{args.issue} is held by "
+              f"{', '.join(siblings)} on {args.repo}.")
+        print("  A sub-issue has one claim whatever the topic, so a second "
+              "topic is not a second claim.")
+        print("  Read who is standing in it before doing anything else:")
+        print(f"    {sys.argv[0]} live {args.campaign_issue}")
+        return 3
+
     # Resolved and checked before the create, never written inline: a read that
     # fails and still prints goes up as the sha and comes back as the 422 that
     # means "already claimed", so the sub-issue reads as taken and is abandoned.
@@ -304,8 +357,15 @@ def parse_agents(text):
         agents = json.loads(text)["result"]["agents"]
     except (ValueError, KeyError, TypeError) as e:
         return None, f"could not parse herdr's output ({e.__class__.__name__})"
+    # `agents: null` and a row that is not an object both used to raise here
+    # instead of returning the `why` this promises, which turned "I could not
+    # read it" into a traceback -- the one shape a caller cannot act on.
+    if not isinstance(agents, list):
+        return None, "herdr's `agents` was not a list"
     out = {}
     for a in agents:
+        if not isinstance(a, dict):
+            return None, f"a herdr row was {type(a).__name__}, not an object"
         sid = (a.get("agent_session") or {}).get("value")
         if sid is None:
             # A row herdr lists but cannot identify. Counted, never dropped:
@@ -377,22 +437,64 @@ def repo_root(cwd):
     return str(Path(r.stdout.strip()).parent), None
 
 
-def sweep_roots(sessions):
-    """(roots, why_unreadable) -- every repository to enumerate worktrees in.
+# `<slug>-<YYMMDD>` -- the campaign directory shape, read as a shape. Nothing
+# derives the list from GitHub, because the question is which directories are on
+# THIS machine. The same regex the claim guard uses.
+CAMPAIGN_DIR = re.compile(r"-\d{6}$")
 
-    The base root is unconditional, because a campaign's worktrees hang off it
-    whether or not any session happens to be sitting there. A failure to
-    resolve it is a refusal: not knowing where to look is not the same as
-    looking and finding nothing."""
+
+def campaign_clones(root):
+    """(paths, unread) -- every member checkout under every campaign directory
+    at the base root.
+
+    UNCONDITIONAL, and that is the fix: deriving the roots from live herdr rows
+    made the sweep go blind exactly when a session died, which is the case it
+    exists for. A delegate that exits leaves its clone on disk holding the
+    branch, and a sweep that only followed living sessions reported that branch
+    as standing in no workspace -- one step before deleting its ref.
+
+    A campaign directory that will not enumerate is named, never skipped."""
+    out, unread = [], []
+    try:
+        dirs = [d for d in sorted(Path(root).iterdir())
+                if d.is_dir() and CAMPAIGN_DIR.search(d.name)]
+    except OSError as e:
+        return [], [f"{root}: could not list campaign directories "
+                    f"({e.__class__.__name__})"]
+    for d in dirs:
+        repos = d / "repos"
+        if not repos.is_dir():
+            continue                      # a repo-less campaign, not a failure
+        try:
+            out.extend(str(c) for c in sorted(repos.iterdir()) if c.is_dir())
+        except OSError as e:
+            unread.append(f"{repos}: would not enumerate "
+                          f"({e.__class__.__name__})")
+    return out, unread
+
+
+def sweep_roots(sessions):
+    """(roots, unread, why_unreadable) -- every repository to enumerate
+    worktrees in.
+
+    Three sources, and only the third depends on anything running: the base
+    root, because a campaign's worktrees hang off it; every member clone under
+    every campaign directory here, because a dead delegate's clone still holds
+    its branch; and each live session's own repository, which catches a session
+    working somewhere none of the above covers. Failing to resolve the base root
+    is a refusal -- not knowing where to look is not the same as looking and
+    finding nothing."""
     root, why = base_root()
     if why:
-        return None, why
+        return None, [], why
     roots = {root}
+    clones, unread = campaign_clones(root)
+    roots.update(clones)
     for row in sessions.values():
         r, _ = repo_root(row.get("cwd", ""))
         if r:
             roots.add(r)
-    return sorted(roots), None
+    return sorted(roots), unread, None
 
 
 def checkouts(roots):
@@ -411,23 +513,45 @@ def checkouts(roots):
     return {b: sorted(set(p)) for b, p in out.items()}, unread
 
 
-def classify(branches, where, sessions, campaign_issue):
+def classify(branches, where, sessions, campaign_issue, root=None, caller=None):
     """(occupied, vacant, ours) -- the join, on the branch name and on nothing
     else.
 
-    Pure, so it can be tested against recorded inputs. `ours` is every live
-    session named for this campaign, which is what a close sweeps; it is
-    deliberately not filtered by whether the session holds anything, because
-    which session holds which claim is the question this cannot answer and
-    says so."""
+    Pure, so it can be tested against recorded inputs.
+
+    `ours` is the set a close sweeps, and it is deliberately NOT just "sessions
+    named for this campaign". Nothing enforces that name any more -- the record
+    whose `name` field `take` used to check is gone -- so a peer that never
+    named itself, or renamed away, would be invisible to a gate keyed on the
+    prefix alone. A session sitting anywhere under the base root is counted too,
+    which is where every session of every campaign here works.
+
+    THE CALLER IS EXCLUDED, by session id. A close runs *from* a session of the
+    campaign it is closing, so a gate that refuses on any live session of the
+    campaign refuses on the closer itself and can never pass. The caller is the
+    one session whose intent is known."""
     name_prefix = f"campaign-{campaign_issue}-"
     occupied, vacant = [], []
     for b in branches:
         paths = where.get(b, [])
         (occupied if paths else vacant).append((b, paths))
     ours = [(sid, row) for sid, row in sorted(sessions.items())
-            if row.get("name", "").startswith(name_prefix)]
+            if sid != caller
+            and (row.get("name", "").startswith(name_prefix)
+                 or (root and under(row.get("cwd", ""), root)))]
     return occupied, vacant, ours
+
+
+def under(path, root):
+    """Is `path` inside `root`? Whole path segments, so `demo-1` is not under
+    `demo`; both resolved, because herdr reports the path a shell was opened at
+    and these comparisons run against `pwd -P`, which differ under /var on
+    macOS."""
+    try:
+        c, t = Path(path).resolve().parts, Path(root).resolve().parts
+    except (TypeError, OSError, ValueError):
+        return False
+    return c[:len(t)] == t
 
 
 def cmd_live(args):
@@ -437,8 +561,12 @@ def cmd_live(args):
     sessions, why2 = herdr_sessions()
     print(f"reading 2  herdr agent list -- "
           f"{'FAILED: ' + why2 if why2 else str(len(sessions)) + ' session(s) on this machine'}")
-    roots, why3 = sweep_roots(sessions or {})
-    where, unread = ({}, []) if why3 else checkouts(roots)
+    roots, unread, why3 = sweep_roots(sessions or {})
+    if why3:
+        where = {}
+    else:
+        where, more = checkouts(roots)
+        unread = unread + more
     print(f"reading 3  git worktree list -- "
           f"{'FAILED: ' + why3 if why3 else f'{len(roots)} repo(s) swept, {len(unread)} unread'}")
     for root in (roots or []):
@@ -450,8 +578,10 @@ def cmd_live(args):
               "is safe to act on.", file=sys.stderr)
         return 1
 
-    occupied, vacant, ours = classify(branches, where, sessions,
-                                      args.campaign_issue)
+    root, _ = base_root()
+    occupied, vacant, ours = classify(
+        branches, where, sessions, args.campaign_issue, root=root,
+        caller=os.environ.get("CLAUDE_CODE_SESSION_ID") or None)
 
     print(f"\nclaims checked out on this machine ({len(occupied)}) -- joined "
           f"on the branch name, which a restart and a rename both leave alone")
@@ -477,16 +607,25 @@ def cmd_live(args):
               "is working in. Ask them; the four messages\n  are the address, "
               "and this list is who to ask.")
 
+    # ON STDOUT, and only one of the two ever prints. AGENTS.md tells a caller
+    # to read the word and never the exit status, so a completed-verdict line
+    # printed beside a failed reading is the exact shape that gets acted on: a
+    # branch checked out in an unswept repository reads as vacant, and the
+    # denial goes to a stream nobody was told to read.
     if unread:
-        print(f"\n{len(unread)} repositor(y/ies) could not be swept, so the "
-              f"claims above are of what\nwas readable and not of what is "
-              f"here.", file=sys.stderr)
+        print(f"\nNOT all readings were made: {len(unread)} repositor(y/ies) "
+              f"could not be swept, so\nthe counts above are of what was "
+              f"readable and not of what is here. A claim may be\nstanding in "
+              f"a workspace this did not look at.")
+        for note in unread:
+            print(f"  !! {note}")
+        return 1
 
     print(f"\nall three readings were made. {len(occupied)} occupied, "
           f"{len(vacant)} vacant, {len(ours)} live session(s) of this campaign.")
     print("No verdict: a close reads these counts, it does not get one from "
           "here.")
-    return 1 if unread else 0
+    return 0
 
 
 # --------------------------------------------------------------------- release
@@ -617,11 +756,12 @@ def cmd_release(args):
               f"the live sessions, so an unread\n  listing leaves an occupant "
               f"unread too.", file=sys.stderr)
         return 1
-    roots, why3 = sweep_roots(sessions)
+    roots, unread, why3 = sweep_roots(sessions)
     if why3:
         print(f"refusing: {why3}", file=sys.stderr)
         return 1
-    where, unread = checkouts(roots)
+    where, more = checkouts(roots)
+    unread = unread + more
     if unread:
         print(f"refusing: {len(unread)} repositor(y/ies) could not be swept, "
               f"so whether a workspace\n  holds {branch} is unknown:",
@@ -668,6 +808,41 @@ def cmd_release(args):
         return 1
     print(f"{args.repo} says {branch} holds nothing beyond main")
 
+    # AN EMPTY BRANCH IS EITHER FINISHED WORK OR A CLAIM NOBODY HAS STARTED,
+    # and the two look identical: both are 0 ahead of main and in no workspace.
+    # A claim is cut BEFORE its delegate is launched (AGENTS.md § The binding),
+    # so between the create-ref and the delegate's first checkout every claim on
+    # this campaign is in exactly that state -- and deleting one there lets a
+    # second `take` succeed and puts two executors on one sub-issue. A merged
+    # pull request whose head was this branch is what tells the two apart; with
+    # none, a person has to say the holder is gone, which is what
+    # `--confirmed-absent` is. This is the proof the record's `session` field
+    # used to carry and this restores, in the one place its absence destroyed
+    # work rather than merely losing an address.
+    p = run("gh", "pr", "list", "-R", args.repo, "--head", branch,
+            "--state", "merged", "--json", "number")
+    merged, text = merged_head_verdict(p.returncode, p.stdout, args.repo, branch)
+    if merged:
+        print(f"{branch} was {text}, so it is finished work and not a fresh "
+              f"claim")
+    elif p.returncode != 0:
+        print(f"refusing: could not ask {args.repo} whether {branch} was ever "
+              f"merged, so whether this is finished work or an unstarted claim "
+              f"is unknown.", file=sys.stderr)
+        return 1
+    elif not args.confirmed_absent:
+        print(f"refusing: {branch} holds nothing beyond main and was never "
+              f"merged, so it is\n  indistinguishable from a claim cut for a "
+              f"holder that has not checked it out yet.\n  Ask whose it is "
+              f"(`{sys.argv[0]} live {args.campaign_issue}`, then the peers), "
+              f"then pass\n  --confirmed-absent WHO. Deleting it lets a second "
+              f"`take` succeed on the same sub-issue.",
+              file=sys.stderr)
+        return 1
+    else:
+        print(f"never merged and empty, but absence confirmed by: "
+              f"{args.confirmed_absent}")
+
     r = run("gh", "api", "-X", "DELETE", delete_path(args.repo, branch))
     if r.returncode != 0:
         print(f"refusing: could not delete the ref.\n  {r.stderr.strip()}",
@@ -705,6 +880,11 @@ def main():
     r.add_argument("issue")
     r.add_argument("--branch", help="name the ref directly, for a branch the "
                                     "naming rule does not describe")
+    r.add_argument("--confirmed-absent", metavar="WHO",
+                   help="who established the holder is gone. Needed only for a "
+                        "branch that is empty AND was never merged, which is "
+                        "what a claim cut for a holder that never started "
+                        "looks like.")
     r.set_defaults(fn=cmd_release)
 
     v = sub.add_parser("live", parents=[against],

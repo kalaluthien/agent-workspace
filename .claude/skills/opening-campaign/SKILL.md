@@ -264,10 +264,11 @@ compare-then-write in full, then acquire it as in step 5. The first repository
 The probes and the failures behind these: `references/gotchas.md`.
 
 - A delegate does not pick up the campaign `AGENTS.md` from its parent
-  directories; it arrives only through `--append-system-prompt-file`, without
-  which nothing reports the omission. Where it does arrive it sits beside the
-  repository's own conventions: adding a principle is free, contradicting one
-  hands the delegate a conflict it resolves without telling you.
+  directories. It reaches one as `CLAUDE.local.md` written into its clone and
+  excluded in `.git/info/exclude` — a file in its own cwd, so nothing has to
+  prove it arrived. It sits beside the repository's own conventions: adding a
+  principle is free, contradicting one hands the delegate a conflict it
+  resolves without telling you.
 - `gh issue create` without `--parent` succeeds, returning a live issue in no
   campaign; only a later listing coming back short shows anything is wrong.
 - This machine's zsh sets `noclobber` and leaves `APPEND_CREATE` unset, so plain

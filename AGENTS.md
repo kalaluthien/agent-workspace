@@ -475,4 +475,5 @@ condition 3**.
 Another machine may read a campaign, may file a sub-issue of it, and may open a
 different one; none may write this one's campaign issue body or its `bound:` label, claim, or launch
 into it. A campaign reaches another machine only by
-migration — the price of a staleness check that is a local `kill -0`.
+migration — the price of every staleness question being answerable from one
+machine's own disk.

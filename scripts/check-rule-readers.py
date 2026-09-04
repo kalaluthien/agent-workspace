@@ -132,10 +132,17 @@ FORMS = [
         # it -- a hand-rolled comment read is no longer a second reader of
         # anything, because nothing reads comments any more.
         #
+        # Both the reading AND the write, which the comment form could not
+        # cover: `campaign-tracker bind` is the one writer now, so a hand-rolled
+        # `gh issue edit --add-label bound:...` in a document is a second WRITER
+        # of the rule, which is worse than a second reader. Under the comment
+        # this was impossible to catch -- two blocks in the tree legitimately
+        # posted one.
+        #
         # Neither `hostname` alone NOR a bare labels read is the form, and both
-        # exclusions are deliberate. A block in this tree may *write* a binding
-        # -- the close comment names the host it is closing from -- so a bare
-        # `hostname` cannot separate writing from reading. And a labels read is
+        # exclusions are deliberate. A block may name this host without binding
+        # anything -- the close comment names the host it is closing from -- so
+        # a bare `hostname` cannot separate the two. And a labels read is
         # not the binding either: two skills read `--json labels` to classify a
         # campaign issue, which is a different question, and `campaign-tracker
         # bound`'s own request is character-for-character the same call. What
@@ -143,10 +150,11 @@ FORMS = [
         # name against something; hence the spaced `=` and `==`, which a
         # `HOST=$(hostname -s)` assignment does not carry.
         re.compile(r"(\bgrep\b|\bsed\b|\bawk\b|\bjq\b|--jq|startswith"
-                   r"|\brg\b|re\.|\bin\b|==)[^|;&]*bound:"
+                   r"|\brg\b|re\.|==)[^|;&]*bound:"
+                   r"|\bgh\b[^|;&]*\b(issue\s+edit|label)\b[^|;&]*bound:"
                    r"|(==|\s=\s)[^|;&]*\bhostname\b|\bhostname\b[^|;&]*(==|\s=\s)"
                    r"|\bgethostname\b|\bplatform\.node\b"),
-        "the binding reading",
+        "the binding reading or write",
     ),
     (
         "campaign-subtasks",

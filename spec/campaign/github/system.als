@@ -195,8 +195,8 @@ pred fileCampaignIssue[c: Campaign] {
 /* The issue and its index entry are one write. Deliberately no session, machine
    or binding precondition: filing a sub-issue is a record, not a claim, so any
    session on any machine may do it (AGENTS.md § The binding). The binding
-   gates writeBody, BOUND, the claim and the launch, which live in session/system.als
-   and the claim script, not here. */
+   gates writeBody, the `bound:` label, the claim and the launch, which live in
+   session/system.als and the claim script, not here. */
 pred addMember[c: Campaign, i: Issue] {
   c in Filed
   i not in Campaign.memberIssues and i not in Campaign.campaignIssue

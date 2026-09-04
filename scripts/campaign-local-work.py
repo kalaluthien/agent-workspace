@@ -17,7 +17,9 @@ It reads two places, and the second only when it is handed one:
                   cannot be scoped to a campaign and so is reported without
                   being counted
   the directory   every checkout under <campaign-dir>/repos/, one at a time,
-                  never one git command across member repositories
+                  never one git command across member repositories, with
+                  anything under runtime/ this script cannot name reported
+                  beside them
 
 Rows, not checks: the checks overlap on purpose -- a branch can be both unpushed
 and unmerged -- so the report merges to one row per thing at risk and names
@@ -34,7 +36,7 @@ error (all probed; the evidence is in
   looked identical, and a close read a repo-less campaign where there were
   checkouts it was not allowed to see. Absent prints "no member checkout" and
   the reading continues; unreadable exits 1, and so does an unreadable campaign
-  directory one level up.
+  directory or runtime/ one level up.
 
   A checkout is what git says it is, never what `.git` looks like. With
   --separate-git-dir, and in every linked worktree, `.git` is a file, so a
@@ -63,9 +65,9 @@ error (all probed; the evidence is in
   absence of findings: while those lines only informed, a run that skipped every
   member checkout still summarised `clear`, which is what licenses the delete.
   Such a run now says NOT clear and counts the unread places separately from the
-  found ones. The other REPORT line -- the base's own working tree -- is a
-  finding the script chose not to count, not a place it failed to look, and it
-  still does not block.
+  found ones. The other REPORT lines -- the base's own working tree, and any
+  runtime/ entry this script cannot name -- are findings it chose not to count,
+  not places it failed to look, and they still do not block.
 
 Exit status is about the reading, never the verdict: 0 means the reading
 completed and the last line says clear or NOT clear; 1 means the reading itself
@@ -294,7 +296,31 @@ def read_base(base, n, rep):
                    "in it carries no campaign, so it is not counted")
 
 
+def read_runtime(campaign_dir, rep):
+    """Anything under `runtime/` this script does not know the name of.
+
+    GENERIC on purpose. This used to name `runtime/handover/` specifically, and
+    when those briefs were retired the reading went with them -- so the files
+    still on disk stopped being reported at all, one step before a close deletes
+    the directory. The two entries the scaffold writes are known and stay quiet;
+    anything else is named, because `runtime/` is the one place under the
+    campaign directory that legitimately holds state and a close destroys it."""
+    known = {"repos", "campaign-issue-body-derived.md"}
+    runtime = os.path.join(campaign_dir, "runtime")
+    try:
+        found = sorted(e for e in os.listdir(runtime)) if os.path.isdir(runtime) else []
+    except OSError as e:
+        refuse(f"{runtime} exists and did not enumerate ({e.strerror}); "
+               "nothing was checked")
+    extra = [e for e in found if e not in known]
+    if extra:
+        rep.report(f"REPORT: {len(extra)} entr(y/ies) under runtime/ this "
+                   f"script does not know ({', '.join(extra)}): say what each "
+                   f"is before the close deletes it")
+
+
 def read_checkouts(campaign_dir, rep):
+    read_runtime(campaign_dir, rep)
     repos = os.path.join(campaign_dir, "repos")
     if not os.path.isdir(repos):
         print(f"  -- no member checkout: {repos} does not exist")

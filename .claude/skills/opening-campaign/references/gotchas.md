@@ -41,10 +41,15 @@ nowhere else in the procedure.
 
 ## A delegate does not inherit the campaign `AGENTS.md`
 
-It does not pick the file up from its parent directories. It reaches the delegate
-only through `--append-system-prompt-file <campaign>/AGENTS.md` at launch;
-without that flag the delegate reads the repository's own file and nothing else,
-and reports nothing wrong. Where the campaign file does arrive, it sits beside
+It does not pick the file up from its parent directories. It reaches the
+delegate as `CLAUDE.local.md`, written into the clone and excluded in that
+clone's `.git/info/exclude`; a file in the delegate's own cwd loads because it
+is there. This replaced `--append-system-prompt-file <campaign>/AGENTS.md`,
+whose text never reached the transcript, so a delegate that received nothing
+read exactly like one that received everything and ignored it — which is why
+that flag needed a canary and this does not
+(`references/launching.md`, probed 2026-09-04). Where the campaign file does
+arrive, it sits beside
 the repository's own conventions: adding a principle is free, contradicting one
 hands the delegate a conflict it cannot resolve, and it will pick a side without
 telling you.

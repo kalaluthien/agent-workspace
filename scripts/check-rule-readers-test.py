@@ -71,8 +71,19 @@ FORM_CASES = [
      fence('[ "$(hostname -s)" = "$M" ] && echo here'), 1),
     ("bound: the machine comparison in Python",
      fence("here = machine == socket.gethostname()", lang="python"), 1),
-    ("bound: naming this host in a comment body is a write, not a reading",
+    ("bound: naming this host without binding anything is neither",
      fence("HOST=$(hostname -s)"), 0),
+    # The WRITE, which the comment form could not catch and this one must:
+    # `campaign-tracker bind` is the one writer, so a hand-rolled edit in a
+    # document is a second writer of the rule.
+    ("bound: a hand-rolled label edit is the write, and is caught",
+     fence('gh issue edit 1 -R o/r --add-label "bound:$(hostname -s)"'), 1),
+    ("bound: ...and so is creating the label by hand",
+     fence("gh label create bound:mac -R o/r --force"), 1),
+    # The false positive the first cut of this form had: `\bin\b` before
+    # `bound:` fires on an ordinary English sentence in a code block.
+    ("bound: English prose naming the prefix inside a block is not the form",
+     fence("# nothing in here about bound: labels"), 0),
     ("bound: the comment read the label replaced is nobody's reader now",
      fence("gh api --paginate --slurp repos/o/r/issues/1/comments"), 0),
     ("repos: a shell parse of the list", fence("grep '^- ' README.md | grep owner/repo"), 1),

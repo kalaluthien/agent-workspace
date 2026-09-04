@@ -5,7 +5,7 @@
     campaign-tracker.py bound <N> [owner/repo]
     campaign-tracker.py bind <N> [owner/repo]
     campaign-tracker.py index <N> [owner/repo]
-    campaign-tracker.py settlement <N> [owner/repo] [--dir CAMPAIGN]
+    campaign-tracker.py settlement <N> [owner/repo]
 
 Four readings of one plane -- GitHub issues, plus `hostname -s` for `bound`,
 and the one write that changes what `bound` answers.
@@ -60,14 +60,16 @@ settlement  The observable spec/campaign/ scenarios are judged by. Verdicts matc
             `open`. Settled is "the issue is closed", both verdicts alike; the
             merged pull request only says which kind.
 
-            Each OPEN row also carries who holds its claim, read from
-            `<campaign>/runtime/claims/` through campaign-claim's own reader:
-            `claimed by <name> [<liveness>]`, or `unclaimed`. That column is
-            what an open sub-issue nobody had started was missing -- it read
-            exactly like one somebody was three hours into. Without a campaign
-            directory the column is EMPTY and a note says which reading did not
-            happen, because printing `unclaimed` for a directory nobody read is
-            the absence dressed as a reading that this exists to end.
+            Each OPEN row also carries whether its claim branch exists,
+            read off the remote's `campaign-<N>/` refs through campaign-claim's
+            own reader: `claimed: <branch>`, or `unclaimed`. That column is what
+            an open sub-issue nobody had started was missing -- it read exactly
+            like one somebody was three hours into. When the ref listing does
+            not happen the column is EMPTY and a note says so, because printing
+            `unclaimed` for a listing nobody made is the absence dressed as a
+            reading that this exists to end. It says nothing about WHO is
+            standing in the branch; that is `campaign-claim live`, and it is a
+            per-machine reading where this table is not.
 
 `settlement` reads the index through `index`'s own reader rather than issuing its
 own request. Moving only the parse behind a script once left `--paginate`
@@ -434,13 +436,45 @@ def verdict(repo, number):
     return "dropped", note, title
 
 
-def claim_reader():
-    """campaign-claim's own record reading, imported rather than rewritten.
+def claim_column(repo, campaign_issue):
+    """(a function issue -> claim word, a note saying what was read).
 
-    Returns (module, why_unreadable). The record's shape is written in exactly
-    one place, and a settlement that parsed `session`/`name`/`released` itself
-    would be the second reader AGENTS.md forbids -- and the one that drifts,
-    since nothing re-runs it against a record campaign-claim just wrote."""
+    Read off the REMOTE's `campaign-<N>/` refs since #176: a claim is a branch
+    and there is no record to import. That also drops the `--dir` this used to
+    need -- the answer is the same from any machine now, which is the point of
+    moving the claim onto a ref.
+
+    The note is not decoration. A ref listing that did not happen would print
+    `unclaimed` for every row, which is an absence dressed as a reading --
+    exactly the failure this column was added to end. It says which branch, and
+    NOT who is standing in it: that is `campaign-claim live`'s reading and it is
+    per-machine, where this table is not."""
+    module, why = claim_reader()
+    if why:
+        return (lambda n: ""), f"the claim reader would not load -- {why}"
+    branches, why = module.matching_refs(repo, campaign_issue)
+    if why:
+        return (lambda n: ""), (f"the claim refs did not read -- {why}; the "
+                                f"rows below say nothing about who holds what")
+    note = (f"read {repo} refs under campaign-{campaign_issue}/ -- "
+            f"{len(branches)} claim(s)")
+
+    def word(number):
+        found = module.refs_for_issue(branches, campaign_issue, number)
+        if not found:
+            return "unclaimed"
+        return f"claimed: {', '.join(found)}"
+    return word, note
+
+
+def claim_reader():
+    """campaign-claim's own ref reading, imported rather than rewritten.
+
+    Returns (module, why_unreadable). What a claim branch is named, and which
+    sub-issue a name belongs to, are written in exactly one place; a settlement
+    that split the name itself would be the second reader AGENTS.md forbids --
+    and the one that drifts, since nothing re-runs it against a ref
+    campaign-claim just cut."""
     path = Path(__file__).resolve().parent / "campaign-claim.py"
     try:
         spec = importlib.util.spec_from_loader(
@@ -451,42 +485,6 @@ def claim_reader():
     except Exception as e:                      # noqa: BLE001 -- any of them
         return None, f"{path}: {e.__class__.__name__}: {e}"
     return module, None
-
-
-def claim_column(directory):
-    """(a function issue -> claim word, a note saying what was read).
-
-    The note is not decoration. Without a campaign directory there is nothing
-    to read, and printing `unclaimed` for every row would be an absence dressed
-    as a reading -- exactly the failure this column was added to end."""
-    if not directory:
-        return (lambda n: ""), ("no --dir and no $CAMPAIGN, so no claim was "
-                                "read; the rows below say nothing about who "
-                                "holds what")
-    claims = Path(directory).expanduser().resolve() / "runtime" / "claims"
-    if not claims.is_dir():
-        return (lambda n: ""), (f"{claims} does not exist, so claims could not "
-                                f"be enumerated. A missing directory says "
-                                f"nothing; an empty one says no claim was taken")
-    module, why = claim_reader()
-    if why:
-        return (lambda n: ""), f"the claim reader would not load -- {why}"
-    recs, odd = module.claim_records(claims)
-    note = f"read {claims} -- {len(recs)} claim(s), {len(odd)} unread"
-    for o in odd:
-        note += f"\n     !! {o}"
-
-    def word(number):
-        rec = recs.get(str(number))
-        if not rec:
-            return "unclaimed"
-        if module.is_released(rec):
-            return "unclaimed (a released record stands as attribution)"
-        # `liveness_of` and not a fresh pid test: it is the wire the release
-        # gate hangs off, and two readings of one pid may not disagree.
-        return (f"claimed by {rec.get('name', '<no name>')} "
-                f"[{module.liveness_of(rec)}]")
-    return word, note
 
 
 def campaign_issue_reports(head):
@@ -523,7 +521,7 @@ def cmd_settlement(args):
         print("  (no sub-issues: the index is empty)")
         return 0
 
-    claim_word, claim_note = claim_column(args.dir or os.environ.get("CAMPAIGN"))
+    claim_word, claim_note = claim_column(args.repo, args.campaign_issue)
     print(f"  -- claims: {claim_note}")
 
     rows_out, settled, unread, nested = [], 0, 0, []
@@ -608,9 +606,9 @@ def main():
         # other two accept and ignore reads as though naming a directory
         # changed what they answer.
         if name == "settlement":
-            p.add_argument("--dir", help="the campaign directory whose "
-                                         "runtime/claims/ names the holders "
-                                         "(or set $CAMPAIGN)")
+            p.add_argument("--dir", help="accepted and ignored since #176: "
+                                         "the claim is a branch on the remote, "
+                                         "so no directory is read")
         p.set_defaults(fn=fn)
 
     args = ap.parse_args()

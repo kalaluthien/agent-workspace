@@ -158,6 +158,19 @@ def main():
     check("concatenated pages are a why rather than a silently short index",
           items is None and why)
 
+    # ------------------------------------------- settlement's claim column
+    # It read `runtime/claims/` through campaign-claim's own functions until
+    # #176 deleted them, and NOTHING covered it: `settlement` died with an
+    # AttributeError while every suite stayed green. These are cases over the
+    # column itself, so the import is exercised rather than assumed.
+    word, note = m.claim_column("o/r", "9")
+    check("the claim column reads the remote's refs, and says which",
+          "refs under campaign-9/" in note or "did not read" in note)
+    reader, why = m.claim_reader()
+    check("campaign-claim still exposes what the column imports",
+          why is None and hasattr(reader, "matching_refs")
+          and hasattr(reader, "refs_for_issue"))
+
     # ------------------------------------------- bound and bind: the binding
     # The binding is a `bound:` LABEL since #176. A label set is read by exact
     # name, so the reading is a calculation over a list of names and every case

@@ -201,8 +201,9 @@ pred sessionCreateDir[s: Session] {
   Who.session = s
 }
 
-/* `runtime/` goes with the directory; orchestration/system.als's `agentDeleteDir` is that
-   lifetime on the record's own bit. */
+/* `runtime/` goes with the directory, and nothing above has a bit with that
+   lifetime any more: since the claim became a ref and attribution a checkout,
+   orchestration/system.als frames straight through a delete. */
 pred sessionDeleteDir[s: Session] {
   Now.event = DeleteDir
   some s.worksOn

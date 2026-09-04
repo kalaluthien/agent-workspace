@@ -823,8 +823,11 @@ def pre(payload, changing_command):
         *unread,
         f"this session is {session_id}",
         "Take the claim first, on the sub-issue's own issue:",
-        "  scripts/campaign-claim.py take --local <campaign issue> <issue> <topic> "
-        "--dir <campaign>",
+        # `--local` and `--dir` went with the record in #176; a refusal naming
+        # a command the new argparse rejects sends the reader nowhere. The
+        # remedy the RECORD needs is #177's to write, when this reads the
+        # branch instead.
+        "  scripts/campaign-claim.py take <campaign issue> <issue> <topic>",
         "A sub-issue worked without one is unreadable as in-progress by every "
         "peer, which is what this refuses.",
     ])
