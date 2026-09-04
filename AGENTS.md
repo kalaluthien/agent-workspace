@@ -251,13 +251,17 @@ what was built. Quote `campaign-tracker settlement`'s note for that row, not its
 **`## Repos`** says which repositories to clone when a campaign is opened, and
 `scripts/campaign-repos.py <path>` is its one reader; `- none` is the whole list for
 a repo-less campaign. **Work that lands no commit is claimed all the same**, with `campaign-claim take
---local`: the record alone, no ref. **`scripts/check-campaign-claim.py` is what
-makes that true rather than remembered** — a `PreToolUse` guard answering "is
-this a change to campaign work that no unreleased claim of this session covers",
-refusing the ones that are. A change landing outside every base tree and
-every campaign directory is not campaign work and is not refused; how the guard
-reads a target, and what it does when it cannot, is its docstring's.
-`install-hooks.sh` registers it in
+--local`: the record alone, no ref. **Two readers make that true rather than
+remembered, one rule read at two moments.** `scripts/check-campaign-claim.py`
+is a `PreToolUse` guard answering "is this a change to campaign work that no
+claim covers" for what has an unambiguous target — a file tool's path and a
+`gh` write — and allowing every other shell command unread, saying so.
+`scripts/check-commit-claim.py` is the `pre-commit` gate where a shell write
+lands: a commit on a base tree or under a campaign directory whose branch is
+not a claim is refused. A change landing outside every base tree and every
+campaign directory is not campaign work and neither refuses it; how each reads
+its target, and what it does when it cannot, is its docstring's.
+`install-hooks.sh` installs both — the commit gate as a git hook, the guard in
 `~/.claude/settings.json`, because a delegate's clone is a different repository
 and reads none of this one's settings.
 

@@ -16,7 +16,8 @@
 #
 # pre-commit chains the machine-wide guard at ~/.claude/git-hooks/no-main-commits
 # (if present), then this repository's own: check-rule-readers, check-tree-shape,
-# check-cross-references.
+# check-cross-references, and check-commit-claim -- the commit half of the
+# claim gate, whose pre-tool-use half is the harness hook below.
 # post-commit pushes a campaign-*/ branch as soon as it has a commit, so an
 # executor never sits on a finished commit unpushed; it touches no other branch.
 #
@@ -122,7 +123,7 @@ $marker Re-run it after changing this file.
 #
 # The line below is the one list of what this hook runs; campaign-primitives
 # reads it too. Add a guard by adding it here.
-# runs: check-rule-readers.py check-tree-shape.py check-cross-references.py
+# runs: check-rule-readers.py check-tree-shape.py check-cross-references.py check-commit-claim.py
 set -e
 # \`cmd && other\` under \`set -e\` exits 1 when the test is false, so a machine
 # without the shared guard would have every commit blocked with no message.
@@ -201,8 +202,10 @@ fi
 # it: a shell that rewrote the file would have to reproduce every key it did not
 # come to change, and the one it drops is silent.
 #
-# The two entries are keyed by the script's basename, so re-running this
-# replaces them rather than stacking a second copy on every clone.
+# The entry is keyed by the script's basename, so re-running this replaces it
+# rather than stacking a second copy on every clone -- and an entry an earlier
+# install left on another event (the PostToolUse --released half, gone with
+# #176's records) is dropped the same way.
 #
 # The line below is the one list of what this installs into the harness, in the
 # same shape as the `# runs:` lines above and read the same two ways: by the
@@ -234,10 +237,10 @@ MATCHER = "Edit|Write|NotebookEdit|Bash"
 # not block -- so a moved checkout turns the guard into a silent pass. python3
 # on a missing file exits 2, the one code that refuses, so the same absence
 # refuses every guarded call and says which file it could not read.
-WANT = {
-    "PreToolUse": [f'python3 "{guard}"'],
-    "PostToolUse": [f'python3 "{guard}" --released'],
-}
+WANT = {"PreToolUse": [f'python3 "{guard}"']}
+# Every event an earlier install may have registered the guard on is swept,
+# so a retired half does not keep running from the slot it kept.
+SWEEP = ("PreToolUse", "PostToolUse")
 
 try:
     with open(path) as handle:
@@ -252,7 +255,8 @@ except (OSError, ValueError) as e:
     sys.exit(1)
 
 hooks = settings.setdefault("hooks", {})
-for event, commands in WANT.items():
+for event in SWEEP:
+    commands = WANT.get(event, [])
     entries = hooks.setdefault(event, [])
     # Every entry mentioning this script goes, whatever matcher or flags it
     # carried: an old registration left beside a new one runs the guard twice
@@ -261,11 +265,14 @@ for event, commands in WANT.items():
             if not any(name in (h.get("command") or "")
                        for h in (e.get("hooks") or []))]
     dropped = len(entries) - len(kept)
-    kept.append({"matcher": MATCHER,
-                 "hooks": [{"type": "command", "command": c} for c in commands]})
+    if commands:
+        kept.append({"matcher": MATCHER,
+                     "hooks": [{"type": "command", "command": c} for c in commands]})
+        print(f"installed: {path} {event} {MATCHER} -> {name}"
+              + (f" (replaced {dropped} earlier entry/entries)" if dropped else ""))
+    elif dropped:
+        print(f"removed: {path} {event} -> {name} ({dropped} retired entry/entries)")
     hooks[event] = kept
-    print(f"installed: {path} {event} {MATCHER} -> {name}"
-          + (f" (replaced {dropped} earlier entry/entries)" if dropped else ""))
 
 with open(path, "w") as handle:
     json.dump(settings, handle, indent=2)
