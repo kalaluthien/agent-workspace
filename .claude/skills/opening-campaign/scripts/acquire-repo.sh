@@ -143,10 +143,19 @@ checkout_branch() {
 # be installed into every checkout, whatever strategy produced it. A failure
 # here is fatal: a caller reading success over an unguarded checkout is exactly
 # the silent case the guard exists to prevent.
+#
+# One writer per hook slot. A repository that ships scripts/install-hooks.sh
+# owns its own hooks, and that installer already chains the guard; so it is run
+# here, with --git-only because the harness half is the base checkout's and a
+# clone must not repoint it. The two-line shim below is written only into a
+# checkout with no installer, and the installer adopts that shim on a re-run --
+# which is what lets this function converge over a checkout it already guarded
+# either way. Before #178 the shim was written unconditionally and the installer
+# refused over it, so no delegate clone ever held the repository's hooks.
 install_commit_guard() {
 	local dest=$1
 	local guard="$HOME/.claude/git-hooks/no-main-commits"
-	local hooks hook dest_abs
+	local hooks hook dest_abs installer rc
 
 	if [ ! -x "$guard" ]; then
 		log "no executable guard at $guard, so $dest would be left unguarded."
@@ -162,6 +171,30 @@ install_commit_guard() {
 		"$dest_abs"/*) ;;
 		*) die "hooks for $dest resolve to $hooks, outside the checkout; refusing to guard another tree" ;;
 	esac
+
+	installer="$dest/scripts/install-hooks.sh"
+	# The execute bit alone must not pick the branch: an installer present but
+	# not executable would fall through to the shim and silently restore the
+	# state this function exists to end.
+	if [ -f "$installer" ] && [ ! -x "$installer" ]; then
+		die "$installer exists but is not executable; chmod +x it and re-run"
+	fi
+	if [ -x "$installer" ]; then
+		log "running the repository's own installer: $installer --git-only"
+		# Captured, not read from `$?` inside the branch: there it is the
+		# status of the negated condition, which is 0 exactly when the branch
+		# is taken.
+		if (cd "$dest" && "$installer" --git-only); then rc=0; else rc=$?; fi
+		[ "$rc" = 0 ] ||
+			die "the repository's install-hooks.sh exited $rc -- read what it said above"
+		# The invariant is verified, not trusted: the installer belongs to the
+		# repository, and its hook has to chain the guard for success here to
+		# mean the same thing it means on the shim path.
+		grep -q 'no-main-commits' "$hooks/pre-commit" 2>/dev/null ||
+			die "the installer left $hooks/pre-commit without the no-main-commits guard; refusing to call $dest guarded"
+		log "installed the repository's git hooks, which chain the no-main-commits guard"
+		return 0
+	fi
 
 	mkdir -p "$hooks"
 	hook="$hooks/pre-commit"
