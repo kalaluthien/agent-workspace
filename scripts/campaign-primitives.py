@@ -174,7 +174,7 @@ def harness_run(settings_path, names):
     there.
 
     The match is on the script's basename as a whole token of a hook's
-    `command` -- nothing of `[\w.-]` touching it on either side -- because a
+    `command` -- no word character, dot or hyphen touching it -- because a
     command is a shell line, a path, quoting and flags around it, and parsing
     it would be a second reader of how install-hooks writes one. A whole
     token and not a substring:
