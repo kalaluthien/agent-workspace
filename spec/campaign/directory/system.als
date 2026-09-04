@@ -34,7 +34,16 @@ sig Branch {}
 sig CampaignDir {
   campaign:         one Campaign,
   machine:         one Machine,
-  var checkedOut: Repo -> Branch
+  var checkedOut: Repo -> Branch,
+  /* THE CLONES HERE THAT CARRY THE CAMPAIGN'S PRINCIPLES. #176 replaced
+     `--append-system-prompt-file` and its canary with a `CLAUDE.local.md` in
+     the delegate's own clone -- a file on disk in its cwd, so there is nothing
+     to prove arrived. #187 question 5 is that no command anywhere wrote one, so
+     the mechanism existed only as prose and a delegate launched by the book got
+     nothing. Modelled as a set of repositories rather than a file, because what
+     a launch needs is that the clone it launches into carries them; WHICH bytes
+     is `acquire-repo.sh`'s. */
+  var principled:  set Repo
 }
 var sig OnDisk in CampaignDir {}
 
@@ -69,7 +78,7 @@ one sig CreateDir, DeleteDir, Acquire extends Event {}
 
 fun directoryEvents: set Event { CreateDir + DeleteDir + Acquire }
 
-pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut }
+pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled }
 
 pred createDir[t: CampaignDir] {
   t not in OnDisk

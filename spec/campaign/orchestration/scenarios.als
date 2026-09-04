@@ -421,6 +421,50 @@ pred R11_HolderThroughAnotherCampaignsDir {
   }
 }
 
+/* A DELEGATE IS LAUNCHED INTO A CLONE THAT CARRIES THE PRINCIPLES (#187
+   question 5). A delegate has no session of its own to be named and reads no
+   ancestor instruction file behind a dialog that defaults to declining, so the
+   `CLAUDE.local.md` in its cwd is the whole channel. #176 wrote that channel
+   down as prose and no command wrote the file, which is the shape of a rule
+   that is remembered rather than enforced -- and one nothing observes, since a
+   delegate that received nothing looks exactly like one that received
+   everything and ignored it.
+
+   Delegates only. A session launching an in-process subagent, or working by its
+   own hands, already has the campaign's instructions loaded by its own harness. */
+pred delegateLaunchIsPrincipled {
+  always all a: Agent |
+    (a not in Launched and a in Launched' and no a.peer)
+      implies a.task.repo in campaignDirAt[campaignOf[a.task], a.host].principled'
+}
+
+/* R12. The defect: a delegate launched into a clone carrying nothing. */
+pred R12_DelegateLaunchedWithoutPrinciples {
+  some a: Agent {
+    no a.peer
+    eventually (a not in Launched and a in Launched'
+                and a.task.repo not in
+                    campaignDirAt[campaignOf[a.task], a.host].principled')
+  }
+}
+
+/* R12b. CONTROL: the discipline excludes it. */
+pred R12b_RepairExcludesIt {
+  delegateLaunchIsPrincipled and R12_DelegateLaunchedWithoutPrinciples
+}
+
+/* R12c. ...and it still admits the launch that DID carry them, or the rule
+   would be one that forbids every delegate. */
+pred R12c_RepairAdmitsThePrincipledLaunch {
+  delegateLaunchIsPrincipled
+  some a: Agent {
+    no a.peer
+    eventually (a not in Launched and a in Launched'
+                and a.task.repo in
+                    campaignDirAt[campaignOf[a.task], a.host].principled')
+  }
+}
+
 /* R4h. THE HOLE, and the one this campaign actually fell into: a session works
    its own sub-issue and no claim of it ever exists, so every peer reading the
    records sees an open sub-issue indistinguishable from one nobody started. */
@@ -929,6 +973,9 @@ run R9b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Ag
 run R9c_RepairAdmitsClaimThenSettle for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R7e_WorkerRuleAdmitsTheDroppedSubIssue for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R11_HolderThroughAnotherCampaignsDir for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 10 steps expect 0
+run R12_DelegateLaunchedWithoutPrinciples for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run R12b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+run R12c_RepairAdmitsThePrincipledLaunch for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
