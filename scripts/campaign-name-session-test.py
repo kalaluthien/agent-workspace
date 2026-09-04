@@ -74,12 +74,36 @@ def main():
           r.returncode == 1 and not calls and "named more than once" in r.stderr,
           f"exit {r.returncode} calls {calls} err {r.stderr[:200]}")
 
+    r, calls = run(["w1:p1", "campaign-1-executor-3", "w1:p2", "campaign-1-reviewer-1"])
+    check("a bad name in the last pair leaves the first pair unapplied too",
+          r.returncode == 1 and not calls, f"exit {r.returncode} calls {calls}")
+
     idle = [{"pane_id": "w1:p1", "agent_status": "idle"}]
     r, calls = run(["w1:p1", "campaign-1-executor-3"], agents=idle)
     check("an idle pane's rename is reported as sent",
           r.returncode == 0 and "/rename sent (confirm" in r.stdout
           and len(prompts(calls)) == 1
           and prompts(calls)[0][3] == "/rename campaign-1-executor-3",
+          f"exit {r.returncode} out {r.stdout!r} calls {calls}")
+    check("...and both names were set: herdr rename, then list, then prompt",
+          [c[:2] for c in calls] == [["agent", "rename"], ["agent", "list"],
+                                     ["agent", "prompt"]]
+          and calls[0][2:] == ["w1:p1", "campaign-1-executor-3"],
+          f"calls {calls}")
+
+    done = [{"pane_id": "w1:p1", "agent_status": "done"}]
+    r, calls = run(["w1:p1", "campaign-1-executor-3"], agents=done)
+    check("a done pane is idle by herdr's own definition, so it reads as sent",
+          r.returncode == 0 and "/rename sent (confirm" in r.stdout
+          and "queued" not in r.stdout and len(prompts(calls)) == 1,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    blocked = [{"pane_id": "w1:p1", "agent_status": "blocked"}]
+    r, calls = run(["w1:p1", "campaign-1-executor-3"], agents=blocked)
+    check("a blocked pane gets the herdr name and no prompt, exit 2",
+          r.returncode == 2 and "NOT sent" in r.stdout and "blocked" in r.stdout
+          and not prompts(calls)
+          and [c[:2] for c in calls] == [["agent", "rename"], ["agent", "list"]],
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
     working = [{"pane_id": "w1:p1", "agent_status": "working"}]

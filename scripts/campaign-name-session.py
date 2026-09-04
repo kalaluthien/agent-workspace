@@ -23,7 +23,8 @@ re-implementation that names nothing; see its header. Removing the guard
 returns this line to being a hope.
 
     exit 0   every pair applied, both paths
-    exit 1   nothing applied -- a name failed the rule, or the arguments are odd
+    exit 1   nothing applied -- a name failed the rule, a pane is named twice,
+             or the arguments are odd
     exit 2   a herdr call failed partway; what was applied is printed
 
 The harness half is `herdr agent prompt <pane> "/rename <name>"`, which is
@@ -34,16 +35,21 @@ not stable: the same call can be refused and then accepted minutes apart. So
 this reports what was applied and what was not rather than assuming either,
 and the caller's own rename is the one most likely to need a person.
 
-A prompt sent to a pane that is not idle is QUEUED, and the harness merges every
-prompt queued before the turn ends into one input line: three `/rename` prompts
-sent to one working pane landed as the single name
+A prompt sent to a WORKING pane is QUEUED, and the harness merges every prompt
+queued before the turn ends into one input line: three `/rename` prompts sent
+to one working pane landed as the single name
 `campaign-1-executor-3/rename campaign-1-planner-1/rename campaign-1-executor-3`
 (2026-09-04, #169). A session naming itself is always mid-turn, so refusing a
 working pane would refuse the ordinary case. Instead this sends at most one
 prompt per pane per call -- a pane named twice is refused before anything is
-applied -- reads the pane's `agent_status` from `herdr agent list` before
-sending, and says `queued` for a pane that is not idle so the caller knows not
-to send it anything else until `ListAgents` shows the name.
+applied -- and reads the pane's `agent_status` from `herdr agent list` before
+sending. `idle` and `done` (herdr's own help calls `done` the same underlying
+idle state) are reported as `sent`; `working` and any other status as `queued`,
+so the caller knows not to send that pane anything else until `ListAgents`
+shows the name. A BLOCKED pane -- one sitting at a dialog -- gets no prompt at
+all: herdr would reject it with `agent_blocked` before any input is sent, and
+the dialog is a person's to clear, so this reports the herdr name as applied
+and the harness half as not sent, exit 2.
 """
 import json
 import re
@@ -124,9 +130,15 @@ def main():
         print(f"  {pane}  herdr name  {got or name}")
 
         # Read the status before sending, so the report describes the pane the
-        # prompt met. The status decides the wording only: the rename is sent
-        # either way, because a session naming itself is always working.
+        # prompt met. A working pane is prompted all the same, because a
+        # session naming itself is always working; a blocked one is not.
         status, why = pane_status(pane)
+        if status == "blocked":
+            print(f"  {pane}  harness     /rename NOT sent: the pane is blocked "
+                  f"at a dialog, which herdr would refuse with agent_blocked. "
+                  f"Clear the dialog and re-run for this pane")
+            failed = True
+            continue
         res, err = herdr("agent", "prompt", pane, f"/rename {name}")
         if err:
             print(f"  {pane}  harness     FAILED: {err}")
@@ -135,7 +147,7 @@ def main():
         # The prompt is never applied here: the session runs /rename on its
         # next turn. Report it as sent or queued rather than as done, because
         # the only honest confirmation is ListAgents afterwards.
-        if status == "idle":
+        if status in ("idle", "done"):
             print(f"  {pane}  harness     /rename sent (confirm with ListAgents)")
         elif status is None:
             print(f"  {pane}  harness     /rename sent; the pane's status could "
