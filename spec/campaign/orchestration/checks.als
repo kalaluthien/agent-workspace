@@ -55,9 +55,21 @@ assert SilenceResolutionStaysSafe {
    or a guard deleted is invisible to the snapshot. Dropping `a.role = Executor`
    from `work` reddens the first, from `report` the second; deleting the
    `some a.peer` fact in AgentWellFormed reddens the third. */
-assert PlannerNeverLocalOnly { always no role.Planner & LocalOnly }
-assert PlannerNeverReports   { always no role.Planner & Reported }
-assert PlannerIsASession     { all a: role.Planner | some a.peer }
+assert PlannerNeverLocalOnly { always no plannerAgents & LocalOnly }
+assert PlannerNeverReports   { always no plannerAgents & Reported }
+assert PlannerIsASession     { all a: plannerAgents | some a.peer }
+
+/* The two planes do not overlap, which is what makes `planeOf` `lone` rather
+   than a coincidence of the current event lists. Moving an event into both
+   lists reddens it. */
+assert DisjointPlanes { no campaignPlaneEvents & codePlaneEvents }
+
+/* #185's rule subsumes #177's: a session permitted to work an issue holds a
+   claim on it, so `claimBeforeWork` needs no separate statement once
+   `permissionByRole` holds. Dropping `i in s.claimedIssues` from `mayAct`'s
+   code-plane row reddens it. Q5 is the control that the subsumption is not by
+   forbidding work altogether. */
+assert PermissionImpliesClaimGates { permissionByRole implies claimBeforeWork }
 
 /* Every delegate was launched by its planner: the launching session holds a
    Planner atom on the delegate's sub-issue. Dropping the planner conjunct from
@@ -65,7 +77,7 @@ assert PlannerIsASession     { all a: role.Planner | some a.peer }
    launch. */
 assert DelegateLaunchedByPlanner {
   always all a: Launched | no a.peer implies
-    (some p: role.Planner | p.peer = a.launcher and p.task = a.task)
+    (some p: plannerAgents | p.peer = a.launcher and p.task = a.task)
 }
 
 /* ---------------- reachability floor ---------------- */
@@ -110,6 +122,8 @@ check SilenceResolutionStaysSafe for 2 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
 check PlannerNeverLocalOnly for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 check PlannerNeverReports   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 check PlannerIsASession     for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+check DisjointPlanes for 1 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 1 Repo, 1 Branch, 1 CampaignDir, 1 steps expect 0
+check PermissionImpliesClaimGates for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 -- every delegate has a planner behind its launch
 check DelegateLaunchedByPlanner       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 

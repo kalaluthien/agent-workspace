@@ -12,10 +12,13 @@
  * cannot be nested the other way.
  *
  *   Request   the one request being routed, and which campaigns cover it.
- *   Session   a campaign session: its machine, the campaign it works on, what
- *             its survey returned, the repository lists in its README and in
- *             the campaign issue body as it last read that body, and the
- *             sub-issues it has claimed.
+ *   Session   a campaign session: its machine, what it is FOR, the campaign it
+ *             works on, what its survey returned, the repository lists in its
+ *             README and in the campaign issue body as it last read that body,
+ *             and the sub-issues it has claimed.
+ *   Role      what a session is for, read from its name: a Planner writes the
+ *             campaign plane and never code; an Executor works its own
+ *             campaign's sub-issues, and only the ones it has claimed.
  *   Surveyed  the sessions that have run the new-versus-follow-up survey.
  *   Binding   the campaign issue's latest `BOUND <machine>` comment.
  *   Who       the observer: which session performed the current event.
@@ -36,8 +39,30 @@ open synchronization/system
    entity above it may not add a field to it. */
 one sig Request { covers: set Campaign }
 
+/* WHAT A SESSION IS FOR, read from its name -- `campaign-<N>-<role>-<n>`, whose
+   pattern `scripts/campaign-name-session.py` owns and which is not restated
+   here for the same reason the name's shape is not. `herdr agent list` is what
+   joins a harness session id to that name, so this is a fact a guard can read
+   about its own caller.
+
+   `lone`, not `one`: a session with no name, or a name of another shape, has no
+   role, and that is the last row of #185's table -- refused on both planes,
+   which `mayAct` in orchestration/scenarios.als states.
+
+   It lives HERE and not in orchestration/system.als, where `Role` used to be a
+   property of an Agent: the role is per SESSION and per its whole life, where an
+   agent is per sub-issue, and a guard reading a tool call has a session and no
+   agent. `Agent.role` stays, pinned to its session's by AgentWellFormed.
+
+   Not `var`. A session that renames itself is out of scope here: nothing in this
+   model reads a rename, and the records already written keep the old name. */
+abstract sig Role {}
+one sig Planner  extends Role {}
+one sig Executor extends Role {}
+
 sig Session {
   machine:          one Machine,
+  role:             lone Role,
   var worksOn:      lone Campaign,
   var surveyResult: set Campaign,  -- what its new-versus-follow-up survey returned
   var reposInReadme:     set Repo,        -- its campaign README's `## Repos` list
