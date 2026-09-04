@@ -173,9 +173,13 @@ def harness_run(settings_path, names):
     hooks, and the difference decides whether a session is told the guard is
     there.
 
-    The match is on the script's basename anywhere in a hook's `command`,
-    because a command is a shell line -- a path, quoting and flags around it --
-    and parsing it would be a second reader of how install-hooks writes one."""
+    The match is on the script's basename as a whole token of a hook's
+    `command` -- no word character, dot or hyphen touching it -- because a
+    command is a shell line, a path, quoting and flags around it, and parsing
+    it would be a second reader of how install-hooks writes one. A whole
+    token and not a substring:
+    `campaign-claim.py` is inside `check-campaign-claim.py`, and a substring
+    match announced the first as installed when only the second was."""
     found, problems = set(), []
     try:
         settings = json.loads(settings_path.read_text())
@@ -197,7 +201,8 @@ def harness_run(settings_path, names):
             for h in (entry or {}).get("hooks") or []:
                 command = (h or {}).get("command") or ""
                 for name in names:
-                    if name in command:
+                    if re.search(r"(?<![\w.-])" + re.escape(name)
+                                 + r"(?![\w.-])", command):
                         found.add(name)
     return found, problems
 
