@@ -104,7 +104,17 @@ var sig Merged in PullRequest {}
 var sig Filed  in Campaign {}
 /* The sub-issue branch: a ref on the remote, so one set over Issue rather than
    one set per machine. A claim made on one machine is readable from every
-   other, which is the whole reason the branch is the claim. */
+   other, which is the whole reason the branch is the claim.
+
+   THE SCRIPT DOES NOT YET REACH THIS. `Claimed` is a set over ISSUE, so one
+   sub-issue has one claim wherever its work lands; `scripts/campaign-claim.py`
+   sweeps and re-checks refs on ONE repository per call and keys them by branch
+   NAME, so two takers passing different `--repo` both succeed on one sub-issue
+   and a same-named ref in a second repository is collapsed. That divergence is
+   named rather than left for a reader to discover: #187 decides what a claim's
+   identity is across repositories and makes the readers agree with this
+   signature. Until it lands, read every statement here about a claim as
+   holding within one repository. */
 var sig Claimed in Issue {}
 
 fact WellFormed {
@@ -270,8 +280,14 @@ pred writeBody[c: Campaign] {
    on one sub-issue. Nothing here models a topic, which is exactly why the
    model could not see that gap. What closes it is in the script: `take` reads
    the campaign's refs again AFTER its own create, and where two name one
-   sub-issue the smallest ref wins and the losers delete what they just cut --
-   a rule both racers can apply because by then they see the same set. */
+   sub-issue, EVERY taker that sees a rival deletes what it just cut. A
+   smallest-name tiebreak was the first shape of this and was wrong: the racers
+   do not read the same set, so two of them can each believe they won. Yielding
+   has no such state, and its worst case -- both yield, the sub-issue is left
+   unclaimed -- the next `take` fixes.
+
+   Scoped to a single repository, as `Claimed`'s own comment above says: #187 is
+   where this becomes what the signature already asserts. */
 pred claim[i: Issue] {
   i in Campaign.memberIssues and i in Open
   Claimed' = Claimed + i

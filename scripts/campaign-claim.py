@@ -760,9 +760,18 @@ def cmd_live(args):
               "is safe to act on.", file=sys.stderr)
         return 1
 
+    # THE CALLER IS EXCLUDED, and it says so. A close runs from a session of
+    # the campaign it is closing, so a gate refusing on any live session of the
+    # campaign would refuse on the closer itself. Printed because a row silently
+    # missing from a count is the shape nobody questions -- and because with
+    # `$CLAUDE_CODE_SESSION_ID` unset there is no exclusion at all, and then the
+    # closer's own row makes the close unpassable with no cause shown.
+    caller = os.environ.get("CLAUDE_CODE_SESSION_ID") or None
+    print(f"           this session is "
+          f"{caller or '<$CLAUDE_CODE_SESSION_ID unset: not excluded below>'}")
     occupied, vacant, ours = classify(
         branches, where, sessions, args.campaign_issue, root=root,
-        caller=os.environ.get("CLAUDE_CODE_SESSION_ID") or None)
+        caller=caller)
 
     print(f"\nclaims checked out on this machine ({len(occupied)}) -- joined "
           f"on the branch name, which a restart and a rename both leave alone")

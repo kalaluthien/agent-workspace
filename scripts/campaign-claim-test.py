@@ -632,6 +632,23 @@ def verdict_cases(m, capsys=None):
         check("an unnamed session under the base root reaches the peer list",
               "live sessions of campaign-9 (1)" in out
               and "/BASE/anywhere" in out)
+        # A row silently missing from a count is the shape nobody questions, so
+        # `live` says which session it left out -- and says plainly when there
+        # is no session id to leave out, because then the closer's own row makes
+        # the close unpassable with no cause shown anywhere.
+        check("live names the session it excluded from the count",
+              "this session is" in out)
+        import os as _os
+        keep = _os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                m.cmd_live(Args())
+            check("...and says so when there is no session id at all",
+                  "unset" in buf.getvalue())
+        finally:
+            if keep is not None:
+                _os.environ["CLAUDE_CODE_SESSION_ID"] = keep
     finally:
         (m.matching_refs, m.herdr_sessions, m.sweep_roots, m.checkouts,
          m.base_root) = real
