@@ -150,6 +150,21 @@ CLOSE_TARGET = re.compile(r"\bgh\b[^|;&]*\bissue\s+close\b([^|;&]*)")
 # call" before target_reading ever ran.
 IN_PLACE_SED = re.compile(r"\bsed\b[^|;&]*--in-place\b")
 
+# A verb of the imported pattern glued to a hyphen is a name, not a verb:
+# `install-hooks.sh` is the file a fresh clone must run, and `\binstall\b`
+# matches it because `-` is a word boundary. So the pattern is searched on a
+# copy with every hyphenated word blanked. Only the search sees the copy; the
+# operands are read from the command as written. `--in-place` and `-i` start
+# with a hyphen and are not hyphenated words, so IN_PLACE_SED and `sed -i`
+# still read.
+HYPHENATED_WORD = re.compile(r"\b\w[\w.]*(?:-[\w.]+)+\b")
+
+
+def verb_match(changing_command, text):
+    """The imported pattern's match on `text`, with hyphenated names blanked."""
+    return changing_command.search(HYPHENATED_WORD.sub("_", text))
+
+
 FILE_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 PATH_KEYS = ("file_path", "notebook_path", "path")
 
@@ -289,7 +304,7 @@ def changing(payload, changing_command):
         return True, "the command writes to the campaign plane through gh"
     if IN_PLACE_SED.search(command):
         return True, "the command runs sed's long in-place spelling"
-    if changing_command.search(command):
+    if verb_match(changing_command, command):
         return True, "the command matches the changing-command pattern"
     return False, "the command matches no changing form, outside quoted text"
 
@@ -552,7 +567,7 @@ def write_targets(command, changing_command):
         elif head == "sed" and any(is_sed_in_place(a) for a in args):
             form, (ops, unreadable) = "sed -i", sed_files(args)
         else:
-            if changing_command.search(body):
+            if verb_match(changing_command, body):
                 return None, (f"the segment {segment.strip()!r} is a changing "
                               f"command on its own, and its target is not an "
                               f"operand this guard can read")
