@@ -98,6 +98,7 @@
     ["orchestration/scenarios.als", "run", "R12_DelegateLaunchedWithoutPrinciples"],
     ["orchestration/scenarios.als", "run", "R12b_RepairExcludesIt"],
     ["orchestration/scenarios.als", "run", "R12c_RepairAdmitsThePrincipledLaunch"],
+    ["orchestration/scenarios.als", "run", "R12d_AcquireIsWhatPrinciplesAClone"],
     ["orchestration/scenarios.als", "run", "R3b_CloseFromAnotherMachine"],
     ["orchestration/scenarios.als", "run", "R3c_GlobalCloseRuleBlocks"],
     ["orchestration/scenarios.als", "run", "R4c_CheckoutSwitchedUnderAgent"],

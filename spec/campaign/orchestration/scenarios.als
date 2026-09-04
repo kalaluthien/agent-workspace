@@ -465,6 +465,22 @@ pred R12c_RepairAdmitsThePrincipledLaunch {
   }
 }
 
+/* R12d. ACQUIRE IS WHAT PRINCIPLES A CLONE, pinned. R12c is satisfied by a
+   `principled` that was simply true at time zero, so it says nothing about
+   WHERE principles come from -- and while `acquire` did not write the field,
+   nothing in the model did. Starting from nothing principled, a principled
+   launch is reachable only through an Acquire. Goes UNSAT when `acquire` stops
+   producing. */
+pred R12d_AcquireIsWhatPrinciplesAClone {
+  no principled
+  some a: Agent {
+    no a.peer
+    eventually (a not in Launched and a in Launched'
+                and a.task.repo in
+                    campaignDirAt[campaignOf[a.task], a.host].principled')
+  }
+}
+
 /* R4h. THE HOLE, and the one this campaign actually fell into: a session works
    its own sub-issue and no claim of it ever exists, so every peer reading the
    records sees an open sub-issue indistinguishable from one nobody started. */
@@ -976,6 +992,7 @@ run R11_HolderThroughAnotherCampaignsDir for 4 Issue, 1 PullRequest, 2 Campaign,
 run R12_DelegateLaunchedWithoutPrinciples for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run R12b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 run R12c_RepairAdmitsThePrincipledLaunch for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run R12d_AcquireIsWhatPrinciplesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0

@@ -181,8 +181,14 @@ one sig Now {
      it the model cannot state the defect it fixes. `Issue.repo` says where a
      sub-issue's work lands, but nothing said where a CLAIM was cut, so "a taker
      cut the ref on a repository that is not the sub-issue's" had no spelling
-     here and the script was free to let `--repo` decide. Unconstrained on every
-     event but `claim`, because it is a record of what happened and not state. */
+     here and the script was free to let `--repo` decide.
+
+     UNCONSTRAINED BY EVERY EVENT, `claim` INCLUDED, and deliberately: it is a
+     record of what happened, not state, and the rule that ties it to the
+     sub-issue is `claimOnTheIssuesRepo` in orchestration/scenarios.als. Written
+     into `claim` itself it would be true in every world the model admits, so no
+     scenario could exhibit its absence and R8b could never redden -- which is
+     how the first draft of this went green while testing nothing. */
   var repo:  lone Repo
 }
 
