@@ -25,7 +25,8 @@ returns this line to being a hope.
     exit 0   every pair applied, both paths
     exit 1   nothing applied -- a name failed the rule, a pane is named twice,
              or the arguments are odd
-    exit 2   a herdr call failed partway; what was applied is printed
+    exit 2   a herdr call failed partway, or a pane was blocked and got no
+             prompt; what was applied is printed
 
 The harness half is `herdr agent prompt <pane> "/rename <name>"`, which is
 another session driving that pane -- the same act as a person typing it, and it
@@ -46,7 +47,8 @@ applied -- and reads the pane's `agent_status` from `herdr agent list` before
 sending. `idle` and `done` (herdr's own help calls `done` the same underlying
 idle state) are reported as `sent`; `working` and any other status as `queued`,
 so the caller knows not to send that pane anything else until `ListAgents`
-shows the name. A BLOCKED pane -- one sitting at a dialog -- gets no prompt at
+shows the name; a status this could not read is said as such, and the prompt
+is still sent. A BLOCKED pane -- one sitting at a dialog -- gets no prompt at
 all: herdr would reject it with `agent_blocked` before any input is sent, and
 the dialog is a person's to clear, so this reports the herdr name as applied
 and the harness half as not sent, exit 2.

@@ -25,15 +25,20 @@ if args[:2] == ["agent", "list"]:
     agents = json.loads(os.environ.get("FAKE_AGENTS", "[]"))
     print(json.dumps({"result": {"agents": agents}}))
 elif args[:2] == ["agent", "rename"]:
+    if os.environ.get("FAKE_RENAME_FAILS"):
+        print("rename broke", file=sys.stderr); sys.exit(1)
     print(json.dumps({"result": {"agent": {"name": args[3]}}}))
 elif args[:2] == ["agent", "prompt"]:
+    if os.environ.get("FAKE_PROMPT_FAILS"):
+        print("prompt broke", file=sys.stderr); sys.exit(1)
     print(json.dumps({"result": {"type": "agent_prompted"}}))
 else:
     sys.exit(1)
 '''
 
 
-def run(argv, agents=None, list_fails=False):
+def run(argv, agents=None, list_fails=False, rename_fails=False,
+        prompt_fails=False):
     """(completed process, list of recorded herdr calls)."""
     with tempfile.TemporaryDirectory() as d:
         bin_dir = Path(d) / "bin"
@@ -46,6 +51,10 @@ def run(argv, agents=None, list_fails=False):
                    FAKE_LOG=str(log), FAKE_AGENTS=json.dumps(agents or []))
         if list_fails:
             env["FAKE_LIST_FAILS"] = "1"
+        if rename_fails:
+            env["FAKE_RENAME_FAILS"] = "1"
+        if prompt_fails:
+            env["FAKE_PROMPT_FAILS"] = "1"
         r = subprocess.run([sys.executable, str(SCRIPT), *argv], env=env,
                            capture_output=True, text=True)
         calls = ([json.loads(l) for l in log.read_text().splitlines()]
@@ -105,6 +114,17 @@ def main():
           and not prompts(calls)
           and [c[:2] for c in calls] == [["agent", "rename"], ["agent", "list"]],
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
+
+    r, calls = run(["w1:p1", "campaign-1-executor-3"], agents=idle, rename_fails=True)
+    check("a failed herdr rename is reported, sends no prompt for that pane, exit 2",
+          r.returncode == 2 and "herdr name  FAILED: rename broke" in r.stdout
+          and not prompts(calls), f"exit {r.returncode} out {r.stdout!r} calls {calls}")
+
+    r, calls = run(["w1:p1", "campaign-1-executor-3"], agents=idle, prompt_fails=True)
+    check("a failed herdr prompt is reported after the herdr name applied, exit 2",
+          r.returncode == 2 and "harness     FAILED: prompt broke" in r.stdout
+          and "herdr name  campaign-1-executor-3" in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
 
     working = [{"pane_id": "w1:p1", "agent_status": "working"}]
     r, calls = run(["w1:p1", "campaign-1-executor-3"], agents=working)
