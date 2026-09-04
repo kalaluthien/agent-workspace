@@ -68,8 +68,14 @@ pred localCheckedShutdown { always (Now.event = StandDown implies Target.agent n
    about an agent, and the script has no reader for it: on GitHub R7c's state
    -- launched, dead, nothing pushed -- is a ref 0 ahead of the base whose
    branch was never a merged pull request's head, which is the one shape
-   `cmd_release` refuses without `--confirmed-absent WHO`. So the model's
-   "ordinary release" is, at this sha, the release that asks a person. What
+   `cmd_release` refuses without `--confirmed-absent WHO`. And that is the SECOND
+   refusal that state hits, not the first: `launch` checks the branch out and
+   neither `agentDie` nor `retire` undoes it, so the dead delegate's clone still
+   holds the branch and the occupant check refuses before the merge question is
+   ever asked -- a refusal `--confirmed-absent` does not lift, since removing a
+   worktree is not something a person's word stands in for. So the model's
+   "ordinary release" is, at this sha, a worktree removal and then a release
+   that asks a person. What
    would close the gap is a durable fact saying a holder was launched at all,
    which is what #187 is deciding. */
 pred releaseNeedsAWorker {

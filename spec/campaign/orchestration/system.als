@@ -127,8 +127,10 @@ pred coLocated[s: Session, a: Agent] { s.machine = a.host }
    even the clone the session sits in. So `campaign-claim live` reads checkouts
    instead -- `git worktree list` over the base root, every campaign clone, and
    each session's own repo root -- and this `fun` is that sweep: a holder is an
-   agent whose campaign-directory checkout is on its branch. herdr's row still
-   answers liveness, and only liveness. */
+   agent whose campaign-directory checkout is on its branch. herdr's row is
+   still read for two things -- liveness, and its `cwd` as one more root to
+   sweep and as the tie between an unnamed session and this campaign -- but
+   never for which branch anyone holds. */
 fun holder[i: Issue]: set Agent {
   { a: Agent | a.task = i
                and campaignDirAt[campaignOf[i], a.host].checkedOut[i.repo] = a.branch }

@@ -134,7 +134,7 @@ RETIRED = [
      "#176 -- the brief is the sub-issue body"),
     # The comment used to announce a STOOD DOWN ban that no pattern implemented.
     (re.compile(r"\bSTOOD DOWN\b"),
-     "#176 -- a peer leaves by stopping its pane or renaming, not by saying so"),
+     "#176 -- a peer leaves by stopping its pane, not by saying so"),
     # `\b` before the subcommand and not after `.py`: the skills write
     # `"$BASE/scripts/campaign-claim.py" stood-down`, where a quote stands
     # between the path and the space, so a pattern anchored on `.py ` misses
