@@ -27,10 +27,13 @@
  * differs between them.
  *
  * ATTRIBUTION IS DERIVED, NOT STORED. `holder` reads which agent a sub-issue's
- * claim belongs to off two facts a later session can still see: the agent is
- * live, and the checkout in its campaign directory is on the claim's branch.
- * Nothing writes it and nothing can go stale against it, which is what
- * replaced the record whose `session` field this entity used to defer to.
+ * claim belongs to off ONE fact a later session can still see: the checkout in
+ * its campaign directory is on the claim's branch. It says nothing about
+ * liveness, deliberately -- every caller applies that itself, `AttributionIsSound`
+ * by quantifying over `Live` and `holderStaysAttributed` by guarding on it, so
+ * a holder that has died is still the holder of the workspace it left. Nothing
+ * writes it and nothing can go stale against it, which is what replaced the
+ * record whose `session` field this entity used to defer to.
  * `AttributionIsSound` is what that costs, and R4c is its counterexample.
  *
  * NOT MODELLED: whether an agent is any good; that an agent answers about
@@ -127,8 +130,33 @@ pred liveUnder[c: Campaign] {
   some a: Agent | a in Live and (a.task in c.memberIssues or a.host in machinesHolding[c])
 }
 /* What one session can actually read: `herdr agent list` on its own machine. */
+/* A live agent whose SESSION's name says it belongs to some other campaign.
+   The name is evidence about whose work it is and nothing else is: with the
+   record gone, a close reading `herdr agent list` has the name, the cwd, and
+   no third thing. A delegate has no session to be named, so it is never this. */
+pred namedForAnother[a: Agent, c: Campaign] {
+  some a.peer and some a.peer.campaignNamed and a.peer.campaignNamed != c
+}
+
+/* What one session can actually read: `herdr agent list` on its own machine.
+
+   TWO DISJUNCTS, AND THEY ARE NOT THE SAME CLAIM. The first is an agent on a
+   sub-issue of THIS campaign, which blocks whatever it is called. The second
+   is machine-wide -- every agent on a machine holding the campaign -- because a
+   session working the campaign directory holds no sub-issue and would
+   otherwise be invisible.
+
+   The second is where the name enters. Machine-wide alone made every campaign's
+   close gate read the identical set, so closing one campaign asked another's
+   sessions to stand down; and a session named for another campaign is the one
+   case where the machine says "here" and the evidence says "not this one".
+   A name that says NOTHING is not evidence and does not exempt: that agent
+   still blocks, which is the direction that costs a question rather than
+   somebody's work. */
 pred liveUnderLocally[c: Campaign, m: Machine] {
-  some a: Agent | a in Live and a.host = m and (a.task in c.memberIssues or m in machinesHolding[c])
+  some a: Agent | a in Live and a.host = m
+    and (a.task in c.memberIssues
+         or (m in machinesHolding[c] and not namedForAnother[a, c]))
 }
 
 /* github's `closable` is the GitHub half. These two add the half that needs

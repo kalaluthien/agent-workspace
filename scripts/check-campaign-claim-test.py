@@ -50,6 +50,7 @@ def base(d, campaigns):
         camp.mkdir()
         if records is None:
             continue
+        # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and has to spell the path
         claims = camp / "runtime" / "claims"
         claims.mkdir(parents=True)
         for issue, body in records.items():
@@ -180,6 +181,7 @@ def main():
                         f"> /tmp/claim.log")
         check("taking a claim cannot itself require one", r.returncode == 0,
               f"exit {r.returncode}: {out(r)[:200]}")
+        # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and has to spell the path
         r = ask(root, path=str(root / "demo-260902" / "runtime" / "claims" / "7"))
         check("a write under runtime/ is exempt", r.returncode == 0,
               f"exit {r.returncode}: {out(r)[:200]}")
@@ -259,6 +261,7 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         root = base(d, {"demo-260902": None})
         r = ask(root)
+        # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and has to spell the path
         check("a campaign directory with no runtime/claims/ refuses",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
         check("...and says a missing directory says nothing",

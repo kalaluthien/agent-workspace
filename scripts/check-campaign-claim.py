@@ -296,6 +296,7 @@ def claim_records(claims):
 def claims_of(directory):
     """(records, refusal) for one campaign directory. A missing claims/ is the
     refusal; an empty one is a reading."""
+    # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and has to spell the path
     claims = directory / "runtime" / "claims"
     if not claims.is_dir():
         return None, (f"{claims} does not exist, so no claim here can be "
@@ -808,10 +809,12 @@ def pre(payload, changing_command):
     detail = []
     for d, recs in found.items():
         if not recs:
+            # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and has to spell the path
             detail.append(f"{d.name}/runtime/claims/ is empty: no claim was "
                           f"taken here.")
         for name, rec in sorted(recs.items()):
             mark = " RELEASED" if is_released(rec) else ""
+            # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and has to spell the path
             detail.append(f"{d.name}/runtime/claims/{name}: session "
                           f"{rec.get('session', '<absent>')} "
                           f"({rec.get('name', '<no name>')}){mark}")
@@ -885,6 +888,7 @@ def released(payload):
         return 0
 
     for d in dirs:
+        # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and has to spell the path
         path = d / "runtime" / "claims" / str(issue)
         rec = read_record(path)
         if not rec or "unreadable" in rec:

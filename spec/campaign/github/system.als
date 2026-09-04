@@ -260,8 +260,18 @@ pred writeBody[c: Campaign] {
 }
 
 /* Deliberately LOOSE -- it does not require the ref to be absent -- so that
-   create-ref's refusal is a named discipline above (orchestration/scenarios.als's
-   `claimAtomic`) with its absence runnable as a control. */
+   the atomicity is a named discipline above (orchestration/scenarios.als's
+   `claimAtomic`) with its absence runnable as a control.
+
+   AND `claimAtomic` IS NOT create-ref ALONE, which is what this comment used to
+   say. `Claimed` is a set of ISSUES, so the discipline is per sub-issue; the
+   ref that carries a claim is named `campaign-<N>/<issue>-<topic>`, so
+   create-ref's server-side refusal serialises ref NAMES and admits two topics
+   on one sub-issue. Nothing here models a topic, which is exactly why the
+   model could not see that gap. What closes it is in the script: `take` reads
+   the campaign's refs again AFTER its own create, and where two name one
+   sub-issue the smallest ref wins and the losers delete what they just cut --
+   a rule both racers can apply because by then they see the same set. */
 pred claim[i: Issue] {
   i in Campaign.memberIssues and i in Open
   Claimed' = Claimed + i

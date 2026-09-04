@@ -1,6 +1,5 @@
 Campaign: kalaluthien/campaign-base#<N>
 Repository: <owner/repo whose code changes, or none>
-Branch: campaign-<N>/<issue>-<topic>
 
 <What is wrong or missing now, and what says so. One paragraph, no preamble.>
 
@@ -19,9 +18,14 @@ points rather than restates: the rules are in the base's `AGENTS.md`, which a
 delegate reaches through the `--add-dir <base>` its launch passes, and a second
 copy of them here would be the one that goes stale.
 
-- **The branch above is already claimed on the remote.** Check it out and work
-  on it. Push every commit the moment it exists — a checkout that dies costs
-  uncommitted work and nothing more.
+- **A branch is already claimed on the remote for this sub-issue.** Its name is
+  not written here — `gh issue create` mints the issue number, so the branch
+  cannot be named in the body that creates it, and a placeholder nobody fills is
+  worse than an absence. Read it with
+  `scripts/campaign-claim.py live <N>`, which lists every claim of the campaign
+  and where each is checked out. Check it out and work on it, and push every
+  commit the moment it exists — a checkout that dies costs uncommitted work and
+  nothing more.
 - **Land by pull request against `main`**, opened on the first commit, body
   closing this issue with `Closes kalaluthien/campaign-base#<issue>`. Merge
   `origin/main` in before merging; resolve on the branch, never force-push.

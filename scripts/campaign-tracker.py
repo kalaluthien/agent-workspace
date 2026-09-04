@@ -451,12 +451,21 @@ def claim_column(repo, campaign_issue):
     module, why = claim_reader()
     if why:
         return (lambda n: ""), f"the claim reader would not load -- {why}"
-    branches, why = module.matching_refs(repo, campaign_issue)
-    if why:
-        return (lambda n: ""), (f"the claim refs did not read -- {why}; the "
-                                f"rows below say nothing about who holds what")
-    note = (f"read {repo} refs under campaign-{campaign_issue}/ -- "
-            f"{len(branches)} claim(s)")
+    # EVERY repository the campaign's claims can be on, not just `--repo`. A
+    # member-repo sub-issue's branch is on that member's remote, and reading the
+    # base alone printed `unclaimed` for it under a note saying the reading
+    # succeeded -- which is how a planner hands a claimed sub-issue to a second
+    # executor. Same reader as `campaign-claim live`, so the two cannot drift.
+    root, _ = module.base_root()
+    repos, repo_note = module.claim_repos(repo, root)
+    found_map, unread = module.all_refs(repos, campaign_issue)
+    if unread:
+        return (lambda n: ""), (f"the claim refs did not read -- "
+                                f"{'; '.join(unread)}; the rows below say "
+                                f"nothing about who holds what")
+    branches = sorted(found_map)
+    note = (f"read refs under campaign-{campaign_issue}/ in "
+            f"{', '.join(repos)} -- {len(branches)} claim(s)")
 
     def word(number):
         found = module.refs_for_issue(branches, campaign_issue, number)

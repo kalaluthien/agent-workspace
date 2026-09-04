@@ -135,10 +135,13 @@ test "${HERDR_ENV:-}" = 1 &&
 Read what it reports applied, then confirm with `ListAgents` that the harness
 name is `campaign-<N>-<role>-<n>` before step 4 begins. The caller's own
 rename is the one most likely to need a person, so a `FAILED` line is a stop:
-say so, and do not go on under the old name. `campaign-claim take` is the
-second reader — it refuses a `--name` from another campaign, or of the wrong
-shape — so a name that was not set here is caught at the first claim, not at
-the close.
+say so, and do not go on under the old name. **There is no second reader any
+more**: `campaign-claim take` used to refuse a `--name` from another campaign,
+and with the record gone there is nowhere to write a name and nothing to check
+it against. What a stale name now costs is a close: `campaign-claim live`
+believes a name that says whose campaign a session is of, so a session still
+carrying another campaign's name is skipped by that campaign's close gate
+wherever it sits. Set it here, and read back what `ListAgents` reports.
 
 ### 4. Scaffold the directory
 

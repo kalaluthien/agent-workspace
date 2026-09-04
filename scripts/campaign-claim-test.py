@@ -361,22 +361,61 @@ case "$*" in
       fi
       exit 0 ;;
   *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
-  *"-X DELETE"*) echo deleted; exit 0 ;;
+  *"-X DELETE"*) echo "$*" >> RACEDIR/deleted; exit 0 ;;
   *git/refs*) exit 0 ;;
 esac
 exit 1
 """.replace("RACEDIR", str(Path(d) / "raced")))
         r = claim(["take", "9999", "5", "zzz"], raced)
         out = r.stdout + r.stderr
-        check("a claim that lost a race is deleted again, not kept",
+        check("a taker that sees a rival after its own create yields",
               r.returncode == 3 and "in the same moment" in out
               and "campaign-9999/5-aaa" in out)
+        check("...and deletes the ref it just cut", "has been deleted again" in out)
+        check("...and says the sub-issue may now be free, since the rival "
+              "yields too", "may now be free" in out)
+        # EVERYONE YIELDS, so the smaller name gets no special door: a tiebreak
+        # both racers cannot compute the same way is not a tiebreak. This is the
+        # case that would pass under a `min()` rule and must not.
         (Path(d) / "raced" / "n").unlink()
+        deleted = Path(d) / "raced" / "deleted"
+        if deleted.exists():
+            deleted.unlink()
         r = claim(["take", "9999", "5", "aaa"], raced)
         out = r.stdout + r.stderr
-        check("...and the winner keeps its ref and says who lost",
-              r.returncode == 0 and "raced this claim and lost" in out
-              and "campaign-9999/5-zzz" in out)
+        # ASSERTED ON THE DELETE, not on the exit status: a `min()` tiebreak
+        # that lets the smaller name keep its ref also exits 3 and also prints
+        # "in the same moment", so an exit-status case is satisfied by the very
+        # rule this replaced.
+        check("the lexicographically smaller name yields too, and its ref goes",
+              r.returncode == 3 and deleted.exists()
+              and "campaign-9999/5-aaa" in deleted.read_text())
+        # A delete that FAILED must not be reported as done: the orphan then
+        # refuses every later take on the sub-issue while the message says it
+        # is gone.
+        # Stateful like `raced`: the survey must come back EMPTY or `take`
+        # exits at it and never reaches the create, the re-check, or the delete.
+        nodel = shims(Path(d) / "nodel", gh="""#!/bin/sh
+STATE=NODELDIR/n
+case "$*" in
+  *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *matching-refs*)
+      if [ -f "$STATE" ]; then
+        echo '["refs/heads/campaign-9999/6-a","refs/heads/campaign-9999/6-b"]'
+      else
+        : > "$STATE"; echo '[]'
+      fi
+      exit 0 ;;
+  *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
+  *"-X DELETE"*) echo "boom" >&2; exit 1 ;;
+  *git/refs*) exit 0 ;;
+esac
+exit 1
+""".replace("NODELDIR", str(Path(d) / "nodel")))
+        r = claim(["take", "9999", "6", "b"], nodel)
+        out = r.stdout + r.stderr
+        check("a failed delete of the yielded ref is reported, not assumed",
+              "was NOT deleted" in out and "by hand" in out)
 
         # A ref listing that failed is not proof the sub-issue is free.
         blind = shims(Path(d) / "blind", gh="""#!/bin/sh
@@ -433,6 +472,17 @@ def release_cases(m):
               r.returncode == 1 and "3 commit(s) ahead" in out)
         check("...and names both ways out, one of them a command",
               "gh api -X DELETE" in out and "pull request" in out)
+
+        # `--branch` NAMING A REF THIS DID NOT FIND: falling back to the base
+        # aimed the compare, the merged-pull-request question and the DELETE at
+        # a repository that may carry the same branch name.
+        r = claim(["release", "9999", "1", "--branch",
+                   "campaign-9999/1-somewhere-else"], path)
+        out = r.stdout + r.stderr
+        check("release refuses a --branch whose repository was never read",
+              r.returncode == 1 and "which repository it is on is unknown" in out)
+        check("...and says which repositories it did read",
+              "kalaluthien/campaign-base" in out)
 
         # A sub-issue with no ref of its own is a refusal, never a silent pass.
         r = claim(["release", "9999", "7"], path)
@@ -563,6 +613,25 @@ def verdict_cases(m, capsys=None):
         check("a complete sweep does print the verdict, and exits 0",
               "all three readings were made" in out and code == 0
               and "NOT all readings" not in out)
+
+        # THE BASE ROOT REACHES `classify`, end to end. The printing loop over
+        # the swept roots once rebound the same name, so the cwd rule the peer
+        # set turns on was compared against the last repository swept -- and
+        # every unit case passed, because they call `classify` with the right
+        # root directly. This one runs the command.
+        m.base_root = lambda: ("/BASE", None)
+        m.sweep_roots = lambda s: (["/some/other/repo"], [], None)
+        m.herdr_sessions = lambda: ({"s1": {"name": "<unnamed>",
+                                            "cwd": "/BASE/anywhere",
+                                            "pane": "p", "status": "idle"}},
+                                    None)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            m.cmd_live(Args())
+        out = buf.getvalue()
+        check("an unnamed session under the base root reaches the peer list",
+              "live sessions of campaign-9 (1)" in out
+              and "/BASE/anywhere" in out)
     finally:
         (m.matching_refs, m.herdr_sessions, m.sweep_roots, m.checkouts,
          m.base_root) = real
@@ -604,7 +673,6 @@ def repos_cases(m):
         root = Path(d).resolve()
         clone = root / "demo-260904" / "repos" / "acme"
         clone.mkdir(parents=True)
-        git(clone.parent, "init", "-q", "acme") if False else None
         subprocess.run(["git", "-C", str(clone), "init", "-q"], check=True)
         subprocess.run(["git", "-C", str(clone), "remote", "add", "origin",
                         "git@github.com:o/acme.git"], check=True)
@@ -618,11 +686,28 @@ def repos_cases(m):
         check("with no base root, only the named repository is read, and it says so",
               repos == ["o/base"] and "no base root" in note)
 
-    # The repository travels with the ref, because a delete aimed at the wrong
-    # one takes a different repository's commits.
-    got, unread = {}, []
-    check("all_refs keys a branch to the repository it was found on",
-          isinstance(m.all_refs([], "1"), tuple))
+    # THE REPOSITORY TRAVELS WITH THE REF, because a delete aimed at the wrong
+    # one takes a different repository's commits. Asserted on the MAPPING, not
+    # on the return type: `isinstance(..., tuple)` was true of every shape this
+    # function could have had, including the one that dropped the repository.
+    real = m.matching_refs
+    try:
+        answers = {"o/base": (["campaign-1/7-a"], None),
+                   "o/acme": (["campaign-1/8-b"], None)}
+        m.matching_refs = lambda repo, n: answers[repo]
+        found, unread = m.all_refs(["o/base", "o/acme"], "1")
+        check("all_refs keys each branch to the repository it was found on",
+              found == {"campaign-1/7-a": "o/base",
+                        "campaign-1/8-b": "o/acme"} and not unread)
+        # A repository whose listing failed is NAMED, because a claim that could
+        # not be read is not an absent one.
+        answers["o/acme"] = (None, "acme would not answer")
+        found, unread = m.all_refs(["o/base", "o/acme"], "1")
+        check("...and a repository that would not answer is reported",
+              found == {"campaign-1/7-a": "o/base"}
+              and unread == ["acme would not answer"])
+    finally:
+        m.matching_refs = real
 
 
 def peer_cases(m):

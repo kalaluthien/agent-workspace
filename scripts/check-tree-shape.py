@@ -102,7 +102,7 @@ def extensionless_call():
 # Prose may name any of these; code may not.
 RETIRED = [
     (re.compile(r"\bruntime/holder\b"), "#100 -- the holding session is retired"),
-    (re.compile(r"\bruntime/executors\b"), "#59 -- renamed to runtime/claims/"),
+    (re.compile(r"\bruntime/executors\b"), "#59 -- renamed to runtime/claims/, itself retired by #176"),
     # The bare word, not quoted: a quote immediately after it would miss
     # `CLAIMED:`, `send(CLAIMED)`, and `CLAIMED <issue>`. R3 only ever reads
     # code, so prose may still name the message.
@@ -119,16 +119,27 @@ RETIRED = [
     (re.compile(r"\bscripts/campaign-(live|session-alive)\b"),
      "#105 -- merged into scripts/campaign-claim.py live"),
     # #176 deleted the record, the brief, the canary and the two prose
-    # comments. Paths and bare words alike here: `runtime/claims` is a path, and
-    # `STOOD DOWN` is a message nothing sends any more, so a reintroduction of
-    # either looks exactly like the thing that was removed. Prose explaining
-    # what was retired says `runtime/claims/` with the trailing slash, which
-    # these do not match.
-    (re.compile(r"\bruntime/claims\b(?!/)"),
+    # comments.
+    #
+    # NO `(?!/)` LOOKAHEAD, and the first cut of these had one. It was meant to
+    # let prose say `runtime/claims/` while banning the bare noun, and it
+    # inverted the intent exactly: a reintroduced READER writes
+    # `runtime/claims/<issue>` or `d / "runtime" / "claims"`, both of which the
+    # lookahead exempted, while the only thing it caught was prose. These match
+    # the path however it is spelled, and a document that must name the retired
+    # shape exempts the block, which is what the exemption is for.
+    (re.compile(r"\bruntime/claims\b|[\"']runtime[\"']\s*[/,]\s*[\"']claims[\"']"),
      "#176 -- the claim is the branch ref; there is no record"),
-    (re.compile(r"\bruntime/handover\b(?!/)"),
+    (re.compile(r"\bruntime/handover\b|[\"']runtime[\"']\s*[/,]\s*[\"']handover[\"']"),
      "#176 -- the brief is the sub-issue body"),
-    (re.compile(r"\bcampaign-claim\.py (status|list|alive|stood-down)\b"),
+    # The comment used to announce a STOOD DOWN ban that no pattern implemented.
+    (re.compile(r"\bSTOOD DOWN\b"),
+     "#176 -- a peer leaves by stopping its pane or renaming, not by saying so"),
+    # `\b` before the subcommand and not after `.py`: the skills write
+    # `"$BASE/scripts/campaign-claim.py" stood-down`, where a quote stands
+    # between the path and the space, so a pattern anchored on `.py ` misses
+    # every real call site.
+    (re.compile(r"campaign-claim\.py[\"']?\s+(status|list|alive|stood-down)\b"),
      "#176 -- retired with the record; take | release | live are what is left"),
     (re.compile(r"\bscripts/alloy-trace-digest\b"),
      "#105 -- merged into scripts/alloy-check.py --digest"),

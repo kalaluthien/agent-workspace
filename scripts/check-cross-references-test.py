@@ -57,7 +57,7 @@ BASE = {
     "spec/campaign/orchestration/system.als": "sig S {}\n",
     f"{SKILL}/SKILL.md": "# demo skill\n",
     f"{SKILL}/references/gotchas.md": "# gotchas\n",
-    f"{SKILL}/assets/handover.md": "# handover\n",
+    f"{SKILL}/assets/sub-issue.md": "# sub-issue\n",
 }
 
 # (name, {path: contents}, expected outcome)
@@ -113,7 +113,7 @@ CASES = [
 
     # ---- S2: a literal skill path, against the filesystem.
     ("S2 a skill path that is there",
-     {"a.md": f"Fill it from `{SKILL}/assets/handover.md`.\n"}, None),
+     {"a.md": f"Fill it from `{SKILL}/assets/sub-issue.md`.\n"}, None),
     ("S2 a skill directory named with its trailing slash",
      {"a.md": f"Templates live in `{SKILL}/assets/`.\n"}, None),
     ("S2 a skill path that is not there",
@@ -134,7 +134,7 @@ CASES = [
      {f"{SKILL}/SKILL.md": "# demo skill\n\nRead `references/gotchas.md`.\n"},
      None),
     ("S4 from a file one level down, still against the skill root",
-     {f"{SKILL}/references/launching.md": "Read `assets/handover.md`.\n"}, None),
+     {f"{SKILL}/references/launching.md": "Read `assets/sub-issue.md`.\n"}, None),
     ("S4 a relative path that is not there",
      {f"{SKILL}/SKILL.md": "# demo skill\n\nRead `references/gone.md`.\n"},
      ("DANGLING", "S4: nothing at")),

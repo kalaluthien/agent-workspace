@@ -379,17 +379,35 @@ def cmd_take(args):
         return 1
     rivals = refs_for_issue(after, args.campaign_issue, args.issue)
     if len(rivals) > 1:
-        winner = min(rivals)
-        if winner != branch:
-            run("gh", "api", "-X", "DELETE", delete_path(args.repo, branch))
-            print(f"already claimed: {winner} took sub-issue #{args.issue} in "
-                  f"the same moment.")
-            print(f"  Both refs existed; the smallest name wins, so {branch} "
-                  f"was deleted again.")
-            print(f"  It held nothing -- it was cut from main seconds ago.")
-            return 3
-        print(f"note: {', '.join(r for r in rivals if r != branch)} raced this "
-              f"claim and lost; {branch} is the smallest name and stands.")
+        # EVERYONE WHO SEES A RIVAL YIELDS. The smallest-name rule looked like a
+        # tiebreak both racers could apply, and it is not: they do not read the
+        # same set. Enumerating the interleavings of survey/create/list for two
+        # takers, `min` leaves BOTH holding in two of them -- the one that
+        # created first lists before the other creates, sees only itself, and
+        # keeps its ref while the later one also finds itself smallest.
+        #
+        # Yielding has no such state. Its worst case is that both delete and the
+        # sub-issue is left unclaimed, which the next `take` fixes; two
+        # executors on one sub-issue is the thing that cannot be fixed after the
+        # fact. Do not "improve" this back into a tiebreak: the property is
+        # never two holders, not always one.
+        others = ", ".join(r for r in rivals if r != branch)
+        d = run("gh", "api", "-X", "DELETE", delete_path(args.repo, branch))
+        print(f"already claimed: sub-issue #{args.issue} was taken in the same "
+              f"moment by {others}.")
+        if d.returncode == 0:
+            print(f"  {branch} held nothing -- it was cut from main seconds "
+                  f"ago -- and has been deleted again.")
+        else:
+            print(f"  !! {branch} was NOT deleted "
+                  f"({' '.join(d.stderr.split())[:120]}), so it is a ref "
+                  f"holding no work that\n     will refuse the next `take` on "
+                  f"this sub-issue. Delete it by hand:")
+            print(f"       gh api -X DELETE {delete_path(args.repo, branch)}")
+        print(f"  Re-read `{sys.argv[0]} live {args.campaign_issue}`: whoever "
+              f"else saw this race yielded too,\n  so the sub-issue may now be "
+              f"free.")
+        return 3
 
     print(f"claimed {branch}")
     print(f"  The ref IS the claim: nothing else was written, and "
@@ -728,8 +746,13 @@ def cmd_live(args):
         unread = unread + more
     print(f"reading 3  git worktree list -- "
           f"{'FAILED: ' + why3 if why3 else f'{len(roots)} repo(s) swept, {len(unread)} unread'}")
-    for root in (roots or []):
-        print(f"           {root}")
+    # NOT `root`: this loop used to rebind the base root that `classify` is
+    # given below, so the cwd rule the peer set turns on was compared against
+    # the last repository swept. The unit case passed throughout, because it
+    # calls `classify` with the right root directly -- a fixture standing in for
+    # the deployed path.
+    for swept in (roots or []):
+        print(f"           {swept}")
     for note in unread:
         print(f"           !! {note}")
     if why1 or why2 or why3:
@@ -916,8 +939,19 @@ def cmd_release(args):
         return 1
     # The repository the ref was FOUND on, never the default: the same branch
     # name exists in every member repository and a delete aimed at the wrong one
-    # takes somebody else's commits.
-    repo = found.get(branch, args.repo)
+    # takes somebody else's commits. A `--branch` this did not find is exactly
+    # that danger -- falling back to the base aimed every later question, the
+    # DELETE included, at a repository that may carry the same name -- so an
+    # unfound branch refuses rather than guessing which remote it is on.
+    if branch not in found:
+        print(f"refusing: nothing this read holds {branch}, so which repository "
+              f"it is on is unknown.\n  Read: {', '.join(repos)}"
+              + (f"\n  Unread: {'; '.join(unread1)}" if unread1 else "")
+              + f"\n  Pass --repo to name the remote directly. Guessing the "
+                f"base would aim the delete at a\n  repository that may carry "
+                f"the same branch name.", file=sys.stderr)
+        return 1
+    repo = found[branch]
     print(f"releasing {branch} on {repo} ({repo_note})")
 
     # What is standing in it, read before anything is deleted. A sweep that
