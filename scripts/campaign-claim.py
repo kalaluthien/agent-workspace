@@ -183,6 +183,14 @@ import sys
 from pathlib import Path
 
 DEFAULT_REPO = "kalaluthien/campaign-base"
+
+# THE SAME STRING, TWO QUESTIONS, so it is named twice on purpose. `DEFAULT_REPO`
+# is where a ref is cut when nothing says otherwise; `TRACKER` is where every
+# sub-issue is FILED whatever repository its code lives in (AGENTS.md, "filed on
+# this base's tracker whatever repository its code lives in"). A reader that
+# collapses them cannot express "read #N's body from the tracker, then cut its
+# ref on the member repository the body names", which is exactly what #187 does.
+TRACKER = DEFAULT_REPO
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
 # A session name that names SOME campaign. Only the shape matters here -- which
@@ -291,6 +299,47 @@ def matching_refs(repo, campaign_issue):
     return parse_refs(r.stdout)
 
 
+REPOSITORY_LINE = re.compile(r"^Repository:\s*(\S+)\s*$", re.MULTILINE)
+
+
+def issue_repo(issue, default_repo):
+    """(repo, note) -- the repository a sub-issue's work lands in, read from the
+    sub-issue's own body. `None` for repo means the reading did not happen.
+
+    THE DESTINATION IS A FACT ABOUT THE SUB-ISSUE, NOT AN ARGUMENT. `--repo`
+    used to decide it, so two takers naming different repositories both cut a
+    ref and both believed they held sub-issue #N: the one-claim-per-issue rule
+    is keyed on the issue and cannot see a disagreement about where the issue
+    lives (spec/campaign/orchestration/scenarios.als, `claimOnTheIssuesRepo`,
+    with `R8_ClaimCutOnAnotherRepo` for the cost of dropping it). The template
+    has carried a `Repository:` line since the sub-issue template existed and
+    NOTHING read it, which is the shape a declared contract takes just before it
+    drifts.
+
+    `none` is the answer for a repo-less sub-issue and means the base: with no
+    member repository the only place a ref can be cut is the base, which is what
+    `R4_RepolessCampaign` says. Three outcomes, not two -- a body that could not
+    be fetched is not a body with no line in it."""
+    r = run("gh", "issue", "view", str(issue), "-R", TRACKER, "--json", "body",
+            "--jq", ".body")
+    if r.returncode != 0:
+        return None, (f"could not read #{issue}'s body from {TRACKER} "
+                      f"({r.stderr.strip()[:120]})")
+    m = REPOSITORY_LINE.search(r.stdout)
+    if not m:
+        return None, (f"#{issue}'s body has no `Repository:` line, so where its "
+                      f"work lands is unstated. Fill it from "
+                      f".claude/skills/opening-campaign/assets/sub-issue.md")
+    named = m.group(1)
+    if named.lower() == "none":
+        return default_repo, (f"#{issue} names no member repository, so its ref "
+                              f"is cut on the base ({default_repo})")
+    if "/" not in named:
+        return None, (f"#{issue}'s `Repository:` line reads {named!r}, which is "
+                      f"not an owner/repo and not `none`")
+    return named, f"#{issue} says its work lands in {named}"
+
+
 def refs_for_issue(branches, campaign_issue, issue):
     """The claim branches of one sub-issue. Pure, so none, one and two each
     have a case; two is what `release` refuses on rather than picking."""
@@ -311,6 +360,24 @@ def cmd_take(args):
         return 1
     print("bound here, so the claim may be cut")
 
+    # WHERE, read from the sub-issue and not from the caller. Before #187 this
+    # was `repo`, so two takers naming different repositories both cut a
+    # ref and both held #N. `--repo` survives only as a confirmation, and a
+    # disagreement is refused rather than resolved: whichever way it were
+    # resolved silently, one of the two readers would be wrong for good.
+    repo, note = issue_repo(args.issue, DEFAULT_REPO)
+    if repo is None:
+        print(f"refusing: {note}\n  Where a claim is cut is a fact about the "
+              f"sub-issue, so a body this could not read is not a\n  "
+              f"sub-issue whose ref may be cut anywhere.", file=sys.stderr)
+        return 1
+    print(note)
+    if args.repo != DEFAULT_REPO and args.repo != repo:
+        print(f"refusing: --repo says {args.repo}, #{args.issue} says {repo}.\n"
+              f"  The sub-issue decides. Fix its `Repository:` line, or drop "
+              f"--repo.", file=sys.stderr)
+        return 1
+
     # THE SUB-ISSUE IS WHAT IS CLAIMED, AND THE REF NAME CARRIES THE TOPIC TOO,
     # so create-ref alone serialises topics rather than sub-issues: `7-parser`
     # and `7-parse-fix` are two names and the server refuses neither. The record
@@ -320,7 +387,7 @@ def cmd_take(args):
     # that is the honest ceiling, not a bug hidden here: the binding already
     # limits a campaign to one machine, and this window is narrower than the
     # one `O_EXCL` on a record closed only for this machine anyway.
-    existing, why = matching_refs(args.repo, args.campaign_issue)
+    existing, why = matching_refs(repo, args.campaign_issue)
     if why:
         print(f"refusing: {why}\n  A ref listing that did not happen is not "
               f"proof the sub-issue is free.", file=sys.stderr)
@@ -328,7 +395,7 @@ def cmd_take(args):
     siblings = refs_for_issue(existing, args.campaign_issue, args.issue)
     if siblings:
         print(f"already claimed: sub-issue #{args.issue} is held by "
-              f"{', '.join(siblings)} on {args.repo}.")
+              f"{', '.join(siblings)} on {repo}.")
         print("  A sub-issue has one claim whatever the topic, so a second "
               "topic is not a second claim.")
         print("  Read who is standing in it before doing anything else:")
@@ -338,19 +405,19 @@ def cmd_take(args):
     # Resolved and checked before the create, never written inline: a read that
     # fails and still prints goes up as the sha and comes back as the 422 that
     # means "already claimed", so the sub-issue reads as taken and is abandoned.
-    r = run("gh", "api", f"repos/{args.repo}/commits/main", "--jq", ".sha")
+    r = run("gh", "api", f"repos/{repo}/commits/main", "--jq", ".sha")
     sha = r.stdout.strip()
     if r.returncode != 0 or not SHA.match(sha):
-        print(f"refusing: could not resolve {args.repo}'s main sha.\n"
+        print(f"refusing: could not resolve {repo}'s main sha.\n"
               f"  got {sha!r}; {r.stderr.strip()}", file=sys.stderr)
         return 1
-    print(f"cut from {args.repo}@main {sha}")
+    print(f"cut from {repo}@main {sha}")
 
-    r = run("gh", "api", f"repos/{args.repo}/git/refs",
+    r = run("gh", "api", f"repos/{repo}/git/refs",
             "-f", f"ref=refs/heads/{branch}", "-f", f"sha={sha}")
     if r.returncode != 0:
         if "already exists" in r.stderr.lower():
-            print(f"already claimed: {branch} exists on {args.repo}.")
+            print(f"already claimed: {branch} exists on {repo}.")
             print("  create-ref refuses an existing ref server-side, so this "
                   "is the claim working.")
             print("  Read who is standing in it before doing anything else:")
@@ -369,7 +436,7 @@ def cmd_take(args):
     # a set they agree about; the loser deletes what it just cut and reports the
     # winner. Do not replace this with a longer survey before the create: no
     # amount of looking first makes a read-then-write atomic.
-    after, why = matching_refs(args.repo, args.campaign_issue)
+    after, why = matching_refs(repo, args.campaign_issue)
     if why:
         print(f"refusing: {branch} WAS cut, but the re-check that makes the "
               f"claim atomic did not\n  happen ({why}). Read "
@@ -392,7 +459,7 @@ def cmd_take(args):
         # fact. Do not "improve" this back into a tiebreak: the property is
         # never two holders, not always one.
         others = ", ".join(r for r in rivals if r != branch)
-        d = run("gh", "api", "-X", "DELETE", delete_path(args.repo, branch))
+        d = run("gh", "api", "-X", "DELETE", delete_path(repo, branch))
         print(f"already claimed: sub-issue #{args.issue} was taken in the same "
               f"moment by {others}.")
         if d.returncode == 0:
@@ -403,7 +470,7 @@ def cmd_take(args):
                   f"({' '.join(d.stderr.split())[:120]}), so it is a ref "
                   f"holding no work that\n     will refuse the next `take` on "
                   f"this sub-issue. Delete it by hand:")
-            print(f"       gh api -X DELETE {delete_path(args.repo, branch)}")
+            print(f"       gh api -X DELETE {delete_path(repo, branch)}")
         print(f"  Re-read `{sys.argv[0]} live {args.campaign_issue}`: whoever "
               f"else saw this race yielded too,\n  so the sub-issue may now be "
               f"free.")

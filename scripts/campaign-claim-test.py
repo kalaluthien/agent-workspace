@@ -73,6 +73,13 @@ GH = """#!/bin/sh
 # Every endpoint this suite needs, and a refusal for anything else, so a call
 # that escaped a gate is visible as a different failure rather than as silence.
 case "$*" in
+  # WHERE A CLAIM IS CUT, read from the sub-issue since #187. `none` is the
+  # ordinary answer here: these cases claim on the base, which is what a
+  # repo-less sub-issue resolves to.
+  *"issue view 404 "*) echo 'no Repository line here'; exit 0 ;;
+  *"issue view 500 "*) echo 'Repository: other/elsewhere'; exit 0 ;;
+  *"issue view 501 "*) exit 1 ;;
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/campaign-9999/1-alpha","refs/heads/campaign-9999/2-beta"]'; exit 0 ;;
   *compare/main*) echo 0; exit 0 ;;
   # `2-beta` landed; `1-alpha` never did. The two answers are what `live`'s
@@ -345,6 +352,42 @@ def take_cases(m):
         check("an unclaimed sub-issue reaches the create-ref",
               "cut from" in out and "one claim whatever the topic" not in out)
 
+        # ------ #187 Q1: WHERE IS A FACT ABOUT THE SUB-ISSUE ------
+        # Three refusals, broken apart, because they share exit 1 and a stream.
+        # A case asserting only the status passes while any one is deleted.
+
+        # "I could not look" is not "there is nothing there". These two are the
+        # pair the guard rules say must never collapse into one another.
+        r = claim(["take", "9999", "501", "x"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue body that could not be fetched refuses",
+              r.returncode == 1 and "could not read #501" in out,
+              f"exit {r.returncode}: {out[:200]}")
+        r = claim(["take", "9999", "404", "x"], path)
+        out = r.stdout + r.stderr
+        check("...and a body with no Repository line refuses differently",
+              r.returncode == 1 and "no `Repository:` line" in out,
+              f"exit {r.returncode}: {out[:200]}")
+        check("...naming the template the line comes from",
+              "sub-issue.md" in out, out[:300])
+        # THE DEFECT ITSELF. `--repo` deciding is what let two takers each hold
+        # #N; it may now only agree. Refused rather than resolved: whichever
+        # side won silently, one of the two readers would be wrong for good.
+        r = claim(["take", "9999", "500", "x", "--repo", "someone/other"], path)
+        out = r.stdout + r.stderr
+        check("--repo disagreeing with the sub-issue is refused",
+              r.returncode == 1 and "The sub-issue decides" in out,
+              f"exit {r.returncode}: {out[:200]}")
+        check("...and the refusal names both repositories it read",
+              "someone/other" in out and "other/elsewhere" in out, out[:300])
+        # ...and the rule admits the ordinary claim, or it forbids everything.
+        # `none` is the repo-less answer and means the base.
+        r = claim(["take", "9999", "7", "delta"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue naming no member repository cuts on the base",
+              "names no member repository" in out and "cut from" in out,
+              out[:300])
+
         # THE RACE THE SURVEY ALONE CANNOT CLOSE. Two takers on two topics both
         # see no sibling and both create; the re-check AFTER the create is what
         # settles it, because by then both refs exist. The shim answers empty
@@ -352,6 +395,7 @@ def take_cases(m):
         raced = shims(Path(d) / "raced", gh="""#!/bin/sh
 STATE=RACEDIR/n
 case "$*" in
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *matching-refs*)
       if [ -f "$STATE" ]; then
@@ -398,6 +442,7 @@ exit 1
         nodel = shims(Path(d) / "nodel", gh="""#!/bin/sh
 STATE=NODELDIR/n
 case "$*" in
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *matching-refs*)
       if [ -f "$STATE" ]; then
@@ -420,6 +465,7 @@ exit 1
         # A ref listing that failed is not proof the sub-issue is free.
         blind = shims(Path(d) / "blind", gh="""#!/bin/sh
 case "$*" in
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
 esac
 exit 1

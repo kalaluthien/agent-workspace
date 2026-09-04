@@ -92,6 +92,19 @@ pred releaseNeedsAWorker {
 pred claimBeforeLaunch { always (Now.event = Launch implies Now.issue in Who.session.claimedIssues) }
 pred claimAtomic       { always (Now.event = Claim  implies Now.issue not in Claimed) }
 
+/* THE REPOSITORY IS THE SUB-ISSUE'S, NOT THE TAKER'S. `claimAtomic` above is
+   keyed on the issue and already forbids two claims on one sub-issue -- but it
+   forbids them only among takers who agree about where the ref goes. Let each
+   taker name its own repository and the two cut different refs, neither sees
+   the other's listing, and the model's one-claim-per-issue reading is satisfied
+   by a world in which two executors are working the same sub-issue. The repair
+   is not a wider sweep, which would still be a survey of a set the takers do
+   not agree about; it is that the destination is a FACT ABOUT THE SUB-ISSUE
+   (`Issue.repo`, read from its `Repository:` line) that no taker supplies. */
+pred claimOnTheIssuesRepo {
+  always (Now.event = Claim implies Now.repo = Now.issue.repo)
+}
+
 /* The gate on LAUNCH covers the agent a session starts and says nothing
    about the agent a session IS: `work` carries no `Who.session`, so a session
    working its own claim reaches the same sub-issue along an edge
@@ -296,6 +309,34 @@ pred R4g_ClaimWithoutAtomicityStillShared {
   some disj s1, s2: Session, i: Issue |
     eventually (i in s1.claimedIssues and i in s2.claimedIssues)
   R4e_NumberedBranchStillShared
+}
+
+/* R8. THE DEFECT #187 FIXES, in the smallest world that holds it: one
+   sub-issue, and a claim cut on a repository that is not the one its work
+   lands in. `claimAtomic` is asserted here, so this is NOT the same defect as
+   R4g -- the one-claim-per-issue rule holds throughout and the wrong ref is cut
+   anyway, which is the whole point: a discipline keyed on the issue cannot see
+   a disagreement about where the issue lives. */
+pred R8_ClaimCutOnAnotherRepo {
+  claimAtomic
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i
+                              and Now.repo != i.repo)
+}
+
+/* R8b. CONTROL: the same trace with the repair, which must be empty. If this
+   ever comes back SAT, `claimOnTheIssuesRepo` has stopped constraining
+   anything -- which is what happened the first time it was written, as a
+   conjunct of `claim` itself, where no scenario could violate it. */
+pred R8b_RepairExcludesIt {
+  claimOnTheIssuesRepo
+  R8_ClaimCutOnAnotherRepo
+}
+
+/* R8c. ...and the repair still admits the ordinary claim, or it would be a
+   rule that forbids everything. */
+pred R8c_RepairAdmitsTheOrdinaryClaim {
+  claimOnTheIssuesRepo and claimAtomic
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i)
 }
 
 /* R4h. THE HOLE, and the one this campaign actually fell into: a session works
@@ -766,6 +807,9 @@ run R7d_WorkerRuleAdmitsTheAgentLessLanding for 3 Issue, 1 PullRequest, 1 Campai
 run R4f_ClaimClosesSameSubIssue    for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- control: the 422 is load-bearing
 run R4g_ClaimWithoutAtomicityStillShared for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R8_ClaimCutOnAnotherRepo for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R8b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R8c_RepairAdmitsTheOrdinaryClaim for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0

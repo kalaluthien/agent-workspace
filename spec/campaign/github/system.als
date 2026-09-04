@@ -106,15 +106,14 @@ var sig Filed  in Campaign {}
    one set per machine. A claim made on one machine is readable from every
    other, which is the whole reason the branch is the claim.
 
-   THE SCRIPT DOES NOT YET REACH THIS. `Claimed` is a set over ISSUE, so one
-   sub-issue has one claim wherever its work lands; `scripts/campaign-claim.py`
-   sweeps and re-checks refs on ONE repository per call and keys them by branch
-   NAME, so two takers passing different `--repo` both succeed on one sub-issue
-   and a same-named ref in a second repository is collapsed. That divergence is
-   named rather than left for a reader to discover: #187 decides what a claim's
-   identity is across repositories and makes the readers agree with this
-   signature. Until it lands, read every statement here about a claim as
-   holding within one repository. */
+   A CLAIM'S IDENTITY IS THE SUB-ISSUE, and the repository is the sub-issue's
+   own -- `Issue.repo`, "where the work lands, never where the issue is filed".
+   It is therefore not the taker's to choose, which is what `claimOnTheIssuesRepo`
+   in orchestration/scenarios.als says and what `R8_ClaimCutOnAnotherRepo` shows
+   the cost of dropping. The script agrees since #187: `take` and `release` read
+   the sub-issue's own `Repository:` line and `--repo` may only confirm it, where
+   before `--repo` alone decided and two takers naming different repositories
+   both succeeded on one sub-issue. */
 var sig Claimed in Issue {}
 
 fact WellFormed {
@@ -177,7 +176,14 @@ one sig Stutter, FileCampaignIssue, AddMember, RemoveMember,
 
 one sig Now {
   var event:    one Event,
-  var issue: lone Issue
+  var issue: lone Issue,
+  /* WHICH REPOSITORY THE EVENT ACTED ON. Added by #187 for one reason: without
+     it the model cannot state the defect it fixes. `Issue.repo` says where a
+     sub-issue's work lands, but nothing said where a CLAIM was cut, so "a taker
+     cut the ref on a repository that is not the sub-issue's" had no spelling
+     here and the script was free to let `--repo` decide. Unconstrained on every
+     event but `claim`, because it is a record of what happened and not state. */
+  var repo:  lone Repo
 }
 
 fun githubEvents: set Event {
