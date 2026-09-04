@@ -344,6 +344,30 @@ def issue_repo(issue, default_repo):
     return named, named, f"#{issue} says its work lands in {named}"
 
 
+def issue_settled(issue):
+    """(settled, note) -- is this sub-issue closed? None means the reading did
+    not happen.
+
+    BOTH CLOSED READINGS COUNT. AGENTS.md: a sub-issue is settled when it is
+    closed as completed with its pull request merged, or as NOT PLANNED, which
+    is how a sub-issue gets dropped. `take` needs only "is it closed", because
+    either way the work is over and a fresh claim on it is a claim on work
+    nobody is doing."""
+    r = run("gh", "issue", "view", str(issue), "-R", TRACKER,
+            "--json", "state,stateReason", "--jq", '.state + " " + (.stateReason // "")')
+    if r.returncode != 0:
+        return None, (f"could not read #{issue}'s state from {TRACKER} "
+                      f"({r.stderr.strip()[:120]})")
+    words = r.stdout.split()
+    if not words:
+        return None, f"{TRACKER} returned no state for #{issue}"
+    state = words[0].upper()
+    if state == "CLOSED":
+        why = words[1] if len(words) > 1 else ""
+        return True, f"#{issue} is CLOSED{(' as ' + why) if why else ''}"
+    return False, f"#{issue} is {state}"
+
+
 def campaign_repos(campaign_issue):
     """(repos, note) -- the campaign issue's `## Repos` list. None means the
     reading did not happen, which is a refusal and never an empty list.
@@ -454,13 +478,59 @@ def cmd_take(args):
         return 1
     siblings = refs_for_issue(existing, args.campaign_issue, args.issue)
     if siblings:
-        print(f"already claimed: sub-issue #{args.issue} is held by "
-              f"{', '.join(siblings)} on {repo}.")
-        print("  A sub-issue has one claim whatever the topic, so a second "
-              "topic is not a second claim.")
-        print("  Read who is standing in it before doing anything else:")
-        print(f"    {sys.argv[0]} live {args.campaign_issue}")
-        return 3
+        # A SETTLED SUB-ISSUE'S REF IS RESIDUE, NOT A CLAIM (#187 question 3,
+        # spec/campaign/orchestration/scenarios.als `settledLeavesNoClaim`).
+        # `delete_branch_on_merge` is off on this tracker, so a merged branch's
+        # ref stands until somebody deletes it by hand -- and this sweep read it
+        # as a live claim, so a sub-issue that had ever been settled could never
+        # be re-worked. Probed 2026-09-04: `take 1 154 <topic>` exited 3
+        # `already claimed` though #154 closed as completed via #162.
+        #
+        # The test is the ref's own pull request, which is the same reading
+        # `release` makes on its merged path: a branch whose pull request merged
+        # is finished work. Stated in `settledLeavesNoClaim` once so the two
+        # cannot drift about when a ref stops meaning "somebody holds this".
+        residue, held, unread = [], [], []
+        for b in siblings:
+            pr = merged_pr_of(repo, b)
+            if pr == "?":
+                unread.append(b)
+            elif pr:
+                residue.append(f"{b} (merged as #{pr})")
+            else:
+                held.append(b)
+        if unread:
+            print(f"refusing: could not ask {repo} whether "
+                  f"{', '.join(unread)} was ever merged, so whether it is a "
+                  f"live claim or\n  residue of a settled sub-issue is "
+                  f"unknown.", file=sys.stderr)
+            return 1
+        if held:
+            print(f"already claimed: sub-issue #{args.issue} is held by "
+                  f"{', '.join(held)} on {repo}.")
+            print("  A sub-issue has one claim whatever the topic, so a second "
+                  "topic is not a second claim.")
+            print("  Read who is standing in it before doing anything else:")
+            print(f"    {sys.argv[0]} live {args.campaign_issue}")
+            return 3
+        print(f"{', '.join(residue)} is residue of settled work, not a claim")
+
+    # ...AND A SETTLED SUB-ISSUE IS NOT RE-CLAIMED WHILE IT IS STILL CLOSED.
+    # The model admits `claim[i]` only for `i in Open`, so re-working one means
+    # reopening it first -- which is a person's decision and a GitHub fact, not
+    # something a claim should make silently on their behalf.
+    settled, state_note = issue_settled(args.issue)
+    if settled is None:
+        print(f"refusing: {state_note}\n  A sub-issue whose state could not be "
+              f"read is not a sub-issue known to be open.", file=sys.stderr)
+        return 1
+    if settled:
+        print(f"refusing: {state_note}, so it is settled and its work is over.\n"
+              f"  Re-working it means reopening it first, which is a person's "
+              f"call:\n    gh issue reopen {args.issue} -R {TRACKER}\n"
+              f"  Or file a new sub-issue for what is left.", file=sys.stderr)
+        return 1
+    print(state_note)
 
     # Resolved and checked before the create, never written inline: a read that
     # fails and still prints goes up as the sha and comes back as the 422 that

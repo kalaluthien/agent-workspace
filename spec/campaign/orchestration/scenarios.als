@@ -311,6 +311,23 @@ pred R4g_ClaimWithoutAtomicityStillShared {
   R4e_NumberedBranchStillShared
 }
 
+/* A SETTLED SUB-ISSUE'S REF IS RESIDUE, NOT A CLAIM. `closeIssue` leaves
+   `Claimed` alone, so a sub-issue stays claimed for ever after it is settled --
+   and on GitHub the same thing is literally true, because
+   `delete_branch_on_merge` is off on this tracker and a merged branch's ref
+   stands until someone deletes it by hand. Probed 2026-09-04: `take 1 154
+   <topic>` exits 3 `already claimed` though #154 closed as completed via #162.
+   A sub-issue that has been settled can therefore never be re-worked, which is
+   not a policy anyone chose.
+
+   The claim ends where the work does. This is the same reading `release`
+   already makes on the merged path -- a branch whose pull request merged is
+   finished work and not a fresh claim -- stated once, here, so `take` and
+   `release` cannot drift about when a ref stops meaning "somebody holds this". */
+pred settledLeavesNoClaim {
+  always (Now.event = CloseIssue implies Now.issue not in Claimed')
+}
+
 /* R8. THE DEFECT #187 FIXES, in the smallest world that holds it: one
    sub-issue, and a claim cut on a repository that is not the one its work
    lands in. `claimAtomic` is asserted here, so this is NOT the same defect as
@@ -337,6 +354,31 @@ pred R8b_RepairExcludesIt {
 pred R8c_RepairAdmitsTheOrdinaryClaim {
   claimOnTheIssuesRepo and claimAtomic
   some i: Issue | eventually (Now.event = Claim and Now.issue = i)
+}
+
+/* R9. A settled sub-issue whose claim outlives it. `claimAtomic` is asserted,
+   so this is not the atomicity hole either: the sub-issue is closed, nobody is
+   working it, and its claim stands anyway. */
+pred R9_SettledSubIssueStaysClaimed {
+  claimAtomic
+  some i: Issue | eventually (Now.event = CloseIssue and Now.issue = i
+                              and i in Claimed')
+}
+
+/* R9b. CONTROL: the repair excludes it. */
+pred R9b_RepairExcludesIt {
+  settledLeavesNoClaim
+  R9_SettledSubIssueStaysClaimed
+}
+
+/* R9c. ...and the repair still admits a sub-issue being claimed and then
+   settled, which is the ordinary life of every one of them. A rule that made
+   the close unreachable would satisfy R9b just as well. */
+pred R9c_RepairAdmitsClaimThenSettle {
+  settledLeavesNoClaim and claimAtomic
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i
+                              and eventually (Now.event = CloseIssue
+                                              and Now.issue = i))
 }
 
 /* R4h. THE HOLE, and the one this campaign actually fell into: a session works
@@ -810,6 +852,9 @@ run R4g_ClaimWithoutAtomicityStillShared for 4 Issue, 1 PullRequest, 1 Campaign,
 run R8_ClaimCutOnAnotherRepo for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R8b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R8c_RepairAdmitsTheOrdinaryClaim for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R9_SettledSubIssueStaysClaimed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R9b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R9c_RepairAdmitsClaimThenSettle for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0

@@ -73,6 +73,14 @@ GH = """#!/bin/sh
 # Every endpoint this suite needs, and a refusal for anything else, so a call
 # that escaped a gate is visible as a different failure rather than as silence.
 case "$*" in
+  # IS IT SETTLED. Matched before the body arms and on `--json state`, or the
+  # body answer would come back as a state word and every sub-issue would read
+  # open -- which is how these arms first passed while answering the wrong
+  # question.
+  *"--json state"*"issue view 2 "*|*"issue view 2 "*"--json state"*) echo 'CLOSED completed'; exit 0 ;;
+  *"--json state"*"issue view 600 "*|*"issue view 600 "*"--json state"*) echo 'CLOSED not_planned'; exit 0 ;;
+  *"--json state"*"issue view 601 "*|*"issue view 601 "*"--json state"*) exit 1 ;;
+  *"--json state"*) echo 'OPEN '; exit 0 ;;
   # WHERE A CLAIM IS CUT, read from the sub-issue since #187. `none` is the
   # ordinary answer here: these cases claim on the base, which is what a
   # repo-less sub-issue resolves to.
@@ -422,6 +430,60 @@ def take_cases(m):
         check("a sub-issue naming no member repository cuts on the base",
               "names no member repository" in out and "cut from" in out,
               out[:300])
+
+        # ------ #187 Q3: A SETTLED SUB-ISSUE'S REF IS RESIDUE ------
+        # `delete_branch_on_merge` is off on this tracker, so a merged branch's
+        # ref stands until somebody deletes it. Read as a live claim, it made a
+        # sub-issue that had ever been settled un-re-workable for ever.
+        # Sub-issue 2 is closed-completed and `2-beta` merged as #162.
+        r = claim(["take", "9999", "2", "again"], path)
+        out = r.stdout + r.stderr
+        # ASSERTED ON THE REASON, not on exit 3: the OLD behaviour also refused
+        # this, saying "already claimed", so a case keyed on the status passes
+        # against the very defect it is here to pin.
+        check("a settled sub-issue is refused for BEING settled",
+              "is settled and its work is over" in out
+              and "already claimed" not in out,
+              f"exit {r.returncode}: {out[:250]}")
+        check("...and its merged ref is named residue, not a claim",
+              "residue of settled work" in out and "#162" in out, out[:300])
+        check("...and it says reopening is a person's call",
+              "gh issue reopen 2" in out, out[:300])
+        # Closed as NOT PLANNED is settled too, or a dropped sub-issue would
+        # stay claimable while a completed one did not.
+        r = claim(["take", "9999", "600", "x"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue dropped as not planned is settled as well",
+              r.returncode == 1 and "is settled" in out and "not_planned" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        # "I could not look" is not "it is open".
+        r = claim(["take", "9999", "601", "x"], path)
+        out = r.stdout + r.stderr
+        check("a state that could not be read denies the claim",
+              r.returncode == 1 and "not a sub-issue known to be open" in out,
+              f"exit {r.returncode}: {out[:250]}")
+
+        # ...and a merge question that could not be ANSWERED is neither. Its
+        # own shim, because the answer has to fail for one branch while the ref
+        # listing still succeeds, and widening the shared shim's ref list would
+        # move every count the `live` cases assert.
+        unread_gh = shims(Path(d) / "unread", gh="""#!/bin/sh
+case "$*" in
+  *"--json state"*) echo 'OPEN '; exit 0 ;;
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/campaign-9999/3-gamma"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"pr list"*) echo "the merge question failed" >&2; exit 1 ;;
+esac
+exit 1
+""")
+        r = claim(["take", "9999", "3", "delta"], unread_gh)
+        out = r.stdout + r.stderr
+        check("a merge question that could not be answered denies the claim",
+              r.returncode == 1 and "whether it is a live claim or" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        check("...and names the ref it could not settle",
+              "campaign-9999/3-gamma" in out, out[:300])
 
         # THE RACE THE SURVEY ALONE CANNOT CLOSE. Two takers on two topics both
         # see no sibling and both create; the re-check AFTER the create is what
