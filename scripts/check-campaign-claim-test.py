@@ -54,9 +54,14 @@ class Fixture:
         self.d = Path(d)
         self.remote = self.d / "r.git"
         self.base = self.d / "base"
-        subprocess.run(["git", "init", "-q", "--bare", str(self.remote)], check=True)
+        # `main` pinned by hand: the cases assert the branch by name, and a
+        # runner's init.defaultBranch is whatever its git ships (`master` on
+        # the CI image).
+        subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main",
+                        str(self.remote)], check=True)
         subprocess.run(["git", "clone", "-q", str(self.remote), str(self.base)],
                        capture_output=True, check=True)
+        git(self.base, "symbolic-ref", "HEAD", "refs/heads/main")
         (self.base / "scripts").mkdir()
         (self.base / "scripts" / "campaign-claim.py").write_text(CLAIM.read_text())
         self.camp = self.base / "demo-260904"
