@@ -10,10 +10,11 @@ ref exists on the remote, and nothing on disk (#176).
 
 WHAT IS READ. Two bounded languages. A FILE TOOL names its target. A `gh`
 call is one program with a stable grammar: each segment (shlex; ``;|&(){}` ``
-split it, and so do the strings another command runs -- a shell's `-c`, alone
-or last in a cluster like `-lc`, and `eval`'s operands -- but NOT a string a
-shell is handed, `bash <<< '...'` and `... | bash`, which stay unread with
-every other shell string) whose command word is
+split it, and so do the strings another command runs -- the `-c` of a shell
+NAMED IN `SHELLS`, alone or last in a cluster like `-lc`, and `eval`'s
+operands; the set is the rule and the comment beside it says why, so a shell
+absent from it is unread like any other interpreter, as is a string a shell is
+merely handed) whose command word is
 `gh` -- after `env`, `VAR=x`, `time`, a path -- is looked up in WRITES, and a
 segment that will not split refuses. A `gh` TOKEN this cannot read as the call
 (`xargs`, a heredoc, or an assignment whose value is `gh`) is read as a write
