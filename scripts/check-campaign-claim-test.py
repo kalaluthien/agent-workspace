@@ -333,13 +333,21 @@ def main():
                     "command gh issue close 5", "time gh issue close 5",
                     "for i in 1; do gh issue close 5; done",
                     "if true; then gh issue close 5; fi",
-                    "bash -c 'gh issue close 5'"):
+                    "bash -c 'gh issue close 5'",
+                    # The four the fix round's own spec-conformance audit found
+                    # still open at 1918ce7: a backquoted call, eval's operand,
+                    # and a -c spelled last in a short-option cluster.
+                    "`gh issue close 5`", 'eval "gh issue close 5"',
+                    "bash -lc 'gh issue close 5'", "sh -ec 'gh issue close 5'"):
             r = ask(f.base, tool="Bash", command=cmd)
             check(f"`{cmd!r}` is read as the gh write it is",
                   r.returncode == 2 and "a write to #5" in r.stderr,
                   f"exit {r.returncode}: {out(r)[:200]}")
         for cmd in ("xargs gh issue close", "echo gh issue close 5",
-                    "echo hi\ngh issue close 5", "cat <<EOF\nsee gh\nEOF"):
+                    "echo hi\ngh issue close 5", "cat <<EOF\nsee gh\nEOF",
+                    # The fourth: an assignment's VALUE names gh and the call
+                    # itself is an expansion this cannot resolve.
+                    "G=gh; $G issue close 5"):
             r = ask(f.base, tool="Bash", command=cmd)
             check(f"`{cmd!r}`: a gh token this cannot read as the call is a "
                   f"write of unknown kind, refused without a claim",

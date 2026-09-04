@@ -9,12 +9,13 @@ commit half (spec/campaign/orchestration/scenarios.als, `claimBeforeWork` and
 ref exists on the remote, and nothing on disk (#176).
 
 WHAT IS READ. Two bounded languages. A FILE TOOL names its target. A `gh`
-call is one program with a stable grammar: each segment (shlex; `;|&(){}`
-and a shell's `-c` string split it) whose command word is `gh` -- after
-`env`, `VAR=x`, `time`, a path -- is looked up in WRITES, and a segment that
-will not split refuses. A `gh` token this cannot read as the call (a loop
-body, `xargs`, a heredoc) is read as a write of unknown kind, since nothing
-downstream reads a `gh` write. Every other Bash command is ALLOWED UNREAD,
+call is one program with a stable grammar: each segment (shlex; ``;|&(){}` ``
+split it, and so do the strings another command runs -- a shell's `-c`, alone
+or last in a cluster like `-lc`, and `eval`'s operands) whose command word is
+`gh` -- after `env`, `VAR=x`, `time`, a path -- is looked up in WRITES, and a
+segment that will not split refuses. A `gh` TOKEN this cannot read as the call
+(a loop body, `xargs`, a heredoc, or an assignment whose value is `gh`) is
+read as a write of unknown kind, since nothing downstream reads a `gh` write. Every other Bash command is ALLOWED UNREAD,
 printing so: a shell string is an unbounded language, and a shell write on
 campaign work lands at the commit, where the other half reads it.
 
@@ -63,11 +64,13 @@ WRITES = {("issue", v) for v in "close edit comment reopen develop transfer "
 VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
           "-f", "--raw-field", "-b", "--body", "-t", "--title", "-m"}
 API_WRITE_FLAGS = {"-F", "--field", "-f", "--raw-field", "--input"}
-SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}"}
+SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}", "`"}
 # Words before a command that are not it, and shells that run a string.
 PREFIXES = {"env", "command", "time", "nohup", "sudo", "exec", "do", "then",
             "else", "builtin", "nice"}
 SHELLS = {"sh", "bash", "zsh", "dash"}
+# Words whose OPERAND is itself a command string, re-read as one.
+EVALS = {"eval"}
 
 
 def git(args, cwd):
@@ -206,7 +209,7 @@ def held(repo_root, issue=None):
 def segments(command):
     """The command's segments as token lists, or (None, why) when shlex will
     not split it. `punctuation_chars` makes `;`, `|`, `&` their own tokens."""
-    lex = shlex.shlex(command, posix=True, punctuation_chars="();<>|&{}")
+    lex = shlex.shlex(command, posix=True, punctuation_chars="();<>|&{}`")
     lex.whitespace_split = True
     try:
         tokens = list(lex)
@@ -219,14 +222,41 @@ def segments(command):
         elif cur:
             out.append(cur)
             cur = []
-    # A shell running a string is that string's segments too.
+    # A string another command runs is that string's segments too: a shell's
+    # -c, spelled alone or last in a cluster (`bash -lc`), and eval's operands.
     for seg in list(out):
-        if seg[0].rsplit("/", 1)[-1] in SHELLS and "-c" in seg[:-1]:
-            inner, why = segments(seg[seg.index("-c") + 1])
-            if inner is None:
+        word, rest = head(seg)
+        if word is None:
+            continue
+        inners = []
+        if word in SHELLS:
+            i = next((j for j, t in enumerate(rest[:-1]) if is_dash_c(t)), None)
+            if i is not None:
+                inners = [rest[i + 1]]
+        elif word in EVALS:
+            inners = [t for t in rest[1:] if not t.startswith("-")]
+        for text in inners:
+            more, why = segments(text)
+            if more is None:
                 return None, why
-            out += inner
+            out += more
     return out, None
+
+
+def is_dash_c(token):
+    """A shell's -c, alone or last in a short-option cluster: `-c`, `-lc`."""
+    return (len(token) > 1 and token[0] == "-" and token[1] != "-"
+            and token[1:].isalpha() and token.endswith("c"))
+
+
+def gh_token(token):
+    """Whether this token names `gh` -- as the word, as a path, or as the VALUE
+    of an assignment, which is how `G=gh; $G issue close 9` hides one."""
+    if token.rsplit("/", 1)[-1] == "gh":
+        return True
+    if "=" in token and not token.startswith("-"):
+        return token.split("=", 1)[1].rsplit("/", 1)[-1] == "gh"
+    return False
 
 
 def head(seg):
@@ -335,7 +365,7 @@ def bash_call(command, cwd: Path):
         word, rest = head(seg)
         if word == "gh":
             gh.append((rest, *gh_write(rest)))
-        elif any(t.rsplit("/", 1)[-1] == "gh" for t in seg):
+        elif any(gh_token(t) for t in seg):
             # A form not listed, a heredoc, a loop: read as a write of unknown
             # kind, because nothing downstream reads a gh write.
             stray.append(" ".join(seg)[:60])
