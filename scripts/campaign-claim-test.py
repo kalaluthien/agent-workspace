@@ -715,6 +715,56 @@ exit 1
               and "--confirmed-absent" not in out)
 
 
+def scope_cases(m):
+    """#187 Q4: which campaign directory a reading is about."""
+    # The walk, as a calculation. Driven by a path rather than by where this
+    # file sits, which differs in a worktree, in a clone, and on CI.
+    root = Path("/b")
+    check("the campaign directory is the `<slug>-<YYMMDD>` ancestor",
+          m.own_campaign_dir(Path("/b/demo-260905/repos/acme/scripts/x.py"))
+          == Path("/b/demo-260905"))
+    check("...and a path under no campaign directory has none",
+          m.own_campaign_dir(Path("/b/scripts/x.py")) is None)
+    # The nearest one wins: a campaign directory inside another is still the
+    # one this invocation is about.
+    check("...and the nearest ancestor wins",
+          m.own_campaign_dir(Path("/b/outer-260901/x/inner-260905/s/x.py"))
+          == Path("/b/outer-260901/x/inner-260905"))
+
+    # THE WIRING, and not the helper alone. A case that only called
+    # `own_campaign_dir` would pass with the command never consulting it --
+    # which is exactly what happened: the helper was covered and the call was
+    # not, and deleting the walk left every case green.
+    real = (m.own_campaign_dir, m.sweep_roots, m.base_root, m.matching_refs,
+            m.herdr_sessions, m.checkouts, m.claim_repos)
+    seen = {}
+    try:
+        m.own_campaign_dir = lambda start=None: Path("/the-scope-260905")
+        m.base_root = lambda: ("/b", None)
+        m.matching_refs = lambda repo, ci: ([], None)
+        m.herdr_sessions = lambda: ({}, None)
+        m.checkouts = lambda roots: ({}, [])
+        m.claim_repos = lambda r, root, only=None: (seen.setdefault(
+            "claim_repos", only) and [r] or [r], "note")
+        def spy(sessions, only=None):
+            seen["sweep_roots"] = only
+            return ([], [], None)
+        m.sweep_roots = spy
+
+        class Args:
+            campaign_issue, repo = "9999", "o/r"
+        m.cmd_live(Args())
+        check("cmd_live scopes its sweep to this campaign's directory",
+              seen.get("sweep_roots") == Path("/the-scope-260905"),
+              f"got {seen.get('sweep_roots')!r}")
+        check("...and scopes the repository reading the same way",
+              seen.get("claim_repos") == Path("/the-scope-260905"),
+              f"got {seen.get('claim_repos')!r}")
+    finally:
+        (m.own_campaign_dir, m.sweep_roots, m.base_root, m.matching_refs,
+         m.herdr_sessions, m.checkouts, m.claim_repos) = real
+
+
 def sweep_cases(m):
     """The roots, which used to be derived from who was alive."""
     with tempfile.TemporaryDirectory() as d:
@@ -747,9 +797,25 @@ def sweep_cases(m):
             check("a repos/ that will not enumerate is reported, not skipped",
                   len(unread) == 1 and "locked-260904" in unread[0])
             m.base_root = lambda: (str(root), None)
-            roots, unread, why = m.sweep_roots({})
+            roots, unread, why = m.sweep_roots({}, None)
             check("...and an unreadable repos/ comes back through sweep_roots",
                   len(unread) == 1 and "locked-260904" in unread[0])
+            # ------ #187 Q4: A NEIGHBOUR'S DIRECTORY IS NOT THIS ONE'S ------
+            # The same locked directory, with the sweep scoped to a DIFFERENT
+            # campaign's directory. It used to deny `live` and `release` for
+            # every campaign on the machine; scoped, it is not read at all.
+            mine = root / "mine-260905" / "repos" / "acme"
+            mine.mkdir(parents=True)
+            clones, unread = m.campaign_clones(str(root), root / "mine-260905")
+            check("a neighbour's unreadable repos/ does not deny this campaign",
+                  not unread, str(unread))
+            check("...and this campaign's own clone is still swept",
+                  any("acme" in c for c in clones), str(clones))
+            # ...and the scoping does not become a way to MISS this campaign's
+            # own failure: locked, scoped to itself, it is still reported.
+            clones, unread = m.campaign_clones(str(root), root / "locked-260904")
+            check("...while this campaign's OWN unreadable repos/ still denies",
+                  len(unread) == 1 and "locked-260904" in unread[0], str(unread))
         finally:
             bad.chmod(0o755)
             m.base_root = real
@@ -762,7 +828,7 @@ def sweep_cases(m):
         real = m.base_root
         try:
             m.base_root = lambda: (str(root), None)
-            roots, unread, why = m.sweep_roots({})
+            roots, unread, why = m.sweep_roots({}, None)
             check("sweep_roots reaches a member clone with nothing alive",
                   why is None
                   and str(root / "demo-260904" / "repos" / "acme") in roots)
@@ -790,7 +856,7 @@ def verdict_cases(m, capsys=None):
         m.matching_refs = lambda r, n: (["campaign-9/1-a"], None)
         m.herdr_sessions = lambda: ({}, None)
         m.base_root = lambda: ("/nowhere", None)
-        m.sweep_roots = lambda s: (["/a"], ["/b: would not enumerate"], None)
+        m.sweep_roots = lambda s, only=None: (["/a"], ["/b: would not enumerate"], None)
         m.checkouts = lambda roots: ({}, [])
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -803,7 +869,7 @@ def verdict_cases(m, capsys=None):
         check("...and names the repository it could not sweep",
               "would not enumerate" in out)
 
-        m.sweep_roots = lambda s: (["/a"], [], None)
+        m.sweep_roots = lambda s, only=None: (["/a"], [], None)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             code = m.cmd_live(Args())
@@ -818,7 +884,7 @@ def verdict_cases(m, capsys=None):
         # every unit case passed, because they call `classify` with the right
         # root directly. This one runs the command.
         m.base_root = lambda: ("/BASE", None)
-        m.sweep_roots = lambda s: (["/some/other/repo"], [], None)
+        m.sweep_roots = lambda s, only=None: (["/some/other/repo"], [], None)
         m.herdr_sessions = lambda: ({"s1": {"name": "<unnamed>",
                                             "cwd": "/BASE/anywhere",
                                             "pane": "p", "status": "idle"}},
@@ -998,7 +1064,8 @@ def main():
     spec.loader.exec_module(m)
 
     for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
-               sweep_cases, verdict_cases, peer_cases, robustness_cases,
+               scope_cases, sweep_cases, verdict_cases, peer_cases,
+               robustness_cases,
                root_cases, repos_cases):
         fn(m)
     for name in FAILED:

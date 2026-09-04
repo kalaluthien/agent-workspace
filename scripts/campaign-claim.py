@@ -716,11 +716,47 @@ def repo_root(cwd):
     return str(Path(r.stdout.strip()).parent), None
 
 
-def campaign_clones(root):
-    """(paths, unread) -- every member checkout under every campaign directory
-    at the base root.
+def own_campaign_dir(start=None):
+    """This session's own campaign directory, or None when it is not under one.
 
-    UNCONDITIONAL, and that is the fix: deriving the roots from live herdr rows
+    THE SAME WALK `base_root` MAKES, kept rather than thrown away. `base_root`
+    already looks for a `<slug>-<YYMMDD>` ancestor of this file and returns its
+    PARENT; the directory it walked past is the one campaign this invocation is
+    actually about, and #187 question 4 is what it cost to discard it.
+
+    None is a real answer, not a failure: run from the base's own `scripts/`
+    there is no campaign ancestor, and nothing on disk says which campaign a
+    directory belongs to until #181 puts the number in the name.
+
+    `start` is a parameter so the walk is a calculation a case can drive. Read
+    from `HERE` alone it could only be tested by where this file happens to
+    sit, which is a different answer in a worktree, in a clone, and on CI."""
+    for parent in (start or HERE).parents:
+        if CAMPAIGN_DIR.search(parent.name):
+            return parent
+    return None
+
+
+def campaign_clones(root, only=None):
+    """(paths, unread) -- the member checkouts under campaign directories at the
+    base root; under `only` alone when a campaign directory is given.
+
+    ONE CAMPAIGN'S READING DOES NOT DEPEND ON ANOTHER'S DIRECTORY (#187
+    question 4). This walked EVERY campaign directory, so one with an
+    unreadable `repos/` denied `live` and `release` for every other campaign on
+    the machine, and a neighbour's clone counted toward this campaign's sweep.
+    directory/system.als has said all along that `campaignDirAt` is the one way
+    to reach a campaign's directory and that every reading about a campaign
+    goes through it; this is the reader catching up, as in question 1.
+
+    The residual, named because it does not go away here: run from the base's
+    own `scripts/` there is no campaign ancestor, `only` is None, and the sweep
+    is machine-wide again. Nothing on disk attributes a directory to a campaign
+    until #181 puts the number in the name, so the wide sweep says so rather
+    than pretending to be scoped.
+
+    UNCONDITIONAL WITHIN WHAT IT SWEEPS, and that is the older fix: deriving
+    the roots from live herdr rows
     made the sweep go blind exactly when a session died, which is the case it
     exists for. A delegate that exits leaves its clone on disk holding the
     branch, and a sweep that only followed living sessions reported that branch
@@ -728,12 +764,15 @@ def campaign_clones(root):
 
     A campaign directory that will not enumerate is named, never skipped."""
     out, unread = [], []
-    try:
-        dirs = [d for d in sorted(Path(root).iterdir())
-                if d.is_dir() and CAMPAIGN_DIR.search(d.name)]
-    except OSError as e:
-        return [], [f"{root}: could not list campaign directories "
-                    f"({e.__class__.__name__})"]
+    if only is not None:
+        dirs = [Path(only)]
+    else:
+        try:
+            dirs = [d for d in sorted(Path(root).iterdir())
+                    if d.is_dir() and CAMPAIGN_DIR.search(d.name)]
+        except OSError as e:
+            return [], [f"{root}: could not list campaign directories "
+                        f"({e.__class__.__name__})"]
     for d in dirs:
         repos = d / "repos"
         if not repos.is_dir():
@@ -760,7 +799,7 @@ def remote_of(clone):
     return m.group(1) if m else None
 
 
-def claim_repos(default_repo, root):
+def claim_repos(default_repo, root, only=None):
     """Every repository this campaign's claims can be on. Returns (repos, note).
 
     A CLAIM IS CUT ON THE REPOSITORY THE WORK LANDS IN, so `--repo` alone
@@ -773,7 +812,7 @@ def claim_repos(default_repo, root):
     repos, seen = [default_repo], {default_repo}
     if not root:
         return repos, "no base root, so only the named repository was read"
-    clones, _ = campaign_clones(root)
+    clones, _ = campaign_clones(root, only)
     for c in clones:
         name = remote_of(c)
         if name and name not in seen:
@@ -801,14 +840,15 @@ def all_refs(repos, campaign_issue):
     return out, unread
 
 
-def sweep_roots(sessions):
+def sweep_roots(sessions, only=None):
     """(roots, unread, why_unreadable) -- every repository to enumerate
     worktrees in.
 
     Three sources, and only the third depends on anything running: the base
     root, because a campaign's worktrees hang off it; every member clone under
-    every campaign directory here, because a dead delegate's clone still holds
-    its branch; and each live session's own repository, which catches a session
+    THIS campaign's directory (#187 question 4 -- it used to be every campaign
+    directory here, so a neighbour's unreadable `repos/` denied this campaign's
+    reading), because a dead delegate's clone still holds its branch; and each live session's own repository, which catches a session
     working somewhere none of the above covers. Failing to resolve the base root
     is a refusal -- not knowing where to look is not the same as looking and
     finding nothing."""
@@ -816,7 +856,7 @@ def sweep_roots(sessions):
     if why:
         return None, [], why
     roots = {root}
-    clones, unread = campaign_clones(root)
+    clones, unread = campaign_clones(root, only)
     roots.update(clones)
     for row in sessions.values():
         r, _ = repo_root(row.get("cwd", ""))
@@ -924,7 +964,8 @@ def merged_pr_of(repo, branch):
 
 def cmd_live(args):
     root, _ = base_root()
-    repos, repo_note = claim_repos(args.repo, root)
+    mine = own_campaign_dir()
+    repos, repo_note = claim_repos(args.repo, root, mine)
     found, unread1 = all_refs(repos, args.campaign_issue)
     branches = sorted(found)
     why1 = "; ".join(unread1) if unread1 else None
@@ -935,7 +976,7 @@ def cmd_live(args):
     sessions, why2 = herdr_sessions()
     print(f"reading 2  herdr agent list -- "
           f"{'FAILED: ' + why2 if why2 else str(len(sessions)) + ' session(s) on this machine'}")
-    roots, unread, why3 = sweep_roots(sessions or {})
+    roots, unread, why3 = sweep_roots(sessions or {}, mine)
     if why3:
         where = {}
     else:
@@ -1132,7 +1173,8 @@ def merged_head_verdict(returncode, out, repo, branch):
 
 def cmd_release(args):
     root, _ = base_root()
-    repos, repo_note = claim_repos(args.repo, root)
+    mine = own_campaign_dir()
+    repos, repo_note = claim_repos(args.repo, root, mine)
     found, unread1 = all_refs(repos, args.campaign_issue)
     if unread1 and not args.branch:
         print(f"refusing: {'; '.join(unread1)}\n  A ref listing that did not "
@@ -1169,7 +1211,7 @@ def cmd_release(args):
               f"the live sessions, so an unread\n  listing leaves an occupant "
               f"unread too.", file=sys.stderr)
         return 1
-    roots, unread, why3 = sweep_roots(sessions)
+    roots, unread, why3 = sweep_roots(sessions, mine)
     if why3:
         print(f"refusing: {why3}", file=sys.stderr)
         return 1

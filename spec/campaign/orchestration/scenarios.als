@@ -397,6 +397,30 @@ pred R7e_WorkerRuleAdmitsTheDroppedSubIssue {
   }
 }
 
+/* R11. A HOLDER ATTRIBUTED THROUGH ANOTHER CAMPAIGN'S DIRECTORY (#187
+   question 4). `holder` reaches a checkout through `campaignDirAt[campaignOf[i],
+   host]`, and directory/system.als says that is the one way to reach a
+   campaign's directory -- so a sub-issue's holder must stand in ITS OWN
+   campaign's directory, never in a neighbour's on the same machine.
+
+   That statement was in the model and pinned by nothing: dropping the campaign
+   filter from `campaignDirAt` left all 162 commands green. The script had
+   drifted the same way for the same reason -- `campaign_clones` walked EVERY
+   campaign directory at the base root, so one with an unreadable `repos/`
+   denied `live` and `release` for every other campaign on the machine, and a
+   clone belonging to a neighbour counted toward this campaign's sweep.
+
+   Expect 0, and it goes SAT the moment `campaignDirAt` stops filtering by
+   campaign. */
+pred R11_HolderThroughAnotherCampaignsDir {
+  some a: Agent, c: Campaign {
+    c != campaignOf[a.task]
+    eventually (a in holder[a.task]
+                and no campaignDirAt[campaignOf[a.task], a.host].checkedOut
+                and some campaignDirAt[c, a.host].checkedOut)
+  }
+}
+
 /* R4h. THE HOLE, and the one this campaign actually fell into: a session works
    its own sub-issue and no claim of it ever exists, so every peer reading the
    records sees an open sub-issue indistinguishable from one nobody started. */
@@ -547,6 +571,10 @@ pred N2_UnnamedSessionStillBlocks {
   some c: Campaign, s: Session, a: Agent, m: Machine {
     a.peer = s and a.host = m and s.machine = m
     always no s.campaignNamed
+    /* ...AND UNDER THE BASE TREE, since #187 question 6. An absent name is not
+       evidence either way, so the cwd is what ties the session to this machine's
+       campaigns; N7 is the same session outside the tree, which does NOT block. */
+    always s in UnderBase
     /* `a.task not in c.memberIssues` is load-bearing: without it the witness
        blocks through the FIRST disjunct -- an agent on a sub-issue of this
        campaign blocks whatever it is called -- and says nothing about whether
@@ -579,6 +607,26 @@ pred N3_ForeignNameDoesNotExemptOwnSubIssue {
    retired, which the next `take` on that sub-issue then refuses forever. */
 pred noStrayClaims[c: Campaign] {
   all i: c.memberIssues | i in Claimed implies complete[i]
+}
+
+/* N7. THE RESIDUAL #187 QUESTION 6 LEAVES, stated rather than left as a gap in
+   a comment. A live session of this campaign that renamed to nothing AND left
+   the base tree does not block a close: nothing observable ties it here, and
+   blocking on it would block on it for every campaign on the machine at once.
+   It is a real hole -- that session is asked by nobody -- and this is the
+   witness that makes it findable instead of surprising.
+
+   Expect 1, and it is the pair of N2: the same unnamed session, in the tree and
+   out of it, blocking and not. */
+pred N7_UnnamedSessionOutsideTheTreeDoesNotBlock {
+  some c: Campaign, s: Session, a: Agent, m: Machine {
+    a.peer = s and a.host = m and s.machine = m
+    always no s.campaignNamed
+    always s not in UnderBase
+    eventually (a in Live and m in machinesHolding[c]
+                and a.task not in c.memberIssues
+                and not liveUnderLocally[c, m])
+  }
 }
 
 /* N4. THE STRAY: every sub-issue settled, one of them dropped rather than
@@ -850,6 +898,7 @@ run R4e_NumberedBranchStillShared for 4 Issue, 1 PullRequest, 1 Campaign, 2 Sess
 run N1_ForeignNamedSessionDoesNotBlock       for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 -- control: a session whose name says nothing still blocks
 run N2_UnnamedSessionStillBlocks             for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run N7_UnnamedSessionOutsideTheTreeDoesNotBlock for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 -- control: the name exempts the machine-wide disjunct and nothing else
 run N3_ForeignNameDoesNotExemptOwnSubIssue   for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 
@@ -879,6 +928,7 @@ run R9_SettledSubIssueStaysClaimed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Ses
 run R9b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R9c_RepairAdmitsClaimThenSettle for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R7e_WorkerRuleAdmitsTheDroppedSubIssue for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R11_HolderThroughAnotherCampaignsDir for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 10 steps expect 0
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
