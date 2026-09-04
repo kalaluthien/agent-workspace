@@ -208,6 +208,23 @@ def main():
         check("core.hooksPath sends git elsewhere, and the listing follows it",
               "NO git hook is installed" in r.stdout)
 
+    # A hook with no marker and no declaration, in a real hooks directory: the
+    # two-line shim acquire-repo writes. The note is a true reading -- what the
+    # hook runs is unknown to this reader -- and #178 fixed the clone, not the
+    # note, so it must survive as written.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        h = root / ".git" / "hooks" / "pre-commit"
+        h.write_text('#!/usr/bin/env sh\nexec "/h/.claude/git-hooks/no-main-commits" "$@"\n')
+        h.chmod(0o755)
+        r = subprocess.run([sys.executable, str(PRIM)], cwd=root,
+                           capture_output=True, text=True)
+        check("an unmarked hook with no `# runs:` line still yields the "
+              "unknown note",
+              "pre-commit declares no `# runs:` line" in r.stdout
+              and r.returncode == 0)
+
     # The unclassifiable-script case the warning block above exists for.
     with tempfile.TemporaryDirectory() as d:
         q = Path(d) / "mystery"
