@@ -14,8 +14,10 @@ split it, and so do the strings another command runs -- a shell's `-c`, alone
 or last in a cluster like `-lc`, and `eval`'s operands) whose command word is
 `gh` -- after `env`, `VAR=x`, `time`, a path -- is looked up in WRITES, and a
 segment that will not split refuses. A `gh` TOKEN this cannot read as the call
-(a loop body, `xargs`, a heredoc, or an assignment whose value is `gh`) is
-read as a write of unknown kind, since nothing downstream reads a `gh` write. Every other Bash command is ALLOWED UNREAD,
+(`xargs`, a heredoc, or an assignment whose value is `gh`) is read as a write
+of unknown kind, since nothing downstream reads a `gh` write. NOT a loop body:
+`do` and `then` are prefixes, so `for i in 1 2; do gh issue close 9; done` is
+read as the call it is and narrowed to #9. Every other Bash command is ALLOWED UNREAD,
 printing so: a shell string is an unbounded language, and a shell write on
 campaign work lands at the commit, where the other half reads it.
 
@@ -68,7 +70,7 @@ SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}", "`"}
 # Words before a command that are not it, and shells that run a string.
 PREFIXES = {"env", "command", "time", "nohup", "sudo", "exec", "do", "then",
             "else", "builtin", "nice"}
-SHELLS = {"sh", "bash", "zsh", "dash"}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
 # Words whose OPERAND is itself a command string, re-read as one.
 EVALS = {"eval"}
 
@@ -288,10 +290,17 @@ def gh_write(tokens):
     if not words:
         return False, "gh with no subcommand"
     if words[0] == "api":
-        method = next((tokens[j + 1].upper() if t in ("-X", "--method")
-                       else t[9:].upper() for j, t in enumerate(tokens[:-1])
-                       if t in ("-X", "--method") or t.startswith("--method=")),
-                      None)
+        # Over ALL tokens: `--method=X` carries its value and can be last,
+        # where `-X X` cannot. Slicing the last token off read the attached
+        # spelling as absent, which allowed the write.
+        method = None
+        for j, t in enumerate(tokens):
+            if t.startswith("--method="):
+                method = t[9:].upper()
+                break
+            if t in ("-X", "--method") and j + 1 < len(tokens):
+                method = tokens[j + 1].upper()
+                break
         if method:
             return method != "GET", f"gh api {method}"
         if any(t in API_WRITE_FLAGS or t.split("=")[0] in API_WRITE_FLAGS
@@ -330,7 +339,7 @@ def allow(lines):
 
 
 TAKE = ("Take the claim first: scripts/campaign-claim.py take <campaign issue> "
-        "<issue> <topic> --dir <campaign>, then work in a checkout on its branch.")
+        "<issue> <topic>, then work in a checkout on its branch.")
 
 
 def file_call(tool, target: Path, cwd: Path):
@@ -366,7 +375,7 @@ def bash_call(command, cwd: Path):
         if word == "gh":
             gh.append((rest, *gh_write(rest)))
         elif any(gh_token(t) for t in seg):
-            # A form not listed, a heredoc, a loop: read as a write of unknown
+            # A form not listed, a heredoc, xargs: read as a write of unknown
             # kind, because nothing downstream reads a gh write.
             stray.append(" ".join(seg)[:60])
     writes = [rest for rest, is_write, _ in gh if is_write]
@@ -378,8 +387,14 @@ def bash_call(command, cwd: Path):
     what = ", ".join([w for _, is_write, w in gh if is_write]
                      + [f"a `gh` this cannot read as a call, in `{x}`" for x in stray])
     root, how = session_root(cwd)
-    if root is None:
-        return allow([f"{what}: {how}, so this session is in no campaign."])
+    # A repository is not a base. `session_root` answers "which repository root"
+    # and any git checkout has one, so gating on `root is None` alone walled
+    # every campaign-plane write from every unrelated repository on the machine
+    # -- and this guard is registered for every session. The marker is what
+    # `file_call` already decides on, so both halves ask the same question.
+    if root is None or not (root / BASE_MARKER).is_file():
+        why = how if root is None else f"{how}, which is a repository and not a base"
+        return allow([f"{what}: {why}, so this session is in no campaign."])
     issues = {issue_target(x) for x in writes} - {None}
     issue = issues.pop() if len(issues) == 1 and not stray else None
     holders, detail = held(root, issue)

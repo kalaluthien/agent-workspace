@@ -107,7 +107,14 @@ pred claimAtomic       { always (Now.event = Claim  implies Now.issue not in Cla
    no other: a file tool's path, and a `gh` command, which is one program with
    a stable grammar -- a write to the campaign plane through it has no
    filesystem target at all and is always `Work`, and a `gh` call the guard
-   cannot parse is refused, never guessed. A shell command is NOT read for a
+   READS AS A CALL and cannot parse is refused, never guessed. The narrower
+   verb is deliberate and was bought twice: a `gh` write can always be hidden
+   from a bounded reader by a shell that is not read -- a here-string, a pipe
+   into a shell, an interpreter's `-c`, a script file -- so a sentence
+   promising that no `gh` write escapes is a sentence the code cannot make
+   true, and it produced a CONTRADICTS on every audit that checked it. What
+   the guard does promise: a `gh` TOKEN it can see and cannot resolve to a
+   call is refused rather than guessed at. A shell command is NOT read for a
    target: an arbitrary shell string is an unbounded language, and every
    reader of it was one more alternation for the next bypass. Such a call is
    allowed at the moment it is made, printing that it was unread, and its

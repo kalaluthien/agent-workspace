@@ -46,7 +46,9 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
-      - name: Every guard that refuses a commit also refuses here
+      # check-commit-claim.py is deliberately absent: it refuses a branch that
+      # is not a claim, and a pull request runner's branch never is.
+      - name: The three guards that read the tree, as the pre-commit runs them
         run: |
           scripts/check-rule-readers.py
           scripts/check-tree-shape.py

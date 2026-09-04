@@ -32,7 +32,7 @@ remote only when that is absent. Session-keyed when `CLAUDE_CODE_SESSION_ID`
 is in the environment (it is, in the shell a Bash tool call's `git` inherits):
 the session id is printed beside the verdict so a refusal is attributable, and
 a person's terminal commit, which carries none, is judged by the branch alone
-and never walled. After #176 there is no record a session id could be joined
+-- which walls it exactly as it walls a session's. After #176 there is no record a session id could be joined
 to, so the id changes what is PRINTED and never what is decided; that is said
 here so nobody reads the second line as a second gate. A remote that could not
 be asked is printed as such, apart from a ref that was looked for and absent.
@@ -106,8 +106,7 @@ def main() -> int:
         f"{top} is {where}, and its branch is not a claim: {source}.", who,
         "A commit on campaign work lands on the sub-issue's claimed branch.",
         "Take the claim: scripts/campaign-claim.py take <campaign issue> "
-        "<issue> <topic> --dir <campaign>, then commit from a checkout on "
-        "that branch.",
+        "<issue> <topic>, then commit from a checkout on that branch.",
     ])
 
 

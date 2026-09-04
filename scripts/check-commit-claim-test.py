@@ -209,6 +209,56 @@ def main():
               r.returncode == 0 and "not campaign work" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
 
+    # COULD NOT LOOK IS NOT A PASS. The claim reading lives in one script; when
+    # that import fails the gate has read nothing, and the one branch that
+    # turns "I could not look" into an allowed commit was asserted by nothing.
+    with tempfile.TemporaryDirectory() as d:
+        f = build(d)
+        home = f.home
+        (f.base / "scripts" / "check-campaign-claim.py").unlink()
+        (f.base / "docs" / "y.html").write_text("<p>y</p>\n")
+        m = load_fixture()
+        m.git(f.base, "add", "-A")
+        before = m.git(f.base, "rev-parse", "HEAD").stdout.strip()
+        r = subprocess.run(["git", "-C", str(f.base), "-c", "user.email=t@t",
+                            "-c", "user.name=t", "commit", "-qm", "c"],
+                           capture_output=True, text=True,
+                           env=dict(os.environ, HOME=str(home)))
+        after = m.git(f.base, "rev-parse", "HEAD").stdout.strip()
+        check("the claim reading missing refuses the commit and says it could "
+              "not import, rather than allowing it",
+              r.returncode != 0 and "could not import" in out(r)
+              and before == after,
+              f"exit {r.returncode}; HEAD moved: {before != after}; "
+              f"{out(r)[:300]}")
+
+    # A remedy naming an option `take` does not accept sends the reader to a
+    # command that fails. Read from `take --help`, so the next retired flag is
+    # caught too.
+    with tempfile.TemporaryDirectory() as d:
+        f = build(d, feature="feature")
+        home = f.home
+        wt = f.trees["feature"]
+        (wt / "docs").mkdir(exist_ok=True)
+        (wt / "docs" / "z.html").write_text("<p>z</p>\n")
+        m = load_fixture()
+        m.git(wt, "add", "-A")
+        r = subprocess.run(["git", "-C", str(wt), "-c", "user.email=t@t", "-c",
+                            "user.name=t", "commit", "-qm", "c"],
+                           capture_output=True, text=True,
+                           env=dict(os.environ, HOME=str(home)))
+        usage = subprocess.run(
+            [sys.executable, str(HERE / "campaign-claim.py"), "take", "--help"],
+            capture_output=True, text=True).stdout
+        remedy = next((x for x in out(r).splitlines()
+                       if "campaign-claim.py take" in x), "")
+        unknown = [w.strip(",.") for w in remedy.split()
+                   if w.startswith("--") and w.strip(",.") not in usage]
+        check("the commit gate's remedy names only options `take` accepts",
+              remedy and not unknown,
+              f"not in `take --help`: {unknown}; remedy: {remedy!r}; "
+              f"exit {r.returncode}: {out(r)[:300]}")
+
     if not ran:
         print("FAIL  the suite ran no case at all")
         return 1

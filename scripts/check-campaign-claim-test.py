@@ -26,7 +26,6 @@ named for its row.
 Usage: scripts/check-campaign-claim-test.py
 """
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -151,6 +150,20 @@ def main():
         r = ask(d, tool="Bash", command="rm -rf x")
         check("a shell command outside is allowed unread",
               r.returncode == 0 and UNREAD in r.stdout, out(r)[:200])
+        # A REPOSITORY IS NOT A BASE, and this guard is registered for every
+        # session on the machine: gating the gh half on "has a repository root"
+        # walled every campaign-plane write in every unrelated checkout. The
+        # case above cannot catch it -- its cwd has no repository at all.
+        plain = Path(d) / "plain"
+        plain.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(plain)], check=True)
+        for cmd in ("gh issue close 9", "gh pr merge 9 --merge",
+                    "gh pr comment 9 --body x"):
+            r = ask(plain, tool="Bash", command=cmd)
+            check(f"`{cmd}` from an ordinary git repository that is no base is "
+                  f"allowed, naming why",
+                  r.returncode == 0 and "in no campaign" in r.stdout
+                  and "not a base" in r.stdout, out(r)[:300])
 
     # 2. The two clauses, and the refusal when neither holds.
     with tempfile.TemporaryDirectory() as d:
@@ -194,6 +207,19 @@ def main():
               "Clause 1 does not hold" in r.stderr and "Clause 2 does not hold"
               in r.stderr and "no checkout under" in r.stderr, out(r)[:400])
         check("...and says how to take one", "campaign-claim.py take" in r.stderr)
+        # A REMEDY THAT DOES NOT RUN IS NOT A REMEDY. `--dir` went with the
+        # record in #176 and argparse now rejects it, so the refusal sent the
+        # reader to a command that fails. Asserted against `take --help`
+        # rather than against a literal, so the next retired flag is caught
+        # too.
+        usage = subprocess.run([sys.executable, str(CLAIM), "take", "--help"],
+                               capture_output=True, text=True).stdout
+        remedy = next(x for x in r.stderr.splitlines()
+                      if "campaign-claim.py take" in x)
+        unknown = [w.strip(",.") for w in remedy.split()
+                   if w.startswith("--") and w.strip(",.") not in usage]
+        check("...and every option the remedy prints is one `take` accepts",
+              not unknown, f"not in `take --help`: {unknown}; remedy: {remedy}")
         r = ask(f.base, path=str(f.camp / "notes.md"))
         check("a write under the campaign directory with no claim is refused",
               r.returncode == 2 and "inside the campaign directory" in r.stderr,
@@ -356,6 +382,29 @@ def main():
         r = ask(f.base, tool="Bash", command="gh api -X GET search/issues -f q=x")
         check("gh api with an explicit GET is a read, fields or not",
               r.returncode == 0 and "gh api GET" in r.stdout, out(r)[:200])
+        # `--method=X` carries its value, so it can be the LAST token where
+        # `-X X` cannot. The method scan sliced the last token off and read the
+        # attached spelling as absent, which allowed the write.
+        r = ask(f.base, tool="Bash",
+                command="gh api repos/o/r/issues/1 --method=DELETE")
+        check("an attached --method= is read even as the last word",
+              r.returncode == 2 and "gh api DELETE" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh api repos/o/r/issues/1 --method=GET")
+        check("...and an attached GET is still a read", r.returncode == 0
+              and "gh api GET" in r.stdout, out(r)[:300])
+        for sh in ("ksh", "fish"):
+            r = ask(f.base, tool="Bash", command=f"{sh} -c 'gh issue close 5'")
+            check(f"{sh} runs a -c string like every other shell that does",
+                  r.returncode == 2 and "a write to #5" in r.stderr, out(r)[:200])
+        # `do` is a PREFIX, so a for-body is read as the call it is -- the
+        # docstring used to name it as unreadable, which was the other way
+        # round.
+        r = ask(f.base, tool="Bash",
+                command="for i in 1 2; do gh issue close 9; done")
+        check("a loop body is read as the call it is, not as a stray token",
+              r.returncode == 2 and "a write to #9" in r.stderr
+              and "cannot read as a call" not in r.stderr, out(r)[:300])
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, claims=("campaign-1/7-x",))
         r = ask(f.base, tool="Bash", command="gh issue close 7 -R a/b")
