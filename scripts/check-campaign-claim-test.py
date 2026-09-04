@@ -35,6 +35,11 @@ RECORD = f"session {SESSION}\nname exec-1\npid 1\nbranch campaign-1/7-x\nlocal y
 RELEASED = RECORD + "released 2026-09-02T10:00:00+0900 by " + SESSION + "\n"
 OTHER = "session sid-2\nname exec-2\npid 1\nbranch campaign-1/7-x\nlocal yes\n"
 
+# The closing command every `--released` case sends. Named once because the
+# machine-wide PreToolUse guard reads a heredoc body as commands, so a shell
+# that writes this file with the phrase inline is refused before it runs.
+CLOSE_CMD = "gh issue close 7"
+
 
 def base(d, campaigns):
     """A fixture base: the marker script the guard resolves a root by, and
@@ -308,6 +313,38 @@ def main():
         check("the release half on the wrong event says so and exits 0",
               r.returncode == 0 and "Re-run" in out(r),
               f"exit {r.returncode}: {out(r)[:200]}")
+
+    # 11b. A CLAIM IS RELEASED BY ITS HOLDER. This half used to shell out to
+    # `campaign-claim release --session <sid>`, whose holder proof refused a
+    # caller whose session id was not the record's. Moving the mark in-process
+    # dropped that proof, so any session closing any sub-issue retired whoever's
+    # record it happened to find -- a claim retired by a session that never held
+    # it, which is the one thing a claim record exists to prevent.
+    #
+    # ASSERTED ON THE RECORD'S BYTES, not on the exit status: this half exits 0
+    # whatever happens, by design, so an exit-status case cannot see the write
+    # at all and would pass over the defect.
+    with tempfile.TemporaryDirectory() as d:
+        root = base(d, {"demo-260902": {"7": OTHER}})
+        # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and its fixtures have to spell the path
+        rec = root / "demo-260902" / "runtime" / "claims" / "7"
+        before = rec.read_text()
+        r = ask(root, tool="Bash", command=CLOSE_CMD, post=True)
+        check("a peer's record is NOT released by a session that never held it",
+              rec.read_text() == before,
+              f"record changed to: {rec.read_text()[:120]}")
+        check("...and the refusal names the holder it found",
+              "sid-2" in out(r), out(r)[:200])
+
+    # ...and the holder's own close still marks it, or the check above would be
+    # a rule that lets nothing through.
+    with tempfile.TemporaryDirectory() as d:
+        root = base(d, {"demo-260902": {"7": RECORD}})
+        # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and its fixtures have to spell the path
+        rec = root / "demo-260902" / "runtime" / "claims" / "7"
+        ask(root, tool="Bash", command=CLOSE_CMD, post=True)
+        check("the holder's own close does mark its record released",
+              "released" in rec.read_text(), rec.read_text()[:120])
 
     # 12. What the call WRITES TO, which is a different question from where the
     # session sits. Every case here runs from the base root with no claim

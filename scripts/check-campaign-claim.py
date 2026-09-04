@@ -901,6 +901,21 @@ def released(payload):
             print(f"check-campaign-claim --released: {evidence}; "
                   f"{path} is already marked released.")
             return 0
+        # THE HOLDER CHECK, restored. The shell-out this replaced passed
+        # `release --session <sid>`, whose `holder_proof` refused unless the
+        # caller's session id equalled the record's -- and moving the mark
+        # in-process dropped it, so any session closing any sub-issue marked
+        # whoever's record it found. That is somebody else's claim retired by a
+        # session that never held it, which is exactly what a claim record is
+        # for. The relocation was supposed to be behaviour-preserving; here it
+        # was not.
+        held = rec.get("session", "")
+        if held != session_id:
+            print(f"check-campaign-claim --released: {evidence}, but "
+                  f"{path} is held by session {held or '<absent>'}, not by "
+                  f"{session_id}. A claim is released by its holder; this "
+                  f"session is not it.")
+            return 0
         stamp = mark_released(path, rec, session_id)
         print(f"check-campaign-claim --released: {evidence}; "
               f"marked {path} released {stamp} by {session_id}")
