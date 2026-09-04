@@ -75,6 +75,9 @@ GH = """#!/bin/sh
 case "$*" in
   *matching-refs*) echo '["refs/heads/campaign-9999/1-alpha","refs/heads/campaign-9999/2-beta"]'; exit 0 ;;
   *compare/main*) echo 0; exit 0 ;;
+  # `2-beta` landed; `1-alpha` never did. The two answers are what `live`'s
+  # vacant group and `release`'s fresh-claim gate each turn on.
+  *"--head campaign-9999/2-beta"*) echo '[{"number": 162}]'; exit 0 ;;
   *"pr list"*|*--state*merged*) echo '[]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
@@ -275,6 +278,13 @@ def live_cases(m):
             agent("s2", "campaign-1-planner-9", d)))
         r = claim(["live", "9999"], path)
         out = r.stdout + r.stderr
+        # A VACANT REF WHOSE WORK LANDED BLOCKS NOTHING, and saying so is what
+        # makes the group actionable: this tracker leaves merged branches
+        # standing, so a close told to refuse on the whole group can never pass.
+        check("a vacant claim whose pull request merged is marked landed",
+              "campaign-9999/2-beta" in out and "landed as #162" in out)
+        check("...and one that never merged is marked so",
+              "campaign-9999/1-alpha" in out and "never merged" in out)
         check("live names all three readings before any count",
               "reading 1" in out and "reading 2" in out and "reading 3" in out)
         check("...and reads the campaign's refs off the remote",
@@ -335,6 +345,39 @@ def take_cases(m):
         check("an unclaimed sub-issue reaches the create-ref",
               "cut from" in out and "one claim whatever the topic" not in out)
 
+        # THE RACE THE SURVEY ALONE CANNOT CLOSE. Two takers on two topics both
+        # see no sibling and both create; the re-check AFTER the create is what
+        # settles it, because by then both refs exist. The shim answers empty
+        # first and two-refs after, which is exactly that interleaving.
+        raced = shims(Path(d) / "raced", gh="""#!/bin/sh
+STATE=RACEDIR/n
+case "$*" in
+  *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *matching-refs*)
+      if [ -f "$STATE" ]; then
+        echo '["refs/heads/campaign-9999/5-aaa","refs/heads/campaign-9999/5-zzz"]'
+      else
+        : > "$STATE"; echo '[]'
+      fi
+      exit 0 ;;
+  *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
+  *"-X DELETE"*) echo deleted; exit 0 ;;
+  *git/refs*) exit 0 ;;
+esac
+exit 1
+""".replace("RACEDIR", str(Path(d) / "raced")))
+        r = claim(["take", "9999", "5", "zzz"], raced)
+        out = r.stdout + r.stderr
+        check("a claim that lost a race is deleted again, not kept",
+              r.returncode == 3 and "in the same moment" in out
+              and "campaign-9999/5-aaa" in out)
+        (Path(d) / "raced" / "n").unlink()
+        r = claim(["take", "9999", "5", "aaa"], raced)
+        out = r.stdout + r.stderr
+        check("...and the winner keeps its ref and says who lost",
+              r.returncode == 0 and "raced this claim and lost" in out
+              and "campaign-9999/5-zzz" in out)
+
         # A ref listing that failed is not proof the sub-issue is free.
         blind = shims(Path(d) / "blind", gh="""#!/bin/sh
 case "$*" in
@@ -378,6 +421,19 @@ def release_cases(m):
         check("release refuses when the occupancy reading did not happen",
               r.returncode == 1 and "herdr" in (r.stdout + r.stderr))
 
+        # A BRANCH WITH COMMITS IS NEVER DELETED -- and used to leave no exit
+        # at all, so a sub-issue closed `not planned` after its executor pushed
+        # kept a ref that `take`'s sweep then refused forever.
+        ahead = shims(Path(d) / "ahead", herdr=listing(), gh=GH.replace(
+            "*compare/main*) echo 0; exit 0 ;;",
+            "*compare/main*) echo 3; exit 0 ;;"))
+        r = claim(["release", "9999", "1"], ahead)
+        out = r.stdout + r.stderr
+        check("release refuses a branch holding commits",
+              r.returncode == 1 and "3 commit(s) ahead" in out)
+        check("...and names both ways out, one of them a command",
+              "gh api -X DELETE" in out and "pull request" in out)
+
         # A sub-issue with no ref of its own is a refusal, never a silent pass.
         r = claim(["release", "9999", "7"], path)
         check("release refuses a sub-issue no ref names",
@@ -388,7 +444,7 @@ def release_cases(m):
         # has not checked it out yet, and is byte-for-byte what finished work
         # looks like. Deleting it lets a second `take` succeed.
         empty = shims(Path(d) / "empty", herdr=listing())
-        r = claim(["release", "9999", "2"], empty)
+        r = claim(["release", "9999", "1"], empty)
         out = r.stdout + r.stderr
         check("release refuses an empty branch that was never merged",
               r.returncode == 1 and "never merged" in out
@@ -397,11 +453,18 @@ def release_cases(m):
               "second `take` succeed" in out)
         # The shim's DELETE is unhandled and exits 1, so reaching it is visible
         # as the delete's own refusal rather than as this gate passing.
-        r = claim(["release", "9999", "2", "--confirmed-absent", "a person"],
+        r = claim(["release", "9999", "1", "--confirmed-absent", "a person"],
                   empty)
         out = r.stdout + r.stderr
         check("...and a confirmed absence gets past it to the delete",
               "absence confirmed by: a person" in out)
+        # ...and the OTHER side of the same gate: a branch whose pull request
+        # merged is finished work, and needs no person to say so.
+        r = claim(["release", "9999", "2"], empty)
+        out = r.stdout + r.stderr
+        check("a merged branch passes the gate with no --confirmed-absent",
+              "finished work and not a fresh claim" in out
+              and "--confirmed-absent" not in out)
 
 
 def sweep_cases(m):
@@ -505,6 +568,63 @@ def verdict_cases(m, capsys=None):
          m.base_root) = real
 
 
+def root_cases(m):
+    """`base_root` from a clone, which is the base as a member of itself."""
+    import types
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        here = root / "demo-260904" / "repos" / "campaign-base" / "scripts"
+        here.mkdir(parents=True)
+        real = m.HERE
+        try:
+            m.HERE = here
+            got, why = m.base_root()
+            # THE CLONE IS A DIFFERENT REPOSITORY, script and all, so the git
+            # rule answers with the clone -- a base root holding no campaign
+            # directory, which sweeps clean and lets `release` delete a ref
+            # somebody is standing in. The campaign-directory ancestor is what
+            # says otherwise.
+            check("base_root run from a clone finds the real base root",
+                  why is None and got == str(root))
+        finally:
+            m.HERE = real
+        got, why = m.base_root()
+        check("...and from the base's own scripts/ it still answers",
+              why is None and got)
+
+    check("an ssh remote parses to owner/repo",
+          m.REMOTE.search("git@github.com:o/r.git").group(1) == "o/r")
+    check("...and an https one",
+          m.REMOTE.search("https://github.com/o/r").group(1) == "o/r")
+
+
+def repos_cases(m):
+    """Which repositories a campaign's claims can be on."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        clone = root / "demo-260904" / "repos" / "acme"
+        clone.mkdir(parents=True)
+        git(clone.parent, "init", "-q", "acme") if False else None
+        subprocess.run(["git", "-C", str(clone), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(clone), "remote", "add", "origin",
+                        "git@github.com:o/acme.git"], check=True)
+        repos, note = m.claim_repos("o/base", str(root))
+        # A MEMBER-REPO CLAIM IS ON THE MEMBER'S REMOTE. Reading only the base
+        # returned `0 occupied, 0 vacant` over a delegate standing in one.
+        check("a member clone's origin joins the repositories read",
+              repos == ["o/base", "o/acme"])
+        check("...and the base is always first", repos[0] == "o/base")
+        repos, note = m.claim_repos("o/base", None)
+        check("with no base root, only the named repository is read, and it says so",
+              repos == ["o/base"] and "no base root" in note)
+
+    # The repository travels with the ref, because a delete aimed at the wrong
+    # one takes a different repository's commits.
+    got, unread = {}, []
+    check("all_refs keys a branch to the repository it was found on",
+          isinstance(m.all_refs([], "1"), tuple))
+
+
 def peer_cases(m):
     """Who a close is told to ask -- and who it is not."""
     sessions = {
@@ -531,6 +651,33 @@ def peer_cases(m):
     check("a session of another campaign, elsewhere, is not",
           "other" not in names)
 
+    # THE OVERCORRECTION. Counting every session under the base root made
+    # `ours` identical for every campaign number, so closing #116 asked #1's
+    # planner to stand down. A name that says whose it is, is believed.
+    under_base = {"x": {"name": "campaign-1-planner-3", "cwd": "/base",
+                        "pane": "p", "status": "idle"}}
+    check("a session named for ANOTHER campaign is not this one's, even here",
+          not m.classify([], {}, under_base, "116", root="/base",
+                         caller=None)[2])
+    check("...and it IS its own campaign's",
+          len(m.classify([], {}, under_base, "1", root="/base",
+                         caller=None)[2]) == 1)
+
+    # `under` answers about absolute paths only: `Path.resolve()` resolves a
+    # relative one against the PROCESS cwd, so herdr's `"?"` placeholder counted
+    # three unrelated sessions. THE ROOT HERE IS AN ANCESTOR OF THE PROCESS'S
+    # OWN CWD, and it has to be: against a root the process is not inside, the
+    # resolved junk path falls outside anyway and the case passes with the guard
+    # deleted -- which is a fixture that pins nothing.
+    inside = str(Path.cwd().parent)
+    for junk in ("?", "", "relative/path"):
+        check(f"under({junk!r}) is False even from inside the root",
+              not m.under(junk, inside))
+    check("under() still answers True for a real path inside the root",
+          m.under(str(Path.cwd()), inside))
+    check("...and False for a sibling that shares a prefix",
+          not m.under("/base-other/x", "/base"))
+
 
 def robustness_cases(m):
     rows, why = m.parse_agents('{"result": {"agents": null}}')
@@ -551,7 +698,8 @@ def main():
     spec.loader.exec_module(m)
 
     for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
-               sweep_cases, verdict_cases, peer_cases, robustness_cases):
+               sweep_cases, verdict_cases, peer_cases, robustness_cases,
+               root_cases, repos_cases):
         fn(m)
     for name in FAILED:
         print(f"FAIL  {name}")

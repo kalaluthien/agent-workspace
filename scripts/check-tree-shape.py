@@ -117,7 +117,19 @@ RETIRED = [
     (re.compile(r"\bscripts/campaign-(anchors|bound|subtasks|settlement)\b"),
      "#105 -- merged into scripts/campaign-tracker.py <subcommand>"),
     (re.compile(r"\bscripts/campaign-(live|session-alive)\b"),
-     "#105 -- merged into scripts/campaign-claim.py live | alive"),
+     "#105 -- merged into scripts/campaign-claim.py live"),
+    # #176 deleted the record, the brief, the canary and the two prose
+    # comments. Paths and bare words alike here: `runtime/claims` is a path, and
+    # `STOOD DOWN` is a message nothing sends any more, so a reintroduction of
+    # either looks exactly like the thing that was removed. Prose explaining
+    # what was retired says `runtime/claims/` with the trailing slash, which
+    # these do not match.
+    (re.compile(r"\bruntime/claims\b(?!/)"),
+     "#176 -- the claim is the branch ref; there is no record"),
+    (re.compile(r"\bruntime/handover\b(?!/)"),
+     "#176 -- the brief is the sub-issue body"),
+    (re.compile(r"\bcampaign-claim\.py (status|list|alive|stood-down)\b"),
+     "#176 -- retired with the record; take | release | live are what is left"),
     (re.compile(r"\bscripts/alloy-trace-digest\b"),
      "#105 -- merged into scripts/alloy-check.py --digest"),
     # The lookbehind is load-bearing: the destination path *ends* in

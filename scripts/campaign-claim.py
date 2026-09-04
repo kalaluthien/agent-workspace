@@ -57,10 +57,17 @@ server-side refusal separates `7-parser` from `7-parse-fix` and admits both --
 two executors on one sub-issue, which is the thing a claim exists to stop. The
 record this replaced was keyed on the sub-issue and gave that for free. So
 `take` lists `campaign-<N>/` first and refuses on any ref already naming the
-sub-issue, whatever its topic. That is a survey before a create and is NOT
-atomic; the window is stated where the code makes it rather than hidden, and it
-is no wider than the one `O_EXCL` on a record left, since the binding already
-holds a campaign to one machine.
+sub-issue, whatever its topic -- and then lists AGAIN after its own create-ref.
+The first read is a narrowing and is not atomic on its own: two takers on two
+topics both see no sibling and both create. The second read is what settles it,
+because by then both refs exist, both takers see the same set, and the
+lexicographically smallest ref wins a race neither of them has to talk about.
+The loser deletes the ref it just cut, which held nothing.
+
+That matters because the record this replaced was keyed on the sub-issue and
+`O_EXCL` was COMPLETE on one machine -- and one machine is the only place a
+campaign runs. Leaving the survey alone would have been a weakening dressed up
+as a ceiling.
 
 EVERY CLAIM CUTS A REF, REPO-LESS WORK INCLUDED
 
@@ -177,6 +184,17 @@ from pathlib import Path
 
 DEFAULT_REPO = "kalaluthien/campaign-base"
 SHA = re.compile(r"^[0-9a-f]{40}$")
+
+# A session name that names SOME campaign. Only the shape matters here -- which
+# campaign is compared by the caller -- and `campaign-name-session.py` owns the
+# rule itself; this is the loose reading that answers "does this name say whose
+# it is at all", which is a different question from "is it well formed".
+OTHER_CAMPAIGN = re.compile(r"^campaign-\d+-")
+
+# `<slug>-<YYMMDD>` -- the campaign directory shape, read as a shape. Nothing
+# derives the list from GitHub, because the question is which directories are on
+# THIS machine. The same regex the claim guard uses.
+CAMPAIGN_DIR = re.compile(r"-\d{6}$")
 
 HERE = Path(__file__).resolve().parent
 
@@ -341,6 +359,38 @@ def cmd_take(args):
         print(f"refusing: create-ref failed.\n  {r.stderr.strip()}",
               file=sys.stderr)
         return 1
+    # THE RE-CHECK, and it is what makes the sub-issue claim atomic rather than
+    # merely narrowed. The survey above is a read before a write: two takers on
+    # `7-parser` and `7-parse-fix` both see no sibling and both create, and
+    # create-ref refuses neither because the names differ. Reading AGAIN after
+    # the create closes it, because by then both refs exist and both takers see
+    # the same set -- so a rule they can both apply without talking settles it.
+    # The rule is the lexicographically smallest ref, which is a total order on
+    # a set they agree about; the loser deletes what it just cut and reports the
+    # winner. Do not replace this with a longer survey before the create: no
+    # amount of looking first makes a read-then-write atomic.
+    after, why = matching_refs(args.repo, args.campaign_issue)
+    if why:
+        print(f"refusing: {branch} WAS cut, but the re-check that makes the "
+              f"claim atomic did not\n  happen ({why}). Read "
+              f"`{sys.argv[0]} live {args.campaign_issue}` before working it: "
+              f"a second\n  topic on this sub-issue would be invisible.",
+              file=sys.stderr)
+        return 1
+    rivals = refs_for_issue(after, args.campaign_issue, args.issue)
+    if len(rivals) > 1:
+        winner = min(rivals)
+        if winner != branch:
+            run("gh", "api", "-X", "DELETE", delete_path(args.repo, branch))
+            print(f"already claimed: {winner} took sub-issue #{args.issue} in "
+                  f"the same moment.")
+            print(f"  Both refs existed; the smallest name wins, so {branch} "
+                  f"was deleted again.")
+            print(f"  It held nothing -- it was cut from main seconds ago.")
+            return 3
+        print(f"note: {', '.join(r for r in rivals if r != branch)} raced this "
+              f"claim and lost; {branch} is the smallest name and stands.")
+
     print(f"claimed {branch}")
     print(f"  The ref IS the claim: nothing else was written, and "
           f"`{sys.argv[0]} live {args.campaign_issue}` reads it back.")
@@ -412,10 +462,24 @@ def parse_worktrees(text):
 
 
 def base_root():
-    """The base checkout this script belongs to, resolved AGENTS.md's one way:
-    the parent of the common git dir, which is the MAIN checkout even when this
-    file is read through a linked worktree -- and the campaign worktrees hang
-    off exactly there."""
+    """(path, why_unreadable) -- the base checkout whose campaign directories
+    this sweeps.
+
+    TWO RULES, and the first exists because the base is a member of its own
+    campaigns. `<campaign>/repos/campaign-base/` is a second checkout of this
+    very repository, script and all, so `git rev-parse --git-common-dir` run
+    from THAT copy answers with the clone -- a base root holding no campaign
+    directory at all, which comes back as a clean sweep of nothing and lets
+    `release` delete a ref somebody is standing in.
+
+    So: if any ancestor of this file is a `<slug>-<YYMMDD>` campaign directory,
+    the base root is that directory's parent, whichever checkout is running.
+    Only when none is -- the ordinary case, the base's own `scripts/` -- does
+    the git rule apply, and there it is AGENTS.md's one form, which returns the
+    main checkout even from a linked worktree."""
+    for parent in HERE.parents:
+        if CAMPAIGN_DIR.search(parent.name):
+            return str(parent.parent), None
     r = run("git", "-C", str(HERE), "rev-parse", "--path-format=absolute",
             "--git-common-dir")
     if r.returncode != 0:
@@ -435,12 +499,6 @@ def repo_root(cwd):
     if r.returncode != 0:
         return None, None
     return str(Path(r.stdout.strip()).parent), None
-
-
-# `<slug>-<YYMMDD>` -- the campaign directory shape, read as a shape. Nothing
-# derives the list from GitHub, because the question is which directories are on
-# THIS machine. The same regex the claim guard uses.
-CAMPAIGN_DIR = re.compile(r"-\d{6}$")
 
 
 def campaign_clones(root):
@@ -470,6 +528,61 @@ def campaign_clones(root):
         except OSError as e:
             unread.append(f"{repos}: would not enumerate "
                           f"({e.__class__.__name__})")
+    return out, unread
+
+
+REMOTE = re.compile(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$")
+
+
+def remote_of(clone):
+    """`owner/repo` for a clone's `origin`, or None. Pure enough to test: the
+    two URL shapes git hands back, ssh and https, differ only in the separator
+    before the owner."""
+    r = run("git", "-C", clone, "remote", "get-url", "origin")
+    if r.returncode != 0:
+        return None
+    m = REMOTE.search(r.stdout.strip())
+    return m.group(1) if m else None
+
+
+def claim_repos(default_repo, root):
+    """Every repository this campaign's claims can be on. Returns (repos, note).
+
+    A CLAIM IS CUT ON THE REPOSITORY THE WORK LANDS IN, so `--repo` alone
+    answers for the base and for nothing else: a member-repo sub-issue's branch
+    is on that member's remote, and reading only the base returned `0 occupied,
+    0 vacant` over a delegate standing in one -- a close passing over a held
+    claim. The list is derived from the clones on disk rather than from the
+    campaign issue's `## Repos`, because a clone is what a branch can actually
+    be checked out in, and `campaign-repos.py` reads the other."""
+    repos, seen = [default_repo], {default_repo}
+    if not root:
+        return repos, "no base root, so only the named repository was read"
+    clones, _ = campaign_clones(root)
+    for c in clones:
+        name = remote_of(c)
+        if name and name not in seen:
+            seen.add(name)
+            repos.append(name)
+    return repos, f"{len(repos)} repositor(y/ies) hold this campaign's claims"
+
+
+def all_refs(repos, campaign_issue):
+    """({branch: repo}, unread) across every repository.
+
+    THE REPOSITORY TRAVELS WITH THE REF, because `release` deletes by name and a
+    claim branch has the same name in every member repository -- so a delete
+    aimed at the wrong one takes a different repository's ref holding somebody
+    else's commits. A repository whose listing fails is NAMED: a claim that
+    could not be read is not an absent one."""
+    out, unread = {}, []
+    for repo in repos:
+        branches, why = matching_refs(repo, campaign_issue)
+        if why:
+            unread.append(why)
+            continue
+        for b in branches:
+            out.setdefault(b, repo)
     return out, unread
 
 
@@ -519,26 +632,42 @@ def classify(branches, where, sessions, campaign_issue, root=None, caller=None):
 
     Pure, so it can be tested against recorded inputs.
 
-    `ours` is the set a close sweeps, and it is deliberately NOT just "sessions
-    named for this campaign". Nothing enforces that name any more -- the record
-    whose `name` field `take` used to check is gone -- so a peer that never
-    named itself, or renamed away, would be invisible to a gate keyed on the
-    prefix alone. A session sitting anywhere under the base root is counted too,
-    which is where every session of every campaign here works.
+    `ours` is the set a close sweeps, and it is NOT just "sessions named for
+    this campaign". Nothing enforces that name any more -- the record whose
+    `name` field `take` used to check is gone -- so a peer that never named
+    itself, or renamed away, would be invisible to a gate keyed on the prefix
+    alone. Three cases, and the middle one is the whole point:
+
+      named for THIS campaign          counted
+      named for ANOTHER campaign       NOT counted, wherever it sits
+      named for no campaign at all     counted when it sits under the base root
+
+    The second line is what a first cut of this got wrong by counting every
+    session under the base root: `ours` then returned an identical set for
+    campaigns 1, 116 and 999, so closing one campaign asked another's planner to
+    stand down. A name that clearly says "some other campaign" is evidence and
+    is believed; a name that says nothing is not, and the cwd decides instead.
 
     THE CALLER IS EXCLUDED, by session id. A close runs *from* a session of the
     campaign it is closing, so a gate that refuses on any live session of the
     campaign refuses on the closer itself and can never pass. The caller is the
     one session whose intent is known."""
-    name_prefix = f"campaign-{campaign_issue}-"
+    mine = f"campaign-{campaign_issue}-"
     occupied, vacant = [], []
     for b in branches:
         paths = where.get(b, [])
         (occupied if paths else vacant).append((b, paths))
-    ours = [(sid, row) for sid, row in sorted(sessions.items())
-            if sid != caller
-            and (row.get("name", "").startswith(name_prefix)
-                 or (root and under(row.get("cwd", ""), root)))]
+    ours = []
+    for sid, row in sorted(sessions.items()):
+        if sid == caller:
+            continue
+        name = row.get("name", "") or ""
+        if name.startswith(mine):
+            ours.append((sid, row))
+        elif OTHER_CAMPAIGN.match(name):
+            continue                      # it says whose it is, and it is not ours
+        elif root and under(row.get("cwd", ""), root):
+            ours.append((sid, row))
     return occupied, vacant, ours
 
 
@@ -546,7 +675,16 @@ def under(path, root):
     """Is `path` inside `root`? Whole path segments, so `demo-1` is not under
     `demo`; both resolved, because herdr reports the path a shell was opened at
     and these comparisons run against `pwd -P`, which differ under /var on
-    macOS."""
+    macOS.
+
+    ONLY AN ABSOLUTE PATH IS ANSWERED. `Path.resolve()` resolves a relative one
+    against the PROCESS's cwd, so `under("", root)`, `under("relative", root)`
+    and herdr's own `"?"` placeholder all came back True whenever this ran from
+    inside the base -- which is where it always runs. Three unrelated sessions
+    counted as this campaign's for no better reason than the shell they were
+    read from."""
+    if not path or not str(path).startswith("/"):
+        return False
     try:
         c, t = Path(path).resolve().parts, Path(root).resolve().parts
     except (TypeError, OSError, ValueError):
@@ -554,10 +692,31 @@ def under(path, root):
     return c[:len(t)] == t
 
 
+def merged_pr_of(repo, branch):
+    """The merged pull request number whose head was this branch, or None, or
+    `?` when the question was not answered. Three outcomes and not two: a
+    listing that failed is not an absence of a merge."""
+    r = run("gh", "pr", "list", "-R", repo, "--head", branch, "--state",
+            "merged", "--json", "number")
+    if r.returncode != 0:
+        return "?"
+    try:
+        prs = json.loads(r.stdout or "[]")
+    except json.JSONDecodeError:
+        return "?"
+    return prs[0].get("number") if prs else None
+
+
 def cmd_live(args):
-    branches, why1 = matching_refs(args.repo, args.campaign_issue)
-    print(f"reading 1  {args.repo} refs under campaign-{args.campaign_issue}/ "
-          f"-- {'FAILED: ' + why1 if why1 else str(len(branches)) + ' claim(s)'}")
+    root, _ = base_root()
+    repos, repo_note = claim_repos(args.repo, root)
+    found, unread1 = all_refs(repos, args.campaign_issue)
+    branches = sorted(found)
+    why1 = "; ".join(unread1) if unread1 else None
+    print(f"reading 1  refs under campaign-{args.campaign_issue}/ in "
+          f"{', '.join(repos)} -- "
+          f"{'FAILED: ' + why1 if why1 else str(len(branches)) + ' claim(s)'}")
+    print(f"           {repo_note}")
     sessions, why2 = herdr_sessions()
     print(f"reading 2  herdr agent list -- "
           f"{'FAILED: ' + why2 if why2 else str(len(sessions)) + ' session(s) on this machine'}")
@@ -578,7 +737,6 @@ def cmd_live(args):
               "is safe to act on.", file=sys.stderr)
         return 1
 
-    root, _ = base_root()
     occupied, vacant, ours = classify(
         branches, where, sessions, args.campaign_issue, root=root,
         caller=os.environ.get("CLAUDE_CODE_SESSION_ID") or None)
@@ -590,12 +748,21 @@ def cmd_live(args):
             print(f"  {b:<34} {path}")
 
     print(f"\nclaims checked out nowhere on this machine ({len(vacant)})")
+    # WITH ITS MERGED PULL REQUEST, because without that the group is
+    # unactionable: a branch whose work landed months ago sits here forever --
+    # `delete_branch_on_merge` is off on this tracker -- and a close gate told
+    # to refuse on the whole group can never pass. `landed` is a finished claim
+    # nobody is standing in; `open` is one to ask about.
     for b, _ in vacant:
-        print(f"  {b}")
+        pr = merged_pr_of(found[b], b)
+        mark = ("landed as #%s" % pr if isinstance(pr, int)
+                else "MERGE UNREADABLE" if pr == "?" else "never merged")
+        print(f"  {b:<40} {mark}")
     if vacant:
-        print("  Each is one of: a delegate that exited, a checkout on another "
-              "machine, or work\n  finished and waiting on a merge. Ask before "
-              "treating any of them as free.")
+        print("  `landed` is finished work whose ref outlived it, and blocks "
+              "nothing. The rest are\n  one of: a delegate that exited, or a "
+              "checkout on another machine. Ask before\n  treating either as "
+              "free.")
 
     print(f"\nlive sessions of campaign-{args.campaign_issue} ({len(ours)})")
     for sid, row in ours:
@@ -735,17 +902,23 @@ def merged_head_verdict(returncode, out, repo, branch):
 
 
 def cmd_release(args):
-    branches, why = matching_refs(args.repo, args.campaign_issue)
-    if why and not args.branch:
-        print(f"refusing: {why}\n  A ref listing that did not happen is not an "
-              f"absence of claims.", file=sys.stderr)
+    root, _ = base_root()
+    repos, repo_note = claim_repos(args.repo, root)
+    found, unread1 = all_refs(repos, args.campaign_issue)
+    if unread1 and not args.branch:
+        print(f"refusing: {'; '.join(unread1)}\n  A ref listing that did not "
+              f"happen is not an absence of claims.", file=sys.stderr)
         return 1
-    branch, refusal = which_branch(branches or [], args.campaign_issue,
+    branch, refusal = which_branch(sorted(found), args.campaign_issue,
                                    args.issue, args.branch)
     if refusal:
         print(f"refusing: {refusal}", file=sys.stderr)
         return 1
-    print(f"releasing {branch} on {args.repo}")
+    # The repository the ref was FOUND on, never the default: the same branch
+    # name exists in every member repository and a delete aimed at the wrong one
+    # takes somebody else's commits.
+    repo = found.get(branch, args.repo)
+    print(f"releasing {branch} on {repo} ({repo_note})")
 
     # What is standing in it, read before anything is deleted. A sweep that
     # failed refuses: not knowing whether a workspace holds the branch is not
@@ -781,32 +954,50 @@ def cmd_release(args):
     print(f"{branch} is checked out in no workspace on this machine "
           f"({len(roots)} repo(s) swept)")
 
-    r = run("gh", "api", compare_path(args.repo, branch), "--jq", ".ahead_by")
+    r = run("gh", "api", compare_path(repo, branch), "--jq", ".ahead_by")
     if ref_gone(r.returncode, r.stderr):
-        q = run("gh", "api", f"repos/{args.repo}/git/ref/heads/{branch}")
+        q = run("gh", "api", f"repos/{repo}/git/ref/heads/{branch}")
         state = ref_probe(q.returncode, q.stderr)
         if state != "gone":
             print(f"refusing: the comparison against main answered 404 but the "
-                  f"ref {branch} is {state} on {args.repo}"
+                  f"ref {branch} is {state} on {repo}"
                   f"{'' if state == 'present' else ': ' + q.stderr.strip()[:120]}. "
                   f"A comparison that did not happen is not an empty branch.",
                   file=sys.stderr)
             return 1
-        p = run("gh", "pr", "list", "-R", args.repo, "--head", branch,
+        p = run("gh", "pr", "list", "-R", repo, "--head", branch,
                 "--state", "merged", "--json", "number")
-        ok, text = merged_head_verdict(p.returncode, p.stdout, args.repo, branch)
+        ok, text = merged_head_verdict(p.returncode, p.stdout, repo, branch)
         if not ok:
             print(f"refusing: {text}", file=sys.stderr)
             return 1
-        print(f"{args.repo} has no ref {branch}, and it was {text}: nothing "
+        print(f"{repo} has no ref {branch}, and it was {text}: nothing "
               f"beyond main, and no ref to delete")
         return 0
     n = ahead_count(r.returncode, r.stdout)
-    ok, refusal = ahead_verdict(n, r.stdout, r.stderr, args.repo, branch)
+    ok, refusal = ahead_verdict(n, r.stdout, r.stderr, repo, branch)
     if not ok:
+        # A BRANCH WITH COMMITS IS NEVER DELETED HERE, and that is not a
+        # shortcut -- but it used to leave no exit at all. When the record was
+        # the claim, a confirmed absence retired the record and KEPT the ref;
+        # now the ref IS the claim, so the same situation -- a sub-issue closed
+        # `not planned` after its executor pushed -- left a ref standing that
+        # `take`'s sibling sweep then refused forever, and the sub-issue could
+        # never be re-taken. Deleting it silently is the one thing worse. So
+        # this says what the two ways out are and makes the destructive one a
+        # person's own command, run after they have looked at what is on the
+        # branch.
         print(f"refusing: {refusal}", file=sys.stderr)
+        if n:
+            print(f"  The claim cannot be retired without the branch, because "
+                  f"the branch IS the claim.\n"
+                  f"  Either land those {n} commit(s) through a pull request, "
+                  f"or -- having read them --\n"
+                  f"  delete the ref by hand and re-take:\n"
+                  f"    gh api -X DELETE {delete_path(repo, branch)}",
+                  file=sys.stderr)
         return 1
-    print(f"{args.repo} says {branch} holds nothing beyond main")
+    print(f"{repo} says {branch} holds nothing beyond main")
 
     # AN EMPTY BRANCH IS EITHER FINISHED WORK OR A CLAIM NOBODY HAS STARTED,
     # and the two look identical: both are 0 ahead of main and in no workspace.
@@ -819,14 +1010,14 @@ def cmd_release(args):
     # `--confirmed-absent` is. This is the proof the record's `session` field
     # used to carry and this restores, in the one place its absence destroyed
     # work rather than merely losing an address.
-    p = run("gh", "pr", "list", "-R", args.repo, "--head", branch,
+    p = run("gh", "pr", "list", "-R", repo, "--head", branch,
             "--state", "merged", "--json", "number")
-    merged, text = merged_head_verdict(p.returncode, p.stdout, args.repo, branch)
+    merged, text = merged_head_verdict(p.returncode, p.stdout, repo, branch)
     if merged:
         print(f"{branch} was {text}, so it is finished work and not a fresh "
               f"claim")
     elif p.returncode != 0:
-        print(f"refusing: could not ask {args.repo} whether {branch} was ever "
+        print(f"refusing: could not ask {repo} whether {branch} was ever "
               f"merged, so whether this is finished work or an unstarted claim "
               f"is unknown.", file=sys.stderr)
         return 1
@@ -843,7 +1034,7 @@ def cmd_release(args):
         print(f"never merged and empty, but absence confirmed by: "
               f"{args.confirmed_absent}")
 
-    r = run("gh", "api", "-X", "DELETE", delete_path(args.repo, branch))
+    r = run("gh", "api", "-X", "DELETE", delete_path(repo, branch))
     if r.returncode != 0:
         print(f"refusing: could not delete the ref.\n  {r.stderr.strip()}",
               file=sys.stderr)

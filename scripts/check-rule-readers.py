@@ -149,8 +149,14 @@ FORMS = [
         # only the BINDING does is name the `bound:` prefix, or compare a host
         # name against something; hence the spaced `=` and `==`, which a
         # `HOST=$(hostname -s)` assignment does not carry.
+        # A TOOL must be named, and `re.` and `==` are not tools: both were in
+        # a first cut of this and both fired on ordinary code -- `a == b` beside
+        # a comment mentioning `bound:`, and any `re.sub` on a line whose string
+        # holds it. A form that matches a comparison operator matches prose that
+        # happens to sit near one, and this file's whole design is that a
+        # finding points at code.
         re.compile(r"(\bgrep\b|\bsed\b|\bawk\b|\bjq\b|--jq|startswith"
-                   r"|\brg\b|re\.|==)[^|;&]*bound:"
+                   r"|\brg\b)[^|;&]*bound:"
                    r"|\bgh\b[^|;&]*\b(issue\s+edit|label)\b[^|;&]*bound:"
                    r"|(==|\s=\s)[^|;&]*\bhostname\b|\bhostname\b[^|;&]*(==|\s=\s)"
                    r"|\bgethostname\b|\bplatform\.node\b"),

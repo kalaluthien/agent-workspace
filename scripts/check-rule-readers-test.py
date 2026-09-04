@@ -55,10 +55,27 @@ FORM_CASES = [
     # then the shapes that are a *write* rather than a reading -- both already
     # in this tree, both of which a bare `hostname` form would refuse -- and
     # the comment read the label replaced, which is nobody's reader now.
-    ("bound: a filter naming the label prefix",
-     fence("jq -r '.labels[].name' issue.json | grep '^bound:'"), 1),
+    # One case per alternation of the tool list, so reverting any one of them
+    # fails here instead of shipping quietly -- this file's own rule, and the
+    # first cut of this form shipped three alternations with no case at all.
+    ("bound: grep names the prefix",
+     fence("grep '^bound:' labels.txt"), 1),
+    ("bound: sed names it", fence("sed -n 's/^bound://p' labels.txt"), 1),
+    ("bound: awk names it", fence("awk '/^bound:/ {print}' labels.txt"), 1),
+    ("bound: jq names it", fence("""jq -r '.[] | select(startswith("bound:"))' l.json"""), 1),
+    # No `|` in this one: the form cannot cross a pipe, so a piped fixture
+    # would be matched by `grep` alone and would pin `--jq` not at all.
+    ("bound: --jq names it",
+     fence("""gh api repos/o/r/issues/1 --jq '.labels[0].name == "bound:mac"'"""), 1),
+    ("bound: rg names it", fence("rg '^bound:' labels.txt"), 1),
     ("bound: the prefix tested in Python",
      fence('here = [n for n in labels if n.startswith("bound:")]', lang="python"), 1),
+    # ...and the two alternations a first cut had that are NOT tools. Both fired
+    # on ordinary code, which is what a form pointing at prose looks like.
+    ("bound: a comparison beside a comment naming the prefix is not the form",
+     fence('verdict = "here" if a == b else "elsewhere"   # prints bound: <m>'), 0),
+    ("bound: a regex call whose string holds the prefix is not the form",
+     fence('re.sub(r"x", "y", t)   # titles like "bound: mac"', lang="python"), 0),
     # ...and the boundary, which is why the form does not simply match a labels
     # read: two skills ask for `--json labels` to CLASSIFY a campaign issue, and
     # `campaign-tracker bound`'s own request is the same call character for

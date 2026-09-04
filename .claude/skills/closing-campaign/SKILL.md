@@ -75,8 +75,14 @@ Read the words, never the exit status, and refuse on any of:
   included;
 - any row under **claims checked out on this machine** — a workspace is standing
   in a claim;
-- any row under **claims checked out nowhere on this machine** — a claim that
-  outlived its workspace, or one held on a machine this cannot see;
+- any row under **claims checked out nowhere on this machine** that does NOT
+  read `landed as #<pr>` — a claim that outlived its workspace, or one held on a
+  machine this cannot see. **`landed` blocks nothing**: its work is on `main`
+  and only the ref survived, which is the ordinary state of this tracker
+  (`delete_branch_on_merge` is off), and refusing on the whole group made the
+  close unpassable — measured on campaign #1, whose `campaign-1/154-…` landed as
+  #162 months ago. A row reading `MERGE UNREADABLE` refuses like any other
+  failed reading;
 - any row under **live sessions of campaign-N**.
 
 For each row of the last kind, send `STATUS`, then `STAND DOWN`, to every such

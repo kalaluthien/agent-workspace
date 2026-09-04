@@ -305,7 +305,10 @@ def read_runtime(campaign_dir, rep):
     the directory. The two entries the scaffold writes are known and stay quiet;
     anything else is named, because `runtime/` is the one place under the
     campaign directory that legitimately holds state and a close destroys it."""
-    known = {"repos", "campaign-issue-body-derived.md"}
+    # `.gitkeep` is what the scaffold ships to keep `runtime/` a directory
+    # at all, so leaving it out gave every fresh campaign a standing false
+    # REPORT about a file the skill itself put there.
+    known = {"repos", "campaign-issue-body-derived.md", ".gitkeep"}
     runtime = os.path.join(campaign_dir, "runtime")
     try:
         found = sorted(e for e in os.listdir(runtime)) if os.path.isdir(runtime) else []
@@ -411,4 +414,8 @@ def main():
         print("  -- 0 item(s) exist only on this machine; clear")
 
 
-main()
+# Guarded, where it used to be a bare `main()`: importing this module ran the
+# whole reading and then exited on the missing argv, so nothing could test its
+# calculations. Every other script here is already shaped this way.
+if __name__ == "__main__":
+    main()
