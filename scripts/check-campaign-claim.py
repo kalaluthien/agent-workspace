@@ -73,6 +73,9 @@ SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}", "`"}
 # Words before a command that are not it, and shells that run a string.
 PREFIXES = {"env", "command", "time", "nohup", "sudo", "exec", "do", "then",
             "else", "builtin", "nice"}
+# A NAMED LIST, not the category: there is no test for "is a shell", so a shell
+# absent from this set has its `-c` string unread like any other interpreter's.
+# Adding a name reads one more form and promises nothing about the next.
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
 # Words whose OPERAND is itself a command string, re-read as one.
 EVALS = {"eval"}

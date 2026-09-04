@@ -114,10 +114,14 @@ pred claimAtomic       { always (Now.event = Claim  implies Now.issue not in Cla
    sentence promising that no `gh` write escapes is one the code cannot make
    true, and it produced a CONTRADICTS on every audit that checked it. What
    the guard does promise: a `gh` TOKEN it can see and cannot resolve to a
-   call is refused rather than guessed at. A SHELL's `-c` is on the other side
-   of that line and IS read, spelled alone or last in a cluster; it is named
-   here because the list above once said otherwise and the guard's own
-   docstring said the opposite in the same commit.
+   call is refused rather than guessed at. On the other side of that line the
+   guard reads the `-c` string of the shells it NAMES, spelled alone or last in
+   a cluster -- a named list, not the category, because there is no test for
+   "is a shell" and a shell it does not name (`csh`, `tcsh`) is unread like any
+   other interpreter. The line is drawn at a list rather than at a category on
+   purpose: a category is a promise about programs this has never seen, and the
+   two previous attempts at this sentence were false in opposite directions --
+   one calling a shell's `-c` unreadable, the next calling every shell's read.
 
    A shell command is NOT read for a target: an arbitrary shell string is an
    unbounded language, and every reader of it was one more alternation for the

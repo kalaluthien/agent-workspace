@@ -478,6 +478,13 @@ def main():
             r = ask(f.base, tool="Bash", command=cmd)
             check(f"`{cmd[:44]}...` is allowed: a quoted string is data",
                   r.returncode == 0, out(r)[:300])
+        # The list is a LIST, and the spec says so: a shell it does not name
+        # has its -c string unread, like any other interpreter. Without this
+        # case the sentence has no reader and drifts on the next name added.
+        for sh in ("csh", "tcsh"):
+            r = ask(f.base, tool="Bash", command=f"{sh} -c 'gh issue close 5'")
+            check(f"{sh} is not in the named list, so its -c string is unread",
+                  r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
         for sh in ("ksh", "fish"):
             r = ask(f.base, tool="Bash", command=f"{sh} -c 'gh issue close 5'")
             check(f"{sh} runs a -c string like every other shell that does",
