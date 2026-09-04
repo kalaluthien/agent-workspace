@@ -80,7 +80,7 @@ pred localCheckedShutdown { always (Now.event = StandDown implies Target.agent n
    which is what #187 is deciding. */
 pred releaseNeedsAWorker {
   always (Now.event = Release implies
-            (complete[Now.issue]
+            (settled[Now.issue]
              or some a: Agent | a.task = Now.issue and a in Launched))
 }
 
@@ -381,6 +381,22 @@ pred R9c_RepairAdmitsClaimThenSettle {
                                               and Now.issue = i))
 }
 
+/* R7e. CONTROL FOR THE `settled` DISJUNCT #187 Q2 added: a sub-issue DROPPED
+   as not planned, whose claim nobody was ever launched on, must be releasable.
+   This is the case `--confirmed-absent WHO` used to be the only door for, and
+   it is the door GitHub already answers: an issue closed as not planned says
+   the work is over as plainly as a merged pull request does. Deleting
+   `settled` from the rule -- or narrowing it back to `complete` -- turns this
+   UNSAT, which is what makes the widening tested rather than merely made. */
+pred R7e_WorkerRuleAdmitsTheDroppedSubIssue {
+  releaseNeedsAWorker
+  some i: Issue {
+    always no a: Agent | a.task = i and a in Launched
+    always not complete[i]                 -- dropped, never landed
+    eventually (dropped[i] and Now.event = Release and Now.issue = i)
+  }
+}
+
 /* R4h. THE HOLE, and the one this campaign actually fell into: a session works
    its own sub-issue and no claim of it ever exists, so every peer reading the
    records sees an open sub-issue indistinguishable from one nobody started. */
@@ -454,12 +470,19 @@ pred R7a_FreshClaimReleasedWithNoAgent {
        the one that pins the rule's `in Launched`: written as "no atom", the
        weakened rule still forbade the trace and the disjunct went untested. */
     always no a: Agent | a.task = i and a in Launched
-    /* NOT complete, and this conjunct is what makes the witness the fresh
+    /* NOT SETTLED, and this conjunct is what makes the witness the fresh
        claim rather than hands-on work. Without it the trace closes the
        sub-issue and merges its pull request first, which is a landing nobody
        needed an Agent atom for and is releasable on purpose -- so R7b came
-       back SAT over a legitimate trace and pinned nothing. */
-    always not complete[i]
+       back SAT over a legitimate trace and pinned nothing.
+
+       WIDENED FROM `complete` TO `settled` BY #187 Q2, in step with the rule.
+       The moment `releaseNeedsAWorker` admitted a settled sub-issue, the
+       solver satisfied this witness by DROPPING the issue instead of merging
+       it -- the same escape through a different door, and R7b went SAT again.
+       An exclusion has to name the whole disjunct it is excluding, not the
+       half that existed when it was written. */
+    always not settled[i]
     eventually (Now.event = Claim and Now.issue = i
                 and after eventually (Now.event = Release and Now.issue = i))
   }
@@ -478,7 +501,7 @@ pred R7b_WorkerRuleClosesTheFreshClaim {
 pred R7c_WorkerRuleAdmitsTheOrdinaryRelease {
   releaseNeedsAWorker
   some a: Agent {
-    always not complete[a.task]
+    always not settled[a.task]     -- widened with the rule; see R7a
     eventually (a in Launched and a not in Live and a not in PushedToRemote
                 and Now.event = Release and Now.issue = a.task)
   }
@@ -855,6 +878,7 @@ run R8c_RepairAdmitsTheOrdinaryClaim for 4 Issue, 1 PullRequest, 1 Campaign, 2 S
 run R9_SettledSubIssueStaysClaimed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R9b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R9c_RepairAdmitsClaimThenSettle for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R7e_WorkerRuleAdmitsTheDroppedSubIssue for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0

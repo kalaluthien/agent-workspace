@@ -1261,18 +1261,42 @@ def cmd_release(args):
               f"merged, so whether this is finished work or an unstarted claim "
               f"is unknown.", file=sys.stderr)
         return 1
-    elif not args.confirmed_absent:
-        print(f"refusing: {branch} holds nothing beyond main and was never "
-              f"merged, so it is\n  indistinguishable from a claim cut for a "
-              f"holder that has not checked it out yet.\n  Ask whose it is "
-              f"(`{sys.argv[0]} live {args.campaign_issue}`, then the peers), "
-              f"then pass\n  --confirmed-absent WHO. Deleting it lets a second "
-              f"`take` succeed on the same sub-issue.",
-              file=sys.stderr)
-        return 1
     else:
-        print(f"never merged and empty, but absence confirmed by: "
-              f"{args.confirmed_absent}")
+        # THE SUB-ISSUE'S OWN STATE ANSWERS THIS, and it used to take a person
+        # (#187 question 2). 0 ahead and never merged cannot tell finished work
+        # from a claim cut for a holder who has not started -- but GitHub
+        # already carries the missing bit: a CLOSED sub-issue says the work is
+        # over, as completed or as not planned, and neither is a claim anybody
+        # is standing in. That is `settled[Now.issue]` in
+        # spec/campaign/orchestration/scenarios.als's `releaseNeedsAWorker`,
+        # widened from `complete` by this question, with R7e as its control.
+        #
+        # This is what makes `R4_RepolessCampaign` true of the code: a sub-issue
+        # whose work lands no commit closes with no pull request, so its ref is
+        # 0 ahead for ever and only its `stateReason` can say the work is done.
+        # `--confirmed-absent` survives for the sub-issue that is still OPEN,
+        # which is the one case where nothing on GitHub says the holder is gone.
+        settled, state_note = issue_settled(args.issue)
+        if settled is None:
+            print(f"refusing: {branch} holds nothing beyond main and was never "
+                  f"merged, and {state_note}.\n  Whether its work is over is "
+                  f"unknown, and an unknown is not a release.", file=sys.stderr)
+            return 1
+        if settled:
+            print(f"{state_note}, so its work is over and the ref is residue")
+        elif not args.confirmed_absent:
+            print(f"refusing: {branch} holds nothing beyond main, was never "
+                  f"merged, and {state_note},\n  so it is indistinguishable "
+                  f"from a claim cut for a holder that has not checked it out "
+                  f"yet.\n  Close the sub-issue if its work is done, or ask "
+                  f"whose the claim is\n  (`{sys.argv[0]} live "
+                  f"{args.campaign_issue}`, then the peers) and pass\n  "
+                  f"--confirmed-absent WHO. Deleting it lets a second `take` "
+                  f"succeed on the same sub-issue.", file=sys.stderr)
+            return 1
+        else:
+            print(f"never merged and empty, but absence confirmed by: "
+                  f"{args.confirmed_absent}")
 
     r = run("gh", "api", "-X", "DELETE", delete_path(repo, branch))
     if r.returncode != 0:

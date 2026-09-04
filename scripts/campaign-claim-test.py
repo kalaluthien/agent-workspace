@@ -651,6 +651,61 @@ def release_cases(m):
         out = r.stdout + r.stderr
         check("...and a confirmed absence gets past it to the delete",
               "absence confirmed by: a person" in out)
+        # ------ #187 Q2: THE SUB-ISSUE'S OWN STATE ANSWERS THIS ------
+        # A repo-less sub-issue lands no commit, so its ref is 0 ahead FOR EVER
+        # and no merged pull request will ever exist to say the work is done.
+        # `--confirmed-absent` was the only door, and passing it for a sub-issue
+        # that is closed-completed would be a person asserting something GitHub
+        # already says. Its own shim: the ref list has to hold a branch whose
+        # sub-issue is closed, and widening the shared one moves every count the
+        # `live` cases assert.
+        def rel_gh(state):
+            return """#!/bin/sh
+case "$*" in
+  *"--json state"*) echo '%s'; exit 0 ;;
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *compare/main*) echo 0; exit 0 ;;
+  *"pr list"*) echo '[]'; exit 0 ;;
+esac
+exit 1
+""" % state
+        done = shims(Path(d) / "q2done", gh=rel_gh("CLOSED completed"),
+                     herdr=listing())
+        r = claim(["release", "9999", "4"], done)
+        out = r.stdout + r.stderr
+        check("a closed sub-issue's empty ref releases with no person's word",
+              "its work is over and the ref is residue" in out
+              and "--confirmed-absent" not in out,
+              out[:300])
+        # Dropped counts as settled too, or a sub-issue closed as not planned
+        # would strand its ref while a completed one did not.
+        gone = shims(Path(d) / "q2gone", gh=rel_gh("CLOSED not_planned"),
+                     herdr=listing())
+        r = claim(["release", "9999", "4"], gone)
+        out = r.stdout + r.stderr
+        check("...and a sub-issue dropped as not planned counts as settled",
+              "not_planned" in out and "ref is residue" in out, out[:300])
+        # ...and an OPEN one still needs the person, or the gate is gone.
+        openish = shims(Path(d) / "q2open", gh=rel_gh("OPEN "),
+                        herdr=listing())
+        r = claim(["release", "9999", "4"], openish)
+        out = r.stdout + r.stderr
+        check("an open sub-issue's empty ref still needs --confirmed-absent",
+              r.returncode == 1 and "--confirmed-absent" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        check("...and the refusal offers closing the sub-issue as the other way",
+              "Close the sub-issue if its work is done" in out, out[:300])
+        # "I could not look" is not "it is closed" and not "it is open".
+        unread_state = shims(Path(d) / "q2unread", gh=rel_gh("").replace(
+            "echo ''; exit 0", "exit 1"), herdr=listing())
+        r = claim(["release", "9999", "4"], unread_state)
+        out = r.stdout + r.stderr
+        check("a state that would not read denies the release",
+              r.returncode == 1 and "an unknown is not a release" in out,
+              f"exit {r.returncode}: {out[:250]}")
+
         # ...and the OTHER side of the same gate: a branch whose pull request
         # merged is finished work, and needs no person to say so.
         r = claim(["release", "9999", "2"], empty)

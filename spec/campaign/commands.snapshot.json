@@ -110,6 +110,7 @@
     ["orchestration/scenarios.als", "run", "R7b_WorkerRuleClosesTheFreshClaim"],
     ["orchestration/scenarios.als", "run", "R7c_WorkerRuleAdmitsTheOrdinaryRelease"],
     ["orchestration/scenarios.als", "run", "R7d_WorkerRuleAdmitsTheAgentLessLanding"],
+    ["orchestration/scenarios.als", "run", "R7e_WorkerRuleAdmitsTheDroppedSubIssue"],
     ["orchestration/scenarios.als", "run", "R8_ClaimCutOnAnotherRepo"],
     ["orchestration/scenarios.als", "run", "R8b_RepairExcludesIt"],
     ["orchestration/scenarios.als", "run", "R8c_RepairAdmitsTheOrdinaryClaim"],
