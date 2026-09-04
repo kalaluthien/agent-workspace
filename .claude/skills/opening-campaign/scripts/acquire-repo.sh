@@ -173,10 +173,22 @@ install_commit_guard() {
 	esac
 
 	installer="$dest/scripts/install-hooks.sh"
+	# The execute bit alone must not pick the branch: an installer present but
+	# not executable would fall through to the shim and silently restore the
+	# state this function exists to end.
+	if [ -f "$installer" ] && [ ! -x "$installer" ]; then
+		die "$installer exists but is not executable; chmod +x it and re-run"
+	fi
 	if [ -x "$installer" ]; then
 		log "running the repository's own installer: $installer --git-only"
-		(cd "$dest" && "$installer" --git-only) ||
-			die "the repository's install-hooks.sh refused; read what it said above"
+		if ! (cd "$dest" && "$installer" --git-only); then
+			die "the repository's install-hooks.sh exited $? -- read what it said above"
+		fi
+		# The invariant is verified, not trusted: the installer belongs to the
+		# repository, and its hook has to chain the guard for success here to
+		# mean the same thing it means on the shim path.
+		grep -q 'no-main-commits' "$hooks/pre-commit" 2>/dev/null ||
+			die "the installer left $hooks/pre-commit without the no-main-commits guard; refusing to call $dest guarded"
 		log "installed the repository's git hooks, which chain the no-main-commits guard"
 		return 0
 	fi

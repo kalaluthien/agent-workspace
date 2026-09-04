@@ -270,8 +270,12 @@ def main():
         (r.root / "docs" / "x.html").write_text("<p>ok</p>\n")
         git(r.root, "add", "docs/x.html")
         c = r.commit(env={"HOME": str(home)})
+        # Pinned to the hook install-hooks wrote: the un-adopted shim also
+        # prints the fake guard's words, so the `# runs:` line is what
+        # separates "adopted and chained" from "left the shim alone".
         check("...and the hook it writes still chains no-main-commits",
-              c.returncode != 0 and "FAKE GUARD RAN" in c.stdout + c.stderr,
+              c.returncode != 0 and "FAKE GUARD RAN" in c.stdout + c.stderr
+              and "# runs:" in r.hook("pre-commit").read_text(),
               f"exit {c.returncode}; {(c.stdout + c.stderr)[:160]}")
     # A near miss is not the shim. One line more than the shim is somebody's
     # decision, and matching on "mentions no-main-commits" would adopt it.
@@ -354,6 +358,28 @@ def main():
         check("...and a re-run converges rather than refusing",
               out.returncode == 0 and post.exists()
               and "install-hooks" in pre.read_text(),
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+
+        # An installer the repository ships that writes a hook without the
+        # guard: success here would be the unguarded checkout the header says
+        # a caller must never read success over.
+        dest = checkout("foreign", False)
+        bad = dest / "scripts" / "install-hooks.sh"
+        bad.write_text("#!/bin/sh\nprintf '#!/bin/sh\\necho lint\\n' >| "
+                       ".git/hooks/pre-commit\nchmod +x .git/hooks/pre-commit\n")
+        bad.chmod(0o755)
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        check("an installer whose hook omits the guard is refused, not trusted",
+              out.returncode != 0 and "without the no-main-commits guard"
+              in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+        bad.chmod(0o644)
+        bad.write_text("#!/bin/sh\nexit 0\n")
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        check("an installer present but not executable is named, not skipped",
+              out.returncode != 0 and "not executable" in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
 
         dest = checkout("bare", False)
