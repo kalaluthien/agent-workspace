@@ -7,24 +7,24 @@ Claude CLI on this machine, and every item is a failure that raises no error.
 
 ## The launch line
 
-Launch in `<campaign>/repos/<repo>/` with `--append-system-prompt-file
-<campaign>/AGENTS.md`.
+Launch in `<campaign>/repos/<repo>/`.
 
-- **Write the brief to a file**, `<campaign>/runtime/handover/<issue>.md`, from
-  `assets/handover.md`, and make the launched prompt one short sentence naming
-  that path. herdr types the launch line into the pane, and a terminal silently
-  drops a line past 1024 bytes — nothing runs and the launch looks like a slow
-  agent.
+- **The brief is the sub-issue.** Make the launched prompt one short sentence
+  naming the issue number and telling the delegate to read the body first. herdr
+  types the launch line into the pane, and a terminal silently drops a line past
+  1024 bytes — nothing runs and the launch looks like a slow agent — so the
+  prompt has to be short either way, and a `gh issue view` is the shortest thing
+  that carries a whole brief. Nothing is written, nothing goes stale against the
+  issue, and the brief outlives the machine.
 - **Put the prompt before any variadic flag.** `--add-dir` and `--allowedTools`
   swallow a trailing prompt as one of their own values, and the run dies on
   "Input must be provided".
-- **Pass `--add-dir <base> [<other paths the brief names>]`**, always at
+- **Pass `--add-dir <base> [<other paths the sub-issue names>]`**, always at
   least the base. A member-repo delegate's cwd is `<campaign>/repos/<repo>/`,
-  and its brief under `<campaign>/runtime/handover/`, the claim script under
-  `<base>/scripts/`, and the campaign `AGENTS.md` all lie outside it, so
-  without the flag its first `Read` of the brief stops on a permission prompt --
-  a fourth silent stop beside the three below, observed 2026-09-02. Add every
-  source checkout the brief points at the same way; the flag is variadic.
+  and the claim script under `<base>/scripts/` lies outside it, so without the
+  flag its first claim stops on a permission prompt -- a fourth silent stop
+  beside the three below, observed 2026-09-02. Add every source checkout the
+  sub-issue points at the same way; the flag is variadic.
 - Choose the session UUID in advance (`--session-id`) so the transcript path is
   known before the agent starts, and `--name` it `campaign-<N>-executor-<n>` per
   § The session name -- a delegate is always the executor role. `--name`
@@ -62,19 +62,29 @@ a startup timeout defaulting to 30000 ms (max 300000); an agent blocked during
 startup comes back as `agent_not_ready`. It requires an existing pane at an
 interactive shell prompt and creates no layout.
 
-## The canary
+## The campaign's principles
 
-The flag is absent from `claude --help` and the appended text never reaches the
-transcript, so nothing on disk records whether a delegate received the campaign's
-principles — and a delegate that got nothing looks exactly like one that got
-everything and ignored it. Asking it would be the self-report this design refuses
-everywhere else, so make the answer unobtainable any other way:
+**Write them to `<campaign>/repos/<repo>/CLAUDE.local.md` and exclude that path
+in the clone's `.git/info/exclude`.** A file on disk in the delegate's own cwd,
+loaded because it is there — so there is nothing to prove arrived, and no canary.
 
-1. Append a one-line token, unique per launch, to the file being injected.
-2. Launch with `--append-system-prompt-file <that file>`.
-3. **Delete the file**, then ask the delegate for the token.
+This replaced `--append-system-prompt-file`, whose whole problem was
+unobservability: the flag is absent from `claude --help`, the appended text never
+reaches the transcript, and a delegate that received nothing looked exactly like
+one that received everything and ignored it. The old repair was a token appended
+to the injected file, the file deleted, and the delegate asked to recite it.
 
-An answer is something it cannot read, which is evidence rather than testimony.
+Probed 2026-09-04 on this machine, both halves: a fresh `claude -p` in a
+temporary git repository holding a `CLAUDE.local.md` with a token in it answered
+with that token, and `git status --porcelain` in the same repository printed
+nothing, so the exclude keeps it out of the delegate's own commits. `.gitignore`
+would not do: it is tracked, so excluding a per-launch file there is a commit on
+the member repository for the campaign's convenience.
+
+The old external-import dialog goes with the flag: `CLAUDE.local.md` in the cwd
+is not an ancestor import and raises no question. The row for it stays in the
+table below, because a campaign directory *above* a clone still has an
+`AGENTS.md` a session may be asked about.
 
 ## What silently stops a delegate before it starts
 

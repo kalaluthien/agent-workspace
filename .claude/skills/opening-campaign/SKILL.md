@@ -10,10 +10,9 @@ Finished when all of these hold:
 - An open issue in `kalaluthien/campaign-base` carries the label `campaign`,
   no parent, and the sections of the campaign issue template `assets/README.md`, with a
   `## Repos` list that `scripts/campaign-repos.py` reads and exits 0 on.
-- The campaign issue's latest `BOUND` comment names this machine.
+- The campaign issue carries exactly one `bound:` label, and it names this machine.
 - `<slug>-<YYMMDD>/` exists at the base root and holds `AGENTS.md`,
-  `CLAUDE.md`, `scripts/`, `runtime/handover/`, `runtime/claims/`,
-  `runtime/repos`, and a `README.md` and `runtime/campaign-issue-body-derived.md` that
+  `CLAUDE.md`, `scripts/`, `runtime/repos`, and a `README.md` and `runtime/campaign-issue-body-derived.md` that
   each hold the campaign issue body as `gh issue view --json body` returns it --
   the read-back is the canonical form, because the round trip through `gh` is
   not byte-stable (a body sent with one trailing newline comes back with two).
@@ -49,20 +48,17 @@ fact about a directory, not about the campaign.
 ```sh
 ls -d "$BASE"/*-[0-9][0-9][0-9][0-9][0-9][0-9]/ 2>/dev/null
 CAMPAIGN=$(cd "$BASE/<the directory that matched>" && pwd -P)
-mkdir -p "$CAMPAIGN/runtime/claims"
 ```
 
 A directory whose `README.md` names this campaign is the one to work in, peers
-working in it too being the normal state. `mkdir -p` because a campaign
-scaffolded before that directory existed has none, and a missing one leaves the
-close gate unable to enumerate at all.
+working in it too being the normal state.
 
 **No directory at all** — name this session first (the last block of step 3,
 with the ID the campaign issue already has), then run steps 2, 4 and 5 with the ID and
 body from the campaign issue, and skip the rest of step 3, which exists only to
-mint an ID it already has. Do it before launching or receiving anything: until
-the directory exists a claim record has nowhere to be written (`AGENTS.md` § ID,
-directory, branch). Step 2 still runs, because neither the slug nor the kind is
+mint an ID it already has. The directory holds no claim and no brief since #176,
+so it is a cache and not a precondition; scaffold it anyway, because `repos/` and
+the README copy live there. Step 2 still runs, because neither the slug nor the kind is
 recoverable from GitHub; say which kind you picked.
 
 ### 2. Name it and pick its kind
@@ -79,7 +75,7 @@ recoverable from GitHub; say which kind you picked.
 | move a working system from one form to another | `migration` |
 
 With a person in the conversation, propose all three in one message and wait;
-from a handover brief with nobody waiting, read all three from the brief. Either
+from a sub-issue with nobody waiting, read all three from its body. Either
 way state them in the reply, so each costs one line to veto — an unstated kind is
 a wrong set of principles for every delegate.
 
@@ -114,17 +110,18 @@ Want `campaign` among `labels` and `parent` null. A non-null `parent` means you
 filed a sub-issue, not a campaign issue — `gh issue edit <N> --remove-parent` first.
 
 **Then bind it to this machine, in the same step** — everything after is a write
-or a launch, both gated on the binding. One of the two occasions a session posts
-`BOUND`, read back as `AGENTS.md` § The binding says.
+or a launch, both gated on the binding. One of the two occasions a session binds,
+read back as `AGENTS.md` § The binding says.
 
 ```sh
-gh issue comment <N> -R kalaluthien/campaign-base --body "BOUND $(hostname -s)"
+"$BASE/scripts/campaign-tracker.py" bind <N>
+"$BASE/scripts/campaign-tracker.py" bound <N>     # want: here
 ```
 
 **Then name this session, now that the number exists.** A session that opened
 this campaign while named for another keeps that name until something sets it,
-and nothing later does: every claim record, brief and peer message would then
-carry the wrong campaign's address. `<role>` is `planner` when this session
+and nothing later does: every peer message and every `live` sweep would then
+read it as another campaign's. `<role>` is `planner` when this session
 will file the sub-issues and hand them out, `executor` when it will work the
 one it files (`AGENTS.md` § The binding); `<n>` is the next free one among the
 sessions `herdr agent list` shows for this campaign, counted as `AGENTS.md`
@@ -173,11 +170,10 @@ campaign, or unreadable — stop and ask.
 Then finish it:
 
 - Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
-- Delete `sub-issue.md` and `handover.md`. Both are filled once *per sub-issue* from
-  the skill's own copy, so neither top-level copy has a reader and a stale one
-  could be filled long after.
-- Everything else the copy brought stays. Confirm `runtime/claims/` arrived,
-  because `closing-campaign` refuses a close when it is missing.
+- Delete `sub-issue.md`. It is filled once *per sub-issue* from the skill's own
+  copy, so the top-level copy has no reader and a stale one could be filled long
+  after.
+- Everything else the copy brought stays.
 - Overwrite `README.md` with the campaign issue body, which replaces every
   placeholder at once — the close-time sync run backwards:
 
@@ -239,20 +235,17 @@ is half the branch name, and the branch is the claim**, so the claim cannot be
 cut until the issue exists and this is the step that mints it.
 
 ```sh
-"$BASE/scripts/campaign-claim.py" take <N> <issue> <topic> \
-  --dir "$CAMPAIGN" --repo <owner/repo> --name "<this session's ListAgents name>"
+"$BASE/scripts/campaign-claim.py" take <N> <issue> <topic> --repo <owner/repo>
 ```
 
-One call cuts the branch from the named remote and writes the claim record. Exit
-3 is the ref already existing, which is the sub-issue being taken: read who holds
-it, and do not push past it. **When a delegate will do the work**, the record
-must be the delegate's, not the launcher's: choose the delegate's session UUID
-and name first (`references/launching.md`) and pass them as
-`--session <uuid> --name campaign-<N>-executor-<n>`, so the branch is claimed
-before the launch and the planner holds no record of its own
-(`AGENTS.md` § The claim record). A repo-less campaign claims on the base all the
-same — `--repo` defaults there. Give the branch a local checkout only where the
-sub-issue has one, then put the branch name in the handover brief:
+One call cuts the branch from the named remote and writes nothing else: **the
+ref is the whole claim**. Exit 3 is the ref already existing, which is the
+sub-issue being taken: read who is standing in it with `campaign-claim live <N>`,
+and do not push past it. **When a delegate will do the work** the same one call
+does it, before the launch — the delegate checks the branch out when it starts,
+and that checkout is what attributes the claim to its workspace. A repo-less
+campaign claims on the base all the same — `--repo` defaults there. Give the
+branch a local checkout only where the sub-issue has one:
 
 ```sh
 B=campaign-<N>/<issue>-<topic>
