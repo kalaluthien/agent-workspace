@@ -3,9 +3,10 @@
 
 Every case runs the shipped script against a fixture base built here --
 never the real one -- and hands it a hook payload on stdin. No case reaches the
-network: the guard's PreToolUse half makes no request at all, and its PostToolUse
-half is covered only up to the point where it would ask GitHub whether an issue
-is closed, since a fixture that mocked `gh` would be testing the mock.
+network: the guard's PreToolUse half makes no request at all, and `closed_on_github`
+is never the subject of a case, since a fixture that mocked `gh` would be testing
+the mock. The two holder cases stand a stub `gh` in for that reading because it is
+their PRECONDITION -- see `stub_gh`.
 
 WHAT EACH GROUP PINS
 
@@ -63,8 +64,32 @@ def base(d, campaigns):
     return root
 
 
+def stub_gh(d, state="CLOSED"):
+    """An env whose PATH holds a `gh` answering `issue view --json state`.
+
+    The holder cases need the guard PAST its GitHub reading to reach the branch
+    they test, and the real `gh` cannot supply that reliably: on a runner it has
+    no token and exits 4, so the guard returns at `ok is None` and both cases
+    pass over the branch they name while reading green. Locally it answered only
+    because issue #7 of this repository happens to be closed -- a fixture made of
+    ambient state. This stubs the PRECONDITION and not the subject, and it
+    refuses any other call so a case that drifted into testing the mock fails.
+    """
+    bin_dir = Path(d) / "stub-bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        '  "issue view "*" --json state") printf \'{"state":"%s"}\' ;;\n'
+        '  *) echo "stub gh: unexpected call: $*" >&2; exit 3 ;;\n'
+        "esac\n" % state)
+    gh.chmod(0o755)
+    return {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+
+
 def ask(cwd, tool="Edit", command=None, session=SESSION, post=False,
-        event=None, path=None, stdin=None):
+        event=None, path=None, stdin=None, env=None):
     payload = {
         "session_id": session,
         "cwd": str(cwd),
@@ -76,7 +101,7 @@ def ask(cwd, tool="Edit", command=None, session=SESSION, post=False,
     args = [sys.executable, str(GUARD)] + (["--released"] if post else [])
     return subprocess.run(args, input=stdin if stdin is not None
                           else json.dumps(payload),
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, env=env)
 
 
 def main():
@@ -329,7 +354,8 @@ def main():
         # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and its fixtures have to spell the path
         rec = root / "demo-260902" / "runtime" / "claims" / "7"
         before = rec.read_text()
-        r = ask(root, tool="Bash", command=CLOSE_CMD, post=True)
+        r = ask(root, tool="Bash", command=CLOSE_CMD, post=True,
+                env=stub_gh(d))
         check("a peer's record is NOT released by a session that never held it",
               rec.read_text() == before,
               f"record changed to: {rec.read_text()[:120]}")
@@ -342,7 +368,7 @@ def main():
         root = base(d, {"demo-260902": {"7": RECORD}})
         # unguarded: check-tree-shape -- #177 rewrites this guard to read the branch claim and deletes every one of these; until it lands this is the record's last reader and its fixtures have to spell the path
         rec = root / "demo-260902" / "runtime" / "claims" / "7"
-        ask(root, tool="Bash", command=CLOSE_CMD, post=True)
+        ask(root, tool="Bash", command=CLOSE_CMD, post=True, env=stub_gh(d))
         check("the holder's own close does mark its record released",
               "released" in rec.read_text(), rec.read_text()[:120])
 
