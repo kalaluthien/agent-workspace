@@ -23,9 +23,28 @@
 # Refuses rather than overwrites: an existing hook not written by this script, a
 # symlinked hook slot (writing through it would edit a file outside this
 # repository), or a repository with core.hooksPath set (git would never run what
-# gets written to .git/hooks/).
+# gets written to .git/hooks/). One exception, adopted and announced: a
+# pre-commit whose whole body is the two-line shim acquire-repo.sh writes
+# (`exec "<...>/.claude/git-hooks/no-main-commits" "$@"`), because the hook
+# written here chains that same guard and is a strict superset of it. Two
+# writers of one slot, the second refusing the first's output, left every
+# delegate clone with none of this repository's hooks (#178).
+#
+# `--git-only` installs the two git hooks and leaves ~/.claude/settings.json
+# alone. The harness registration is machine-wide and points at ONE checkout;
+# a clone that re-ran it would repoint every session's guard at itself, and
+# the day the clone is deleted the guard refuses every call on the machine.
+# acquire-repo.sh passes it for that reason.
 
 set -e
+
+git_only=0
+for arg in "$@"; do
+	case "$arg" in
+		--git-only) git_only=1 ;;
+		*) echo "usage: scripts/install-hooks.sh [--git-only]" >&2; exit 2 ;;
+	esac
+done
 
 # --git-common-dir, never --show-toplevel: in a linked worktree the latter
 # returns the worktree, while hooks live in the main checkout, so the install
@@ -60,6 +79,15 @@ if hooks_path=$(git config --get core.hooksPath); then
 	exit 1
 fi
 
+# The whole body of the shim acquire-repo.sh writes, and nothing else: a shebang
+# and one exec of the machine-wide guard by absolute path. Anything more is
+# somebody's decision this script cannot read, and is refused below.
+is_guard_shim() {
+	[ "$(wc -l <"$1" | tr -d ' ')" = 2 ] &&
+		[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
+		sed -n 2p "$1" | grep -qE '^exec "[^"]*/\.claude/git-hooks/no-main-commits" "\$@"$'
+}
+
 # Each hook gets the same two refusals, so a second hook cannot arrive with
 # weaker checks than the first. Both are about writing over somebody's decision
 # this script cannot read.
@@ -70,6 +98,11 @@ check_slot() {
 		echo "Writing through it would edit a file outside this repository." >&2
 		echo "Move it aside and re-run, or chain $ours from its target by hand." >&2
 		exit 1
+	fi
+	if [ -e "$slot" ] && is_guard_shim "$slot"; then
+		echo "adopting: $slot held only the no-main-commits shim, which the hook" >&2
+		echo "written here chains; replacing it." >&2
+		return 0
 	fi
 	if [ -e "$slot" ] && ! grep -qF "$marker_match" "$slot"; then
 		echo "refusing: $slot exists and was not written by this script." >&2
@@ -156,6 +189,12 @@ chmod +x "$hook"
 echo "installed: $hook"
 
 # ---------------------------------------------------- the harness hooks
+#
+# Skipped under --git-only; the header says why a clone must not run this half.
+if [ "$git_only" = 1 ]; then
+	echo "skipped: the harness registration in ~/.claude/settings.json (--git-only)"
+	exit 0
+fi
 #
 # Registered in ~/.claude/settings.json for the reason in the header. The merge
 # is done in Python because settings.json is JSON with a person's own hooks in

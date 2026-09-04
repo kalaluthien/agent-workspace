@@ -112,6 +112,21 @@ def installer(root):
                           env=dict(os.environ, HOME=str(home)))
 
 
+def guard_shim(guard):
+    """The two lines acquire-repo writes, spelled from its printf."""
+    return f'#!/usr/bin/env sh\nexec "{guard}" "$@"\n'
+
+
+def fake_guard(home):
+    """A no-main-commits at the place acquire-repo and the hook look, which
+    refuses every commit in its own words so chaining is observed, not read."""
+    g = home / ".claude" / "git-hooks" / "no-main-commits"
+    g.parent.mkdir(parents=True, exist_ok=True)
+    g.write_text("#!/bin/sh\necho 'FAKE GUARD RAN' >&2\nexit 1\n")
+    g.chmod(0o755)
+    return g
+
+
 def main():
     ran, fails = [], []
 
@@ -234,6 +249,156 @@ def main():
         check("the installer refuses a hook it did not write",
               out.returncode != 0 and "refusing" in out.stderr,
               (out.stdout + out.stderr)[:160])
+
+    # 5b. The one hook it adopts: the two-line shim acquire-repo writes into a
+    # clone. Before #178 this refused, so no delegate clone held either hook.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        home = r.root.parent / "home"
+        guard = fake_guard(home)
+        r.hook("pre-commit").write_text(guard_shim(guard))
+        r.hook("pre-commit").chmod(0o755)
+        out = installer(r.root)
+        check("the installer adopts the no-main-commits shim and says so",
+              out.returncode == 0 and "adopting" in out.stderr
+              and r.hook("post-commit").exists(),
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
+        # Chaining, exercised and not read: the fake guard refuses every commit
+        # with its own words, so a clean commit going through would mean the
+        # adopted slot lost the guard the shim carried.
+        (r.root / "docs").mkdir()
+        (r.root / "docs" / "x.html").write_text("<p>ok</p>\n")
+        git(r.root, "add", "docs/x.html")
+        c = r.commit(env={"HOME": str(home)})
+        # Pinned to the hook install-hooks wrote: the un-adopted shim also
+        # prints the fake guard's words, so the `# runs:` line is what
+        # separates "adopted and chained" from "left the shim alone".
+        check("...and the hook it writes still chains no-main-commits",
+              c.returncode != 0 and "FAKE GUARD RAN" in c.stdout + c.stderr
+              and "# runs:" in r.hook("pre-commit").read_text(),
+              f"exit {c.returncode}; {(c.stdout + c.stderr)[:160]}")
+    # A near miss is not the shim. One line more than the shim is somebody's
+    # decision, and matching on "mentions no-main-commits" would adopt it.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        guard = fake_guard(r.root.parent / "home")
+        r.hook("pre-commit").write_text(guard_shim(guard) + "echo also this\n")
+        out = installer(r.root)
+        check("a shim with one line added is still refused",
+              out.returncode != 0 and "refusing" in out.stderr
+              and "adopting" not in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:160]}")
+
+    # 5c. --git-only. The harness half is machine-wide and points at one
+    # checkout; a clone running it would repoint every session's guard.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        home = r.root.parent / "home"
+        (home / ".claude").mkdir(parents=True)
+        settings = home / ".claude" / "settings.json"
+        settings.write_text('{"untouched": true}\n')
+        out = subprocess.run([str(r.root / "scripts" / "install-hooks.sh"),
+                              "--git-only"], cwd=r.root, capture_output=True,
+                             text=True, env=dict(os.environ, HOME=str(home)))
+        check("--git-only installs both git hooks and says the harness half "
+              "was skipped",
+              out.returncode == 0 and r.hook("pre-commit").exists()
+              and r.hook("post-commit").exists() and "skipped" in out.stdout,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
+        check("...and leaves settings.json byte for byte",
+              settings.read_text() == '{"untouched": true}\n',
+              settings.read_text()[:120])
+
+    # 5d. acquire-repo, which is where a clone gets its hooks. Over a checkout
+    # already present (its clone strategy needs gh and the network; the shared
+    # path after it does not), a repository shipping this installer ends up
+    # with both hooks; one without it gets the shim; a re-run converges.
+    with tempfile.TemporaryDirectory() as d:
+        home = Path(d) / "home"
+        guard = fake_guard(home)
+        (home / ".claude" / "settings.json").write_text('{"untouched": true}\n')
+        env = dict(os.environ, HOME=str(home))
+        acq = SCRIPTS.parent / ".claude" / "skills" / "opening-campaign" \
+            / "scripts" / "acquire-repo.sh"
+
+        def checkout(name, with_installer):
+            remote = Path(d) / name / "owner" / "repo.git"
+            remote.parent.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q", "--bare", str(remote)],
+                           check=True)
+            w = Path(d) / name / "w"
+            subprocess.run(["git", "clone", "-q", str(remote), str(w)],
+                           capture_output=True, check=True)
+            (w / "scripts").mkdir()
+            for n in NEEDED:
+                if with_installer or n != "install-hooks.sh":
+                    shutil.copy(SCRIPTS / n, w / "scripts" / n)
+            git(w, "add", "-Af")
+            git(w, "commit", "-qm", "init", "--no-verify")
+            git(w, "push", "-q", "origin", "HEAD")
+            dest = Path(d) / name / "repos" / "repo"
+            subprocess.run(["git", "clone", "-q", str(remote), str(dest)],
+                           capture_output=True, check=True)
+            return dest
+
+        dest = checkout("ships", True)
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        pre = dest / ".git" / "hooks" / "pre-commit"
+        post = dest / ".git" / "hooks" / "post-commit"
+        check("acquire-repo runs the repository's installer when it ships one",
+              out.returncode == 0 and "own installer" in out.stderr
+              and post.exists() and "install-hooks" in pre.read_text(),
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+        check("...with --git-only, so the person's settings are untouched",
+              (home / ".claude" / "settings.json").read_text()
+              == '{"untouched": true}\n')
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        check("...and a re-run converges rather than refusing",
+              out.returncode == 0 and post.exists()
+              and "install-hooks" in pre.read_text(),
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+
+        # An installer the repository ships that writes a hook without the
+        # guard: success here would be the unguarded checkout the header says
+        # a caller must never read success over.
+        dest = checkout("foreign", False)
+        bad = dest / "scripts" / "install-hooks.sh"
+        bad.write_text("#!/bin/sh\nprintf '#!/bin/sh\\necho lint\\n' >| "
+                       ".git/hooks/pre-commit\nchmod +x .git/hooks/pre-commit\n")
+        bad.chmod(0o755)
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        check("an installer whose hook omits the guard is refused, not trusted",
+              out.returncode != 0 and "without the no-main-commits guard"
+              in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+        # An installer that fails: the status it gave is what is reported.
+        # `$?` read inside an `if !` branch is 0, which is the false answer in
+        # the direction that reads as success.
+        bad.write_text("#!/bin/sh\necho unhappy >&2\nexit 7\n")
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        check("an installer that fails is reported with the status it gave",
+              out.returncode != 0 and "exited 7" in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+        bad.chmod(0o644)
+        bad.write_text("#!/bin/sh\nexit 0\n")
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        check("an installer present but not executable is named, not skipped",
+              out.returncode != 0 and "not executable" in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+
+        dest = checkout("bare", False)
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        pre = dest / ".git" / "hooks" / "pre-commit"
+        check("a repository with no installer gets the shim and nothing else",
+              out.returncode == 0 and pre.read_text() == guard_shim(guard)
+              and not (dest / ".git" / "hooks" / "post-commit").exists(),
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
 
     # 6. post-commit, on the real thing.
     with tempfile.TemporaryDirectory() as d:

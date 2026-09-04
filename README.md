@@ -61,8 +61,14 @@ It installs the `pre-commit` that chains the machine-wide no-commits-on-`main`
 guard with this repository's three (`check-rule-readers`, `check-tree-shape`,
 `check-cross-references`), the `post-commit` that pushes a campaign branch on
 its first commit, and the harness claim guard in `~/.claude/settings.json`. It
-refuses rather than overwrites a hook it did not write, so a hand-written
-shim in the slot is the one thing that stops it — remove that first.
+refuses rather than overwrites a hook it did not write, with one exception it
+announces: the two-line `no-main-commits` shim `acquire-repo.sh` leaves in a
+clone, which it adopts because the hook it writes chains that same guard.
+
+A delegate clone gets its hooks from `acquire-repo.sh`, which runs this
+installer with `--git-only`. The harness claim guard is registered from one
+checkout for every session on the machine, so a clone must not repoint it at
+itself; `--git-only` is how a second checkout installs the git hooks alone.
 
 Requires `git`, `gh` (authenticated), `herdr`, `uv`, and Python 3.
 
