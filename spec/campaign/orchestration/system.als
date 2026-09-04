@@ -14,11 +14,9 @@
  *   Launched   agents that have been launched, and Live those still running.
  *   LocalOnly  agents holding work that exists only on their host.
  *   PushedToRemote  agents whose branch is on the remote, a different fact.
- *   Addressable     agents a campaign session can send a message to.
  *   Reported, Asked, Answered, Waiting   the four messages.
  *   Confirmed  agents a session has itself observed to hold nothing local-only.
- *   StandDownTaken          agents that have been told to stand down.
- *   StoodDownCommentPosted  agents whose stand-down is on the campaign issue.
+ *   StandDownTaken  agents that have been told to stand down.
  *   Retired    agents whose workspace has been destroyed.
  *   Reviewed   a bit on the PULL REQUEST, not on the agent: a review outlives
  *              the agent exactly as the pull request does.
@@ -28,12 +26,15 @@
  * -- are ONE `Launch` here: nothing a model can say about reachable states
  * differs between them.
  *
+ * ATTRIBUTION IS DERIVED, NOT STORED. `holder` reads which agent a sub-issue's
+ * claim belongs to off two facts a later session can still see: the agent is
+ * live, and the checkout in its campaign directory is on the claim's branch.
+ * Nothing writes it and nothing can go stale against it, which is what
+ * replaced the record whose `session` field this entity used to defer to.
+ * `AttributionIsSound` is what that costs, and R4c is its counterexample.
+ *
  * NOT MODELLED: whether an agent is any good; that an agent answers about
- * itself only; that STAND DOWN is a request a peer may refuse; which session a
- * claim's RECORD names -- `claimedIssues` is attributed to the acting session,
- * so at a delegate launch the planner's session holds the claim here, where
- * AGENTS.md's "a planner holds no claim of its own" speaks of the record's
- * `session` field, which no atom carries; and two of the
+ * itself only; that STAND DOWN is a request a peer may refuse; and two of the
  * three merge conditions in AGENTS.md -- that the reviewer did not write the
  * commits, because nothing here records who set `Reviewed`, and that the branch
  * contains the current main, because this model has one pull request per issue
@@ -64,7 +65,7 @@ sig Agent {
    (PlannerNeverLocalOnly, PlannerNeverReports), and it shares the rest --
    Asked, Answered and Waiting, three of the four messages with REPORT's own bit
    the one it does not take; Confirmed; the shutdown bits, StandDownTaken among
-   them, so the fourth message is counted there and not twice; Addressable; and
+   them, so the fourth message is counted there and not twice; and
    `branch`. What it executes itself is an Executor atom of the same session. A
    delegate launch is the planner's act, and `launch` says so. A third kind is
    added here the same way, and takes whatever of the state below it turns out
@@ -82,10 +83,6 @@ var sig LocalOnly    in Agent {}
    from LocalOnly. The gap between the two is R5b. */
 var sig PushedToRemote  in Agent {}
 var sig Reported in Agent {}
-/* A campaign session can reach it. A DIRECTORY FACT: it dies with the tree,
-   and it is keyed to no reader, so any later session inherits every address in
-   it. */
-var sig Addressable in Agent {}
 var sig Asked    in Agent {}
 var sig Answered in Agent {}
 var sig Waiting  in Agent {}
@@ -93,11 +90,6 @@ var sig Waiting  in Agent {}
    local-only. */
 var sig Confirmed in Agent {}
 var sig StandDownTaken in Agent {}
-/* The agent has posted `STOOD DOWN <name> <session-id>` on the campaign
-   issue: the agreement made durable where a close gate can read it. Set only
-   by the agent itself, after it stood down, and never for one still LocalOnly
-   -- the comment says its work is on GitHub. */
-var sig StoodDownCommentPosted    in Agent {}
 var sig Retired  in Agent {}
 
 /* A bit on the PULL REQUEST, not on the agent: the review outlives the
@@ -119,6 +111,18 @@ fact AgentWellFormed {
 
 pred coLocated[s: Session, a: Agent] { s.machine = a.host }
 
+/* WHO HOLDS A SUB-ISSUE'S CLAIM, derived from what a later session can read:
+   `herdr agent list` gives the live agent and its cwd, and the checkout there
+   is on a branch or it is not. No record, so nothing to go stale, and the
+   answer survives a harness restart and a rename -- neither touches a
+   checkout. Empty is a real answer: a claimed branch nobody has checked out
+   is a branch with no holder, which is what `campaign-claim live` prints as
+   its second group. */
+fun holder[i: Issue]: set Agent {
+  { a: Agent | a.task = i
+               and campaignDirAt[campaignOf[i], a.host].checkedOut[i.repo] = a.branch }
+}
+
 pred liveUnder[c: Campaign] {
   some a: Agent | a in Live and (a.task in c.memberIssues or a.host in machinesHolding[c])
 }
@@ -126,27 +130,13 @@ pred liveUnder[c: Campaign] {
 pred liveUnderLocally[c: Campaign, m: Machine] {
   some a: Agent | a in Live and a.host = m and (a.task in c.memberIssues or m in machinesHolding[c])
 }
-/* Whether any campaign session can reach this agent at all. Separate from
-   liveness on purpose: "I can see it in a list" and "I can send it a message"
-   are different questions, and this is the second. */
-pred addressable[a: Agent] { a in Addressable }
 
-/* What a close gate can read AND ATTRIBUTE, a strictly smaller set than what
-   it can see. Liveness is readable for BOTH kinds of agent without any
-   record -- a session working its own claim holds a pane and is listed too --
-   but a pane gives a name and a campaign session's cwd is the base root,
-   so only the record ties the name to a claim. The split's subject is
-   attribution, and A17 is the residual gap measured. */
-pred liveAndAddressable[c: Campaign, m: Machine] {
-  some a: Agent | a in Live and a.host = m
-    and (a.task in c.memberIssues or m in machinesHolding[c])
-    and (no a.peer or addressable[a])
-}
-/* github's `closable` is the GitHub half. These three add the half that needs
-   an agent. */
+/* github's `closable` is the GitHub half. These two add the half that needs
+   an agent: the rule as written, and the honest local reading a session on
+   one machine can actually perform. There is no third, narrower reading any
+   more -- the close reads `herdr agent list` and nothing keyed to a tree. */
 pred closableWithAgents[c: Campaign]          { closable[c] and not liveUnder[c] }
 pred closableLocally[s: Session, c: Campaign] { closable[c] and not liveUnderLocally[c, s.machine] }
-pred closableAsRead[s: Session, c: Campaign]  { closable[c] and not liveAndAddressable[c, s.machine] }
 
 /* campaign-<N>/<issue>-<topic>: two agents share a branch only when
    campaign, sub-issue and topic all match. That it separates two SUB-ISSUES is
@@ -160,45 +150,45 @@ pred sameBranch[a1, a2: Agent] {
 /* ---------------- observable events ---------------- */
 
 one sig Work, Push, Status, Answer, Report, Blocked, Decide,
-        Confirm, ConfirmElsewhere, Review, StandDown, StoodDownPosted, Retire,
+        Confirm, ConfirmElsewhere, Review, StandDown, Retire,
         AgentDie extends Event {}
 
 fun orchestrationOwn: set Event {
   Work + Push + Status + Answer + Report + Blocked + Decide
-  + Confirm + ConfirmElsewhere + Review + StandDown + StoodDownPosted + Retire
+  + Confirm + ConfirmElsewhere + Review + StandDown + Retire
   + AgentDie
 }
-/* `DeleteDir` is here because this entity has a bit with the directory's
-   lifetime. `MergePullRequest` is NOT: session/system.als gives it a session and this
-   entity only guards which session that may be, which is a discipline over the event
-   rather than a disjunct on it, so the merge falls through and frames
-   everything. */
-fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + DeleteDir }
+/* `DeleteDir` is NOT here any more: no bit of this entity has the directory's
+   lifetime once attribution is derived, so a delete falls through and frames
+   everything. `MergePullRequest` is not here either: session/system.als gives it
+   a session and this entity only guards which session that may be, which is a
+   discipline over the event rather than a disjunct on it. */
+fun orchestrationActed: set Event { orchestrationOwn + Launch + Release }
 
-/* The bits divide by how long they live: a directory fact, a pull request's,
-   and a process's. */
+/* The bits divide by how long they live: a pull request's, and a process's.
+   None has a directory's any more. */
 pred keepMessages     { Reported' = Reported and Asked' = Asked and Answered' = Answered and Waiting' = Waiting }
-pred keepAddress  { Addressable' = Addressable }
 pred keepReview   { Reviewed' = Reviewed }
 pred keepLife     { Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed }
-pred keepShutdown { StandDownTaken' = StandDownTaken and StoodDownCommentPosted' = StoodDownCommentPosted and Retired' = Retired }
+pred keepShutdown { StandDownTaken' = StandDownTaken and Retired' = Retired }
 pred keepLaunched     { Launched' = Launched }
-pred agentFrame   { keepLife and keepReview and keepMessages and keepAddress and keepShutdown and keepLaunched }
+pred agentFrame   { keepLife and keepReview and keepMessages and keepShutdown and keepLaunched }
 
-/* `Addressable` is set unconditionally: a delegate is addressable from its
-   `--name`, a session from the record it wrote at the claim, which precedes
-   every launch. A1 is the gap that closes. */
 pred launch[a: Agent] {
   Now.event = Launch
   a not in Launched
   a.launcher = Who.session
   a.host = Where.machine
   Now.issue = a.task
-  /* Only a delegate's launch waits on a branch existing. A session working
-     with its own hands starts on work that may land no commit at all, where
-     the claim is a record and no ref. DO NOT strengthen this to require the
-     ref unconditionally: it would model a create-ref that does not happen, and
-     the record is what must hold on this edge -- `claimBeforeWork` says so. */
+  /* Only a DELEGATE's launch waits on the ref, and the asymmetry is a hole
+     measured rather than a shortcut. Every claim is a ref now -- the record
+     that used to stand in for one where no commit would land is gone, and a
+     repo-less sub-issue cuts its ref on the base -- so the ref is what a
+     session working its own claim ought to hold too. That it can reach `work`
+     without one is R4h, and `claimBeforeWork` is the discipline that closes
+     it. DO NOT strengthen this to require the ref unconditionally: it would
+     close R4h here, where nothing runs, and hide the gap the guard exists
+     for. */
   no a.peer implies a.task in Claimed
   /* A delegate is the planner's act: the launching session holds a live
      Planner atom on this sub-issue, the one that filed and distributes it. A
@@ -207,24 +197,9 @@ pred launch[a: Agent] {
   campaignDirAt[Who.session.worksOn, a.host].checkedOut[a.task.repo] = a.branch
   Launched' = Launched + a
   Live'     = Live + a
-  Addressable' = Addressable + a
   LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
   keepReview and keepMessages and keepShutdown
   Target.agent = a
-}
-
-/* `Addressable` is the one bit here that does not outlive the tree, and only
-   for a session working its own claim: stripping a delegate too would make it
-   permanently unreachable when a directory its `--name` never depended on is
-   deleted. Scoped to the deleted tree's own campaign and machine. */
-pred agentDeleteDir {
-  Now.event = DeleteDir
-  Addressable' = Addressable
-    - { a: Agent | some a.peer
-                   and a.host = Where.machine
-                   and campaignOf[a.task] in (OnDisk - OnDisk').campaign }
-  keepLife and keepReview and keepMessages and keepShutdown and keepLaunched
-  no Target.agent
 }
 
 /* Clears an earlier confirmation here rather than at the point it is read.
@@ -235,7 +210,7 @@ pred work[a: Agent] {
   LocalOnly' = LocalOnly + a
   Confirmed' = Confirmed - a
   Live' = Live and PushedToRemote' = PushedToRemote
-  keepReview and keepMessages and keepAddress and keepShutdown and keepLaunched
+  keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = Work and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
@@ -248,19 +223,19 @@ pred push[a: Agent] {
   PushedToRemote'  = PushedToRemote + a
   Reviewed' = Reviewed - a.task.pullRequest
   Live' = Live and Confirmed' = Confirmed
-  keepMessages and keepAddress and keepShutdown and keepLaunched
+  keepMessages and keepShutdown and keepLaunched
   Now.event = Push and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
 /* Asking and answering are two events because STATUS queues behind the
    agent's current turn, so a late reply is ordinary rather than a symptom. */
 pred status[a: Agent] {
-  addressable[a]
+  a in Live
   a.task in Who.session.worksOn.memberIssues
   Asked' = Asked + a
   Answered' = Answered - a
   Reported' = Reported and Waiting' = Waiting
-  keepLife and keepReview and keepAddress and keepShutdown and keepLaunched
+  keepLife and keepReview and keepShutdown and keepLaunched
   Now.event = Status and Now.issue = a.task and Target.agent = a
 }
 
@@ -269,7 +244,7 @@ pred answer[a: Agent] {
   a in Live and a in Asked
   Answered' = Answered + a
   Asked' = Asked and Reported' = Reported and Waiting' = Waiting
-  keepLife and keepReview and keepAddress and keepShutdown and keepLaunched
+  keepLife and keepReview and keepShutdown and keepLaunched
   Now.event = Answer and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
@@ -280,7 +255,7 @@ pred report[a: Agent] {
   a in Live and a.role = Executor
   Reported' = Reported + a
   Asked' = Asked and Answered' = Answered and Waiting' = Waiting
-  keepLife and keepReview and keepAddress and keepShutdown and keepLaunched
+  keepLife and keepReview and keepShutdown and keepLaunched
   Now.event = Report and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
@@ -290,31 +265,31 @@ pred blocked[a: Agent] {
   a in Live and a not in Waiting
   Waiting' = Waiting + a
   Reported' = Reported and Asked' = Asked and Answered' = Answered
-  keepLife and keepReview and keepAddress and keepShutdown and keepLaunched
+  keepLife and keepReview and keepShutdown and keepLaunched
   Now.event = Blocked and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
 pred decide[a: Agent] {
-  addressable[a]
+  a in Live
   a in Waiting
   a.task in Who.session.worksOn.memberIssues
   Waiting' = Waiting - a
   Reported' = Reported and Asked' = Asked and Answered' = Answered
-  keepLife and keepReview and keepAddress and keepShutdown and keepLaunched
+  keepLife and keepReview and keepShutdown and keepLaunched
   Now.event = Decide and Now.issue = a.task and Target.agent = a
 }
 
 /* Stated as an ABSENCE, because "confirm the branch is pushed" has no passing
-   form for an agent that correctly produced nothing. NO `addressable` guard,
-   deliberately: it reads a tree on the session's own machine and sends the
-   agent nothing. A14/A15 are what gating it would cost. */
+   form for an agent that correctly produced nothing. It reads a tree on the
+   session's own machine and sends the agent nothing, which is why a dead
+   agent's pull request still lands. */
 pred confirm[a: Agent] {
   coLocated[Who.session, a]
   a.task in Who.session.worksOn.memberIssues
   a not in LocalOnly
   Confirmed' = Confirmed + a
   Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote
-  keepReview and keepMessages and keepAddress and keepShutdown and keepLaunched
+  keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = Confirm and Now.issue = a.task and Target.agent = a
 }
 
@@ -325,7 +300,7 @@ pred confirmElsewhere[a: Agent] {
   a.task in Who.session.worksOn.memberIssues
   Confirmed' = Confirmed + a
   Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote
-  keepReview and keepMessages and keepAddress and keepShutdown and keepLaunched
+  keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = ConfirmElsewhere and Now.issue = a.task and Target.agent = a
 }
 
@@ -340,46 +315,33 @@ pred review[i: Issue] {
   some i.pullRequest and i.pullRequest not in Reviewed
   i in Who.session.worksOn.memberIssues
   Reviewed' = Reviewed + i.pullRequest
-  keepLife and keepMessages and keepAddress and keepShutdown and keepLaunched
+  keepLife and keepMessages and keepShutdown and keepLaunched
   no Target.agent
 }
 
 /* It does not destroy its own workspace, which is why standing down and
    retiring are two events and the agent is still Live between them. */
 pred standDown[a: Agent] {
-  addressable[a]
   a in Live and a not in StandDownTaken
   a.task in Who.session.worksOn.memberIssues
   StandDownTaken' = StandDownTaken + a
-  StoodDownCommentPosted' = StoodDownCommentPosted and Retired' = Retired
-  keepLife and keepReview and keepMessages and keepAddress and keepLaunched
+  Retired' = Retired
+  keepLife and keepReview and keepMessages and keepLaunched
   Now.event = StandDown and Now.issue = a.task and Target.agent = a
-}
-
-/* The agent's own record of the stand-down, on the campaign issue. It
-   is the agent's own word (no Who.session), it comes after the stand-down, and
-   it is never posted over local-only work -- which is what makes the comment
-   evidence a close may read where a pane is not. */
-pred stoodDownPosted[a: Agent] {
-  a in StandDownTaken and a not in StoodDownCommentPosted and a not in LocalOnly
-  StoodDownCommentPosted'     = StoodDownCommentPosted + a
-  StandDownTaken' = StandDownTaken and Retired' = Retired
-  keepLife and keepReview and keepMessages and keepAddress and keepLaunched
-  Now.event = StoodDownPosted and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
 /* Anything still in LocalOnly at this instant is gone. The second disjunct is not
    a convenience: an agent that already died is retired with no stand-down,
    and that path skips every message, which is why the disciplines guard the
-   retire and not only the stand-down. No `addressable` guard either. */
+   retire and not only the stand-down. */
 pred retire[a: Agent] {
   (a in StandDownTaken or a not in Live) and a in Launched and a not in Retired
   a.task in Who.session.worksOn.memberIssues
   Retired' = Retired + a
   Live'    = Live - a
   LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
-  StandDownTaken' = StandDownTaken and StoodDownCommentPosted' = StoodDownCommentPosted
-  keepReview and keepMessages and keepAddress and keepLaunched
+  StandDownTaken' = StandDownTaken
+  keepReview and keepMessages and keepLaunched
   Now.event = Retire and Now.issue = a.task and Target.agent = a
 }
 
@@ -389,7 +351,7 @@ pred agentDie[a: Agent] {
   a in Live
   Live' = Live - a
   LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
-  keepReview and keepMessages and keepAddress and keepShutdown and keepLaunched
+  keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = AgentDie and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
@@ -405,8 +367,8 @@ pred agentRelease {
 
 pred orchestrationInit {
   no Launched and no Live and no LocalOnly and no PushedToRemote
-  no Reported and no Addressable and no Asked and no Answered
-  no Waiting and no Confirmed and no Reviewed and no StandDownTaken and no StoodDownCommentPosted and no Retired
+  no Reported and no Asked and no Answered
+  no Waiting and no Confirmed and no Reviewed and no StandDownTaken and no Retired
 }
 
 pred orchestrationStep {
@@ -415,10 +377,9 @@ pred orchestrationStep {
         launch[a] or work[a] or push[a]
         or status[a] or answer[a] or report[a]
         or blocked[a] or decide[a] or confirm[a] or confirmElsewhere[a]
-        or standDown[a] or stoodDownPosted[a] or retire[a] or agentDie[a])
+        or standDown[a] or retire[a] or agentDie[a])
   or (some i: Issue | review[i])
   or agentRelease
-  or agentDeleteDir
   or (Now.event not in Stutter + orchestrationActed and agentFrame and no Target.agent)
 }
 

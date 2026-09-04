@@ -81,23 +81,23 @@ pred claimBeforeWork {
             implies Now.issue in Target.agent.peer.claimedIssues)
 }
 
-/* The rule as written, the honest local reading, and the reading a session
-   can actually perform. */
+/* The rule as written, and the honest local reading a session can perform.
+   There is no third: the close reads `herdr agent list`, which sees every
+   live session on this machine, so what it can read and what it can attribute
+   are now the same set. */
 pred closeDisciplineFull[c: Campaign] {
   always ((Now.event = CloseIssue and Now.issue = c.campaignIssue) implies closableWithAgents[c])
 }
 pred closeDisciplineLocal[c: Campaign] {
   always ((Now.event = CloseIssue and Now.issue = c.campaignIssue) implies closableLocally[Who.session, c])
 }
-pred closeDisciplineAsRead[c: Campaign] {
-  always ((Now.event = CloseIssue and Now.issue = c.campaignIssue) implies closableAsRead[Who.session, c])
-}
 
-/* Where session/scenarios.als's R3 is answered: keyed on the record, which is the thing
-   a deleting session can actually read. */
-pred noDeleteUnderAddressableAgent {
+/* Where session/scenarios.als's R3 is answered: keyed on LIVENESS, which is
+   what `herdr agent list` hands a deleting session directly. It used to be
+   keyed on a record that died with the very tree it was about to delete. */
+pred noDeleteUnderLiveAgent {
   always (Now.event = DeleteDir implies
-            no a: Agent | a in Live and a.host = Where.machine and addressable[a]
+            no a: Agent | a in Live and a.host = Where.machine
                           and campaignOf[a.task] in (OnDisk - OnDisk').campaign)
 }
 
@@ -323,26 +323,25 @@ pred R6b_ReclaimAfterDeath {
   }
 }
 
-/* =================== the claim record =================== */
+/* =================== attribution, derived =================== */
 
-/* A1. Liveness was never the missing half; attribution was. Closed BY
-   CONSTRUCTION and not by a discipline, since the claimant writes its own
-   record before any agent exists. What remains outside it is the
-   post-delete window: A9, gated by A10-A12, measured by A14/A15. */
-pred A1_UnrecordedAgentAtTheClose {
+/* A1. WHO HOLDS THE CLAIM, read with no record anywhere: the agent is live
+   and the checkout in its campaign directory is on the claim's branch. Two
+   sessions, so `holder` is picking one of them out and not answering
+   vacuously. */
+pred A1_HolderReadFromTheCheckout {
   some c: Campaign, disj s1, s2: Session, a: Agent {
     a.peer = s2 and a.task in c.memberIssues
-    always a not in Addressable                   -- a claim with no record
-    closeDisciplineAsRead[c]                    -- s1 obeys the gate it can read
-    eventually (a in Live and a.task in Claimed
-                and Now.event = CloseIssue and Now.issue = c.campaignIssue and Who.session = s1
-                and liveUnderLocally[c, s1.machine])
+    s1.machine = s2.machine
+    eventually (a in Live and a in holder[a.task]
+                and Now.event = Status and Who.session = s1 and Target.agent = a)
   }
 }
 
-/* A3. Control for A1: UNSAT here would mean A1 went green by forbidding the
-   agent's life altogether. */
-pred A3_RecordedAgentRunsTheWholeProtocol {
+/* A3. Control for A1: the derived reading did not buy itself by making the
+   agent unable to run. UNSAT here would mean the whole protocol went with the
+   record. */
+pred A3_HolderRunsTheWholeProtocol {
   coLocatedShutdown and twoStepShutdown
   some c: Campaign, disj s1, s2: Session, a: Agent {
     a.peer = s2 and a.task in c.memberIssues
@@ -381,40 +380,32 @@ pred A5_ReviewRuleBlocksTheCollision {
   mergedOnCurrentReview and A4_AgentMergesItsOwnPullRequest
 }
 
-/* =================== the record, and what it is worth =================== */
+/* =================== deleting a tree under an agent =================== */
 
-/* A9. The lifetime exercised rather than asserted. Its cost is A10. */
-pred A9_RecordDiesWithTheDirectory {
-  some a: Agent {
-    some a.peer                        -- a delegate's address is its --name
-    eventually (addressable[a] and Now.event = DeleteDir and Where.machine = a.host
-                and after not addressable[a])
-  }
-}
-
-/* A10. session/scenarios.als's R3 with the missing half supplied: the record names the
-   working session and nothing reads it. */
-pred A10_DeleteUnderRecordedAgent {
+/* A10. session/scenarios.als's R3 reached from here: a directory is deleted
+   while a live agent on that machine still holds local-only work. */
+pred A10_DeleteUnderLiveAgent {
   some c: Campaign, a: Agent {
     some a.peer                        -- a session working its own claim
     a.task in c.memberIssues
-    eventually (a in Live and addressable[a] and a in LocalOnly
+    eventually (a in Live and a in LocalOnly
                 and Now.event = DeleteDir and Where.machine = a.host)
   }
 }
 
-/* A11. Keying the gate on `no a.peer` instead of `addressable[a]` turns it SAT
-   again. */
-pred A11_AddressableGateBlocksTheDelete {
-  noDeleteUnderAddressableAgent and A10_DeleteUnderRecordedAgent
+/* A11. The liveness gate closes it. Keying the gate on `some a.peer` instead
+   of on `a in Live` turns it SAT again, which is the reading that would let a
+   delegate's tree go. */
+pred A11_LiveGateBlocksTheDelete {
+  noDeleteUnderLiveAgent and A10_DeleteUnderLiveAgent
 }
 
 /* A12. UNSAT here would mean the directory could never be deleted at all. */
-pred A12_AddressableGateAdmitsTheDelete {
-  noDeleteUnderAddressableAgent
+pred A12_LiveGateAdmitsTheDelete {
+  noDeleteUnderLiveAgent
   some a: Agent |
-    eventually (addressable[a] and eventually (a not in Live and Now.event = DeleteDir
-                                             and Where.machine = a.host))
+    eventually (a in Live and eventually (a not in Live and Now.event = DeleteDir
+                                          and Where.machine = a.host))
 }
 
 /* A6. The other chair. A confirmation checks that the work EXISTS, never that
@@ -441,53 +432,6 @@ pred A8_ReviewRuleAdmitsTheLanding {
     eventually (Now.event = Confirm and Who.session = s1 and Target.agent = a)
     eventually (Now.event = Review and Who.session = s1 and Now.issue = a.task)
     eventually (Now.event = MergePullRequest and Who.session = s1 and Now.issue = a.task)
-  }
-}
-
-/* A20. StoodDownCommentPosted is set by its event and by nothing else:
-   unframed in any step,
-   or uncleared at init, this goes SAT. */
-pred A20_StoodDownCommentOnlyByPosting {
-  eventually some StoodDownCommentPosted
-  always Now.event != StoodDownPosted
-}
-/* The comment is never over local-only work: no trace posts it while the
-   agent is LocalOnly. */
-pred A19_StoodDownCommentNeverOverLocalOnlyWork {
-  eventually (Now.event = StoodDownPosted and Target.agent in LocalOnly)
-}
-
-/* A14. An agent whose record died is still retirable, on the confirmation
-   alone. Restoring the `addressable` guard on `confirm` turns this UNSAT. */
-pred A14_UnaddressableAgentIsRetirable {
-  resolveSilenceExternally and coLocatedShutdown
-  some a: Agent {
-    some a.peer
-    eventually (a not in Addressable and Now.event = Confirm and Target.agent = a)
-    eventually (a not in Addressable and Now.event = Retire and Target.agent = a)
-  }
-}
-
-/* A14b. And it cannot be stood down: `standDown` carries a message and
-   nothing re-creates an address after the delete. So A14's ending is a
-   stand-down taken while the record stood, or `retire`'s second disjunct. */
-pred A14b_UnaddressableAgentCannotBeStoodDown {
-  A14_UnaddressableAgentIsRetirable
-  some a: Agent {
-    some a.peer
-    eventually (a not in Addressable and Now.event = StandDown and Target.agent = a)
-  }
-}
-
-/* A15. And its pull request still lands. Gating `confirm` on `addressable` made
-   a record-less agent's work permanently unmergeable, which `gh pullRequest merge`
-   does not do. */
-pred A15_UnaddressableAgentPullRequestLands {
-  mergedOnCurrentReview
-  some a: Agent {
-    some a.peer
-    eventually (a not in Addressable and Now.event = Confirm and Target.agent = a)
-    eventually (Now.event = MergePullRequest and Now.issue = a.task)
   }
 }
 
@@ -541,17 +485,17 @@ pred A18b_AgentLessUnreviewedMergeIsBlocked {
   some i: Issue | eventually (Now.event = MergePullRequest and Now.issue = i)
 }
 
-/* A17. Seen live, no longer attributable: the pane proves the agent ALIVE
-   and cannot say WHOSE CLAIM it is. */
-pred A17_PaneSeesWhatTheRecordLost {
+/* A17. THE RESIDUAL GAP OF THE DERIVED READING, and the only one: an agent
+   is live and listed, and the checkout it was attributed by has moved off its
+   branch, so `holder` no longer names it. R4c is how the checkout moves;
+   AttributionIsSound is the same fact as a property. */
+pred A17_LiveButNoLongerTheHolder {
   some c: Campaign, a: Agent {
-    some a.peer
     a.task in c.memberIssues
     eventually (a in Live and liveUnderLocally[c, a.host]
-                and not liveAndAddressable[c, a.host])
+                and a not in holder[a.task])
   }
 }
-
 /* =================== the planner =================== */
 
 /* P1. THE ONE-EXECUTOR SHAPE: a request of one sub-issue is filed and worked by
@@ -627,15 +571,14 @@ run R6_ReleaseUnderRemoteAgent   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
 -- a dangling claim is reclaimable
 run R6b_ReclaimAfterDeath        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 14 steps expect 1
 
-/* A1 and A3 run at two roles, where the gap they measure was widest. A9-A12
-   need a CampaignDir to delete; A14-A15 need one to delete mid-trace. A16, A16b, A18
-   and A18b run at exactly ONE Session, because the absence of a second merger
-   is their subject. */
--- closed BY CONSTRUCTION: the claimant writes its own record, so no live claim is unattributable
-run A1_UnrecordedAgentAtTheClose          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+/* A1 and A3 run at two Sessions, so the derived reading is choosing between
+   them. A10-A12 need a CampaignDir to delete mid-trace. A16, A16b, A18 and
+   A18b run at exactly ONE Session, because the absence of a second merger is
+   their subject. */
+-- the holder read off the checkout, with no record anywhere
+run A1_HolderReadFromTheCheckout          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- control: the whole run still happens
-run A3_RecordedAgentRunsTheWholeProtocol  for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
-
+run A3_HolderRunsTheWholeProtocol         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- the live collision: a self-merge with NO review
 run A4_AgentMergesItsOwnPullRequest                for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- still caught, by what was missing
@@ -647,33 +590,22 @@ run A7_ReviewRuleBlocksUnreviewed            for 3 Issue, 1 PullRequest, 1 Campa
 -- control: two-session landing runs
 run A8_ReviewRuleAdmitsTheLanding            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 
--- the record has the tree's lifetime
-run A9_RecordDiesWithTheDirectory            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- session/scenarios.als's R3, reached from here
-run A10_DeleteUnderRecordedAgent          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
--- and closed by reading the record
-run A11_AddressableGateBlocksTheDelete          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run A10_DeleteUnderLiveAgent      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- and closed by reading liveness
+run A11_LiveGateBlocksTheDelete   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- control
-run A12_AddressableGateAdmitsTheDelete          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run A12_LiveGateAdmitsTheDelete   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- a push retires a review
 run A13_PushAfterReviewUnReviews             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
--- a record dead with its directory still ends in a lawful retire
-run A14_UnaddressableAgentIsRetirable       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
--- and never a stand-down: that one carries a message, so it stays gated
-run A14b_UnaddressableAgentCannotBeStoodDown for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 0
--- and its pull request still lands
-run A15_UnaddressableAgentPullRequestLands           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 16 steps expect 1
 -- the one-session landing
 run A16_AuthorLandsOwnReviewedWork           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- and a push retires that permission
 run A16b_AuthorCannotMergeOnStaleReview      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 0
--- attribution, not liveness, is the split's subject
-run A17_PaneSeesWhatTheRecordLost            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- the derived reading's one residual gap: live, listed, checkout moved off
+run A17_LiveButNoLongerTheHolder             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- hands-on work, reviewed and merged by one session, at `0 Agent`
 run A18_AgentLessLandingIsAdmitted           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- and unreviewed it does not land. The pair matters because the confirm conjunct is VACUOUS at `0 Agent`, so the review half holds the rule up alone
 run A18b_AgentLessUnreviewedMergeIsBlocked   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 
--- the floor's two negative controls
-run A19_StoodDownCommentNeverOverLocalOnlyWork for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0
-run A20_StoodDownCommentOnlyByPosting  for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0

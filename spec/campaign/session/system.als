@@ -17,7 +17,7 @@
  *             the campaign issue body as it last read that body, and the
  *             sub-issues it has claimed.
  *   Surveyed  the sessions that have run the new-versus-follow-up survey.
- *   Binding   the campaign issue's latest `BOUND <machine>` comment.
+ *   Binding   the campaign issue's `bound:<machine>` label.
  *   Who       the observer: which session performed the current event.
  *
  * A session is in a campaign exactly when the campaign is bound to its machine.
@@ -46,11 +46,18 @@ sig Session {
 }
 var sig Surveyed in Session {}
 
-/* The campaign issue's latest `BOUND <machine>` comment. A GitHub fact, so the
-   layering rule would put it in github/system.als -- but its value is a Machine and
-   its source is the filing session's own `machine`, and this is the lowest entity
+/* The campaign issue's `bound:<machine>` label. A GitHub fact, so the layering
+   rule would put it in github/system.als -- but its value is a Machine and its
+   source is the filing session's own `machine`, and this is the lowest entity
    that has either. The placement follows from that, not from the binding being
-   local. */
+   local.
+
+   A LABEL, NOT A COMMENT, and `lone` below is the whole difference. A comment
+   thread holds every binding a campaign ever had and a reader has to pick the
+   latest, so it parses prose and orders by time to answer one question. A
+   label set is read by exact name, and a campaign carrying two `bound:` labels
+   is a state the reader refuses rather than resolves -- which is what this
+   fact says, and why nothing here models a history. */
 one sig Binding {
   var bound: Campaign -> Machine
 }
