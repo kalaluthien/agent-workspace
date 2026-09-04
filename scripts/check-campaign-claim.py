@@ -29,6 +29,14 @@ a service is handed, and `gh issue create --body "... git mv ..."` must file
 the issue whose number the claim is minted from. Every other quoted span stays
 visible, because the sinks that execute text cannot be listed.
 
+It is also matched with every HYPHENATED WORD blanked (`verb_match`), the one
+local layer that subtracts from the imported pattern rather than adding to it:
+`\binstall\b` matches `install-hooks.sh` because `-` is a word boundary, and a
+fresh clone with no claim must be able to run the installer. A word after
+`git ` is left alone, so `git merge-file` and `git commit-tree` are still read
+as the `git merge` and `git commit` forms the pattern names. The mask serves
+the search only; operands are read from the command as written.
+
 That pattern has no opinion about service doors, because a takeaway check does
 not need one. The three `gh` writes a claim actually gates -- closing, editing
 and commenting on an issue, and merging a pull request -- are added here, in
@@ -156,8 +164,10 @@ IN_PLACE_SED = re.compile(r"\bsed\b[^|;&]*--in-place\b")
 # copy with every hyphenated word blanked. Only the search sees the copy; the
 # operands are read from the command as written. `--in-place` and `-i` start
 # with a hyphen and are not hyphenated words, so IN_PLACE_SED and `sed -i`
-# still read.
-HYPHENATED_WORD = re.compile(r"\b\w[\w.]*(?:-[\w.]+)+\b")
+# still read. A word after `git ` is not blanked: `git merge-file` writes its
+# first operand in place and `git commit-tree` writes an object, and the
+# pattern's `git (commit|merge|...)` alternation must keep reading them.
+HYPHENATED_WORD = re.compile(r"(?<!\bgit )\b\w[\w.]*(?:-[\w.]+)+\b")
 
 
 def verb_match(changing_command, text):

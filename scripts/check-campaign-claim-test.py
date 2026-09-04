@@ -453,17 +453,27 @@ def main():
         # A pattern verb glued to a hyphen is a file name, and the file the
         # README tells a fresh clone to run is the one that installs this guard.
         for cmd in ("cat scripts/install-hooks.sh | head -1",
-                    "sh scripts/install-hooks.sh",
                     "python3 -c 'print(1)' # install-hooks.sh"):
             r = ask(root, tool="Bash", command=cmd)
             check(f"a hyphenated name is not the verb: {cmd!r} is allowed",
                   r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        # The write_targets site: a readable segment that lands outside, next
+        # to a segment that is changing only through the hyphenated name.
+        # Without the mask there, the second segment poisons the first.
+        r = ask(root, tool="Bash", command="touch /tmp/x && sh scripts/install-hooks.sh")
+        check("...at the target-reading site too: a masked segment does not "
+              "poison a readable one", r.returncode == 0,
+              f"exit {r.returncode}: {out(r)[:300]}")
         r = ask(root, tool="Bash", command="pip install hooks")
         check("...while the verb itself, `pip install`, is still refused",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
         r = ask(root, tool="Bash", command="rm a-b.txt")
         check("...and a hyphenated operand does not hide the verb before it",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        for cmd in ("git merge-file AGENTS.md b.md c.md", "git commit-tree HEAD^{tree}"):
+            r = ask(root, tool="Bash", command=cmd)
+            check(f"...and a hyphenated git subcommand keeps its verb: {cmd!r} is refused",
+                  r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
         r = ask(root, tool="Bash", command="npm install lodash")
         check("a changing form whose target this cannot read is refused",
               r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
