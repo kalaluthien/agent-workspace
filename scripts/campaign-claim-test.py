@@ -76,7 +76,12 @@ case "$*" in
   # WHERE A CLAIM IS CUT, read from the sub-issue since #187. `none` is the
   # ordinary answer here: these cases claim on the base, which is what a
   # repo-less sub-issue resolves to.
+  # The CAMPAIGN issue's body, whose `## Repos` is the campaign's scope. A
+  # sub-issue may only name a repository this list holds.
+  *"issue view 9999 "*) printf '## Repos\n- other/elsewhere\n'; exit 0 ;;
+  *"issue view 8888 "*) printf 'no Repos heading at all\n'; exit 0 ;;
   *"issue view 404 "*) echo 'no Repository line here'; exit 0 ;;
+  *"issue view 502 "*) echo 'Repository: outside/scope'; exit 0 ;;
   *"issue view 500 "*) echo 'Repository: other/elsewhere'; exit 0 ;;
   *"issue view 501 "*) exit 1 ;;
   *"issue view"*) echo 'Repository: none'; exit 0 ;;
@@ -86,7 +91,7 @@ case "$*" in
   # vacant group and `release`'s fresh-claim gate each turn on.
   *"--head campaign-9999/2-beta"*) echo '[{"number": 162}]'; exit 0 ;;
   *"pr list"*|*--state*merged*) echo '[]'; exit 0 ;;
-  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"issues/9999"*|*"issues/8888"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
   *git/refs*) echo 'Reference already exists' >&2; exit 1 ;;
 esac
@@ -380,6 +385,36 @@ def take_cases(m):
               f"exit {r.returncode}: {out[:200]}")
         check("...and the refusal names both repositories it read",
               "someone/other" in out and "other/elsewhere" in out, out[:300])
+        # A REPOSITORY OUTSIDE THE CAMPAIGN'S SCOPE. `Repository:` is prose on
+        # one sub-issue; `## Repos` is what a person signed up for, so a
+        # sub-issue naming a repository outside it is a scope change filed as a
+        # typo. Cutting the ref would make the campaign wider than its charter.
+        r = claim(["take", "9999", "502", "x"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue naming a repository outside `## Repos` is refused",
+              r.returncode == 1 and "belongs in the campaign issue" in out,
+              f"exit {r.returncode}: {out[:200]}")
+        check("...and names the repository it read and the list it read",
+              "outside/scope" in out and "other/elsewhere" in out, out[:300])
+        # ...and a scope that could not be READ is not a scope that admits it.
+        # Separate from the case above: both exit 1, and only this sentence
+        # tells "I looked and it is not there" from "I could not look".
+        r = claim(["take", "8888", "502", "x"], path)
+        out = r.stdout + r.stderr
+        # ASSERTED ON THE SCOPE SENTENCE, not on "could not be read": the
+        # BINDING refusal prints that phrase too, so the first shape of this
+        # case passed while the campaign body was never fetched at all.
+        check("a `## Repos` list that would not read denies the claim",
+              r.returncode == 1 and "did not read" in out
+              and "not a scope that admits it" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        # ...and the scope check ADMITS a sub-issue the list holds, or it is a
+        # rule that refuses everything.
+        r = claim(["take", "9999", "500", "x"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue naming a listed repository passes the scope check",
+              "which includes other/elsewhere" in out, out[:300])
+
         # ...and the rule admits the ordinary claim, or it forbids everything.
         # `none` is the repo-less answer and means the base.
         r = claim(["take", "9999", "7", "delta"], path)

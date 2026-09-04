@@ -180,6 +180,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 DEFAULT_REPO = "kalaluthien/campaign-base"
@@ -323,21 +324,57 @@ def issue_repo(issue, default_repo):
     r = run("gh", "issue", "view", str(issue), "-R", TRACKER, "--json", "body",
             "--jq", ".body")
     if r.returncode != 0:
-        return None, (f"could not read #{issue}'s body from {TRACKER} "
-                      f"({r.stderr.strip()[:120]})")
+        return None, None, (f"could not read #{issue}'s body from {TRACKER} "
+                            f"({r.stderr.strip()[:120]})")
     m = REPOSITORY_LINE.search(r.stdout)
     if not m:
-        return None, (f"#{issue}'s body has no `Repository:` line, so where its "
-                      f"work lands is unstated. Fill it from "
-                      f".claude/skills/opening-campaign/assets/sub-issue.md")
+        return None, None, (
+            f"#{issue}'s body has no `Repository:` line, so where its work "
+            f"lands is unstated. Fill it from "
+            f".claude/skills/opening-campaign/assets/sub-issue.md")
     named = m.group(1)
     if named.lower() == "none":
-        return default_repo, (f"#{issue} names no member repository, so its ref "
-                              f"is cut on the base ({default_repo})")
+        return default_repo, None, (
+            f"#{issue} names no member repository, so its ref is cut on the "
+            f"base ({default_repo})")
     if "/" not in named:
-        return None, (f"#{issue}'s `Repository:` line reads {named!r}, which is "
-                      f"not an owner/repo and not `none`")
-    return named, f"#{issue} says its work lands in {named}"
+        return None, None, (
+            f"#{issue}'s `Repository:` line reads {named!r}, which is not an "
+            f"owner/repo and not `none`")
+    return named, named, f"#{issue} says its work lands in {named}"
+
+
+def campaign_repos(campaign_issue):
+    """(repos, note) -- the campaign issue's `## Repos` list. None means the
+    reading did not happen, which is a refusal and never an empty list.
+
+    THROUGH ITS ONE READER. `scripts/campaign-repos.py` owns what that list
+    admits -- the missing heading, the malformed line, the surviving
+    `<owner/repo>` placeholder, `- none` mixed with entries -- and AGENTS.md
+    forbids a second reader of a rule a script owns, so this hands it the body
+    and reads its verdict rather than parsing the section again. It takes a
+    path and calls `main()` at import time, so it is run and not imported."""
+    r = run("gh", "issue", "view", str(campaign_issue), "-R", TRACKER,
+            "--json", "body", "--jq", ".body")
+    if r.returncode != 0:
+        return None, (f"could not read campaign #{campaign_issue}'s body from "
+                      f"{TRACKER} ({r.stderr.strip()[:120]})")
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
+        fh.write(r.stdout)
+        tmp = fh.name
+    try:
+        v = run(sys.executable, str(HERE / "campaign-repos.py"), tmp)
+    finally:
+        os.unlink(tmp)
+    if v.returncode != 0:
+        return None, (f"campaign #{campaign_issue}'s `## Repos` list did not "
+                      f"read: {v.stderr.strip()[:160]}")
+    listed = [x for x in v.stdout.split() if x]
+    if not listed:
+        return [], (f"campaign #{campaign_issue} lists no member repository "
+                    f"(`- none`)")
+    return listed, (f"campaign #{campaign_issue} lists "
+                    f"{', '.join(listed)}")
 
 
 def refs_for_issue(branches, campaign_issue, issue):
@@ -365,7 +402,7 @@ def cmd_take(args):
     # ref and both held #N. `--repo` survives only as a confirmation, and a
     # disagreement is refused rather than resolved: whichever way it were
     # resolved silently, one of the two readers would be wrong for good.
-    repo, note = issue_repo(args.issue, DEFAULT_REPO)
+    repo, named, note = issue_repo(args.issue, DEFAULT_REPO)
     if repo is None:
         print(f"refusing: {note}\n  Where a claim is cut is a fact about the "
               f"sub-issue, so a body this could not read is not a\n  "
@@ -377,6 +414,29 @@ def cmd_take(args):
               f"  The sub-issue decides. Fix its `Repository:` line, or drop "
               f"--repo.", file=sys.stderr)
         return 1
+
+    # ...AND IT MUST BE A REPOSITORY THE CAMPAIGN IS FOR. `Repository:` is
+    # prose on one sub-issue; `## Repos` is the campaign's scope and the thing a
+    # person signed up for. A sub-issue naming a repository outside it is a
+    # scope change filed as a typo, and cutting the ref would make the campaign
+    # silently wider than its charter. Only a named member repository is
+    # checked: `none` resolves to the base, which is never in the list.
+    if named is not None:
+        listed, repos_note = campaign_repos(args.campaign_issue)
+        if listed is None:
+            print(f"refusing: {repos_note}\n  #{args.issue} names {named}, and "
+                  f"whether this campaign is for it could not be read.\n  "
+                  f"A scope that could not be read is not a scope that admits "
+                  f"it.", file=sys.stderr)
+            return 1
+        if named not in listed:
+            print(f"refusing: #{args.issue} says its work lands in {named}, but "
+                  f"{repos_note}.\n  Adding a repository is a scope change and "
+                  f"belongs in the campaign issue's `## Repos`,\n  not in one "
+                  f"sub-issue's body.", file=sys.stderr)
+            return 1
+        print(f"{repos_note}, which includes {named}")
+
 
     # THE SUB-ISSUE IS WHAT IS CLAIMED, AND THE REF NAME CARRIES THE TOPIC TOO,
     # so create-ref alone serialises topics rather than sub-issues: `7-parser`
