@@ -11,7 +11,9 @@ ref exists on the remote, and nothing on disk (#176).
 WHAT IS READ. Two bounded languages. A FILE TOOL names its target. A `gh`
 call is one program with a stable grammar: each segment (shlex; ``;|&(){}` ``
 split it, and so do the strings another command runs -- a shell's `-c`, alone
-or last in a cluster like `-lc`, and `eval`'s operands) whose command word is
+or last in a cluster like `-lc`, `eval`'s operands, and -- when a shell that
+runs what it is HANDED is present, as in `bash <<< '...'` or `... | bash` --
+every multi-word token) whose command word is
 `gh` -- after `env`, `VAR=x`, `time`, a path -- is looked up in WRITES, and a
 segment that will not split refuses. A `gh` TOKEN this cannot read as the call
 (`xargs`, a heredoc, or an assignment whose value is `gh`) is read as a write
@@ -208,7 +210,17 @@ def held(repo_root, issue=None):
     return out, detail
 
 
-def segments(command):
+def reads_stdin(seg):
+    """A shell in this segment that runs whatever it is HANDED rather than an
+    operand: `bash` alone at the end of a pipe, `bash <<< '...'`. Not a shell
+    given a script file -- that file is not read, and the docstring says so."""
+    word, rest = head(seg)
+    if word not in SHELLS:
+        return False
+    return not any(is_dash_c(t) for t in rest[:-1])
+
+
+def segments(command, depth=0):
     """The command's segments as token lists, or (None, why) when shlex will
     not split it. `punctuation_chars` makes `;`, `|`, `&` their own tokens."""
     lex = shlex.shlex(command, posix=True, punctuation_chars="();<>|&{}`")
@@ -238,10 +250,25 @@ def segments(command):
         elif word in EVALS:
             inners = [t for t in rest[1:] if not t.startswith("-")]
         for text in inners:
-            more, why = segments(text)
+            more, why = segments(text, depth + 1)
             if more is None:
                 return None, why
             out += more
+    # A shell that runs what it is HANDED reaches the same place by another
+    # road: `bash <<< '...'` and `... | bash` put the command in a quoted
+    # operand of some segment, where the `gh` token is one word of a token and
+    # no branch sees it. Both are the family the docstring already names, so
+    # leaving them out is what makes that sentence false. When such a shell is
+    # present, every multi-word token in the command is a candidate command
+    # string. `depth` bounds it; each re-read is strictly shorter.
+    if depth < 4 and any(reads_stdin(seg) for seg in out):
+        for seg in list(out):
+            for t in seg:
+                if " " in t.strip():
+                    more, why = segments(t, depth + 1)
+                    if more is None:
+                        return None, why
+                    out += more
     return out, None
 
 

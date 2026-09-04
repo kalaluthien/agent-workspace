@@ -393,6 +393,18 @@ def main():
                 command="gh api repos/o/r/issues/1 --method=GET")
         check("...and an attached GET is still a read", r.returncode == 0
               and "gh api GET" in r.stdout, out(r)[:300])
+        # A shell that runs what it is HANDED: the command string is one
+        # multi-word token of some segment, so no branch saw the `gh` in it.
+        for cmd in ('bash <<< "gh issue close 5"',
+                    "echo 'gh issue close 5' | bash"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd}`: a shell fed a string still has its gh write read",
+                  r.returncode == 2 and "a write to #5" in r.stderr, out(r)[:300])
+        for cmd in ("echo hi | bash", "ls -la | wc -l", "cat notes.txt | bash"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd}` is still allowed unread: re-reading a handed string "
+                  f"finds no gh and invents none",
+                  r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
         for sh in ("ksh", "fish"):
             r = ask(f.base, tool="Bash", command=f"{sh} -c 'gh issue close 5'")
             check(f"{sh} runs a -c string like every other shell that does",
