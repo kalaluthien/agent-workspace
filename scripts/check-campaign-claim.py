@@ -29,6 +29,14 @@ a service is handed, and `gh issue create --body "... git mv ..."` must file
 the issue whose number the claim is minted from. Every other quoted span stays
 visible, because the sinks that execute text cannot be listed.
 
+It is also matched with every HYPHENATED WORD blanked (`verb_match`), the one
+local layer that subtracts from the imported pattern rather than adding to it:
+`\binstall\b` matches `install-hooks.sh` because `-` is a word boundary, and a
+fresh clone with no claim must be able to run the installer. A word after
+`git ` is left alone, so `git merge-file` and `git commit-tree` are still read
+as the `git merge` and `git commit` forms the pattern names. The mask serves
+the search only; operands are read from the command as written.
+
 That pattern has no opinion about service doors, because a takeaway check does
 not need one. The three `gh` writes a claim actually gates -- closing, editing
 and commenting on an issue, and merging a pull request -- are added here, in
@@ -149,6 +157,23 @@ CLOSE_TARGET = re.compile(r"\bgh\b[^|;&]*\bissue\s+close\b([^|;&]*)")
 # -- `sed --in-place=...` used to bypass it entirely, read as "not a changing
 # call" before target_reading ever ran.
 IN_PLACE_SED = re.compile(r"\bsed\b[^|;&]*--in-place\b")
+
+# A verb of the imported pattern glued to a hyphen is a name, not a verb:
+# `install-hooks.sh` is the file a fresh clone must run, and `\binstall\b`
+# matches it because `-` is a word boundary. So the pattern is searched on a
+# copy with every hyphenated word blanked. Only the search sees the copy; the
+# operands are read from the command as written. `--in-place` and `-i` start
+# with a hyphen and are not hyphenated words, so IN_PLACE_SED and `sed -i`
+# still read. A word after `git ` is not blanked: `git merge-file` writes its
+# first operand in place and `git commit-tree` writes an object, and the
+# pattern's `git (commit|merge|...)` alternation must keep reading them.
+HYPHENATED_WORD = re.compile(r"(?<!\bgit )\b\w[\w.]*(?:-[\w.]+)+\b")
+
+
+def verb_match(changing_command, text):
+    """The imported pattern's match on `text`, with hyphenated names blanked."""
+    return changing_command.search(HYPHENATED_WORD.sub("_", text))
+
 
 FILE_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 PATH_KEYS = ("file_path", "notebook_path", "path")
@@ -289,7 +314,7 @@ def changing(payload, changing_command):
         return True, "the command writes to the campaign plane through gh"
     if IN_PLACE_SED.search(command):
         return True, "the command runs sed's long in-place spelling"
-    if changing_command.search(command):
+    if verb_match(changing_command, command):
         return True, "the command matches the changing-command pattern"
     return False, "the command matches no changing form, outside quoted text"
 
@@ -552,7 +577,7 @@ def write_targets(command, changing_command):
         elif head == "sed" and any(is_sed_in_place(a) for a in args):
             form, (ops, unreadable) = "sed -i", sed_files(args)
         else:
-            if changing_command.search(body):
+            if verb_match(changing_command, body):
                 return None, (f"the segment {segment.strip()!r} is a changing "
                               f"command on its own, and its target is not an "
                               f"operand this guard can read")
