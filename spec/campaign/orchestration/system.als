@@ -114,13 +114,21 @@ fact AgentWellFormed {
 
 pred coLocated[s: Session, a: Agent] { s.machine = a.host }
 
-/* WHO HOLDS A SUB-ISSUE'S CLAIM, derived from what a later session can read:
-   `herdr agent list` gives the live agent and its cwd, and the checkout there
-   is on a branch or it is not. No record, so nothing to go stale, and the
-   answer survives a harness restart and a rename -- neither touches a
-   checkout. Empty is a real answer: a claimed branch nobody has checked out
-   is a branch with no holder, which is what `campaign-claim live` prints as
-   its second group. */
+/* WHO HOLDS A SUB-ISSUE'S CLAIM: the WORKSPACE the ref is checked out in, not
+   a session. No record, so nothing to go stale, and the answer survives a
+   harness restart and a rename -- neither touches a checkout. Empty is a real
+   answer: a claimed branch nobody has checked out is a branch with no holder,
+   which is what `campaign-claim live` prints as its second group.
+
+   NOT herdr's cwd, which is what a first cut of this read and what #176's body
+   said before it was corrected. Measured on this machine 2026-09-04: that join
+   found ZERO claims, because herdr reports where a session was STARTED, a base
+   executor works in a worktree, and the repository owning that worktree is not
+   even the clone the session sits in. So `campaign-claim live` reads checkouts
+   instead -- `git worktree list` over the base root, every campaign clone, and
+   each session's own repo root -- and this `fun` is that sweep: a holder is an
+   agent whose campaign-directory checkout is on its branch. herdr's row still
+   answers liveness, and only liveness. */
 fun holder[i: Issue]: set Agent {
   { a: Agent | a.task = i
                and campaignDirAt[campaignOf[i], a.host].checkedOut[i.repo] = a.branch }
@@ -152,7 +160,17 @@ pred namedForAnother[a: Agent, c: Campaign] {
    case where the machine says "here" and the evidence says "not this one".
    A name that says NOTHING is not evidence and does not exempt: that agent
    still blocks, which is the direction that costs a question rather than
-   somebody's work. */
+   somebody's work.
+
+   THE MODEL IS WIDER THAN THE READING, deliberately and by one case. This
+   predicate blocks on an unnamed agent anywhere on the machine; `classify`
+   counts an unnamed session only when its cwd is under the base root, so an
+   unnamed session at `/tmp` does not block a close. The narrowing is what
+   keeps the gate from reading the same set for every campaign: with no name
+   and no tree, nothing on the machine ties that session to THIS campaign, and
+   blocking on it would block on it for all of them at once. Named gap: a
+   session of this campaign that both renamed to nothing and left the tree is
+   invisible to the close, and is asked by nobody. */
 pred liveUnderLocally[c: Campaign, m: Machine] {
   some a: Agent | a in Live and a.host = m
     and (a.task in c.memberIssues

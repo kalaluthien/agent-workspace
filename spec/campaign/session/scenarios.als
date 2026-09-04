@@ -183,7 +183,8 @@ pred R2c_SurveyAtFileAdmitsOne {
    entity that has none: every live-role gate the design has passes vacuously
    here and the loss happens anyway, because a live SESSION is invisible to
    that gate. Nothing in this entity repairs it -- whether a peer is working the
-   tree is carried by `runtime/claimedIssues/`, so the repair is orchestration/scenarios.als's A10-A12. */
+   tree is carried by this entity's own `claimedIssues` field and by no path on
+   disk, so the repair is orchestration/scenarios.als's A10-A12. */
 pred R3_DeleteUnderWorkingSession {
   some c: Campaign, disj s1, s2: Session {
     s1.machine = s2.machine
@@ -201,7 +202,16 @@ pred R3_DeleteUnderWorkingSession {
    member repository" is a claim about the list, not about where a ref goes.
 
    Checked WITH the disciplines rather than instead of them, and the claim is
-   required: the branch is the claim before it is a workspace. */
+   required: the branch is the claim before it is a workspace.
+
+   SCOPED TO #187, and this trace is ahead of the code. A repo-less sub-issue
+   lands no commit, so its ref stays 0 ahead of the base and is never a merged
+   pull request's head -- and `campaign-claim release` refuses exactly that
+   shape without `--confirmed-absent WHO`, because it cannot tell finished work
+   from a claim cut for a holder that has not checked it out yet. So the close
+   this trace reaches needs a person's word today, where the model asks for
+   none. #187 decides the repair: whether such a sub-issue cuts a ref at all,
+   or whether the closed issue is itself the evidence the holder is done. */
 pred R4_RepolessCampaign {
   compareThenWriteBody and surveyAtFile
   some s: Session, c: Campaign, i: Issue {

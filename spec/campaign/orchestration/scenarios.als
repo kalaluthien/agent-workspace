@@ -62,7 +62,16 @@ pred localCheckedShutdown { always (Now.event = StandDown implies Target.agent n
    or what is complete. NOT MODELLED is the escape the script keeps for the
    case a person has established the holder is gone (`--confirmed-absent`),
    because no atom here carries a person's word; R7c is the ordinary release
-   that must stay reachable without it. */
+   that must stay reachable without it.
+
+   R7c IS WIDER THAN THE SCRIPT, and #187 owns the gap. `Launched` is a fact
+   about an agent, and the script has no reader for it: on GitHub R7c's state
+   -- launched, dead, nothing pushed -- is a ref 0 ahead of the base whose
+   branch was never a merged pull request's head, which is the one shape
+   `cmd_release` refuses without `--confirmed-absent WHO`. So the model's
+   "ordinary release" is, at this sha, the release that asks a person. What
+   would close the gap is a durable fact saying a holder was launched at all,
+   which is what #187 is deciding. */
 pred releaseNeedsAWorker {
   always (Now.event = Release implies
             (complete[Now.issue]

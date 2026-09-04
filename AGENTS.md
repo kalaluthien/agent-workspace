@@ -376,7 +376,10 @@ Four messages between sessions, carrying **only what the agent alone knows**:
 anything about finished work duplicates a GitHub fact, and the copy is what goes
 stale. **The claim is not among them** — it is a ref, not an announcement.
 **A finished peer leaves the campaign by fact, not by saying so**: it stops its
-pane, or renames itself off `campaign-<N>-*`. There is no `STOOD DOWN` comment,
+pane, or leaves the base tree. **A rename alone does not**, unless the new name
+is another campaign's — `campaign-claim live` believes a name that says whose
+work it is, and counts a name that says nothing whenever the session sits under
+the base root. There is no `STOOD DOWN` comment,
 because a close reads `herdr agent list` and a peer still listed is asked, never
 killed.
 

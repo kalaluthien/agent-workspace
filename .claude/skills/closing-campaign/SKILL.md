@@ -60,7 +60,9 @@ Holds when: the campaign issue carries one `bound:` label naming this machine, a
 
 **If `TOOK_IT_HERE` is set, this step and step 2 are not applicable — report
 that, not a pass**; run them anyway, they cost one command. **A peer leaves the
-campaign by fact**: it stops its pane, or renames itself off `campaign-<N>-*`.
+campaign by fact**: it stops its pane, or leaves the base tree. A rename alone
+does not, unless the new name is another campaign's; a name that says nothing
+still counts while the session sits under the base root.
 There is nothing to say and nothing to post, and a peer still listed is asked,
 not killed. One reader makes all three readings — the remote's claim refs, where
 each is checked out, and herdr's liveness:
