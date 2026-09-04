@@ -164,6 +164,14 @@ def main():
         out = r.stdout + r.stderr
         check("a harness-registered guard is announced as running unasked",
               "harness hooks in" in out and "check-campaign-claim.py" in out)
+        # Read through harness_run and not the printed line: the line that
+        # announces check-campaign-claim.py contains campaign-claim.py as text,
+        # so a substring test on the output cannot see the defect.
+        found, probs = m.harness_run(home / ".claude" / "settings.json",
+                                     {"check-campaign-claim.py",
+                                      "campaign-claim.py"})
+        check("a basename inside another basename is not reported as installed",
+              found == {"check-campaign-claim.py"} and not probs)
     with tempfile.TemporaryDirectory() as d:
         home = Path(d)
         (home / ".claude").mkdir()
