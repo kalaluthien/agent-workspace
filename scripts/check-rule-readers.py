@@ -21,12 +21,19 @@ written, and it does not stop one somebody sets out to write.
 Stated here rather than fixed: widening the forms to match a paraphrase is how
 a guard starts firing on prose instead of code.
 
+The `campaign-session-alive` form went with the pid reading it guarded.
+Liveness is `herdr agent list` now, and no script here compares a process name,
+so a process-name selector in a markdown code block is somebody else's business
+and this refuses nothing on account of it. The claim that form kept true no
+longer exists to be kept.
+
 WHAT IT READS
 
 Code blocks -- fenced, or under a four-space or tab indent -- and only in
 tracked files outside scripts/. That line is the whole design. A deliberate
-mention of a retired form lives in prose as inline code -- AGENTS.md explains at
-length why `ps -o comm=` is wrong, and must go on being able to say so. A
+mention of a retired form lives in prose as inline code -- a document may
+explain at length why some command is the wrong one, and must go on being able
+to say so. A
 dangerous copy lives in a code block, because that is what makes it
 copy-pasteable, and copy-pasted is the only way a second reader gets written.
 Firing only inside code separates the two with no allowlist to maintain and no
@@ -108,22 +115,6 @@ from pathlib import Path
 # into non-matches, and a non-matching exemption is reported, not honoured.
 FORMS = [
     (
-        "campaign-session-alive",
-        "campaign-claim.py",
-        # `ps` with a comm/ucomm selector in any argument order -- `-p $PID -o
-        # ucomm=` is the script's own form and the first one a person writes --
-        # and `pgrep`, which answers the same question a different way.
-        # `-axo` and friends combine the selector with other flags; the
-        # selector may be quoted; and a Python copy passes it as a list
-        # element, where `ucomm=` carries its own `=`. The selector must
-        # *open* with the field -- `-o pid,ucomm` is not matched, and saying
-        # so is cheaper than a form that chases every field order.
-        re.compile(r"\bps\b[^|;&]*\B-\w*o\s+[\"']?u?comm\b|\bpgrep\b"
-                   r"|[\"']-?\w*o?[\"']\s*,\s*[\"']u?comm=?[\"']"
-                   r"|[\"']u?comm=[\"']"),
-        "the process-name comparison",
-    ),
-    (
         "campaign-anchors",
         "campaign-tracker.py",
         # The open-campaign issue survey: a `gh issue list` on this tracker asking for
@@ -135,19 +126,24 @@ FORMS = [
     (
         "campaign-bound",
         "campaign-tracker.py",
-        # The binding reading: the campaign issue's comments filtered for `BOUND`, and
-        # the last one's machine compared against this one's.
+        # The binding reading: the campaign issue's `bound:` LABEL, and the
+        # machine it names compared against this one's. #176 moved the binding
+        # off a `BOUND` comment onto a label, so the comment shapes went with
+        # it -- a hand-rolled comment read is no longer a second reader of
+        # anything, because nothing reads comments any more.
         #
-        # `hostname` alone is not the form, and deliberately. Two blocks in this
-        # tree *write* a binding -- `--body "BOUND $(hostname -s)"` posts one,
-        # and the close comment names the host it is closing from -- so a bare
-        # `hostname` cannot separate writing a binding from reading one. What
-        # only the reading does is filter comments for `BOUND`, or compare a
-        # host name against something; hence the spaced `=` and `==`, which a
+        # Neither `hostname` alone NOR a bare labels read is the form, and both
+        # exclusions are deliberate. A block in this tree may *write* a binding
+        # -- the close comment names the host it is closing from -- so a bare
+        # `hostname` cannot separate writing from reading. And a labels read is
+        # not the binding either: two skills read `--json labels` to classify a
+        # campaign issue, which is a different question, and `campaign-tracker
+        # bound`'s own request is character-for-character the same call. What
+        # only the BINDING does is name the `bound:` prefix, or compare a host
+        # name against something; hence the spaced `=` and `==`, which a
         # `HOST=$(hostname -s)` assignment does not carry.
-        re.compile(r"\bgh\b[^|;&]*\bapi\b[^|;&]*/comments\b"
-                   r"|(\bgrep\b|\bsed\b|\bawk\b|\bjq\b|--jq|startswith)"
-                   r"[^|;&]*\bBOUND\b"
+        re.compile(r"(\bgrep\b|\bsed\b|\bawk\b|\bjq\b|--jq|startswith"
+                   r"|\brg\b|re\.|\bin\b|==)[^|;&]*bound:"
                    r"|(==|\s=\s)[^|;&]*\bhostname\b|\bhostname\b[^|;&]*(==|\s=\s)"
                    r"|\bgethostname\b|\bplatform\.node\b"),
         "the binding reading",

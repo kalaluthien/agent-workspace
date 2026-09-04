@@ -17,8 +17,7 @@ It reads two places, and the second only when it is handed one:
                   cannot be scoped to a campaign and so is reported without
                   being counted
   the directory   every checkout under <campaign-dir>/repos/, one at a time,
-                  never one git command across member repositories, with the
-                  briefs in runtime/handover/ named beside them
+                  never one git command across member repositories
 
 Rows, not checks: the checks overlap on purpose -- a branch can be both unpushed
 and unmerged -- so the report merges to one row per thing at risk and names
@@ -35,7 +34,7 @@ error (all probed; the evidence is in
   looked identical, and a close read a repo-less campaign where there were
   checkouts it was not allowed to see. Absent prints "no member checkout" and
   the reading continues; unreadable exits 1, and so does an unreadable campaign
-  directory or runtime/handover/ one level up.
+  directory one level up.
 
   A checkout is what git says it is, never what `.git` looks like. With
   --separate-git-dir, and in every linked worktree, `.git` is a file, so a
@@ -64,9 +63,9 @@ error (all probed; the evidence is in
   absence of findings: while those lines only informed, a run that skipped every
   member checkout still summarised `clear`, which is what licenses the delete.
   Such a run now says NOT clear and counts the unread places separately from the
-  found ones. The other REPORT lines -- the base's own working tree, the
-  handover briefs -- are findings the script chose not to count, not places it
-  failed to look, and they still do not block.
+  found ones. The other REPORT line -- the base's own working tree -- is a
+  finding the script chose not to count, not a place it failed to look, and it
+  still does not block.
 
 Exit status is about the reading, never the verdict: 0 means the reading
 completed and the last line says clear or NOT clear; 1 means the reading itself
@@ -296,7 +295,6 @@ def read_base(base, n, rep):
 
 
 def read_checkouts(campaign_dir, rep):
-    read_handover(campaign_dir, rep)
     repos = os.path.join(campaign_dir, "repos")
     if not os.path.isdir(repos):
         print(f"  -- no member checkout: {repos} does not exist")
@@ -332,19 +330,6 @@ def read_checkouts(campaign_dir, rep):
         for line in git(repo, "stash", "list").splitlines():
             rep.add(name, "stash", line.split(":")[0], "git stash list", "discard")
         read_worktrees(repo, name, rep)
-
-def read_handover(campaign_dir, rep):
-    """Briefs are accounted for on every path: a repo-less campaign has them too."""
-    handover = os.path.join(campaign_dir, "runtime", "handover")
-    try:
-        briefs = sorted(os.listdir(handover)) if os.path.isdir(handover) else []
-    except OSError as e:
-        refuse(f"{handover} exists and did not enumerate ({e.strerror}); "
-               "nothing was checked")
-    if briefs:
-        rep.report(f"REPORT: {len(briefs)} brief(s) in runtime/handover/ "
-                   f"({', '.join(briefs)}): say which sub-issue each was for")
-
 
 def main():
     if len(sys.argv) < 2:

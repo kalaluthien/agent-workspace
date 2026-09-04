@@ -122,15 +122,15 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CLAIM = HERE / "campaign-claim.py"
 
 # What makes a directory this repository's root rather than any checkout with an
 # AGENTS.md in it -- and the campaign directory beside it has one of those. The
-# marker is the script this one reuses, so a root it names is a root whose
-# reader exists.
+# marker is a script this repository owns, so a root it names is a base and not
+# any tree that happens to carry instructions.
 BASE_MARKER = Path("scripts") / "campaign-claim.py"
 
 # `<slug>-<YYMMDD>`. AGENTS.md's shape, read as a shape: nothing derives the
@@ -219,7 +219,81 @@ def campaign_dirs(root: Path, cwd: Path):
                   f"{len(every)} at the root"
 
 
-def claims_of(claim_module, directory):
+# ------------------------------------------------------------- the record
+#
+# RELOCATED FROM campaign-claim.py BY #176, AND ONLY UNTIL #177. That script
+# no longer knows what a record is: a claim there is the branch on the remote,
+# and attribution is read off `git worktree list`. This guard is the last
+# reader of `runtime/claims/`, so the record's shape lives here now rather than
+# being imported from a script that has stopped writing one. #177 rewrites this
+# guard to read the branch and deletes all six of these together with the
+# directory they read.
+
+
+RELEASED = "released"
+
+
+def is_released(rec):
+    """True when this record has been marked released. A released record is
+    attribution kept on purpose, never a claim: it licenses no write."""
+    return bool(rec) and bool(rec.get(RELEASED, "").strip())
+
+
+def mark_released(path, rec, by):
+    """Append the release mark, keeping every field the record already had."""
+    body = "".join(f"{k} {v}\n" for k, v in rec.items() if k != RELEASED)
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    path.write_text(body + f"{RELEASED} {stamp} by {by}\n")
+    return stamp
+
+
+def read_record(path):
+    """The record's fields, or None when there is none. A file that will not
+    decode is a reading that failed -- reported by the caller through the
+    `unreadable` field -- never a traceback."""
+    if not path.exists():
+        return None
+    try:
+        text = path.read_text()
+    except (OSError, UnicodeDecodeError) as e:
+        return {"unreadable": f"{e.__class__.__name__}"}
+    return fields_of(text)
+
+
+def fields_of(text):
+    """A record's `key value` lines as a dict. One parser, so `status` and
+    `live` cannot disagree about what a record says."""
+    fields = {}
+    for line in text.splitlines():
+        if " " in line:
+            k, v = line.split(" ", 1)
+            fields[k] = v.strip()
+    return fields
+
+
+def claim_records(claims):
+    """Returns (records, unread). A claim this cannot read is named rather than
+    dropped, exactly as parse_agents counts a row it cannot identify: the number
+    a close gate reads must not shrink because something was skipped.
+
+    `unread` is a check that did not happen, so it denies the clean verdict the
+    way a failed herdr read does."""
+    recs, odd = {}, []
+    for p in sorted(claims.iterdir()):
+        if not p.is_file():
+            odd.append(f"{p.name} is not a file, so it holds no claim")
+            continue
+        try:
+            text = p.read_text()
+        except (OSError, UnicodeDecodeError) as e:
+            odd.append(f"{p.name} will not decode ({e.__class__.__name__}), "
+                       f"so what it claims is unknown")
+            continue
+        recs[p.name] = fields_of(text)
+    return recs, odd
+
+
+def claims_of(directory):
     """(records, refusal) for one campaign directory. A missing claims/ is the
     refusal; an empty one is a reading."""
     claims = directory / "runtime" / "claims"
@@ -227,22 +301,22 @@ def claims_of(claim_module, directory):
         return None, (f"{claims} does not exist, so no claim here can be "
                       f"enumerated. An empty directory says no claim was "
                       f"taken; a missing one says nothing.")
-    recs, unread = claim_module.claim_records(claims)
+    recs, unread = claim_records(claims)
     return (recs, unread), None
 
 
-def held_by(claim_module, records, session_id, issue=None):
+def held_by(records, session_id, issue=None):
     """The records this session holds, unreleased. `issue` narrows to one.
 
-    The released test is campaign-claim's own, so what "released" means is
-    written where the mark is written."""
+    The released test is `is_released` above, so what "released" means is
+    written once, beside the mark itself."""
     out = []
     for name, rec in sorted(records.items()):
         if issue is not None and name != str(issue):
             continue
         if rec.get("session", "") != session_id:
             continue
-        if claim_module.is_released(rec):
+        if is_released(rec):
             continue
         out.append((name, rec))
     return out
@@ -677,7 +751,7 @@ def setting(payload):
     return cwd, root, dirs, note, None
 
 
-def pre(payload, claim_module, changing_command):
+def pre(payload, changing_command):
     session_id = payload.get("session_id") or ""
     cwd, root, dirs, note, refusal_lines = setting(payload)
     if refusal_lines:
@@ -713,7 +787,7 @@ def pre(payload, claim_module, changing_command):
 
     found, unread, missing = {}, [], []
     for d in dirs:
-        result, refusal_line = claims_of(claim_module, d)
+        result, refusal_line = claims_of(d)
         if refusal_line:
             missing.append(refusal_line)
             continue
@@ -727,7 +801,7 @@ def pre(payload, claim_module, changing_command):
             "A directory that cannot be enumerated is a refusal, not a pass."])
 
     holders = [(d, name, rec) for d, recs in found.items()
-               for name, rec in held_by(claim_module, recs, session_id, issue)]
+               for name, rec in held_by(recs, session_id, issue)]
     if holders:
         return 0
 
@@ -737,7 +811,7 @@ def pre(payload, claim_module, changing_command):
             detail.append(f"{d.name}/runtime/claims/ is empty: no claim was "
                           f"taken here.")
         for name, rec in sorted(recs.items()):
-            mark = " RELEASED" if claim_module.is_released(rec) else ""
+            mark = " RELEASED" if is_released(rec) else ""
             detail.append(f"{d.name}/runtime/claims/{name}: session "
                           f"{rec.get('session', '<absent>')} "
                           f"({rec.get('name', '<no name>')}){mark}")
@@ -784,7 +858,7 @@ def closed_on_github(issue, command):
     return state == "CLOSED", f"{' '.join(cmd)} says {state}"
 
 
-def released(payload, claim_module):
+def released(payload):
     """Mark a closed sub-issue's claim released. Always exits 0."""
     session_id = payload.get("session_id") or ""
     command = (payload.get("tool_input") or {}).get("command") or ""
@@ -808,16 +882,21 @@ def released(payload, claim_module):
         return 0
 
     for d in dirs:
-        rec = claim_module.read_record(d / "runtime" / "claims" / str(issue))
+        path = d / "runtime" / "claims" / str(issue)
+        rec = read_record(path)
         if not rec or "unreadable" in rec:
             continue
-        r = subprocess.run(
-            [sys.executable, str(CLAIM), "release", str(issue),
-             "--session", session_id, "--dir", str(d)],
-            capture_output=True, text=True)
+        # Marked here rather than by shelling out to campaign-claim: since #176
+        # that script writes no record and its `release` deletes a ref, which is
+        # not what closing a sub-issue asks for. The mark is idempotent, so a
+        # second close is not a failure.
+        if is_released(rec):
+            print(f"check-campaign-claim --released: {evidence}; "
+                  f"{path} is already marked released.")
+            return 0
+        stamp = mark_released(path, rec, session_id)
         print(f"check-campaign-claim --released: {evidence}; "
-              f"campaign-claim release in {d.name} exited {r.returncode}")
-        print((r.stdout + r.stderr).strip())
+              f"marked {path} released {stamp} by {session_id}")
         return 0
     print(f"check-campaign-claim --released: {evidence}, and no record for "
           f"#{issue} was found in {', '.join(d.name for d in dirs)}.")
@@ -847,17 +926,8 @@ def main() -> int:
             return 0
         return refuse([message])
 
-    claim_module, why = load(CLAIM, "campaign_claim")
-    if why:
-        message = f"could not import the claim reader -- {why}"
-        if post:
-            print(f"check-campaign-claim --released: {message}")
-            return 0
-        return refuse([message, "The record's shape lives in one script, and "
-                                "this is not it."])
-
     if post:
-        return released(payload, claim_module)
+        return released(payload)
 
     stop_hook, why = load(STOP_HOOK, "stop_takeaway_check")
     if why:
@@ -871,7 +941,7 @@ def main() -> int:
             f"{STOP_HOOK} no longer defines CHANGING_COMMAND.",
             "The pattern was renamed or removed there; this guard reads it by "
             "that name and has no copy to fall back on."])
-    return pre(payload, claim_module, pattern)
+    return pre(payload, pattern)
 
 
 if __name__ == "__main__":

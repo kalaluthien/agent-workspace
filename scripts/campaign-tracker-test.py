@@ -158,19 +158,43 @@ def main():
     check("concatenated pages are a why rather than a silently short index",
           items is None and why)
 
-    # ---------------------------------------------------- bound: the binding
-    # Three ways the jq pipeline this replaced was wrong, each testable without
-    # a network because the comparison is a calculation.
-    check("no BOUND comment is unbound, not a machine",
-          m.binding_of(["hello", "BOUNDARY issues"]) is None)
-    check("the LAST BOUND wins, since a migration appends",
-          m.binding_of(["BOUND alpha", "chat", "BOUND beta"]) == "beta")
-    check("only the first line of an annotated binding is the machine",
-          m.binding_of(["BOUND beta\nmigrated because alpha died"]) == "beta")
-    check("a CRLF body does not leave a carriage return on the name",
-          m.binding_of(["BOUND beta\r\nwhy"]) == "beta")
+    # ------------------------------------------- bound and bind: the binding
+    # The binding is a `bound:` LABEL since #176. A label set is read by exact
+    # name, so the reading is a calculation over a list of names and every case
+    # here runs without a network.
+    machine, why = m.binding_of(["campaign", "boundary"])
+    check("no bound: label is unbound, and `boundary` is not one",
+          machine is None and why is None)
+    machine, why = m.binding_of(["campaign", "bound:beta"])
+    check("one bound: label names its machine",
+          machine == "beta" and why is None)
+    # THE STATE A COMMENT THREAD COULD NOT REACH and a label set can: two
+    # bindings with no latest between them. Refused, never resolved -- picking
+    # one hands the campaign to a machine that is not working it.
+    machine, why = m.binding_of(["bound:alpha", "bound:beta"])
+    check("two bound: labels are a refusal, not a verdict",
+          machine is None and why and "bound:alpha" in why and "bound:beta" in why)
+    machine, why = m.binding_of(["bound:"])
     check("an empty machine name is unbound rather than the empty string",
-          m.binding_of(["BOUND "]) is None)
+          machine is None and why is None)
+    check("bound_labels ignores a label that merely opens with the same letters",
+          m.bound_labels(["boundary", "bound:x"]) == ["bound:x"])
+
+    # `bind` plans the edit before it makes one, so the three shapes are cases.
+    want, drop, already = m.bind_plan([], "alpha")
+    check("binding an unbound campaign adds one label and removes none",
+          want == "bound:alpha" and drop == [] and not already)
+    want, drop, already = m.bind_plan(["campaign", "bound:alpha"], "alpha")
+    check("re-binding to the same machine is already, with nothing to remove",
+          want == "bound:alpha" and drop == [] and already)
+    want, drop, already = m.bind_plan(["bound:beta"], "alpha")
+    check("binding a campaign held elsewhere removes the other label",
+          want == "bound:alpha" and drop == ["bound:beta"] and not already)
+    # The state `bound` refuses, repaired in ONE edit: the wanted label is
+    # already there AND another is too, so `already` alone must not short out.
+    want, drop, already = m.bind_plan(["bound:alpha", "bound:beta"], "alpha")
+    check("bind repairs a two-label campaign in one edit",
+          want == "bound:alpha" and drop == ["bound:beta"] and already)
     # The three printed words are the whole contract; a caller reads the word.
     r = tracker("bound", "not-a-number")
     check("bound refuses a malformed campaign issue with exit 2, never a verdict",
@@ -223,18 +247,30 @@ def main():
         check("...against the sub_issues endpoint, which is the index",
               "sub_issues" in argv)
 
-        # `bound` is the third pagination seam, and its own: a campaign migrated
-        # after thirty comments would answer with the binding it left.
+        # `bound` reads the issue itself, not its comments: one request, and
+        # no page to stop early on. Deleting the `--jq` or asking the wrong
+        # endpoint is what this pins.
         log.write_text("")
         (shim / "gh").write_text(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> " + str(log) + "\necho '[[]]'\n")
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> " + str(log) + "\necho '[]'\n")
         (shim / "gh").chmod(0o755)
         r = tracker("bound", "1", env=env)
         argv = log.read_text()
-        check("bound passes --paginate and --slurp over the comments",
-              "--paginate" in argv and "--slurp" in argv and "comments" in argv)
-        check("...and no BOUND comment prints `unbound`",
+        check("bound asks the issue for its labels, not the comments endpoint",
+              "labels" in argv and "issues/1" in argv and "comments" not in argv)
+        check("...and no bound: label prints `unbound`",
               r.returncode == 0 and r.stdout.strip() == "unbound")
+
+        # The end-to-end refusal, which the pure case above cannot show: two
+        # labels must come out as exit 2 with NO verdict on stdout, because a
+        # caller reads the word and `unbound` here would invite a re-bind.
+        (shim / "gh").write_text(
+            "#!/bin/sh\necho '[\"bound:alpha\",\"bound:beta\"]'\n")
+        (shim / "gh").chmod(0o755)
+        r = tracker("bound", "1", env=env)
+        check("two bound: labels exit 2 and print no verdict",
+              r.returncode == 2 and r.stdout.strip() == ""
+              and "bound:alpha" in r.stderr)
 
     # ----------------------------------------------- the end-to-end refusals
     # A tracker that cannot be read must never print "open campaign issues (0)".

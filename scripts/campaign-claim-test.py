@@ -1,863 +1,370 @@
 #!/usr/bin/env python3
-"""Prove campaign-claim reads a record honestly and refuses to conclude from a
-dead pid.
+"""Prove campaign-claim reads a claim off the remote and a checkout, and refuses
+to conclude from a reading that did not happen.
 
-Only the readings are covered: `take` and the ref delete in `release` reach
-GitHub, and a fixture that mocked them would be testing the mock. What is here
-is the half that decides whether a claim gets deleted, which is the half whose
-failure destroys somebody's work.
+The claim is the branch since #176, so what is covered is the join: which refs
+exist, where each is checked out, and which of the three groups a row lands in.
+The `take` create-ref and the `release` ref delete reach GitHub, so they are
+covered through a shimmed `gh` -- the refusals around them are what decide
+whether somebody's branch is deleted, and those are pure.
 
-`live` is covered here too, since it is the same script's two-sided reading. Its
-herdr half is tested against a recorded listing rather than whatever is running,
-so the cases mean the same thing tomorrow; the directory half runs the shipped
-script.
-
-No case may reach the network: a case that does writes to production, hidden
-inside a green line of output.
+The worktree half runs REAL git against temporary repositories rather than a
+parser fixture: `git worktree list --porcelain` is the thing whose output shape
+this depends on, and a recorded copy of it would stop being evidence the day git
+changes it. Nothing here reaches the network.
 
 Usage: scripts/campaign-claim-test.py
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 CLAIM = Path(__file__).resolve().parent / "campaign-claim.py"
-def _free_pid():
-    """A pid held by nobody. A hardcoded one passed on a runner and could name a
-    live process on a dev machine -- the residue running the other way."""
-    p = subprocess.Popen([sys.executable, "-c", ""])
-    p.wait()
-    return str(p.pid)
+
+RAN, FAILED = [], []
 
 
-DEAD = _free_pid()
-DEAD_REC = f"session s1\nname n1\npid {DEAD}\nbranch campaign-1/7-x\n"
-DIR = object()   # a fixture that is a directory rather than a file
+def check(name, ok, detail=""):
+    RAN.append(name)
+    if not ok:
+        FAILED.append(f"{name}{(' -- ' + detail) if detail else ''}")
 
 
-# A stand-in process table, so the cases that turn on `stale?` do not depend
-# on whether a claude happens to be running on the machine the suite runs on.
-PS_SHIM = """#!/bin/sh
-for a in "$@"; do
-  case "$a" in
-    *lstart*) echo "Sat Aug 30 12:00:00 2026     claude.exe"; exit 0 ;;
-  esac
-done
-exit 1
-"""
+def git(cwd, *args):
+    return subprocess.run(["git", "-C", str(cwd), *args],
+                          capture_output=True, text=True, check=True)
 
 
-# A stand-in `gh`, so the binding read inside `take` has a case without a
-# network. It answers the comments endpoint with one BOUND comment naming a
-# machine that is not this one, and refuses everything else -- so a ref call
-# that escaped the binding gate is visible as a different refusal.
-GH_SHIM = """#!/bin/sh
-for a in "$@"; do
-  case "$a" in
-    */comments) echo '[[{"body":"BOUND some-other-machine"}]]'; exit 0 ;;
-  esac
-done
-if [ "$1" = issue ] && [ "$2" = comment ]; then echo "$@" >> "$HOME/gh-comment.log"; exit 0; fi
-echo "gh shim: a ref call escaped the binding gate: $*" >&2
-exit 1
-"""
+def a_repo(root, *branches):
+    """A repository with a commit, plus one linked worktree per named branch.
+    Returns (repo_path, {branch: worktree path})."""
+    repo = Path(root).resolve() / "repo"
+    repo.mkdir(parents=True)
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.email", "t@example.invalid")
+    git(repo, "config", "user.name", "t")
+    (repo / "f").write_text("x")
+    git(repo, "add", "f")
+    git(repo, "commit", "-qm", "c")
+    trees = {}
+    for i, b in enumerate(branches):
+        w = Path(root).resolve() / f"w{i}"
+        git(repo, "worktree", "add", "-q", "-b", b, str(w))
+        trees[b] = str(w)
+    return repo, trees
 
 
-# A `gh` that fails the way an unauthenticated one does: several lines, the
-# cause on the first. The binding read's failure branch must carry both which
-# command failed and why, so neither end of that message may be cut.
-GH_FAILS = """#!/bin/sh
-printf 'gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable. Example:\\n  env:\\n    GH_TOKEN: x\\n' >&2
-exit 4
-"""
+# --------------------------------------------------------------- the fixtures
 
-
-HOSTNAME = subprocess.run(["hostname", "-s"], capture_output=True, text=True).stdout.strip()
-
-# The default gh: a call that reached it is a case that would have reached
-# the network, and it says so rather than doing so.
-GH_DENIED = """#!/bin/sh
-echo "gh shim: this case reached gh without stubbing it: $*" >&2
-exit 97
-"""
-
-
-# A compare that answers "3 commits ahead of main", for the case that proves
-# a confirmed absence deletes the record and leaves an ahead ref alone. Any
-# other call -- the ref delete included -- is an escape from that branch, and
-# is refused loudly rather than silently taking effect.
-GH_AHEAD3 = """#!/bin/sh
-for a in "$@"; do
-  case "$a" in
-    *compare/main*) echo "3"; exit 0 ;;
-  esac
-done
-echo "gh shim: this case reached an endpoint it did not stub: $*" >&2
-exit 97
-"""
-
-
-def run(args, files=None, mtime=None, env=None, stub_ps=False, stub_gh=False):
-    with tempfile.TemporaryDirectory() as d:
-        claims = Path(d) / "runtime" / "claims"
-        claims.mkdir(parents=True)
-        for name, body in (files or {}).items():
-            if body is DIR:
-                (claims / name).mkdir()
-                continue
-            if isinstance(body, bytes):
-                (claims / name).write_bytes(body)
-            else:
-                (claims / name).write_text(body)
-            if mtime is not None:
-                os.utime(claims / name, (mtime, mtime))
-        e = dict(os.environ, **(env or {}))
-        # A shim directory on PATH for every case. `gh` is ALWAYS shimmed:
-        # the real one would reach the network, and a case that did so has
-        # written to production behind a green line -- eight STOOD DOWN
-        # comments landed on a live campaign issue that way. Unstubbed, gh
-        # refuses and says so.
-        shim = Path(d) / "shim"
-        shim.mkdir()
-        gh_body = (GH_FAILS if stub_gh == "fails"
-                   else GH_SHIM.replace("some-other-machine", HOSTNAME) if stub_gh == "here"
-                   else GH_AHEAD3 if stub_gh == "ahead3"
-                   else GH_SHIM if stub_gh else GH_DENIED)
-        for name, body, on in (("ps", PS_SHIM, stub_ps), ("gh", gh_body, True)):
-            if on:
-                (shim / name).write_text(body)
-                (shim / name).chmod(0o755)
-        e["PATH"] = f"{shim}:{e.get('PATH', '')}"
-        return subprocess.run([sys.executable, str(CLAIM), *args, "--dir", d],
-                              capture_output=True, text=True, env=e)
-
-
-OLD = 1767225600.0     # 2026-01-01, before any session on this machine
-CASES = []
-
-
-def case(name, args, files=None, mtime=None, env=None, want=None, code=None,
-         stub_ps=False, absent=None, stub_gh=False):
-    """`absent` is a string the output must NOT contain: a false warning is
-    invisible to `want`, which only asks that the right line is present."""
-    CASES.append((name, args, files, mtime, env, want, code, stub_ps, absent,
-                  stub_gh))
-
-
-# The reading that says nothing is here, which must not read like a refusal.
-case("an empty claims directory is a reading, not an absence",
-     ["list"], want="0 claim(s)", code=0)
-case("no record for this sub-issue says so and names the path it read",
-     ["status", "7"], want="verdict none", code=0)
-
-# The verdict that costs work if it is wrong.
-case("a dead pid on an old record is stale?, never dead",
-     ["status", "7"], {"7": DEAD_REC}, OLD, want="verdict stale?", code=0,
-     stub_ps=True)
-case("...and it says why, so the reader knows to ask",
-     ["status", "7"], {"7": DEAD_REC}, OLD, want="do not read this as free", code=0,
-     stub_ps=True)
-case("a dead pid on a record written since the last restart is plain dead",
-     ["status", "7"], {"7": DEAD_REC}, None, want="verdict dead", code=0)
-
-# A record that cannot answer must say so rather than answer wrongly.
-case("a record with no pid is unreadable, not dead",
-     ["status", "7"], {"7": "session s1\nname n1\nbranch b\n"},
-     want="verdict unreadable", code=0)
-
-# The release gate.
-case("release refuses a dead pid with no confirmation",
-     ["release", "7"], {"7": DEAD_REC}, OLD, want="not proof the session is gone", code=1)
-case("release names the restart evidence when it refuses",
-     ["release", "7"], {"7": DEAD_REC}, OLD, want="a restart is likely", code=1,
-     stub_ps=True)
-
-# A confirmed absence on a branch still ahead of main: the ref (the pull
-# request's head) is never touched, but the record is the claim, and the
-# absence is what makes deleting it safe -- a successor can then `take` the
-# sub-issue. `stub_ps=True` because the record is dead, so cmd_release's
-# restart note still runs and must not reach the real `ps`.
-case("a confirmed absence on a branch ahead of main keeps the ref and says so",
-     ["release", "7", "--confirmed-absent", "asked the peer"], {"7": DEAD_REC},
-     OLD, want="commit(s) ahead of main: the ref is kept", code=0,
-     stub_ps=True, stub_gh="ahead3", absent="deleted campaign-1/7-x")
-case("...and it deletes the record, naming the path, on the confirmed absence",
-     ["release", "7", "--confirmed-absent", "asked the peer"], {"7": DEAD_REC},
-     OLD, want="the confirmed absence retires the claim, not the branch it "
-               "points at", code=0, stub_ps=True, stub_gh="ahead3")
-
-# The holder's own release gets no such split: it asked to release, so a ref
-# not yet safe to delete is still a plain refusal, record and all.
-MINE_BRANCH_REC = "session mine\nname n1\npid 1\nbranch campaign-1/7-x\n"
-case("the holder's own release still refuses a branch ahead of main, "
-     "keeping the record",
-     ["release", "7", "--session", "mine"], {"7": MINE_BRANCH_REC},
-     want="never deleted", code=1, stub_gh="ahead3",
-     absent="retires the claim")
-
-# A missing directory is not an empty one.
-case("a missing claims directory refuses rather than reading empty",
-     ["list"], want=None, code=None)
-
-# `take` is covered only up to the point where it would reach GitHub.
-# pid 1 exists on every machine this runs on and is not a claude, so
-# the pid reading calls it `other` -- a liveness that is neither dead
-# nor alive, and the one the release gate must refuse by name. Hardcoding the
-# wire to "dead" would flip this refusal's reason, which is what makes it a
-# case.
-# A record whose bytes are not text must read as unreadable, not crash.
-# The trace and its notes on one stream, in order -- split across stdout and
-# stderr, a pipe could reorder them relative to each other.
-case("the restart note is on stdout with the rest of the trace",
-     ["release", "7"], {"7": DEAD_REC}, OLD, want="note:", code=1)
-# A non-file entry under claims/ is counted apart, never dropped.
-case("a directory under claims/ is named by list, not skipped",
-     ["list"], {"7": DEAD_REC, "9": DIR}, want="is not a file", code=0)
-case("an undecodable record reads as unreadable, not as an absence",
-     ["status", "7"], {"7": b"\xff\xfe not text\n"}, want="will not decode",
-     code=0)
-case("release refuses a record whose pid belongs to something else",
-     ["release", "7"], {"7": "session s\nname n\npid 1\nbranch campaign-1/7-x\n"},
-     want="reads other", code=1)
-case("take refuses a sub-issue this machine already has a record for",
-     ["take", "1", "7", "x"], {"7": DEAD_REC},
-     want="already claimed", code=3)
-case("...and the refusal names the session to go and ask",
-     ["take", "1", "7", "x"], {"7": DEAD_REC}, want="session s1", code=3)
-
-# `--local` reaches no network at all, so the whole of it is covered here.
-LOCAL_REC = "session mine\nname n1\npid 1\nbranch campaign-1/7-x\nlocal yes\n"
-RELEASED_REC = LOCAL_REC + "released 2026-09-02T10:00:00+0900 by mine\n"
-
-case("take --local writes the record and says no ref was cut",
-     ["take", "--local", "1", "7", "x"], want="no ref is cut", code=0)
-case("...and the record carries `local yes`, which is what release reads",
-     ["take", "--local", "1", "7", "x"], want="local yes", code=0)
-case("take --local on a live record refuses like any other take",
-     ["take", "--local", "1", "7", "x"], {"7": LOCAL_REC},
-     want="already claimed", code=3)
-# A record that will not decode is a reading that failed. Answering `already
-# claimed` would be right by accident; answering 0 would hand out a held claim.
-case("take on an undecodable record refuses without concluding",
-     ["take", "--local", "1", "7", "x"], {"7": b"\xff\xfe not text\n"},
-     want="will not decode", code=1)
-# Scoped to unsettled records: a sub-issue that returns to its starting state
-# must be re-takeable, or a re-opened issue can never be worked again.
-case("take re-takes a released record and says why it may",
-     ["take", "--local", "1", "7", "x"], {"7": RELEASED_REC},
-     want="marked released", code=0)
-
-# The launch-time path: a record written for another session carries no pid,
-# or `status` reads the launcher's liveness as the delegate's.
-case("take --session for another session writes pid unknown",
-     ["take", "--local", "1", "7", "x", "--session", "theirs"],
-     env={"CLAUDE_CODE_SESSION_ID": "mine", "CLAUDE_PID": "1"},
-     want="pid unknown", code=0)
-case("...and no CLAUDE_PID warning fires, since no pid was wanted",
-     ["take", "--local", "1", "7", "x", "--session", "theirs"],
-     env={"CLAUDE_CODE_SESSION_ID": "mine", "CLAUDE_PID": "1"},
-     want="pid unknown", code=0, absent="CLAUDE_PID not set")
-case("...and the caller's own session keeps its pid",
-     ["take", "--local", "1", "7", "x", "--session", "mine"],
-     env={"CLAUDE_CODE_SESSION_ID": "mine", "CLAUDE_PID": "1"},
-     want="pid 1", code=0)
-
-# A name from another campaign is a stale name about to become durable: the
-# refusal names both numbers, and fires before any ref or record is written.
-case("take refuses a --name from another campaign, naming both numbers",
-     ["take", "--local", "1", "7", "x", "--name", "campaign-116-executor-2"],
-     want="campaign 116", code=1)
-case("...and says what to do about it",
-     ["take", "--local", "1", "7", "x", "--name", "campaign-116-executor-2"],
-     want="rename first", code=1)
-case("take accepts a --name of this campaign",
-     ["take", "--local", "1", "7", "x", "--name", "campaign-1-executor-2"],
-     want="name campaign-1-executor-2", code=0)
-# A planner claims only when it executes a sub-issue itself; the name it
-# already carries must pass the same reader, with no second spelling of the
-# pattern anywhere in this script.
-case("take accepts a planner's --name of this campaign",
-     ["take", "--local", "1", "7", "x", "--name", "campaign-1-planner-1"],
-     want="name campaign-1-planner-1", code=0)
-case("take refuses a role the pattern does not admit",
-     ["take", "--local", "1", "7", "x", "--name", "campaign-1-reviewer-1"],
-     want="not campaign-<campaign issue>-<role>-<n>", code=1)
-# The binding read at its call site, against the gh shim: with the gate in
-# place the shim's BOUND comment is what refuses; with the gate removed the
-# first ref call reaches the shim and is refused as an escape instead.
-case("take reads the binding before cutting a ref, and `elsewhere` refuses",
-     ["take", "1", "7", "x"], want="bound elsewhere", code=1, stub_gh=True,
-     absent="escaped the binding gate")
-case("...and a `#`-prefixed campaign issue reads the same number the tracker read",
-     ["take", "#1", "7", "x", "--name", "campaign-1-executor-1"],
-     want="bound elsewhere", code=1, stub_gh=True, absent="belongs to campaign")
-# A binding read that failed is the "I could not look" branch: it must name
-# the command that failed AND the cause, so each end has its own case.
-case("a failed binding read names the command that failed",
-     ["take", "1", "7", "x"], stub_gh="fails", code=1,
-     want="campaign-tracker bound: gh api")
-case("...and the cause the command gave",
-     ["take", "1", "7", "x"], stub_gh="fails", code=1,
-     want="set the GH_TOKEN environment variable")
-case("take refuses a --name that is not the shape at all",
-     ["take", "--local", "1", "7", "x", "--name", "campaign-1-oops"],
-     want="not campaign-<campaign issue>-<role>-<n>", code=1)
-
-# `stood-down`: refused while a claim is held, refused with no session, posted
-# through the gh shim otherwise (its arguments land in gh-comment.log).
-case("stood-down refuses while this session holds an unreleased claim",
-     ["stood-down", "1", "--session", "mine"], {"7": LOCAL_REC},
-     env={"CLAUDE_CODE_SESSION_ID": "mine"},
-     want="still holds claim(s) #7", code=1)
-case("stood-down refuses with no session id to name",
-     ["stood-down", "1"], env={"CLAUDE_CODE_SESSION_ID": ""},
-     want="names no session", code=1)
-case("stood-down refuses a --session when nothing proves the caller",
-     ["stood-down", "1", "--session", "theirs"], {"7": RELEASED_REC},
-     env={"CLAUDE_CODE_SESSION_ID": ""},
-     want="nothing proves the caller", code=1, absent="posted on")
-case("stood-down refuses to speak for a peer",
-     ["stood-down", "1", "--session", "theirs"], {"7": RELEASED_REC},
-     env={"CLAUDE_CODE_SESSION_ID": "mine"},
-     want="never for a peer", code=1, absent="posted on")
-case("stood-down reads the binding before it posts, and `elsewhere` refuses",
-     ["stood-down", "1", "--session", "mine"], {"7": RELEASED_REC},
-     env={"CLAUDE_CODE_SESSION_ID": "mine"},
-     want="bound elsewhere", code=1, stub_gh=True, absent="posted on")
-case("stood-down posts once every claim here is released and the binding is here",
-     ["stood-down", "1", "--session", "mine", "--name", "campaign-1-executor-2"],
-     {"7": RELEASED_REC}, env={"CLAUDE_CODE_SESSION_ID": "mine"},
-     want="posted on", code=0, stub_gh="here")
-
-case("release --session marks a local claim released, deleting no ref",
-     ["release", "7", "--session", "mine"], {"7": LOCAL_REC},
-     want="marked", code=0)
-case("...and says there was never a ref to delete",
-     ["release", "7", "--session", "mine"], {"7": LOCAL_REC},
-     want="no ref was ever cut", code=0)
-case("release refuses a local claim held by another session",
-     ["release", "7", "--session", "theirs"], {"7": LOCAL_REC},
-     want="held by session mine", code=1)
-case("release refuses a local claim with no proof of any kind",
-     ["release", "7"], {"7": LOCAL_REC},
-     want="Pass --session", code=1)
-# The PostToolUse half fires on every close, so a second release of the same
-# record is ordinary and must not read as a failure.
-case("releasing an already-released record is a no-op, not an error",
-     ["release", "7", "--session", "mine"], {"7": RELEASED_REC},
-     want="already marked released", code=0)
-
-
-PS = ("Fri Aug  7 13:37:53 2026     claude.exe\n"
-      "Mon Aug 31 02:00:00 2026     claude.exe\n"
-      "Mon Aug 31 02:00:00 2026     launchd\n")
-BEFORE_ALL = 1754000000.0    # Aug 2026, before both claude rows
-AFTER_ALL = 1790000000.0     # 2026-09, after both
-
-
-def pure_cases(m):
-    """The restart evidence, against a recorded process table."""
-    # Counted as they run, never a constant. A hardcoded total is a suite that
-    # cannot report its own shrinkage -- deleting a case still prints the same
-    # "N/N pass".
-    ran, out = [], []
-
-    def c(name, cond):
-        ran.append(name)
-        if not cond:
-            out.append(name)
-
-    names = frozenset({"claude", "claude.exe"})
-    n, why = m.count_newer(PS, names, BEFORE_ALL)
-    c("a record older than every session sees them all", why is None and n == 2)
-    n, why = m.count_newer(PS, names, AFTER_ALL)
-    c("a record newer than every session sees none", why is None and n == 0)
-    n, why = m.count_newer(PS, frozenset({"claude"}), BEFORE_ALL)
-    c("a name list that misses this install's name finds nothing",
-      why is None and n == 0)
-    n, why = m.count_newer("not a timestamp     claude.exe\n", names, 0)
-    c("an unparseable start time is a why, not a zero", n is None and why)
-    n, why = m.count_newer("", names, 0)
-    c("an empty process table is zero, not a why", why is None and n == 0)
-
-    # The destructive path's decision, now that it is a calculation and the
-    # suite can reach it: the effects around it touch GitHub, and the suite
-    # may not.
-    rec = {"session": "S1", "branch": "campaign-1/7-x"}
-    c("a live record is never releasable",
-      m.release_gate(rec, None, "asked the peer", "alive")[0] is None)
-    c("nor an `other` one, which is a pid this install cannot name",
-      m.release_gate(rec, None, "asked the peer", "other")[0] is None)
-    c("nor an unreadable one",
-      m.release_gate(rec, None, "asked the peer", "unreadable (x)")[0] is None)
-    c("a dead record without a confirmed absence is refused",
-      m.release_gate(rec, None, None, "dead")[0] is None)
-    c("...and the refusal says a restart renumbers pids",
-      "renumbers" in (m.release_gate(rec, None, None, "dead")[1] or ""))
-    c("a dead record with one proceeds, on the branch the record names",
-      m.release_gate(rec, None, "the peer said so", "dead")[0] == "campaign-1/7-x")
-
-    c("no record and no --branch is refused",
-      m.release_gate(None, None, "the peer said so", None)[0] is None)
-    c("no record with a branch but no confirmation is refused too",
-      m.release_gate(None, "campaign-1/7-x", None, None)[0] is None)
-    c("no record is the weaker evidence, so it needs the same confirmation",
-      m.release_gate(None, "campaign-1/7-x", "asked everyone", None)[0]
-      == "campaign-1/7-x")
-
-    # The blocker: compare and delete must name the same repository.
-    c("the comparison is asked of the repository named",
-      m.compare_path("a/b", "campaign-1/7-x").startswith("repos/a/b/"))
-    c("and the delete happens in that same one",
-      m.delete_path("a/b", "campaign-1/7-x").startswith("repos/a/b/"))
-    c("a member repository is never compared against the base",
-      "campaign-base" not in m.compare_path("owner/web", "campaign-1/7-x"))
-
-    # ahead_count reduces the raw comparison to a known N, or None when the
-    # question was not answered -- the returncode-vs-output cases belong to
-    # it now, since ahead_verdict only shapes a message from what this
-    # already decided (cmd_release parses once and passes the result to
-    # both).
-    c("a comparison that failed is not an empty branch",
-      m.ahead_count(1, "") is None)
-    c("an empty answer is not zero either", m.ahead_count(0, "") is None)
-    c("a branch ahead of main is read as its count", m.ahead_count(0, "3") == 3)
-    c("a branch at main is read as zero", m.ahead_count(0, "0") == 0)
-    # The two halves of the guard overlap, so each needs a case that only it
-    # catches: a failed call whose stdout happens to read "0" is caught by the
-    # returncode half alone.
-    c("a failed call is not empty even when its output says 0",
-      m.ahead_count(1, "0") is None)
-    # An answer that is not a number is a failed question, not a count.
-    c("an answer that is not a number is unanswered, not a count",
-      m.ahead_count(0, "not a number") is None)
-
-    ok, why = m.ahead_verdict(None, "", "boom", "a/b", "x")
-    c("an unanswered comparison is not an empty branch", not ok and "did not happen" in why)
-    ok, why = m.ahead_verdict(3, "3", "", "a/b", "x")
-    c("a branch ahead of main is reported, never deleted", not ok and "never deleted" in why)
-    ok, why = m.ahead_verdict(0, "0", "", "a/b", "x")
-    c("a branch at main is releasable", ok and why is None)
-    # The message separates the two None cases: an answer that is not a
-    # number means the question was not answered, and reporting it as "N
-    # commits ahead" sends the reader to the wrong repair.
-    ok, why = m.ahead_verdict(None, "not a number", "", "a/b", "x")
-    c("an answer that is not a number is a failed question, not a count",
-      not ok and "did not happen" in why and "commit(s) ahead" not in why)
-
-    # The binding read before a ref is cut, one case per word it can say.
-    c("`here` admits the cut", m.binding_verdict("here") is None)
-    c("`elsewhere` refuses by name",
-      "bound elsewhere" in (m.binding_verdict("elsewhere") or ""))
-    c("`unbound` refuses by name",
-      "not bound" in (m.binding_verdict("unbound") or ""))
-    c("a reading that failed refuses, and says the binding could not be read",
-      "could not be read" in (m.binding_verdict("exit 1: boom") or ""))
-    # The name read against the one pattern, loaded from its owner.
-    naming, why = m.load_sibling("campaign-name-session.py", "cns_for_test")
-    c("the name rule loads from its sibling", why is None and naming is not None)
-    if naming is not None:
-        c("a name of this campaign is admitted",
-          m.name_verdict("campaign-1-executor-2", "1", naming.NAME) is None)
-        c("a planner's name of this campaign is admitted",
-          m.name_verdict("campaign-1-planner-1", "1", naming.NAME) is None)
-        c("a role outside the pattern is refused",
-          "not campaign-<campaign issue>" in (m.name_verdict("campaign-1-reviewer-1", "1", naming.NAME) or ""))
-        c("no name is admitted, the record may carry unknown",
-          m.name_verdict(None, "1", naming.NAME) is None)
-        c("another campaign's name is refused naming both numbers",
-          "campaign 116" in (m.name_verdict("campaign-116-executor-2", "1", naming.NAME) or ""))
-        c("a malformed name is refused, not read as no campaign",
-          "not campaign-<campaign issue>" in (m.name_verdict("campaign-1-oops", "1", naming.NAME) or ""))
-
-    # The gone-ref path, one case per branch it can take. A ref present is the
-    # ahead_verdict cases above; these are the two readings of a 404.
-    c("a 404 on the comparison is a gone ref",
-      m.ref_gone(1, "gh: Not Found (HTTP 404)"))
-    c("any other failure is not a gone ref, it is an unanswered question",
-      not m.ref_gone(1, "gh: boom") and not m.ref_gone(0, ""))
-    c("the ref's own endpoint answering 200 is a present ref",
-      m.ref_probe(0, "") == "present")
-    c("...404 is a gone ref", m.ref_probe(1, "gh: Not Found (HTTP 404)") == "gone")
-    c("...and any other failure is unanswered, never gone",
-      m.ref_probe(1, "gh: connect: network is unreachable") == "unanswered")
-    ok, text = m.merged_head_verdict(0, '[{"number": 131}]', "a/b", "x")
-    c("a gone ref with a merged pull request is nothing beyond main",
-      ok and "#131" in text)
-    ok, text = m.merged_head_verdict(0, "[]", "a/b", "x")
-    c("a gone ref with no merged pull request is refused, never released",
-      not ok and "never released" in text)
-    ok, text = m.merged_head_verdict(1, "", "a/b", "x")
-    c("a pull request question that failed is not an absence",
-      not ok and "not an absence" in text)
-
-    # A command that is not installed at all: a failed run carrying its reason,
-    # never a traceback. `gh` and `ps` both go through this.
-    r = m.run("no-such-command-xyz")
-    c("a missing command is a failed run, not an exception",
-      r.returncode != 0 and "FileNotFoundError" in r.stderr)
-
-    # The install's process names. A literal, and stated as a fact about this
-    # install rather than about claude: an unrecognised name must read `other`,
-    # never `dead`, so the literal is allowed to be wrong without a tree being
-    # deleted for it.
-    c("the install's process names are a frozenset with something in it",
-      isinstance(m.NAMES, frozenset) and m.NAMES)
-
-    # The pid reading, now in this script. Each verdict, and each way the
-    # question can fail to be asked at all -- the branch whose wrong answer
-    # deletes a tree.
-    c("a pid that is not a number is unreadable, never dead",
-      m.liveness("abc") == (None, "not a pid: 'abc'"))
-    c("pid 0 is not a pid either", m.liveness("0")[0] is None)
-    c("a negative pid is not a pid", m.liveness("-1")[0] is None)
-    c("this process's own pid reads a verdict, not a failure",
-      m.liveness(os.getpid())[1] is None)
-    c("a pid held by nobody is dead", m.liveness(DEAD) == ("dead", None))
-    # pid 1 exists on every machine this runs on and is not a claude, so it is
-    # `other` -- a liveness that is neither dead nor alive, and the one the
-    # release gate must refuse by name.
-    c("a pid held by something this install cannot name is other, not dead",
-      m.liveness("1") == ("other", None))
-    c("the record reader turns an unreadable pid into a word, not an exception",
-      m.alive("abc").startswith("unreadable ("))
-
-    # A record that will not decode is a failed reading, not an absence.
-    c("an undecodable record is unreadable, never dead",
-      "unreadable" in (m.liveness_of({"unreadable": "UnicodeDecodeError"}) or ""))
-
-    # The wire into the release gate. Replacing it with the constant "dead"
-    # left the whole suite green and made a live claim deletable.
-    c("a record with no pid reads unreadable, not dead",
-      m.liveness_of({"session": "s"}) == "unreadable (no pid)")
-    c("no record has no liveness at all", m.liveness_of(None) is None)
-    return ran, out
-
-
-# ------------------------------------------------------------- `live` and its join
-
-# A stand-in herdr, so a case that runs the shipped script end to end does not
-# depend on what happens to be installed.
-HERDR_SHIM = """#!/bin/sh
-echo '{"result":{"agents":[]}}'
-"""
-
-
-# A `gh` for the third reading: the comments endpoint answers from
-# $HOME/comments.json (slurp shape: a list of pages), `issue comment` records
-# its arguments in $HOME/gh-comment.log and succeeds, anything else fails.
-GH_LIVE_SHIM = """#!/bin/sh
-for a in "$@"; do
-  case "$a" in
-    */comments) cat "$HOME/comments.json"; exit 0 ;;
-  esac
-done
-if [ "$1" = issue ] && [ "$2" = comment ]; then echo "$@" >> "$HOME/gh-comment.log"; exit 0; fi
-echo "gh shim: unexpected call: $*" >&2
-exit 1
-"""
-
-
-def with_herdr(d, agents=None, comments=None):
-    """PATH with a herdr and a gh shim. `agents` is a list of herdr rows
-    (default none); `comments` a list of comment bodies on the campaign issue
-    (default none)."""
-    shim = Path(d) / "bin"
-    shim.mkdir(exist_ok=True)
-    (Path(d) / "listing.json").write_text(listing(*(agents or [])))
-    (shim / "herdr").write_text('#!/bin/sh\ncat "$HOME/listing.json"\n')
-    (shim / "herdr").chmod(0o755)
-    (Path(d) / "comments.json").write_text(
-        json.dumps([[{"body": b} for b in (comments or [])]]))
-    (shim / "gh").write_text(GH_LIVE_SHIM)
-    (shim / "gh").chmod(0o755)
-    return {"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(d)}
-
-
-def agent(sid, name=None, pane="w1:p1", cwd="/x"):
-    a = {"agent_session": {"value": sid} if sid else None,
-         "agent_status": "working", "cwd": cwd, "pane_id": pane}
-    if name:
-        a["name"] = name
-    return a
+def agent(sid, name, cwd, pane="w1:p1", status="idle"):
+    return {"agent_session": {"value": sid}, "name": name, "cwd": cwd,
+            "pane_id": pane, "agent_status": status}
 
 
 def listing(*agents):
     return json.dumps({"result": {"agents": list(agents)}})
 
 
-def live(m):
-    """The two-sided reading: liveness from herdr, attribution from the records,
-    joined on the one key that survives a restart and a rename."""
-    ran, out = [], []
+GH = """#!/bin/sh
+# Every endpoint this suite needs, and a refusal for anything else, so a call
+# that escaped a gate is visible as a different failure rather than as silence.
+case "$*" in
+  *matching-refs*) echo '["refs/heads/campaign-9999/1-alpha","refs/heads/campaign-9999/2-beta"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
+  *git/refs*) echo 'Reference already exists' >&2; exit 1 ;;
+esac
+echo "gh shim: refusing $*" >&2
+exit 1
+"""
 
-    def c(name, cond):
-        ran.append(name)
-        if not cond:
-            out.append(name)
+GH_ELSEWHERE = GH.replace('"$(hostname -s)"', '"not-this-machine"')
 
-    def run_live(d, env=None, campaign_issue="1"):
-        return subprocess.run([sys.executable, str(CLAIM), "live", campaign_issue,
-                               "--dir", d],
-                              capture_output=True, text=True, env=env)
+HERDR = """#!/bin/sh
+cat <<'JSON'
+%s
+JSON
+"""
 
-    # `#1` and `1` are the same campaign at the `live` parser too. Unstripped,
-    # the campaign issue never matches a branch and every record here reads stray --
-    # a warning that is invisible to a `want`, so it is asserted as absent.
+
+def shims(d, gh=GH, herdr=None):
+    """A PATH directory holding the shims. `gh` is ALWAYS shimmed: the real one
+    reaches the network, and a case that did so has written to production behind
+    a green line of output."""
+    b = Path(d) / "bin"
+    b.mkdir(parents=True, exist_ok=True)
+    (b / "gh").write_text(gh)
+    (b / "gh").chmod(0o755)
+    if herdr is not None:
+        (b / "herdr").write_text(HERDR % herdr)
+        (b / "herdr").chmod(0o755)
+    # Everything else a case legitimately runs, linked in, because PATH is this
+    # directory ALONE: with the real PATH behind it, "herdr is not installed"
+    # would silently run the real herdr and prove nothing.
+    for tool in ("git", "hostname", "sh", "cat", "printf", "uname"):
+        found = shutil.which(tool)
+        if found and not (b / tool).exists():
+            (b / tool).symlink_to(found)
+    return b
+
+
+def claim(args, path_dir, extra_env=None):
+    env = dict(os.environ, PATH=str(path_dir), **(extra_env or {}))
+    return subprocess.run([sys.executable, str(CLAIM), *args],
+                          capture_output=True, text=True, env=env)
+
+
+# ----------------------------------------------------------------- the cases
+
+def pure_cases(m):
+    # --- which sub-issue a branch names ---
+    check("a claim branch names its sub-issue",
+          m.issue_of_branch("campaign-1/176-github-facts", "1") == "176")
+    check("...and a branch of another campaign names none here",
+          m.issue_of_branch("campaign-2/176-x", "1") is None)
+    # The one that would silently mis-attribute: `17` must not answer for `176`.
+    check("a shorter number is not a prefix match",
+          m.issue_of_branch("campaign-1/176-x", "1") == "176"
+          and m.refs_for_issue(["campaign-1/176-x"], "1", "17") == [])
+    check("a second segment with no number claims no sub-issue",
+          m.issue_of_branch("campaign-1/topic-only", "1") is None)
+    check("a branch outside the campaign prefix is not ours",
+          m.issue_of_branch("main", "1") is None)
+
+    refs, why = m.parse_refs('["refs/heads/campaign-1/7-a","refs/tags/v1"]')
+    check("a tag in the ref listing is not a claim branch",
+          refs == ["campaign-1/7-a"] and why is None)
+    refs, why = m.parse_refs("not json")
+    check("a ref listing that did not parse is a why, not zero claims",
+          refs is None and why)
+
+    # --- which ref a release is about ---
+    b, refusal = m.which_branch(["campaign-1/7-a"], "1", "7", None)
+    check("one matching ref answers the release", b == "campaign-1/7-a" and not refusal)
+    b, refusal = m.which_branch([], "1", "7", None)
+    check("no matching ref is a refusal naming --branch",
+          b is None and refusal and "--branch" in refusal)
+    b, refusal = m.which_branch(["campaign-1/7-a", "campaign-1/7-b"], "1", "7", None)
+    check("TWO refs on one sub-issue are refused, never picked between",
+          b is None and refusal and "7-a" in refusal and "7-b" in refusal)
+    b, refusal = m.which_branch(["campaign-1/7-a", "campaign-1/7-b"], "1", "7",
+                                "campaign-1/7-b")
+    check("...and --branch names one directly, past the refusal",
+          b == "campaign-1/7-b" and not refusal)
+
+    # --- the binding gate ---
+    check("only `here` admits a ref cut", m.binding_verdict("here") is None)
+    for word in ("elsewhere", "unbound", "exit 2: gh: not found", ""):
+        check(f"the binding refuses on {word!r}", bool(m.binding_verdict(word)))
+
+    # --- the herdr half ---
+    rows, why = m.parse_agents(listing(agent("s1", "campaign-1-executor-1", "/x")))
+    check("a herdr row is read by its session id",
+          why is None and rows["s1"]["name"] == "campaign-1-executor-1")
+    rows, why = m.parse_agents(listing({"name": "n", "cwd": "/x", "pane_id": "p"}))
+    check("a row herdr cannot identify is counted, never dropped",
+          why is None and len(rows) == 1
+          and list(rows)[0].startswith("<unidentified:"))
+    rows, why = m.parse_agents("{}")
+    check("herdr output of an unknown shape is a why, not zero sessions",
+          rows is None and why)
+
+    # --- the worktree half, as a parse ---
+    where = m.parse_worktrees(
+        "worktree /a\nHEAD aaa\nbranch refs/heads/campaign-1/7-a\n\n"
+        "worktree /b\nHEAD bbb\ndetached\n\n"
+        "worktree /c\nHEAD ccc\nbranch refs/heads/main\n")
+    check("a worktree's branch is read off its own paragraph",
+          where.get("campaign-1/7-a") == ["/a"])
+    check("a DETACHED worktree holds no branch and is not an unread reading",
+          "/b" not in sum(where.values(), []))
+    check("...and the paragraph after it is still read",
+          where.get("main") == ["/c"])
+
+    # --- the join ---
+    stood = {"campaign-1/7-a": ["/w/7"]}
+    sessions = {
+        "s1": {"name": "campaign-1-executor-1", "cwd": "/x", "pane": "p1",
+               "status": "working"},
+        "s2": {"name": "campaign-2-executor-1", "cwd": "/y", "pane": "p2",
+               "status": "idle"},
+    }
+    occupied, vacant, ours = m.classify(
+        ["campaign-1/7-a", "campaign-1/8-b"], stood, sessions, "1")
+    check("a claim with a checkout is occupied",
+          occupied == [("campaign-1/7-a", ["/w/7"])])
+    check("a claim with no checkout is vacant",
+          vacant == [("campaign-1/8-b", [])])
+    check("only sessions of THIS campaign are listed",
+          [n for _, r in ours for n in [r["name"]]] == ["campaign-1-executor-1"])
+    # A campaign whose number is a prefix of another's must not collect it.
+    check("campaign 1 does not collect campaign 11's sessions",
+          not m.classify([], {}, {"s": {"name": "campaign-11-executor-1"}},
+                         "1")[2])
+
+    check("occupants names every workspace holding the branch",
+          m.occupants({"b": ["/w1", "/w2"]}, "b") == ["/w1", "/w2"])
+    check("...and none for a branch nothing holds",
+          m.occupants({"b": ["/w1"]}, "other") == [])
+
+    # --- the comparison, and the 404 that is not an absence ---
+    check("a comparison that did not happen is not an empty branch",
+          m.ahead_count(1, "") is None
+          and not m.ahead_verdict(None, "", "boom", "o/r", "b")[0])
+    check("a branch ahead of main is refused with its count",
+          not m.ahead_verdict(3, "3", "", "o/r", "b")[0]
+          and "3 commit(s)" in m.ahead_verdict(3, "3", "", "o/r", "b")[1])
+    check("a branch holding nothing beyond main is admitted",
+          m.ahead_verdict(0, "0", "", "o/r", "b")[0])
+    check("only a 404 reads as a gone ref", m.ref_gone(1, "HTTP 404")
+          and not m.ref_gone(1, "HTTP 500") and not m.ref_gone(0, ""))
+    check("the ref's own endpoint separates gone from unanswered",
+          m.ref_probe(0, "") == "present" and m.ref_probe(1, "HTTP 404") == "gone"
+          and m.ref_probe(1, "HTTP 500") == "unanswered")
+    ok, text = m.merged_head_verdict(0, "[]", "o/r", "b")
+    check("a vanished branch with no merged pull request is reported",
+          not ok and "never released" in text)
+    ok, text = m.merged_head_verdict(0, '[{"number": 9}]', "o/r", "b")
+    check("...and one with a merged pull request is nothing beyond main",
+          ok and "#9" in text)
+    ok, text = m.merged_head_verdict(1, "", "o/r", "b")
+    check("a pull request question that failed is not an absence", not ok)
+
+
+def git_cases(m):
+    """The half that runs real git, so what is proved is git's own shape."""
     with tempfile.TemporaryDirectory() as d:
-        claims = Path(d) / "runtime" / "claims"
-        claims.mkdir(parents=True)
-        (claims / "7").write_text("session S1\nbranch campaign-1/7-x\n")
-        r = run_live(d, {"PATH": "/nonexistent"}, campaign_issue="#1")
-        out_text = r.stdout + r.stderr
-    c("a `#`-prefixed campaign issue does not make this campaign's own record stray",
-      "outside campaign" not in out_text)
+        repo, trees = a_repo(d, "campaign-9999/1-alpha")
+        where, unread = m.checkouts([str(repo)])
+        check("a real linked worktree is found on its branch",
+              not unread and where.get("campaign-9999/1-alpha")
+              == [trees["campaign-9999/1-alpha"]])
+        check("...and the main worktree's own branch is found beside it",
+              where.get("main") == [str(repo)])
 
-    got, why = m.parse_agents(listing(agent("S1", "campaign-1-executor-1")))
-    c("a listed session is keyed by its session id", why is None and "S1" in got)
-    c("its name comes along", got and got["S1"]["name"] == "campaign-1-executor-1")
+        # A root that is not a repository is NAMED, never skipped: a repository
+        # that could not be swept is not an empty one.
+        where, unread = m.checkouts([str(repo), str(Path(d) / "nothing")])
+        check("a root git will not answer for is reported as unread",
+              len(unread) == 1 and "nothing" in unread[0]
+              and where.get("campaign-9999/1-alpha"))
 
-    got, why = m.parse_agents(listing(agent("S1")))
-    c("a session with no name is still listed",
-      why is None and got["S1"]["name"] == "<unnamed>")
+        root, why = m.repo_root(trees["campaign-9999/1-alpha"])
+        check("a linked worktree resolves to the repository that owns it",
+              why is None and root == str(repo))
+        root, why = m.repo_root(str(Path(d) / "nothing"))
+        check("a directory in no repository is not a failure, just no root",
+              root is None and why is None)
 
-    # A session herdr cannot identify still occupies a pane, and dropping it
-    # shrinks the count a close gate reads.
-    got, why = m.parse_agents(listing(agent(None, pane="w1:p9")))
-    key = next(iter(got)) if got else ""
-    c("a session herdr cannot identify is counted under a key naming its pane",
-      why is None and len(got) == 1 and isinstance(key, str) and "w1:p9" in key)
 
-    # The join, which is the whole point.
-    sessions, _ = m.parse_agents(listing(agent("S1", "campaign-1-executor-1")))
-    same = {"7": {"session": "S1", "name": "campaign-1-executor-1", "branch": "b"}}
-    a, o, i = m.classify(same, sessions)
-    c("a claim whose session id is live is answered", len(a) == 1 and not o)
-    # ...and is not also counted as holding nothing. The two lists are a
-    # partition of the live sessions, and a session appearing on both would be
-    # read by a close as one live executor too many.
-    c("a session that answers a claim is not also listed as unattributed", not i)
+def live_cases(m):
+    """`live` end to end: a fixture remote, a fixture herdr listing, real git.
 
-    # The case that separates the two possible keys. The name matches and the
-    # session id does not, which is exactly what a rename leaves behind: joining
-    # on the name calls this answered, and a close then reads a live claim as
-    # attributed to a session that is not the one holding it.
-    renamed = {"7": {"session": "S9", "name": "campaign-1-executor-1", "branch": "b"}}
-    a, o, i = m.classify(renamed, sessions)
-    c("a claim whose name matches but session id does not is unanswered",
-      not a and len(o) == 1)
-    c("...and that live session is then reported as holding no claim", len(i) == 1)
-
-    # The campaign issue argument: pins that it is actually read, not merely declared.
-    mine = {"7": {"session": "S1", "branch": "campaign-1/7-x"}}
-    theirs = {"9": {"session": "S2", "branch": "campaign-2/9-y"}}
-    c("a record naming this campaign's branch is not stray",
-      m.stray_branches(mine, "1") == [])
-    c("a record naming another campaign's branch is stray",
-      len(m.stray_branches(theirs, "1")) == 1)
-    c("a record with no branch cannot vouch for itself and is stray",
-      len(m.stray_branches({"7": {"session": "S1"}}, "1")) == 1)
-    c("campaign issue 1 does not swallow campaign issue 11",
-      len(m.stray_branches({"7": {"branch": "campaign-11/7-x"}}, "1")) == 1)
-
-    # The STOOD DOWN parse, one case per shape.
-    c("a STOOD DOWN first line yields its session id",
-      m.stood_down_sessions(["STOOD DOWN campaign-1-executor-2 S1\nprose"]) == {"S1"})
-    c("a STOOD DOWN with no session id yields nothing",
-      m.stood_down_sessions(["STOOD DOWN S1"]) == set())
-    c("a STOOD DOWN below the first line is prose, not a record",
-      m.stood_down_sessions(["hello\nSTOOD DOWN n S1"]) == set())
-    c("the name may be unknown", m.stood_down_sessions([m.stood_down_line(None, "S1")]) == {"S1"})
-    c("a released record is not an unreleased claim",
-      m.unreleased_claims_of({"7": {"session": "S1", "released": "x"}}, "S1") == [])
-    c("an unreleased record is", m.unreleased_claims_of({"7": {"session": "S1"}}, "S1") == ["7"])
-    c("under_tree compares whole segments", m.under_tree("/a/demo-1/x", "/a/demo") is False
-      and m.under_tree("/a/demo/x", "/a/demo") is True)
-
-    got, why = m.parse_agents("not json")
-    c("unparseable output is a why, not an empty listing", got is None and why)
-    got, why = m.parse_agents(json.dumps({"result": {}}))
-    c("a listing with no agents key is a why, not zero sessions",
-      got is None and why)
-
-    # A reading that did not happen must not come back as a clean tree.
+    Campaign 9999 is used so the fixture branches cannot collide with anything
+    actually checked out on the machine the suite runs on -- the group each row
+    lands in is then a property of the fixture and not of the day."""
     with tempfile.TemporaryDirectory() as d:
-        r = run_live(d, with_herdr(d))
-        out_text = r.stdout + r.stderr
-    c("a missing claims directory refuses",
-      r.returncode == 1 and "says nothing" in out_text)
+        path = shims(d, herdr=listing(
+            agent("s1", "campaign-9999-executor-1", d),
+            agent("s2", "campaign-1-planner-9", d)))
+        r = claim(["live", "9999"], path)
+        out = r.stdout + r.stderr
+        check("live names all three readings before any count",
+              "reading 1" in out and "reading 2" in out and "reading 3" in out)
+        check("...and reads the campaign's refs off the remote",
+              "2 claim(s)" in out)
+        check("a claim nothing has checked out is in the vacant group",
+              "campaign-9999/1-alpha" in out
+              and "claims checked out nowhere on this machine (2)" in out)
+        check("a live session of this campaign is listed",
+              "campaign-9999-executor-1" in out)
+        check("...and a session of another campaign is not",
+              "campaign-1-planner-9" not in out)
+        check("live reaches no verdict", "No verdict" in out and r.returncode == 0)
 
-    with tempfile.TemporaryDirectory() as d:
-        (Path(d) / "runtime" / "claims").mkdir(parents=True)
-        r = run_live(d, with_herdr(d))
-        out_text = r.stdout + r.stderr
-    c("an empty claims directory is read, not refused",
-      r.returncode == 0 and "0 claim(s)" in out_text)
-    c("and it still says all three readings were made",
-      "all three readings were made" in out_text)
+        # A reading that did not happen must deny every count below it.
+        broken = shims(Path(d) / "broken", gh="#!/bin/sh\nexit 1\n",
+                       herdr=listing(agent("s1", "campaign-9999-executor-1", d)))
+        r = claim(["live", "9999"], broken)
+        out = r.stdout + r.stderr
+        check("a failed ref listing denies the counts and exits 1",
+              r.returncode == 1 and "FAILED" in out
+              and "did not happen" in out
+              and "claims checked out nowhere" not in out)
 
-    # The third reading and the gate it feeds, one case per branch. A peer
-    # under the tree with no claim: refused until its STOOD DOWN comment is
-    # on the campaign issue; a live claim is refused whatever it posted; a
-    # released claim attributes nothing. Each row's absence is asserted too,
-    # since a `want` cannot see a row that should not be there.
-    def peer_run(d, claims_body=None, comments=None, cwd=None):
-        claims = Path(d) / "runtime" / "claims"
-        claims.mkdir(parents=True, exist_ok=True)
-        if claims_body is not None:
-            (claims / "7").write_text(claims_body)
-        env = with_herdr(d, [agent("S1", "campaign-1-executor-2",
-                                   cwd=cwd or str(Path(d) / "repos"))],
-                         comments)
-        r = run_live(d, env)
-        return r, r.stdout + r.stderr
+        # herdr absent is the same shape from the other side.
+        no_herdr = shims(Path(d) / "noherdr")
+        r = claim(["live", "9999"], no_herdr)
+        check("herdr that cannot be run is a failed reading, not zero sessions",
+              r.returncode == 1 and "FAILED" in r.stdout + r.stderr)
 
-    with tempfile.TemporaryDirectory() as d:
-        r, out_text = peer_run(d)
-    c("a peer under the tree with no claim and no STOOD DOWN is listed as pending",
-      r.returncode == 0 and "(1)" in out_text.split("neither a claim nor a STOOD DOWN")[1][:5]
-      and "not stood down" in out_text)
-    with tempfile.TemporaryDirectory() as d:
-        r, out_text = peer_run(d, comments=["STOOD DOWN campaign-1-executor-2 S1\nprose"])
-    c("...and with its STOOD DOWN comment it is not",
-      r.returncode == 0 and "(0)" in out_text.split("neither a claim nor a STOOD DOWN")[1][:5]
-      and "not stood down" not in out_text and "1 session(s) stood down" in out_text)
-    with tempfile.TemporaryDirectory() as d:
-        r, out_text = peer_run(d, claims_body="session S1\nbranch campaign-1/7-x\n",
-                               comments=["STOOD DOWN campaign-1-executor-2 S1"])
-    c("a live claim is still answered, whatever was posted",
-      "claims answered by a live session (1)" in out_text)
-    with tempfile.TemporaryDirectory() as d:
-        r, out_text = peer_run(d, claims_body="session S1\nbranch campaign-1/7-x\n"
-                                              "released 2026-09-03T00:00:00+0900 by S1\n",
-                               comments=["STOOD DOWN campaign-1-executor-2 S1"])
-    c("a released claim attributes nothing, so the peer reads as stood down",
-      "claims answered by a live session (0)" in out_text
-      and "(0)" in out_text.split("neither a claim nor a STOOD DOWN")[1][:5])
-    with tempfile.TemporaryDirectory() as d:
-        r, out_text = peer_run(d, cwd="/elsewhere")
-    c("a peer outside the tree is not the close's business",
-      "(0)" in out_text.split("neither a claim nor a STOOD DOWN")[1][:5])
-    with tempfile.TemporaryDirectory() as d:
-        env = with_herdr(d)
-        (Path(d) / "comments.json").write_text("not json")
-        (Path(d) / "runtime" / "claims").mkdir(parents=True)
-        r = run_live(d, env)
-        out_text = r.stdout + r.stderr
-    c("a comments read that failed denies the clean verdict",
-      r.returncode == 1 and "did not parse" in out_text)
 
-    # A run that asserted nothing is not a pass either.
-    # The wire from cmd_live into stray_branches, which the pure cases above
-    # cannot reach: replacing the call with [] left the suite green. Run with
-    # PATH stripped so herdr cannot be found -- the stray report must not
-    # depend on the other reading having worked.
+def take_cases(m):
     with tempfile.TemporaryDirectory() as d:
-        claims = Path(d) / "runtime" / "claims"
-        claims.mkdir(parents=True)
-        (claims / "9").write_text("session S9\nbranch campaign-2/9-y\n")
-        r = run_live(d, {"PATH": "/nonexistent"})
-        out_text = r.stdout + r.stderr
-    c("a record from another campaign is reported by the real run",
-      "campaign-2/9-y" in out_text and "outside campaign-1" in out_text)
-    c("...even when the herdr reading could not be made",
-      "did not happen" in out_text and r.returncode == 1)
+        path = shims(d)
+        r = claim(["take", "9999", "1", "alpha"], path)
+        out = r.stdout + r.stderr
+        check("take on an existing ref exits 3, which is the claim working",
+              r.returncode == 3 and "already claimed" in out)
+        check("...and it says to read who is standing in it",
+              "live 9999" in out)
 
-    # A record that will not decode is a check that did not happen, so it must
-    # deny the clean verdict the way a failed herdr read does.
+        # The binding, read BEFORE the ref is cut.
+        elsewhere = shims(Path(d) / "elsewhere", gh=GH_ELSEWHERE)
+        r = claim(["take", "9999", "1", "alpha"], elsewhere)
+        out = r.stdout + r.stderr
+        check("take refuses when the campaign is bound elsewhere",
+              r.returncode == 1 and "bound elsewhere" in out)
+        check("...and cuts no ref, so the refusal is before the write",
+              "cut from" not in out and "claimed campaign" not in out)
+
+
+def release_cases(m):
     with tempfile.TemporaryDirectory() as d:
-        claims = Path(d) / "runtime" / "claims"
-        claims.mkdir(parents=True)
-        (claims / "7").write_text("session S1\nbranch campaign-1/7-x\n")
-        (claims / "9").write_bytes(b"\xff\xfe not text\n")
-        r = run_live(d)
-        out_text = r.stdout + r.stderr
-    c("an unreadable record denies the clean verdict", r.returncode == 1)
-    c("...and is named as unread rather than as a stray file",
-      "will not decode" in out_text and "1 unread" in out_text)
-    c("...and the run does not claim both readings were made",
-      "both readings were made" not in out_text)
+        repo, trees = a_repo(d, "campaign-9999/1-alpha")
+        # The refusal only a derived attribution can make: the branch is
+        # somebody's workspace right now. The herdr row's cwd is the worktree's
+        # OWNING repository, which is how the sweep reaches a worktree at all.
+        path = shims(d, herdr=listing(
+            agent("s1", "campaign-9999-executor-1", str(repo))))
+        r = claim(["release", "9999", "1"], path)
+        out = r.stdout + r.stderr
+        check("release refuses a branch a workspace is standing in",
+              r.returncode == 1 and "checked out in 1 workspace" in out)
+        check("...and names the path, so the reader knows where to look",
+              trees["campaign-9999/1-alpha"] in out)
 
-    # A non-file entry under claims/ is counted, not silently dropped.
-    with tempfile.TemporaryDirectory() as d:
-        claims = Path(d) / "runtime" / "claims"
-        claims.mkdir(parents=True)
-        (claims / "7").write_text("session S1\nbranch campaign-1/7-x\n")
-        (claims / "9").mkdir()
-        recs, odd = m.claim_records(claims)
-        c("a directory under claims/ is named, not dropped",
-          len(recs) == 1 and len(odd) == 1 and odd[0].startswith("9 "))
+        # herdr unreadable: an unread occupant is not an absent one.
+        no_herdr = shims(Path(d) / "noherdr")
+        r = claim(["release", "9999", "1"], no_herdr)
+        check("release refuses when the occupancy reading did not happen",
+              r.returncode == 1 and "herdr" in (r.stdout + r.stderr))
 
-    # `status` and `live` read one record with one parser, so they cannot
-    # disagree about what it says.
-    body = "session S1\nname n1\npid 4\nbranch campaign-1/7-x\n"
-    with tempfile.TemporaryDirectory() as d:
-        claims = Path(d) / "runtime" / "claims"
-        claims.mkdir(parents=True)
-        (claims / "7").write_text(body)
-        recs, _ = m.claim_records(claims)
-        c("one record parser feeds both readings",
-          recs["7"] == m.read_record(claims / "7") == m.fields_of(body))
-
-    # --- the `alive` subcommand, whose printed word is the whole contract.
-    def alive_cli(pid):
-        r = subprocess.run([sys.executable, str(CLAIM), "alive", str(pid)],
-                           capture_output=True, text=True)
-        return r.returncode, r.stdout.strip(), r.stderr
-    code, word, _ = alive_cli(DEAD)
-    c("`alive` prints `dead` for a pid held by nobody, and exits 0",
-      code == 0 and word == "dead")
-    code, word, _ = alive_cli(1)
-    c("`alive` prints `other` for a pid this install cannot name",
-      code == 0 and word == "other")
-    # The status is about the reading, never the verdict: a failed read that
-    # exited like `dead` deletes a tree under a live session.
-    code, word, err = alive_cli("abc")
-    c("`alive` refuses an unreadable pid on exit 2, printing no verdict",
-      code == 2 and word == "" and "not a pid" in err)
-    return ran, out
+        # A sub-issue with no ref of its own is a refusal, never a silent pass.
+        r = claim(["release", "9999", "7"], path)
+        check("release refuses a sub-issue no ref names",
+              r.returncode == 1 and "no ref under campaign-9999/" in r.stderr)
 
 
 def main():
-    failed = 0
-    import importlib.machinery, importlib.util
+    import importlib.machinery
+    import importlib.util
     spec = importlib.util.spec_from_loader(
         "campaign_claim",
         importlib.machinery.SourceFileLoader("campaign_claim", str(CLAIM)))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
-    pure_ran, pure_failed = pure_cases(m)
-    live_ran, live_failed = live(m)
-    pure_ran += live_ran
-    pure_failed += live_failed
-    for name in pure_failed:
+
+    for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases):
+        fn(m)
+    for name in FAILED:
         print(f"FAIL  {name}")
-    failed += len(pure_failed)
-    for name, args, files, mtime, env, want, code, stub_ps, absent, stub_gh in CASES:
-        if name.startswith("a missing claims directory"):
-            with tempfile.TemporaryDirectory() as d:
-                r = subprocess.run([sys.executable, str(CLAIM), "list", "--dir", d],
-                                   capture_output=True, text=True)
-            ok = r.returncode != 0 and "does not exist" in r.stdout + r.stderr
-            if not ok:
-                failed += 1
-                print(f"FAIL  {name}\n      got exit {r.returncode}: "
-                      f"{(r.stdout + r.stderr).strip()[:160]}")
-            continue
-        r = run(args, files, mtime, env, stub_ps, stub_gh)
-        out = r.stdout + r.stderr
-        ok = ((want is None or want in out) and (code is None or r.returncode == code)
-              and (absent is None or absent not in out))
-        if not ok:
-            failed += 1
-            print(f"FAIL  {name}\n      wanted {want!r} and exit {code}, got "
-                  f"exit {r.returncode}:\n      {out.strip()[:200]}")
-    total = len(CASES) + len(pure_ran)
-    print(f"{total - failed}/{total} cases pass")
-    return 1 if failed else 0
+    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
+    return 1 if FAILED else 0
 
 
 if __name__ == "__main__":
