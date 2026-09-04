@@ -353,6 +353,42 @@ pred R4j_GuardAdmitsClaimedWork {
 
 /* ============== permission by role, one witness per table cell ============== */
 
+/* Q10. A planner cuts a claim for a delegate on a sub-issue of ANOTHER campaign
+   bound to the same machine. SAT: the relaxation in `sessionClaim`.
+
+   `c != s.worksOn` sits INSIDE the `eventually` in all three: `worksOn` is var,
+   so a session that differs from `c` at time zero can adopt `c` before it
+   claims, and the three would measure nothing. */
+pred Q10_PlannerClaimsOnAnotherBoundCampaign {
+  permissionByRole
+  some s: Session, c: Campaign |
+    s.role = Planner
+    and eventually (Now.event = Claim and Who.session = s
+                    and c != s.worksOn and Now.issue in c.memberIssues)
+}
+
+/* Q10b. The same claim by an executor. UNSAT, and TWO rules refuse it --
+   `sessionClaim`'s pin and `mayAct`'s campaign-plane row. Q10c separates
+   them. */
+pred Q10b_ExecutorClaimsOnAnotherBoundCampaign {
+  permissionByRole
+  some s: Session, c: Campaign |
+    s.role = Executor
+    and eventually (Now.event = Claim and Who.session = s
+                    and c != s.worksOn and Now.issue in c.memberIssues)
+}
+
+/* Q10c. Q10b with the discipline dropped, and still UNSAT: `sessionClaim`
+   alone holds the executor to its own campaign, so the relaxation was made for
+   planners only and nothing else moved. */
+pred Q10c_ExecutorClaimsOnAnotherBoundCampaignUnguarded {
+  some s: Session, c: Campaign |
+    s.role = Executor
+    and eventually (Now.event = Claim and Who.session = s
+                    and c != s.worksOn and Now.issue in c.memberIssues)
+}
+
+
 /* Q1. THE CASE THAT PROMPTED #185: a planner of campaign #1 closes an issue no
    campaign of its own covers -- #116 and #160, closed by hand outside the
    harness on 2026-09-04 because the claim rule had no passing form for them. */
@@ -839,6 +875,11 @@ run Q8b_PlannerWritesCampaignBody         for 3 Issue, 1 PullRequest, 1 Campaign
 -- opening a campaign is planner work
 run Q9_ExecutorFilesCampaignIssue         for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run Q9c_ExecutorFilesCampaignIssueUnguarded for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- a claim is a campaign-plane write: a planner may cut one on any campaign
+-- bound HERE, an executor only on its own, and Q10c says which rule refuses
+run Q10_PlannerClaimsOnAnotherBoundCampaign  for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+run Q10b_ExecutorClaimsOnAnotherBoundCampaign for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run Q10c_ExecutorClaimsOnAnotherBoundCampaignUnguarded for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 
 -- the gap TwoStepShutdownSuffices rests on
 run R5b_PushedButStillLocalOnly         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1

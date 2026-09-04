@@ -244,11 +244,22 @@ pred sessionAcquire[s: Session] {
 }
 
 /* Which session created it is what `claimedIssues` records; that the ref exists at
-   all is github/system.als's `Claimed`. */
+   all is github/system.als's `Claimed`.
+
+   A CLAIM IS A CAMPAIGN-PLANE WRITE, so #185's rule reaches it: a planner writes
+   the campaign plane of any campaign, and the claim it cuts for a delegate may
+   name a sub-issue of any campaign BOUND TO ITS OWN MACHINE -- the delegate then
+   works that campaign under that campaign's name. An executor's claim stays
+   pinned to the campaign it works on, and so does a session with no role, since
+   `s.role != Planner` holds of an empty role. Q10/Q10b/Q10c are the witnesses.
+   The binding conjunct is not decoration: it is the one campaign, one machine
+   rule, and without it this would let a session claim into a campaign running
+   somewhere else. */
 pred sessionClaim[s: Session] {
   Now.event = Claim
   some s.worksOn
-  Now.issue in s.worksOn.memberIssues
+  s.role = Planner  implies s.machine in machinesHolding[campaignOf[Now.issue]]
+  s.role != Planner implies Now.issue in s.worksOn.memberIssues
   claimedIssues' = claimedIssues + s->Now.issue
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
