@@ -11,9 +11,9 @@ ref exists on the remote, and nothing on disk (#176).
 WHAT IS READ. Two bounded languages. A FILE TOOL names its target. A `gh`
 call is one program with a stable grammar: each segment (shlex; ``;|&(){}` ``
 split it, and so do the strings another command runs -- a shell's `-c`, alone
-or last in a cluster like `-lc`, `eval`'s operands, and -- when a shell that
-runs what it is HANDED is present, as in `bash <<< '...'` or `... | bash` --
-every multi-word token) whose command word is
+or last in a cluster like `-lc`, and `eval`'s operands -- but NOT a string a
+shell is handed, `bash <<< '...'` and `... | bash`, which stay unread with
+every other shell string) whose command word is
 `gh` -- after `env`, `VAR=x`, `time`, a path -- is looked up in WRITES, and a
 segment that will not split refuses. A `gh` TOKEN this cannot read as the call
 (`xargs`, a heredoc, or an assignment whose value is `gh`) is read as a write
@@ -183,11 +183,23 @@ def session_root(cwd: Path):
     """(root, how). The session's repository root, or the base above a cwd
     inside a campaign directory, or None."""
     main, _top, _note = checkout_of(cwd)
-    if main is not None:
+    # A REPOSITORY INSIDE A BASE IS STILL THAT BASE'S. Preferring the common dir
+    # unconditionally resolved a cwd in `<base>/<campaign>/repos/<member>/` to
+    # the member repository, which carries no marker -- so the ordinary delegate
+    # shape read as "in no campaign" and every campaign-plane write there was
+    # allowed unread, while `file_call` refused the same target. This is
+    # `classify`'s fallback, mirrored, which is what makes the two halves ask
+    # one question rather than two that agree on the suite's cases.
+    if main is not None and (main / BASE_MARKER).is_file():
         return main, f"cwd {cwd} -> git common dir -> {main}"
     base = base_above(cwd)
-    return base, (f"cwd {cwd} is under the base {base} outside any checkout" if base
-                  else f"cwd {cwd} is under no repository and no base")
+    if base is not None:
+        return base, (f"cwd {cwd} is inside {main}, which is no base; the base "
+                      f"above it is {base}" if main is not None
+                      else f"cwd {cwd} is under the base {base} outside any checkout")
+    if main is not None:
+        return main, f"cwd {cwd} -> git common dir -> {main}"
+    return None, f"cwd {cwd} is under no repository and no base"
 
 
 def held(repo_root, issue=None):
@@ -208,16 +220,6 @@ def held(repo_root, issue=None):
     if not claims:
         detail.append(f"no checkout under {repo_root} is on a campaign branch")
     return out, detail
-
-
-def reads_stdin(seg):
-    """A shell in this segment that runs whatever it is HANDED rather than an
-    operand: `bash` alone at the end of a pipe, `bash <<< '...'`. Not a shell
-    given a script file -- that file is not read, and the docstring says so."""
-    word, rest = head(seg)
-    if word not in SHELLS:
-        return False
-    return not any(is_dash_c(t) for t in rest[:-1])
 
 
 def segments(command, depth=0):
@@ -254,21 +256,19 @@ def segments(command, depth=0):
             if more is None:
                 return None, why
             out += more
-    # A shell that runs what it is HANDED reaches the same place by another
-    # road: `bash <<< '...'` and `... | bash` put the command in a quoted
-    # operand of some segment, where the `gh` token is one word of a token and
-    # no branch sees it. Both are the family the docstring already names, so
-    # leaving them out is what makes that sentence false. When such a shell is
-    # present, every multi-word token in the command is a candidate command
-    # string. `depth` bounds it; each re-read is strictly shorter.
-    if depth < 4 and any(reads_stdin(seg) for seg in out):
-        for seg in list(out):
-            for t in seg:
-                if " " in t.strip():
-                    more, why = segments(t, depth + 1)
-                    if more is None:
-                        return None, why
-                    out += more
+    # WHAT IS DELIBERATELY NOT READ, and why the line is here. A shell that
+    # runs what it is HANDED -- `bash <<< '...'`, `... | bash` -- puts the
+    # command in a quoted operand, where the `gh` is one word of one token.
+    # Re-reading every multi-word token when such a shell is present closed
+    # those two and cost more than they were worth: it refused
+    # `gh issue create --body "...gh issue close 9..."` (the create exemption
+    # defeated by its own body) and `git commit -m "fix gh issue close parsing"
+    # && bash deploy.sh`, machine-wide, on a guard every session runs; and a
+    # decoy `-b "gh issue close 7"` re-read into a SECOND issue number let a
+    # claim on #7 admit a real write to #9. Both were found by review, and
+    # both are the shape this design already declines: one more alternation
+    # buys one more form and a new bypass. An operand handed to a shell is a
+    # shell string, and a shell string is not read.
     return out, None
 
 
@@ -422,17 +422,38 @@ def bash_call(command, cwd: Path):
     if root is None or not (root / BASE_MARKER).is_file():
         why = how if root is None else f"{how}, which is a repository and not a base"
         return allow([f"{what}: {why}, so this session is in no campaign."])
-    issues = {issue_target(x) for x in writes} - {None}
-    issue = issues.pop() if len(issues) == 1 and not stray else None
-    holders, detail = held(root, issue)
-    if holders:
+    # EVERY issue named must be covered, not one of them. Collapsing two to
+    # `None` and asking for any claim at all is a WIDENING: it let a claim on
+    # #7 admit `gh issue close 9; gh issue close 7`, and a decoy naming a
+    # claimed issue was the shape a review turned into a bypass. A write whose
+    # issue this could not read still falls back to the unnarrowed question,
+    # which is the weaker gate and is printed as such.
+    issues = sorted({issue_target(x) for x in writes} - {None})
+    unreadable = stray or any(issue_target(x) is None for x in writes)
+    detail, uncovered, covering = [], [], []
+    for i in issues:
+        holders, d = held(root, i)
+        detail += d
+        (covering if holders else uncovered).append((i, holders))
+    if uncovered:
+        i = uncovered[0][0]
+        return refuse([f"{what}: a campaign-plane write, and this session holds "
+                       f"no claim covering a write to #{i}.", how, *detail, TAKE])
+    if unreadable:
+        holders, d = held(root)
+        if not holders:
+            return refuse([f"{what}: a campaign-plane write, and this session "
+                           f"holds no claim covering it.", how, *detail, *d, TAKE])
         path, branch, source = holders[0]
         return allow([f"{what}: {how}; {path} is on {branch}, a claim "
-                      f"({source})."
-                      + (f" It covers #{issue}." if issue else "")])
-    subject = f"a write to #{issue}" if issue else "it"
-    return refuse([f"{what}: a campaign-plane write, and this session holds "
-                   f"no claim covering {subject}.", how, *detail, TAKE])
+                      f"({source})."])
+    if not covering:
+        return refuse([f"{what}: a campaign-plane write, and this session holds "
+                       f"no claim covering it.", how, *detail, TAKE])
+    path, branch, source = covering[0][1][0]
+    named = ", ".join(f"#{i}" for i, _ in covering)
+    return allow([f"{what}: {how}; {path} is on {branch}, a claim "
+                  f"({source}). It covers {named}."])
 
 
 def pre(payload):

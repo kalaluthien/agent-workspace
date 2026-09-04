@@ -110,7 +110,8 @@ pred claimAtomic       { always (Now.event = Claim  implies Now.issue not in Cla
    READS AS A CALL and cannot parse is refused, never guessed. The narrower
    verb is deliberate and was bought twice: a `gh` write can always be hidden
    from a bounded reader by a shell that is not read -- a here-string, a pipe
-   into a shell, an interpreter's `-c`, a script file -- so a sentence
+   into a shell, an interpreter's `-c`, a script file, all of them unread and
+   listed here so the boundary has one statement -- so a sentence
    promising that no `gh` write escapes is a sentence the code cannot make
    true, and it produced a CONTRADICTS on every audit that checked it. What
    the guard does promise: a `gh` TOKEN it can see and cannot resolve to a

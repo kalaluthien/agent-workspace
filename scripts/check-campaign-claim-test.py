@@ -393,18 +393,26 @@ def main():
                 command="gh api repos/o/r/issues/1 --method=GET")
         check("...and an attached GET is still a read", r.returncode == 0
               and "gh api GET" in r.stdout, out(r)[:300])
-        # A shell that runs what it is HANDED: the command string is one
-        # multi-word token of some segment, so no branch saw the `gh` in it.
+        # A STRING HANDED TO A SHELL IS NOT READ, and these say so rather than
+        # leaving it to the absence of a case. Reading them cost two blocking
+        # findings -- a machine-wide over-refusal and a decoy that widened the
+        # claim check -- so the boundary is here and is asserted here.
         for cmd in ('bash <<< "gh issue close 5"',
-                    "echo 'gh issue close 5' | bash"):
+                    "echo 'gh issue close 5' | bash",
+                    "echo hi | bash", "ls -la | wc -l"):
             r = ask(f.base, tool="Bash", command=cmd)
-            check(f"`{cmd}`: a shell fed a string still has its gh write read",
-                  r.returncode == 2 and "a write to #5" in r.stderr, out(r)[:300])
-        for cmd in ("echo hi | bash", "ls -la | wc -l", "cat notes.txt | bash"):
-            r = ask(f.base, tool="Bash", command=cmd)
-            check(f"`{cmd}` is still allowed unread: re-reading a handed string "
-                  f"finds no gh and invents none",
+            check(f"`{cmd}` is allowed unread: a string a shell is handed is a "
+                  f"shell string",
                   r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        # The over-refusals that reading them produced, each an ordinary
+        # command on a guard every session runs.
+        for cmd in ('gh issue create --title t --body "then gh issue close 9"'
+                    ' && bash run.sh',
+                    'git commit -m "fix gh issue close parsing" && bash deploy.sh',
+                    'echo "see gh docs" | bash'):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd[:44]}...` is allowed: a quoted string is data",
+                  r.returncode == 0, out(r)[:300])
         for sh in ("ksh", "fish"):
             r = ask(f.base, tool="Bash", command=f"{sh} -c 'gh issue close 5'")
             check(f"{sh} runs a -c string like every other shell that does",
@@ -419,6 +427,23 @@ def main():
               and "cannot read as a call" not in r.stderr, out(r)[:300])
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, claims=("campaign-1/7-x",))
+        # THE ORDINARY DELEGATE SHAPE. A member repository under a campaign
+        # directory is a git repository with no marker, so resolving a cwd to
+        # its own common dir read it as "in no campaign" and allowed every
+        # campaign-plane write there, while file_call refused the same target.
+        # Both halves are asserted, because the bug was that they disagreed.
+        member = f.camp / "repos" / "member"
+        member.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(member)], check=True)
+        r = ask(member, tool="Bash", command="gh issue close 9")
+        check("a gh write from inside a member clone is judged by the base "
+              "above it, not by the clone",
+              r.returncode == 2 and "no claim covering a write to #9" in r.stderr,
+              out(r)[:400])
+        r = ask(member, path=str(member / "a.txt"))
+        check("...and the file half resolves the same target to the same "
+              "campaign, which is what the two halves must agree on",
+              str(f.camp) in out(r), out(r)[:400])
         r = ask(f.base, tool="Bash", command="gh issue close 7 -R a/b")
         check("closing the sub-issue a held claim names is allowed",
               r.returncode == 0 and "covers #7" in r.stdout, out(r)[:300])
@@ -432,6 +457,17 @@ def main():
         r = ask(f.base, tool="Bash", command="gh issue comment 7 --body x")
         check("...and one naming the held claim's issue is allowed",
               r.returncode == 0 and "covers #7" in r.stdout, out(r)[:300])
+        # EVERY ISSUE NAMED MUST BE COVERED. Collapsing two to "any claim at
+        # all" let a claim on #7 admit a write to #9 standing beside it -- and
+        # a decoy naming #7 was the shape a review turned into a bypass.
+        r = ask(f.base, tool="Bash",
+                command="gh issue close 9; gh issue close 7")
+        check("a claim on one issue does not admit a write to another beside it",
+              r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:400])
+        r = ask(f.base, tool="Bash",
+                command="gh issue close 7; gh issue comment 7 --body x")
+        check("...and two writes to the SAME claimed issue are allowed",
+              r.returncode == 0 and "It covers #7" in r.stdout, out(r)[:400])
         r = ask(f.base, tool="Bash", command="gh pr comment 5 --body hi")
         check("a gh write that names no issue is covered by any held claim",
               r.returncode == 0 and "campaign-1/7-x, a claim" in r.stdout,
