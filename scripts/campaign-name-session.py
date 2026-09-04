@@ -33,6 +33,17 @@ per-session permission decision rather than a property of the tool, and it is
 not stable: the same call can be refused and then accepted minutes apart. So
 this reports what was applied and what was not rather than assuming either,
 and the caller's own rename is the one most likely to need a person.
+
+A prompt sent to a pane that is not idle is QUEUED, and the harness merges every
+prompt queued before the turn ends into one input line: three `/rename` prompts
+sent to one working pane landed as the single name
+`campaign-1-executor-3/rename campaign-1-planner-1/rename campaign-1-executor-3`
+(2026-09-04, #169). A session naming itself is always mid-turn, so refusing a
+working pane would refuse the ordinary case. Instead this sends at most one
+prompt per pane per call -- a pane named twice is refused before anything is
+applied -- reads the pane's `agent_status` from `herdr agent list` before
+sending, and says `queued` for a pane that is not idle so the caller knows not
+to send it anything else until `ListAgents` shows the name.
 """
 import json
 import re
@@ -67,6 +78,19 @@ def herdr(*args):
         return {}, None
 
 
+def pane_status(pane):
+    """(agent_status, None) from `herdr agent list`, or (None, why) when the
+    list could not be read or does not hold the pane."""
+    res, err = herdr("agent", "list")
+    if err:
+        return None, f"herdr agent list failed: {err}"
+    agents = ((res or {}).get("result") or {}).get("agents") or []
+    for agent in agents:
+        if agent.get("pane_id") == pane:
+            return agent.get("agent_status") or "unknown", None
+    return None, f"{pane} is not in herdr agent list"
+
+
 def main():
     args = sys.argv[1:]
     if not args or len(args) % 2:
@@ -80,6 +104,14 @@ def main():
         if not NAME.match(name):
             refuse(f"{name!r} is not campaign-<campaign issue>-<role>-<n> "
                    "(role: planner or executor); nothing was applied")
+    # One prompt per pane per call: two queued at a working pane merge into
+    # one name, and only the last name asked for could have been meant.
+    panes = [pane for pane, _ in pairs]
+    for pane in panes:
+        if panes.count(pane) > 1:
+            refuse(f"{pane} is named more than once; two /rename prompts "
+                   "queued at one pane merge into a single name. Name it "
+                   "once; nothing was applied")
 
     failed = False
     for pane, name in pairs:
@@ -91,15 +123,29 @@ def main():
         got = (res.get("result", {}).get("agent", {}) or {}).get("name")
         print(f"  {pane}  herdr name  {got or name}")
 
+        # Read the status before sending, so the report describes the pane the
+        # prompt met. The status decides the wording only: the rename is sent
+        # either way, because a session naming itself is always working.
+        status, why = pane_status(pane)
         res, err = herdr("agent", "prompt", pane, f"/rename {name}")
         if err:
             print(f"  {pane}  harness     FAILED: {err}")
             failed = True
             continue
-        # The prompt is queued, not applied: the session runs /rename on its
-        # next turn. Report it as sent rather than as done, because the only
-        # honest confirmation is ListAgents afterwards.
-        print(f"  {pane}  harness     /rename sent (confirm with ListAgents)")
+        # The prompt is never applied here: the session runs /rename on its
+        # next turn. Report it as sent or queued rather than as done, because
+        # the only honest confirmation is ListAgents afterwards.
+        if status == "idle":
+            print(f"  {pane}  harness     /rename sent (confirm with ListAgents)")
+        elif status is None:
+            print(f"  {pane}  harness     /rename sent; the pane's status could "
+                  f"not be read ({why}), so whether it queued is unknown "
+                  f"(confirm with ListAgents)")
+        else:
+            print(f"  {pane}  harness     /rename queued: the pane is {status}, "
+                  f"so it applies when this turn ends, and any other prompt "
+                  f"queued before then merges into the name (confirm with "
+                  f"ListAgents)")
 
     return 2 if failed else 0
 
