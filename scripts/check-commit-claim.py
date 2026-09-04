@@ -2,7 +2,9 @@
 """Refuse a commit on campaign work whose branch is not a claim.
 
     check-commit-claim.py [--staged]    pre-commit, run by the hook
-                                        scripts/install-hooks.sh writes
+                                        scripts/install-hooks.sh writes; the
+                                        flag is accepted and ignored, since
+                                        a branch is not a staged thing
 
 The commit half of the claim gate; scripts/check-campaign-claim.py is the
 pre-tool-use half and holds the reading both share. The model is

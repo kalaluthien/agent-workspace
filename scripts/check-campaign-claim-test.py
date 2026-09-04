@@ -27,6 +27,7 @@ Usage: scripts/check-campaign-claim-test.py
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -199,7 +200,7 @@ def main():
               out(r)[:300])
         r = ask(f.base, tool="Bash", command="gh issue close 9")
         check("a gh write with no claim is refused",
-              r.returncode == 2 and "holds no claim for closing #9" in r.stderr,
+              r.returncode == 2 and "no claim covering a write to #9" in r.stderr,
               out(r)[:300])
 
     # 3. The ref is the claim, and a ref that cannot be read is not an absence.
@@ -234,7 +235,7 @@ def main():
               r.returncode == 2, out(r)[:300])
         r = ask(wt1, tool="Bash", command="gh issue close 999")
         check("#180 row 11: gh issue close from there with no claim is refused",
-              r.returncode == 2 and "closing #999" in r.stderr, out(r)[:300])
+              r.returncode == 2 and "a write to #999" in r.stderr, out(r)[:300])
         r = ask(wt1, tool="Bash", command=f"rm -rf {f.camp}")
         check("#180 row 10: a shell delete of the campaign directory is allowed "
               "UNREAD -- the named cost -- and says the commit gate is the reader",
@@ -316,17 +317,37 @@ def main():
               and "No closing quotation" in r.stderr, out(r)[:200])
         r = ask(f.base, tool="Bash", command="echo ok && gh issue close 5")
         check("a gh write in a later segment is read",
-              r.returncode == 2 and "closing #5" in r.stderr, out(r)[:200])
+              r.returncode == 2 and "a write to #5" in r.stderr, out(r)[:200])
         r = ask(f.base, tool="Bash", command="gh -R o/r issue close 5")
         check("a valued flag before the subcommand does not hide it",
-              r.returncode == 2 and "closing #5" in r.stderr, out(r)[:200])
+              r.returncode == 2 and "a write to #5" in r.stderr, out(r)[:200])
         r = ask(f.base, tool="Bash",
                 command="gh issue close https://github.com/o/r/issues/12 -R o/r")
         check("the closed issue is read from a URL too",
-              r.returncode == 2 and "closing #12" in r.stderr, out(r)[:200])
-        r = ask(f.base, tool="Bash", command="echo gh issue close 5")
-        check("gh that is not a segment's first word is not a gh call; unread",
-              r.returncode == 0 and UNREAD in r.stdout, out(r)[:200])
+              r.returncode == 2 and "a write to #12" in r.stderr, out(r)[:200])
+        # Position must not hide the call: every executing form the old
+        # SERVICE_DOORS regex caught, the table catches too.
+        for cmd in ("(gh issue close 5)",
+                    "{ gh issue close 5; }", "/opt/homebrew/bin/gh issue close 5",
+                    "env gh issue close 5", "GH_TOKEN=x gh issue close 5",
+                    "command gh issue close 5", "time gh issue close 5",
+                    "for i in 1; do gh issue close 5; done",
+                    "if true; then gh issue close 5; fi",
+                    "bash -c 'gh issue close 5'"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd!r}` is read as the gh write it is",
+                  r.returncode == 2 and "a write to #5" in r.stderr,
+                  f"exit {r.returncode}: {out(r)[:200]}")
+        for cmd in ("xargs gh issue close", "echo gh issue close 5",
+                    "echo hi\ngh issue close 5", "cat <<EOF\nsee gh\nEOF"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd!r}`: a gh token this cannot read as the call is a "
+                  f"write of unknown kind, refused without a claim",
+                  r.returncode == 2 and "cannot read as a call" in r.stderr
+                  and GATE not in r.stdout, f"exit {r.returncode}: {out(r)[:200]}")
+        r = ask(f.base, tool="Bash", command="gh api -X GET search/issues -f q=x")
+        check("gh api with an explicit GET is a read, fields or not",
+              r.returncode == 0 and "gh api GET" in r.stdout, out(r)[:200])
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, claims=("campaign-1/7-x",))
         r = ask(f.base, tool="Bash", command="gh issue close 7 -R a/b")
@@ -334,12 +355,24 @@ def main():
               r.returncode == 0 and "covers #7" in r.stdout, out(r)[:300])
         r = ask(f.base, tool="Bash", command="gh issue close 9 -R a/b")
         check("closing another sub-issue is refused, naming the issue",
-              r.returncode == 2 and "closing #9" in r.stderr
+              r.returncode == 2 and "a write to #9" in r.stderr
               and "not a claim on #9" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue edit 9 --body x")
+        check("every gh issue write naming a number is narrowed to it, not only close",
+              r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue comment 7 --body x")
+        check("...and one naming the held claim's issue is allowed",
+              r.returncode == 0 and "covers #7" in r.stdout, out(r)[:300])
         r = ask(f.base, tool="Bash", command="gh pr comment 5 --body hi")
         check("a gh write that names no issue is covered by any held claim",
               r.returncode == 0 and "campaign-1/7-x, a claim" in r.stdout,
               out(r)[:300])
+        # A worktree directory that is gone is a claim git itself calls
+        # prunable, and clause 2 must not stand on it.
+        shutil.rmtree(f.trees["campaign-1/7-x"])
+        r = ask(f.base, path=str(f.base / "AGENTS.md"))
+        check("a prunable worktree does not hold clause 2 open",
+              r.returncode == 2 and "no checkout under" in r.stderr, out(r)[:300])
 
     # 7. F1/F2/F3: the probes the verb parser missed. Allowed, and the allow
     # says the command was not read and what covers it. That sentence is the

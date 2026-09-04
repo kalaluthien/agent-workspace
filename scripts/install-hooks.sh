@@ -272,6 +272,9 @@ for event in SWEEP:
               + (f" (replaced {dropped} earlier entry/entries)" if dropped else ""))
     elif dropped:
         print(f"removed: {path} {event} -> {name} ({dropped} retired entry/entries)")
+    elif not entries:
+        del hooks[event]                # nothing to say about this event
+        continue
     hooks[event] = kept
 
 with open(path, "w") as handle:

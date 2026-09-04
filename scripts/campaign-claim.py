@@ -122,9 +122,7 @@ caller's pid would be a lie that `status` reads as the delegate's liveness.
 `--confirmed-absent` exists because a THIRD party cannot tell a dead session
 from a restarted one. The holder itself has no such problem: a caller whose
 session id equals the record's `session` is the claimant, and its release needs
-no absence established by anyone. `--session` is that proof, and it is also how
-scripts/check-campaign-claim.py releases a claim on the holder's behalf, since a
-hook is handed the `session_id` and has no environment to read it from.
+no absence established by anyone. `--session` is that proof.
 
 The campaign directory comes from --dir or $CAMPAIGN. There is no default and no
 search: guessing which directory is this campaign's is how a record lands in
