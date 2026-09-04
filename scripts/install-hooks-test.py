@@ -374,6 +374,15 @@ def main():
               out.returncode != 0 and "without the no-main-commits guard"
               in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+        # An installer that fails: the status it gave is what is reported.
+        # `$?` read inside an `if !` branch is 0, which is the false answer in
+        # the direction that reads as success.
+        bad.write_text("#!/bin/sh\necho unhappy >&2\nexit 7\n")
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        check("an installer that fails is reported with the status it gave",
+              out.returncode != 0 and "exited 7" in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
         bad.chmod(0o644)
         bad.write_text("#!/bin/sh\nexit 0\n")
         out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,

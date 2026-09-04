@@ -155,7 +155,7 @@ checkout_branch() {
 install_commit_guard() {
 	local dest=$1
 	local guard="$HOME/.claude/git-hooks/no-main-commits"
-	local hooks hook dest_abs installer
+	local hooks hook dest_abs installer rc
 
 	if [ ! -x "$guard" ]; then
 		log "no executable guard at $guard, so $dest would be left unguarded."
@@ -181,9 +181,12 @@ install_commit_guard() {
 	fi
 	if [ -x "$installer" ]; then
 		log "running the repository's own installer: $installer --git-only"
-		if ! (cd "$dest" && "$installer" --git-only); then
-			die "the repository's install-hooks.sh exited $? -- read what it said above"
-		fi
+		# Captured, not read from `$?` inside the branch: there it is the
+		# status of the negated condition, which is 0 exactly when the branch
+		# is taken.
+		if (cd "$dest" && "$installer" --git-only); then rc=0; else rc=$?; fi
+		[ "$rc" = 0 ] ||
+			die "the repository's install-hooks.sh exited $rc -- read what it said above"
 		# The invariant is verified, not trusted: the installer belongs to the
 		# repository, and its hook has to chain the guard for success here to
 		# mean the same thing it means on the shim path.
