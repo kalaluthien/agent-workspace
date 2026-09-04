@@ -15,6 +15,8 @@ changes it. Nothing here reaches the network.
 
 Usage: scripts/campaign-claim-test.py
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -869,7 +871,8 @@ def scope_cases(m):
     seen = {}
     try:
         m.own_campaign_dir = lambda start=None: Path("/the-scope-260905")
-        m.scope_for = lambda ci: (Path("/the-scope-260905"), "scoped")
+        m.scope_for = lambda ci: (Path("/the-scope-260905"),
+                                  "SCOPE-NOTE-FOR-THE-READER")
         m.base_root = lambda: ("/b", None)
         m.matching_refs = lambda repo, ci: ([], None)
         m.herdr_sessions = lambda: ({}, None)
@@ -883,7 +886,17 @@ def scope_cases(m):
 
         class Args:
             campaign_issue, repo = "9999", "o/r"
-        m.cmd_live(Args())
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            m.cmd_live(Args())
+        # THE NOTE IS PRINTED, not merely returned. `scope_for` says whether the
+        # sweep was scoped or fell back to every campaign directory here, and a
+        # wrong-scope reading that says nothing is exactly the silent failure
+        # the fallback exists to avoid. Deleting `print(scope_note)` reddened no
+        # case before this one.
+        check("cmd_live prints which sweep it made",
+              "SCOPE-NOTE-FOR-THE-READER" in buf.getvalue(),
+              buf.getvalue()[:200])
         check("cmd_live scopes its sweep to this campaign's directory",
               seen.get("sweep_roots") == Path("/the-scope-260905"),
               f"got {seen.get('sweep_roots')!r}")
@@ -902,7 +915,12 @@ def scope_cases(m):
             class RArgs:
                 campaign_issue, issue, repo = "9999", "7", None
                 branch, confirmed_absent = None, None
-            m.cmd_release(RArgs())
+            rbuf = io.StringIO()
+            with contextlib.redirect_stdout(rbuf):
+                m.cmd_release(RArgs())
+            check("cmd_release prints which sweep it made",
+                  "SCOPE-NOTE-FOR-THE-READER" in rbuf.getvalue(),
+                  rbuf.getvalue()[:200])
         finally:
             m.issue_repo, m.all_refs = real_ir, real_ar
         check("cmd_release scopes its repository reading the same way",
