@@ -110,14 +110,18 @@ pred claimAtomic       { always (Now.event = Claim  implies Now.issue not in Cla
    READS AS A CALL and cannot parse is refused, never guessed. The narrower
    verb is deliberate and was bought twice: a `gh` write can always be hidden
    from a bounded reader by a shell that is not read -- a here-string, a pipe
-   into a shell, an interpreter's `-c`, a script file, all of them unread and
-   listed here so the boundary has one statement -- so a sentence
-   promising that no `gh` write escapes is a sentence the code cannot make
+   into a shell, a script file, an interpreter that is not a shell -- so a
+   sentence promising that no `gh` write escapes is one the code cannot make
    true, and it produced a CONTRADICTS on every audit that checked it. What
    the guard does promise: a `gh` TOKEN it can see and cannot resolve to a
-   call is refused rather than guessed at. A shell command is NOT read for a
-   target: an arbitrary shell string is an unbounded language, and every
-   reader of it was one more alternation for the next bypass. Such a call is
+   call is refused rather than guessed at. A SHELL's `-c` is on the other side
+   of that line and IS read, spelled alone or last in a cluster; it is named
+   here because the list above once said otherwise and the guard's own
+   docstring said the opposite in the same commit.
+
+   A shell command is NOT read for a target: an arbitrary shell string is an
+   unbounded language, and every reader of it was one more alternation for the
+   next bypass. Such a call is
    allowed at the moment it is made, printing that it was unread, and its
    write is `Work` at the moment it LANDS -- `claimBeforeCommit` below, the
    pre-commit gate. R4k states the gap that leaves open until the commit. No

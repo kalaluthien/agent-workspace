@@ -102,6 +102,32 @@ class Fixture:
             git(dest, "switch", "-q", "--track", f"origin/{branch}")
         return dest.resolve()
 
+    def member(self, branch=None):
+        """A MEMBER repository's clone under the campaign directory: its own
+        remote, and no marker of its own. That last part is what makes it a
+        different case from `clone()` above -- a clone of the base carries the
+        marker and so answers as a base, while a member repository does not,
+        and the guard has to resolve it through the base above it."""
+        remote = self.d / "m.git"
+        subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main",
+                        str(remote)], check=True)
+        seed = self.d / "m-seed"
+        subprocess.run(["git", "clone", "-q", str(remote), str(seed)],
+                       capture_output=True, check=True)
+        (seed / "code.txt").write_text("x\n")
+        git(seed, "add", "-A")
+        git(seed, "commit", "-qm", "init")
+        git(seed, "push", "-q", "origin", "HEAD")
+        git(seed, "branch", "campaign-1/7-x")
+        git(seed, "push", "-q", "origin", "campaign-1/7-x")
+        dest = self.camp / "repos" / "member"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "clone", "-q", str(remote), str(dest)],
+                       capture_output=True, check=True)
+        if branch:
+            git(dest, "switch", "-q", "--track", f"origin/{branch}")
+        return dest.resolve()
+
 
 def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
         tool_input=None):
@@ -304,6 +330,26 @@ def main():
         r = ask(clone, path=str(clone / "AGENTS.md"))
         check("...and on a claimed branch it is allowed by clause 1",
               r.returncode == 0 and "Clause 1" in r.stdout, out(r)[:300])
+    # 5b. THE ORDINARY DELEGATE SHAPE, which is NOT the clone above: a MEMBER
+    # repository's clone carries no marker, so it resolves through the base,
+    # and `held` then sweeps the BASE's worktrees -- which structurally cannot
+    # see the member clone's own branch. A delegate standing on its own pushed
+    # claim read as holding none, and every gh write it made was refused.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        member = f.member(branch="campaign-1/7-x")
+        r = ask(member, tool="Bash", command="gh issue close 7")
+        check("a gh write from a member clone standing on its own claim is "
+              "allowed, though no worktree of the base is on it",
+              r.returncode == 0 and "campaign-1/7-x, a claim" in r.stdout,
+              out(r)[:400])
+        r = ask(member, tool="Bash", command="gh issue close 9")
+        check("...and it is still narrowed: a write to another issue is refused",
+              r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:400])
+        git(member, "switch", "-q", "main")
+        r = ask(member, tool="Bash", command="gh issue close 7")
+        check("...and the same clone off the claim holds none of its own",
+              r.returncode == 2 and "a write to #7" in r.stderr, out(r)[:400])
 
     # 6. gh: the table, the exemption, the narrowing, the parse.
     with tempfile.TemporaryDirectory() as d:
@@ -351,6 +397,25 @@ def main():
                 command="gh issue close https://github.com/o/r/issues/12 -R o/r")
         check("the closed issue is read from a URL too",
               r.returncode == 2 and "a write to #12" in r.stderr, out(r)[:200])
+        # A PATH IS NOT AN ISSUE NUMBER. Reading the tail of any token holding
+        # a slash made `--body-file /tmp/123` name #123 and refuse the write
+        # for a claim nobody could hold.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment --body-file /tmp/123 7")
+        check("a file path operand is not read as the issue number",
+              r.returncode == 2 and "a write to #7" in r.stderr
+              and "#123" not in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue close docs/2024/9")
+        check("...nor is any other slashed word that is not an issue URL",
+              "a write to #9" not in r.stderr, out(r)[:300])
+        # And a flag's value that IS a bare number must not be read as the
+        # issue either -- which the path rule alone cannot catch, since the
+        # value has no slash. VALUED is what skips it.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment --body-file 9 7")
+        check("a valued flag's numeric value is not the issue the write names",
+              r.returncode == 2 and "a write to #7" in r.stderr
+              and "#9" not in r.stderr, out(r)[:300])
         # Position must not hide the call: every executing form the old
         # SERVICE_DOORS regex caught, the table catches too.
         for cmd in ("(gh issue close 5)",

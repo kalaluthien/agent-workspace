@@ -66,7 +66,8 @@ WRITES = {("issue", v) for v in "close edit comment reopen develop transfer "
     | {("label", v) for v in "create edit delete".split()}
 # Flags whose value is a separate word, skipped when the subcommand is sought.
 VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
-          "-f", "--raw-field", "-b", "--body", "-t", "--title", "-m"}
+          "-f", "--raw-field", "-b", "--body", "-t", "--title", "-m",
+          "--body-file", "-l", "--label", "-a", "--assignee", "--milestone"}
 API_WRITE_FLAGS = {"-F", "--field", "-f", "--raw-field", "--input"}
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}", "`"}
 # Words before a command that are not it, and shells that run a string.
@@ -177,6 +178,27 @@ def worktrees(repo_root):
         elif line.startswith("prunable") and found and found[-1][0] == path:
             found.pop()                 # a directory git itself marks gone
     return found
+
+
+def own_claim(cwd: Path):
+    """(path, branch, source) when the checkout the session is STANDING IN is
+    itself on a claim, else None.
+
+    `held` sweeps one repository root's worktrees, and a member repository's
+    clone under a campaign directory is not one of them -- it is a different
+    repository. A delegate on its own pushed `campaign-<N>/...` branch there
+    therefore read as holding no claim at all. This is the same branch reading
+    `held` does, asked of the checkout at hand rather than of the base's
+    worktree list."""
+    _main, top, _note = checkout_of(cwd)
+    if top is None:
+        return None
+    branch = git(["branch", "--show-current"], top)[0]
+    branch = (branch or "").strip()
+    if not branch or not CLAIM_BRANCH.match(branch):
+        return None
+    exists, source = ref_exists(branch, top)
+    return (top, branch, source) if exists else None
 
 
 def session_root(cwd: Path):
@@ -349,9 +371,17 @@ def issue_target(tokens):
     if words[:1] != ["issue"]:
         return None
     for t in words[2:]:
-        tail = t.rstrip("/").rsplit("/", 1)[-1].lstrip("#")
-        if tail.isdigit():
-            return tail
+        # A PATH IS NOT AN ISSUE NUMBER. Reading the tail of any token with a
+        # slash made `--body-file /tmp/123` name issue #123 and refused the
+        # write for a claim on a number nobody typed. Only a GitHub issue URL
+        # has a tail worth reading; everything else must BE the number.
+        bare = t.lstrip("#")
+        if bare.isdigit():
+            return bare
+        if "/issues/" in t:
+            tail = t.rstrip("/").rsplit("/", 1)[-1]
+            if tail.isdigit():
+                return tail
     return None
 
 
@@ -430,9 +460,12 @@ def bash_call(command, cwd: Path):
     # which is the weaker gate and is printed as such.
     issues = sorted({issue_target(x) for x in writes} - {None})
     unreadable = stray or any(issue_target(x) is None for x in writes)
+    own = own_claim(cwd)
     detail, uncovered, covering = [], [], []
     for i in issues:
         holders, d = held(root, i)
+        if not holders and own is not None and CLAIM_BRANCH.match(own[1]).group(2) == i:
+            holders = [own]
         detail += d
         (covering if holders else uncovered).append((i, holders))
     if uncovered:
@@ -441,6 +474,8 @@ def bash_call(command, cwd: Path):
                        f"no claim covering a write to #{i}.", how, *detail, TAKE])
     if unreadable:
         holders, d = held(root)
+        if not holders and own is not None:
+            holders = [own]
         if not holders:
             return refuse([f"{what}: a campaign-plane write, and this session "
                            f"holds no claim covering it.", how, *detail, *d, TAKE])
@@ -448,6 +483,9 @@ def bash_call(command, cwd: Path):
         return allow([f"{what}: {how}; {path} is on {branch}, a claim "
                       f"({source})."])
     if not covering:
+        if own is not None:
+            return allow([f"{what}: the session's own checkout {own[0]} is on "
+                          f"{own[1]}, a claim ({own[2]})."])
         return refuse([f"{what}: a campaign-plane write, and this session holds "
                        f"no claim covering it.", how, *detail, TAKE])
     path, branch, source = covering[0][1][0]
