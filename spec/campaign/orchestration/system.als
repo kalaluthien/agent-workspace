@@ -168,9 +168,11 @@ pred namedForAnother[a: Agent, c: Campaign] {
    unnamed session at `/tmp` does not block a close. The narrowing is what
    keeps the gate from reading the same set for every campaign: with no name
    and no tree, nothing on the machine ties that session to THIS campaign, and
-   blocking on it would block on it for all of them at once. Named gap: a
-   session of this campaign that both renamed to nothing and left the tree is
-   invisible to the close, and is asked by nobody. */
+   blocking on it would block on it for all of them at once. The gap that
+   leaves -- a session of this campaign that both renamed to nothing and left
+   the tree is invisible to the close, and is asked by nobody -- is #187's
+   question 6, which decides which side moves: a narrower model, or a third
+   piece of evidence for when neither the name nor the cwd says. */
 pred liveUnderLocally[c: Campaign, m: Machine] {
   some a: Agent | a in Live and a.host = m
     and (a.task in c.memberIssues
