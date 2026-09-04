@@ -3,10 +3,12 @@
 
     campaign-tracker.py campaign-issues [--repo owner/repo] [--limit N]
     campaign-tracker.py bound <N> [owner/repo]
+    campaign-tracker.py bind <N> [owner/repo]
     campaign-tracker.py index <N> [owner/repo]
-    campaign-tracker.py settlement <N> [owner/repo] [--dir CAMPAIGN]
+    campaign-tracker.py settlement <N> [owner/repo]
 
-Four readings of one plane -- GitHub issues, plus `hostname -s` for `bound`.
+Four readings of one plane -- GitHub issues, plus `hostname -s` for `bound`,
+and the one write that changes what `bound` answers.
 They were four scripts, and every one of them carried the same lesson in its own
 words: a listing that stopped early reads exactly like a complete one, and a
 reading that did not happen reads exactly like an empty tracker. One script means
@@ -28,15 +30,24 @@ campaign-issues     The open-campaign issue survey, and the two ways its reading
             issues here, and a listing that comes back *at* the limit refuses
             rather than printing rows that are wrong rather than merely short.
 
-bound       The one reader of the `BOUND` comment. Four things the jq pipeline
-            it replaced had to get right, each a way to be wrong: `--paginate`,
-            because comments page at thirty and a campaign migrated after thirty
-            comments would answer with the binding it left; oldest-first, so the
-            LAST match is the current binding; the first line only, because a
-            binding may be annotated; and `\\r`, since a body stored with CRLF
-            leaves a carriage return on the machine name. The comparison against
-            this machine is folded in, because every caller ran `hostname -s` on
-            its next line and compared by eye.
+bound       The one reader of the `bound:<machine>` LABEL. A label set is read
+            by exact name and carries no history, so the four things the comment
+            reading had to get right -- paginating a thread, taking the LAST
+            match rather than the first, reading only the first line, and
+            stripping a carriage return off a body stored with CRLF -- are four
+            ways to be wrong that no longer exist. What replaces them is one
+            state this refuses rather than resolves: TWO `bound:` labels on one
+            campaign issue. A thread has a latest and a label set has not, so no
+            rule could pick between them, and guessing hands one machine a
+            campaign another is working. The comparison against this machine is
+            folded in, because every caller ran `hostname -s` on its next line
+            and compared by eye.
+
+bind        The write `bound` reads. It adds `bound:<this machine>` and removes
+            every other `bound:` label in the same edit, so the refusal above is
+            a state this command cannot leave behind. Gated by the person's word
+            and by nothing here: AGENTS.md names the two cases a session binds
+            in, and neither has a premise anything mechanical can observe.
 
 index       The sub-issue index -- the whole of it. `gh issue create --parent` is
             the only write that records a campaign's membership and this endpoint
@@ -49,14 +60,16 @@ settlement  The observable spec/campaign/ scenarios are judged by. Verdicts matc
             `open`. Settled is "the issue is closed", both verdicts alike; the
             merged pull request only says which kind.
 
-            Each OPEN row also carries who holds its claim, read from
-            `<campaign>/runtime/claims/` through campaign-claim's own reader:
-            `claimed by <name> [<liveness>]`, or `unclaimed`. That column is
-            what an open sub-issue nobody had started was missing -- it read
-            exactly like one somebody was three hours into. Without a campaign
-            directory the column is EMPTY and a note says which reading did not
-            happen, because printing `unclaimed` for a directory nobody read is
-            the absence dressed as a reading that this exists to end.
+            Each OPEN row also carries whether its claim branch exists,
+            read off the remote's `campaign-<N>/` refs through campaign-claim's
+            own reader: `claimed: <branch>`, or `unclaimed`. That column is what
+            an open sub-issue nobody had started was missing -- it read exactly
+            like one somebody was three hours into. When the ref listing does
+            not happen the column is EMPTY and a note says so, because printing
+            `unclaimed` for a listing nobody made is the absence dressed as a
+            reading that this exists to end. It says nothing about WHO is
+            standing in the branch; that is `campaign-claim live`, and it is a
+            per-machine reading where this table is not.
 
 `settlement` reads the index through `index`'s own reader rather than issuing its
 own request. Moving only the parse behind a script once left `--paginate`
@@ -72,20 +85,22 @@ It catches a pasted copy, not a re-implementation that names nothing.
 EXIT
 
 campaign-issues, index, settlement  0 when the reading was made, 1 when it was not.
-bound                       0 for any verdict, 2 when the reading itself failed.
+bound                       0 for any verdict, 2 when the reading itself failed
+                            -- two `bound:` labels included, since that is a
+                            question this refuses to answer, not a verdict.
+bind                        0 when the label was set, 1 when it was not.
 """
 import argparse
 import importlib.machinery
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 DEFAULT_REPO = "kalaluthien/campaign-base"
 CAMPAIGN_LABEL = "campaign"
-BOUND_PREFIX = "BOUND "
+BOUND_LABEL_PREFIX = "bound:"
 
 NOT_EMPTY = "An index that did not read is not an empty campaign."
 
@@ -189,36 +204,44 @@ def run_or_refuse(*args):
     return out.stdout
 
 
-def bodies(repo, number):
-    """Every comment body on the campaign issue, oldest first.
-
-    `--paginate --slurp` is what makes one JSON document out of the pages;
-    without `--slurp` gh concatenates one array per page and json.loads sees
-    trailing data.
-    """
-    raw = run_or_refuse("gh", "api", "--paginate", "--slurp",
-                        f"repos/{repo}/issues/{number}/comments")
+def labels_of(repo, number):
+    """Every label name on the issue. One request and no pagination: labels come
+    back on the issue itself, so there is no page to stop early on."""
+    raw = run_or_refuse("gh", "api", f"repos/{repo}/issues/{number}",
+                        "--jq", "[.labels[].name]")
     try:
-        pages = json.loads(raw)
+        names = json.loads(raw or "[]")
     except json.JSONDecodeError as exc:
         refuse_bound(f"gh returned something that is not JSON: {exc}")
-    out = []
-    for page in pages:
-        if not isinstance(page, list):
-            refuse_bound("gh returned a shape this script does not know")
-        out.extend(c.get("body") or "" for c in page)
-    return out
+    if not isinstance(names, list):
+        refuse_bound("gh returned a shape this script does not know")
+    return [n for n in names if isinstance(n, str)]
 
 
-def binding_of(comment_bodies):
-    """The machine named by the last BOUND comment, or None. A calculation, so
-    the three ways this can be wrong are testable without a network."""
-    found = None
-    for body in comment_bodies:
-        if body.startswith(BOUND_PREFIX):
-            # The first line is the binding; anything after it is prose.
-            found = body.split("\n", 1)[0][len(BOUND_PREFIX):].strip()
-    return found or None
+def bound_labels(names):
+    """Every `bound:` label on the issue, sorted. A calculation, so none, one
+    and two are each a case with no network in it."""
+    return sorted(n for n in names if n.startswith(BOUND_LABEL_PREFIX))
+
+
+def binding_of(names):
+    """(machine, why_unreadable) from a label list.
+
+    `None, None` is a campaign nobody has bound. `None, <why>` is TWO bindings,
+    which is not a verdict: a label set has no latest, so nothing here can
+    choose, and choosing wrongly hands the campaign to a machine that is not
+    working it."""
+    found = bound_labels(names)
+    if not found:
+        return None, None
+    if len(found) > 1:
+        return None, (f"the campaign issue carries {len(found)} `bound:` labels "
+                      f"({', '.join(found)}). A label set has no latest, so which "
+                      f"machine holds the campaign is unanswerable from here. "
+                      f"Run `campaign-tracker.py bind <N>` on the machine that "
+                      f"holds it, which removes the others in the same edit.")
+    machine = found[0][len(BOUND_LABEL_PREFIX):].strip()
+    return (machine or None), None
 
 
 def this_machine():
@@ -229,13 +252,66 @@ def this_machine():
 
 
 def cmd_bound(args):
-    machine = binding_of(bodies(args.repo, args.campaign_issue))
+    machine, why = binding_of(labels_of(args.repo, args.campaign_issue))
+    if why:
+        refuse_bound(why)
     if machine is None:
         print("unbound")
     elif machine == this_machine():
         print("here")
     else:
         print(f"elsewhere {machine}")
+    return 0
+
+
+# ------------------------------------------------------------------------ bind
+
+
+def bind_plan(names, machine):
+    """(label_to_add, labels_to_remove, already_there). Pure, so unbound, bound
+    here already, and bound elsewhere each have a case.
+
+    `already_there` is not a no-op on its own: a campaign carrying `bound:X`
+    and `bound:Y` at once has the wanted label already and still needs the
+    other removed, which is the state `bound` refuses to read."""
+    want = f"{BOUND_LABEL_PREFIX}{machine}"
+    have = bound_labels(names)
+    return want, [n for n in have if n != want], want in have
+
+
+def cmd_bind(args):
+    machine = this_machine()
+    names = labels_of(args.repo, args.campaign_issue)
+    have = bound_labels(names)
+    want, drop, already = bind_plan(names, machine)
+    print(f"{args.repo}#{args.campaign_issue} carries {len(have)} `bound:` "
+          f"label(s): {', '.join(have) or '<none>'}")
+    if already and not drop:
+        print(f"already {want}; nothing to change")
+        return 0
+    # `--force` because the label existing is the ordinary case, and its
+    # non-zero exit would otherwise read as a failure to create one.
+    c = subprocess.run(["gh", "label", "create", want, "-R", args.repo,
+                        "--force", "--color", "0E8A16", "--description",
+                        "the machine this campaign is bound to"],
+                       capture_output=True, text=True)
+    if c.returncode != 0:
+        print(f"campaign-tracker bind: could not ensure the label {want} "
+              f"exists: {c.stderr.strip() or 'no message'}", file=sys.stderr)
+        return 1
+    cmd = ["gh", "issue", "edit", str(args.campaign_issue), "-R", args.repo]
+    if not already:
+        cmd += ["--add-label", want]
+    for n in drop:
+        cmd += ["--remove-label", n]
+    e = subprocess.run(cmd, capture_output=True, text=True)
+    if e.returncode != 0:
+        print(f"campaign-tracker bind: the edit failed: "
+              f"{e.stderr.strip() or 'no message'}", file=sys.stderr)
+        return 1
+    print(f"{'kept' if already else 'added'} {want}")
+    for n in drop:
+        print(f"removed {n}")
     return 0
 
 
@@ -359,13 +435,54 @@ def verdict(repo, number):
     return "dropped", note, title
 
 
-def claim_reader():
-    """campaign-claim's own record reading, imported rather than rewritten.
+def claim_column(repo, campaign_issue):
+    """(a function issue -> claim word, a note saying what was read).
 
-    Returns (module, why_unreadable). The record's shape is written in exactly
-    one place, and a settlement that parsed `session`/`name`/`released` itself
-    would be the second reader AGENTS.md forbids -- and the one that drifts,
-    since nothing re-runs it against a record campaign-claim just wrote."""
+    Read off the REMOTE's `campaign-<N>/` refs since #176: a claim is a branch
+    and there is no record to import. That also drops the `--dir` this used to
+    need -- the answer is the same from any machine now, which is the point of
+    moving the claim onto a ref.
+
+    The note is not decoration. A ref listing that did not happen would print
+    `unclaimed` for every row, which is an absence dressed as a reading --
+    exactly the failure this column was added to end. It says which branch, and
+    NOT who is standing in it: that is `campaign-claim live`'s reading and it is
+    per-machine, where this table is not."""
+    module, why = claim_reader()
+    if why:
+        return (lambda n: ""), f"the claim reader would not load -- {why}"
+    # EVERY repository the campaign's claims can be on, not just `--repo`. A
+    # member-repo sub-issue's branch is on that member's remote, and reading the
+    # base alone printed `unclaimed` for it under a note saying the reading
+    # succeeded -- which is how a planner hands a claimed sub-issue to a second
+    # executor. Same reader as `campaign-claim live`, so the two cannot drift.
+    root, _ = module.base_root()
+    repos, repo_note = module.claim_repos(repo, root)
+    found_map, unread = module.all_refs(repos, campaign_issue)
+    if unread:
+        return (lambda n: ""), (f"the claim refs did not read -- "
+                                f"{'; '.join(unread)}; the rows below say "
+                                f"nothing about who holds what")
+    branches = sorted(found_map)
+    note = (f"read refs under campaign-{campaign_issue}/ in "
+            f"{', '.join(repos)} -- {len(branches)} claim(s)")
+
+    def word(number):
+        found = module.refs_for_issue(branches, campaign_issue, number)
+        if not found:
+            return "unclaimed"
+        return f"claimed: {', '.join(found)}"
+    return word, note
+
+
+def claim_reader():
+    """campaign-claim's own ref reading, imported rather than rewritten.
+
+    Returns (module, why_unreadable). What a claim branch is named, and which
+    sub-issue a name belongs to, are written in exactly one place; a settlement
+    that split the name itself would be the second reader AGENTS.md forbids --
+    and the one that drifts, since nothing re-runs it against a ref
+    campaign-claim just cut."""
     path = Path(__file__).resolve().parent / "campaign-claim.py"
     try:
         spec = importlib.util.spec_from_loader(
@@ -376,42 +493,6 @@ def claim_reader():
     except Exception as e:                      # noqa: BLE001 -- any of them
         return None, f"{path}: {e.__class__.__name__}: {e}"
     return module, None
-
-
-def claim_column(directory):
-    """(a function issue -> claim word, a note saying what was read).
-
-    The note is not decoration. Without a campaign directory there is nothing
-    to read, and printing `unclaimed` for every row would be an absence dressed
-    as a reading -- exactly the failure this column was added to end."""
-    if not directory:
-        return (lambda n: ""), ("no --dir and no $CAMPAIGN, so no claim was "
-                                "read; the rows below say nothing about who "
-                                "holds what")
-    claims = Path(directory).expanduser().resolve() / "runtime" / "claims"
-    if not claims.is_dir():
-        return (lambda n: ""), (f"{claims} does not exist, so claims could not "
-                                f"be enumerated. A missing directory says "
-                                f"nothing; an empty one says no claim was taken")
-    module, why = claim_reader()
-    if why:
-        return (lambda n: ""), f"the claim reader would not load -- {why}"
-    recs, odd = module.claim_records(claims)
-    note = f"read {claims} -- {len(recs)} claim(s), {len(odd)} unread"
-    for o in odd:
-        note += f"\n     !! {o}"
-
-    def word(number):
-        rec = recs.get(str(number))
-        if not rec:
-            return "unclaimed"
-        if module.is_released(rec):
-            return "unclaimed (a released record stands as attribution)"
-        # `liveness_of` and not a fresh pid test: it is the wire the release
-        # gate hangs off, and two readings of one pid may not disagree.
-        return (f"claimed by {rec.get('name', '<no name>')} "
-                f"[{module.liveness_of(rec)}]")
-    return word, note
 
 
 def campaign_issue_reports(head):
@@ -448,7 +529,7 @@ def cmd_settlement(args):
         print("  (no sub-issues: the index is empty)")
         return 0
 
-    claim_word, claim_note = claim_column(args.dir or os.environ.get("CAMPAIGN"))
+    claim_word, claim_note = claim_column(args.repo, args.campaign_issue)
     print(f"  -- claims: {claim_note}")
 
     rows_out, settled, unread, nested = [], 0, 0, []
@@ -523,6 +604,7 @@ def main():
     # `--limit` beside it, and a positional there would read as the campaign issue.
     for name, fn, help_text in (
             ("bound", cmd_bound, "here | elsewhere <machine> | unbound"),
+            ("bind", cmd_bind, "set this machine's `bound:` label, dropping any other"),
             ("index", cmd_index, "the sub-issue index"),
             ("settlement", cmd_settlement, "every sub-issue's verdict")):
         p = sub.add_parser(name, help=help_text)
@@ -532,13 +614,13 @@ def main():
         # other two accept and ignore reads as though naming a directory
         # changed what they answer.
         if name == "settlement":
-            p.add_argument("--dir", help="the campaign directory whose "
-                                         "runtime/claims/ names the holders "
-                                         "(or set $CAMPAIGN)")
+            p.add_argument("--dir", help="accepted and ignored since #176: "
+                                         "the claim is a branch on the remote, "
+                                         "so no directory is read")
         p.set_defaults(fn=fn)
 
     args = ap.parse_args()
-    if args.cmd == "bound":
+    if args.cmd in ("bound", "bind"):
         args.campaign_issue = campaign_issue_number(args.campaign_issue)
     return args.fn(args)
 

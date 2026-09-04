@@ -104,7 +104,17 @@ var sig Merged in PullRequest {}
 var sig Filed  in Campaign {}
 /* The sub-issue branch: a ref on the remote, so one set over Issue rather than
    one set per machine. A claim made on one machine is readable from every
-   other, which is the whole reason the branch is the claim. */
+   other, which is the whole reason the branch is the claim.
+
+   THE SCRIPT DOES NOT YET REACH THIS. `Claimed` is a set over ISSUE, so one
+   sub-issue has one claim wherever its work lands; `scripts/campaign-claim.py`
+   sweeps and re-checks refs on ONE repository per call and keys them by branch
+   NAME, so two takers passing different `--repo` both succeed on one sub-issue
+   and a same-named ref in a second repository is collapsed. That divergence is
+   named rather than left for a reader to discover: #187 decides what a claim's
+   identity is across repositories and makes the readers agree with this
+   signature. Until it lands, read every statement here about a claim as
+   holding within one repository. */
 var sig Claimed in Issue {}
 
 fact WellFormed {
@@ -195,8 +205,8 @@ pred fileCampaignIssue[c: Campaign] {
 /* The issue and its index entry are one write. Deliberately no session, machine
    or binding precondition: filing a sub-issue is a record, not a claim, so any
    session on any machine may do it (AGENTS.md § The binding). The binding
-   gates writeBody, BOUND, the claim and the launch, which live in session/system.als
-   and the claim script, not here. */
+   gates writeBody, the `bound:` label, the claim and the launch, which live in
+   session/system.als and the claim script, not here. */
 pred addMember[c: Campaign, i: Issue] {
   c in Filed
   i not in Campaign.memberIssues and i not in Campaign.campaignIssue
@@ -260,8 +270,24 @@ pred writeBody[c: Campaign] {
 }
 
 /* Deliberately LOOSE -- it does not require the ref to be absent -- so that
-   create-ref's refusal is a named discipline above (orchestration/scenarios.als's
-   `claimAtomic`) with its absence runnable as a control. */
+   the atomicity is a named discipline above (orchestration/scenarios.als's
+   `claimAtomic`) with its absence runnable as a control.
+
+   AND `claimAtomic` IS NOT create-ref ALONE, which is what this comment used to
+   say. `Claimed` is a set of ISSUES, so the discipline is per sub-issue; the
+   ref that carries a claim is named `campaign-<N>/<issue>-<topic>`, so
+   create-ref's server-side refusal serialises ref NAMES and admits two topics
+   on one sub-issue. Nothing here models a topic, which is exactly why the
+   model could not see that gap. What closes it is in the script: `take` reads
+   the campaign's refs again AFTER its own create, and where two name one
+   sub-issue, EVERY taker that sees a rival deletes what it just cut. A
+   smallest-name tiebreak was the first shape of this and was wrong: the racers
+   do not read the same set, so two of them can each believe they won. Yielding
+   has no such state, and its worst case -- both yield, the sub-issue is left
+   unclaimed -- the next `take` fixes.
+
+   Scoped to a single repository, as `Claimed`'s own comment above says: #187 is
+   where this becomes what the signature already asserts. */
 pred claim[i: Issue] {
   i in Campaign.memberIssues and i in Open
   Claimed' = Claimed + i

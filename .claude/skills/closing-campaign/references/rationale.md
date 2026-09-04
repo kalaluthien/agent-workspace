@@ -12,19 +12,19 @@ relative value matches nothing and the refusal passes having found nothing; step
 
 It is always bound to a real directory. A campaign bound here with no directory
 is scaffolded first — `opening-campaign` steps 2 and 4, step 2 being where the
-slug and kind step 4 needs are chosen — because `runtime/claims/` has no other
-home. Unset or empty means step 0 never ran, which is the wrong-cwd hazard the
-guard in step 5 exists for.
+slug and kind step 4 needs are chosen — because `repos/` and the README copy have
+no other home. Unset or empty means step 0 never ran, which is the wrong-cwd
+hazard the guard in step 5 exists for.
 
 **What the gates are worth on that path, which is not what "restored" would
 claim.** When step 0 creates the tree, step 1 and step 2 then read a directory
-seconds old: no herdr `cwd` can be under it, `runtime/claims/` is empty
-because it was just copied, and there is nothing uncommitted in it. They cannot
-fail, so they must not be reported as passed. The soundness argument is that
-they have nothing to find: an agent of this campaign is launched into
-`<campaign>/repos/<repo>/` and a session working one of its sub-issues is recorded
-in `<campaign>/runtime/claims/`, and both need a directory that did not exist —
-so a campaign never worked on this machine can have no local executor to miss.
+seconds old: no herdr `cwd` can be under it, no worktree of it exists, and there
+is nothing uncommitted in it. They cannot fail, so they must not be reported as
+passed. The soundness argument is that they have nothing to find: an agent of
+this campaign is launched into `<campaign>/repos/<repo>/` and a session working
+one of its sub-issues checks the claim out under the same tree, and both need a
+directory that did not exist — so a campaign never worked on this machine can
+have no local executor to miss.
 The residue is the one case that breaks the premise: a directory that existed
 here and was deleted by hand without a close, leaving agents alive with their
 tree gone. Nothing local can see that, and step 5's announcement on the campaign issue
@@ -38,29 +38,31 @@ There is no holder to read. The holding session is retired (`AGENTS.md`
 has agreed the campaign is over, and it asks `campaign-claim live` because
 either of its first two readings alone is blind to half the executors.
 
-**The comment is the evidence, not the pane.** A pane under the tree says a
-shell was opened there; it says nothing about whether the session in it is
-done, and a finished peer sitting idle in the directory blocked every close
-until a person shut its tab. `STAND DOWN` is a message between sessions and
-leaves no record. A `STOOD DOWN <name> <session-id>` comment on the campaign
-issue is durable, is the peer's own word, is posted only after it verified its
-work is on GitHub (`campaign-claim stood-down` refuses while the session holds
-an unreleased claim), and is joined to herdr's row on the session id — the one
-field a restart and a rename both leave alone. So a stood-down peer passes
-whatever its cwd, a live claim refuses whatever was posted, and a peer that has
-neither is asked. `spec/campaign/orchestration/system.als` carries it as `StoodDownPosted`, never
-over local-only work.
+**The workspace is the evidence, and leaving is a fact rather than a claim.**
+A peer used to pass this gate by posting `STOOD DOWN <name> <session-id>` on the
+campaign issue, because a pane under the tree says a shell was opened there and
+nothing about whether the session in it is done. #176 removed the comment: what
+the gate reads now is whether a claim branch is **checked out** anywhere on this
+machine, which is the same durability the comment had — a checkout survives a
+restart and a rename exactly as a comment does — with nothing to write and
+nothing to forget to write. A peer finishes by stopping its pane or renaming off
+`campaign-<N>-*`, both facts. `spec/campaign/orchestration/system.als` carries
+the reading as `holder`.
 
-A live PID that is some other `claude` reads as held. That is the safe direction
-to be wrong in here: leaving a claim standing costs a question, deleting a live
-session's tree costs its work.
+A claim checked out in a workspace whose session is gone reads as occupied. That
+is the safe direction to be wrong in here: leaving a claim standing costs a
+question, deleting a live session's tree costs its work.
 
-**Do not match `ListAgents` names against the branch.** A name and a branch are
-two strings on purpose (`AGENTS.md` § The session name, which states the rule): a
-session is named `campaign-<campaign issue>-<role>-<n>`, which carries no sub-issue at all,
-and it can be changed while the claim cannot. So a test built on the branch
-string finds whatever happens to match and misses what `runtime/claims/` exists
-to catch. This is where that bites.
+**`live` cannot say which session holds which claim, and the gate does not need
+it to.** herdr reports where a session was *started*, an executor on the base
+works in a worktree, and that worktree's owning repository may not even be the
+clone the session sits in — measured 2026-09-04, and it is why attribution names
+a workspace. The gate asks two existence questions, "is any claim occupied" and
+"is any session of this campaign still running", and both are answerable. **Do
+not repair the gap by matching `ListAgents` names against branches**: a name and
+a branch are two strings on purpose (`AGENTS.md` § The session name), a name
+carries no sub-issue at all, and a test built on the string finds whatever
+happens to match and misses the rest. Ask the session instead.
 
 ## Step 2 — work only on this machine
 
@@ -99,9 +101,9 @@ written at all is `AGENTS.md` § The campaign issue body.
 
 **Why announce at all.** Step 1's gate is local, and under one campaign, one
 machine that covers everything legitimate: every agent and every executor session
-is on the bound machine, step 1 enumerates `runtime/claims/` and so sees every
-one that wrote a record, and step 2 read the base and `repos/` for the work
-of one that did not. A machine working this
+is on the bound machine, step 1 reads every claim ref on the remote and where
+each is checked out here, and step 2 read the base and `repos/` for work in no
+claim at all. A machine working this
 campaign against the binding is what neither can see, and no cheap local check
 fixes it. Announcing narrows that window rather than closing it — a session that
 never comments is invisible either way — and what keeps it survivable is that a
@@ -135,7 +137,7 @@ the ref the step exists to release. Probed: a claim four commits behind reads
 rather than a 404 when a campaign claimed nothing (probed), so the loop runs zero
 times and says nothing.
 
-**A machine the campaign was `BOUND` to before a migration may still hold a
+**A machine the campaign was bound to before a migration may still hold a
 directory of its own**: a stale cache, untouched by this delete, with nothing
 durable in it.
 
@@ -151,7 +153,7 @@ and three things produce it:
 | --- | --- | --- |
 | a session on this machine wrote it | ask the peers: `ListAgents`, then `SendMessage` to each | ask what it meant, then fold. Moving a sub-issue between campaigns writes *two* campaign issues, and one of them is never the writer's own campaign |
 | a person edited the charter on GitHub | no peer claims the write | their words win: fold them into the `README.md`, refresh the derived copy, re-run |
-| a session on a machine the campaign issue is not `BOUND` to wrote it | nothing on this machine can see it — one `gh` account signs a person's edit and a session's alike | ask the person. The fold is the same; what differs is that the binding was broken and the other machine has to be told |
+| a session on a machine the campaign issue's `bound:` label does not name wrote it | nothing on this machine can see it — one `gh` account signs a person's edit and a session's alike | ask the person. The fold is the same; what differs is that the binding was broken and the other machine has to be told |
 
 **The last two are not separable from here, and the refusal says so** rather than
 picking one. Naming all three is still worth it: a session meeting the refusal
