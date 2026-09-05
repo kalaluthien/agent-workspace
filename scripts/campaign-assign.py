@@ -19,16 +19,16 @@ whichever way the sender guessed. This is that rule with a machine behind it.
 
 WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
 
-  not listed        no herdr row names this pane, so there is nothing to prompt
-                    and the pane string is probably stale.
-  not idle          a pane mid-turn queues the prompt behind work whose outcome
+  (no row)          no herdr row names this pane, so there is nothing to
+                    prompt and the pane string is probably stale.
+  (not idle)        a pane mid-turn queues the prompt behind work whose outcome
                     nobody has read, and the assignment lands on a session that
                     may be about to report something that changes it.
-  release unseen    nothing in what was read says this pane ever released.
+  `unknown`         nothing in what was read says THIS PANE ever released.
                     That is NOT evidence it never did -- see the window note
                     below -- so it refuses. --lines reads further back,
                     --assume-fresh assigns anyway and says what it overrode.
-  not compacted     the pane released a sub-issue and has not compacted since,
+  `stale`           the pane released a sub-issue and has not compacted since,
                     so the next sub-issue would re-read the last one's whole
                     transcript on every turn. `campaign-claim.py release`
                     enqueues that compaction; this is the reader that says
@@ -98,8 +98,8 @@ DEFAULT_REPO = "kalaluthien/campaign-base"
 MARKER = "Compacted (ctrl+o to see full summary)"
 
 # What the transcript draws to the left of a rendered line. Stripped before a
-# line is compared, so that the comparison can be an EQUALITY rather than a
-# containment -- see `rendered`.
+# line is compared, so the comparison can be against the line's START rather
+# than against anything it merely contains -- see `rendered`.
 # MEASURED ONLY. Every character here has been seen drawn to the left of a
 # transcript line on this machine; `|`, `\u2022` and four box-drawing glyphs
 # were here on plausibility alone, and each of them only ever WIDENS what is
@@ -214,14 +214,15 @@ def idle_verdict(row):
                    f"of.")
 
 
-def compaction_verdict(text, anchor):
+def compaction_verdict(text, anchor, pane):
     """Has this pane compacted since its last release? Pure, over the pane's
     scrollback. Returns (verdict, why) with verdict one of:
 
       `compacted`   the marker appears after the last release line. The one
                     verdict that admits a pane on its own.
       `stale`       a release line with no marker after it.
-      `unknown`     no release line in what was read. NOT "it never released":
+      `unknown`     no release line NAMING THIS PANE in what was read. NOT
+                    "it never released":
                     `herdr agent read` caps at 1000 lines and returns fewer
                     than asked even when more history exists, so an absent
                     anchor and a pane that never released are the same bytes.
@@ -233,11 +234,23 @@ def compaction_verdict(text, anchor):
     `min` here instead of `max` would call that pane `compacted` and assign it
     with its second release uncompacted."""
     lines = [rendered(ln) for ln in (text or "").splitlines()]
-    # STARTSWITH for the anchor, because the release line carries the branch
-    # after it; EQUALITY for the marker, which stands alone. Both against the
-    # rendered line, so this file's own source does not answer either.
+    # STARTSWITH for both, against the rendered line, so this file's own
+    # source answers neither. The anchor must also END with this pane's id: a
+    # pane's text holds what it DISPLAYED as well as what it printed, and
+    # `herdr agent read` puts another session's release into the reader's own
+    # scrollback, which AGENTS.md makes the ordinary planner move.
+    #
+    # THE MARKER CANNOT BE QUALIFIED THAT WAY -- it is harness UI text with
+    # nothing in it that says whose pane it is -- so one direction is still
+    # open: this pane's own release followed by somebody else's marker read
+    # into this pane assigns. Bounded (this pane's own compaction must have
+    # failed first, or its own marker would be there), and its fix is to stop
+    # reading the pane at all and read the session's transcript, which no
+    # other pane can write into. That is kalaluthien/campaign-base#220.
+    tail = f" in {pane}"
     last_release = max((i for i, ln in enumerate(lines)
-                        if ln.startswith(anchor)), default=None)
+                        if ln.startswith(anchor) and ln.endswith(tail)),
+                       default=None)
     if last_release is None:
         return "unknown", (f"no release line in the {len(lines)} line(s) read. "
                            f"That is not evidence this pane never released: "
@@ -253,8 +266,12 @@ def compaction_verdict(text, anchor):
                      f"after it in the {len(lines)} line(s) read")
 
 
-def read_pane(pane, limit=LINES):
+def read_pane(pane, limit):
     """(text, why_unread). The scrollback, or the reason there is none.
+
+    NO DEFAULT for `limit`: `main` always passes `--lines`, so a default here
+    is unreachable, and an unreachable value is one a mutation cannot redden --
+    the fifth review pinned `limit=1` and the suite stayed green.
 
     Not guarded by HERDR_ENV: that guard is against ACTING on somebody else's
     session, never against reading -- the same reading `campaign-claim.py`
@@ -337,10 +354,10 @@ def main():
 
     screen, why_unread = read_pane(args.pane, args.lines)
     if screen is None:
-        # I COULD NOT LOOK, which is neither a yes nor a no. It refuses rather
-        # than assigning, and `--force` is the way past -- the same door the
-        # stale verdict has, because a caller overriding one has the same
-        # standing to override the other.
+        # I COULD NOT LOOK, which is neither a yes nor a no. It refuses, and
+        # `--assume-fresh` is the way past: an unreadable pane is a reading
+        # this cannot make, not a reading that came back bad. `--force`
+        # reaches it too, because it implies --assume-fresh.
         if not (args.assume_fresh or args.force):
             print(f"refusing: {why_unread}\n  Whether {args.pane} compacted "
                   f"since its last release is unknown, and an unknown is not"
@@ -351,7 +368,7 @@ def main():
         # twice about the same verdict with the same reason.
         verdict, why = "unread", why_unread
     else:
-        verdict, why = compaction_verdict(screen, m.RELEASED)
+        verdict, why = compaction_verdict(screen, m.RELEASED, args.pane)
         print(f"{verdict}: {why}")
     # ONE REMEDY LIST PER VERDICT. Shared, it offered `/compact and retry` to
     # `unknown`, which changes nothing when no anchor is in the window, and
@@ -375,7 +392,10 @@ def main():
                   file=sys.stderr)
         return 1
     if verdict != "compacted":
-        flag = "--force" if verdict == "stale" or args.force else "--assume-fresh"
+        # `--force` names itself whenever it was passed, and it is the ONLY
+        # flag that reaches `stale` -- so the `stale` disjunct that used to sit
+        # here was dead, and its deadness was itself unobservable.
+        flag = "--force" if args.force else "--assume-fresh"
         print(f"{flag}: assigning anyway, verdict was {verdict} -- {why}")
 
     sentence = prompt_for(args.repo, issue)

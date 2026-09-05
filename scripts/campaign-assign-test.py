@@ -35,7 +35,14 @@ MARKER = "Compacted (ctrl+o to see full summary)"
 # The anchor as `campaign-claim.py` prints it. Spelled here rather than
 # imported so that a case fails if the two ever disagree -- which is the one
 # thing importing it on both sides would hide.
-RELEASED = "campaign-claim: released campaign-1/195-token-tally"
+# The anchor as `campaign-claim.py` prints it, PANE AND ALL. Spelled here
+# rather than imported so that a case fails if the two ever disagree.
+RELEASED = "campaign-claim: released campaign-1/195-token-tally in w1:p2"
+# The same release, printed in somebody else's pane. `herdr agent read` puts
+# another session's output into the reader's own scrollback, which is the
+# ordinary planner move -- so this string turns up in a pane that did not
+# release, and must not answer for it.
+ELSEWHERE = "campaign-claim: released campaign-1/177-commit-claim in w1:p1"
 
 
 def agent(sid, name, pane, status="idle"):
@@ -52,6 +59,7 @@ case "$1 $2" in
 JSON
     exit 0 ;;
   "agent read")
+    printf 'read %%s %%s\\n' "$3" "$5" >> "$log"
     %s ;;
   "agent prompt")
     printf 'HERDR_ENV=%%s pane=%%s prompt=%%s\\n' "${HERDR_ENV:-unset}" "$3" "$4" >> "$log"
@@ -84,11 +92,26 @@ def shims(d, rows, screen="", read_exit=0, prompt_exit=0):
     return b
 
 
+def calls(path_dir, kind):
+    """Every `agent <kind>` the stub was asked to make, in order. One log for
+    both, so a case can assert the window `agent read` was given as well as the
+    prompt `agent prompt` carried -- the window was plumbed by nothing until a
+    review mutated it away and the suite stayed green."""
+    log = Path(path_dir).parent / "prompts.log"
+    if not log.exists():
+        return []
+    return [ln for ln in log.read_text().splitlines()
+            if ln.strip() and ln.startswith(kind)]
+
+
 def prompts(path_dir):
     """Every prompt the stub was asked to send. An absent log is no calls."""
-    log = Path(path_dir).parent / "prompts.log"
-    return ([ln for ln in log.read_text().splitlines() if ln.strip()]
-            if log.exists() else [])
+    return calls(path_dir, "HERDR_ENV=")
+
+
+def reads(path_dir):
+    """Every scrollback read, as `read <pane> <lines>`."""
+    return calls(path_dir, "read ")
 
 
 def assign(args, path_dir):
@@ -138,8 +161,8 @@ def pure_cases(m):
     check("the anchor this suite fixtures is the line campaign-claim prints",
           RELEASED.startswith(cm.RELEASED), f"{cm.RELEASED!r} vs {RELEASED!r}")
 
-    def verdict(text):
-        return m.compaction_verdict(text, cm.RELEASED)
+    def verdict(text, pane="w1:p2"):
+        return m.compaction_verdict(text, cm.RELEASED, pane)
 
     # NO RELEASE LINE IS `unknown`, NOT `fresh`. It used to be `fresh`, which
     # ALLOWED, on the reasoning that a read shorter than its window is the
@@ -232,6 +255,29 @@ def pure_cases(m):
     v, why = verdict('RELEASED = "campaign-claim: released"\nnoise\n')
     check("...and campaign-claim's source line does not forge a release",
           v == "unknown", f"{v} {why[:140]}")
+    # ANOTHER PANE'S RELEASE IS NOT THIS PANE'S. A planner that reads a
+    # delegate's pane has the delegate's release AND its compaction marker in
+    # its own scrollback, in that order -- and read itself as compacted, which
+    # ASSIGNS. The anchor names the pane it was printed in for this reason.
+    # A LINE THAT MERELY CONTAINS THE ANCHOR is prose about a release, not a
+    # release -- and prose about THIS pane's release ends with this pane's id,
+    # so the pane tail alone does not separate the two. Only matching the
+    # line's START does. This is what a pull request comment quoting the run,
+    # read back in a pane, renders to.
+    v, why = verdict(f"the run printed {RELEASED}\n{MARKER}\n")
+    check("prose quoting a release mid-line is not a release",
+          v == "unknown", f"{v} {why[:140]}")
+    v, why = verdict(f"  \u23bf  {ELSEWHERE}\n  \u23bf  {MARKER}\n")
+    check("a release read out of ANOTHER pane does not answer for this one",
+          v == "unknown", f"{v} {why[:140]}")
+    # ...and the allow beside it: this pane's own release still counts, and a
+    # foreign one sitting after it does not move the answer.
+    v, why = verdict(f"{RELEASED}\n  \u23bf  {ELSEWHERE}\n{MARKER}\n")
+    check("...while this pane's own release still does",
+          v == "compacted", f"{v} {why[:140]}")
+    v, why = verdict(f"{RELEASED}\n{MARKER}\n", pane="w9:p9")
+    check("...and reading for a different pane finds no release of its own",
+          v == "unknown", f"{v} {why[:140]}")
 
     sentence = m.prompt_for("kalaluthien/campaign-base", "42")
     check("the prompt names the sub-issue and defers to its body",
@@ -257,6 +303,12 @@ def end_to_end_cases():
               and "HERDR_ENV=1" in sent[0] and "#198" in sent[0], repr(sent))
         check("...and never to the other pane",
               not any("pane=w1:p1" in ln for ln in sent), repr(sent))
+        # A CLEAN PATH SAYS NOTHING ABOUT OVERRIDING. Held by nothing until the
+        # fifth review made the guard unconditional and the suite stayed green,
+        # printing `assigning anyway, verdict was compacted`.
+        check("...and says nothing about overriding anything",
+              "assigning anyway" not in out and "--force" not in out
+              and "--assume-fresh" not in out, out[:400])
 
         # THE REVERSAL. A pane with no release line USED to be assigned, on
         # the reasoning that a fresh session's context is small. Nothing here
@@ -274,6 +326,19 @@ def end_to_end_cases():
         check("...and --force is how a genuinely fresh pane is assigned",
               r.returncode == 0 and len(prompts(fresh_f)) == 1,
               f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
+        # --lines REACHES herdr. The `unknown` refusal offers raising it as the
+        # remedy, and nothing asserted the flag was plumbed at all: dropping it
+        # from the call, and pinning the window to 1, both left 56/56 green.
+        windowed = shims(Path(d) / "windowed", rows,
+                         screen=f"{RELEASED}\n{MARKER}\n")
+        r = assign(["w1:p2", "198", "--lines", "137"], windowed)
+        check("the --lines window is what herdr is asked for",
+              reads(windowed) == ["read w1:p2 137"], repr(reads(windowed)))
+        defaulted = shims(Path(d) / "defaulted", rows,
+                          screen=f"{RELEASED}\n{MARKER}\n")
+        r = assign(["w1:p2", "198"], defaulted)
+        check("...and the default window is the one the docstring names",
+              reads(defaulted) == ["read w1:p2 400"], repr(reads(defaulted)))
 
         # REFUSE: released and not compacted since.
         stale = shims(Path(d) / "stale", rows, screen=f"{RELEASED}\nworking\n")
@@ -400,6 +465,14 @@ def end_to_end_cases():
               r.returncode == 0 and "verdict was unread" in out
               and len(prompts(forced_unread)) == 1,
               f"exit {r.returncode}: {out[:300]}")
+        # `--force` IMPLIES --assume-fresh, which its help promises and which
+        # this branch implements separately from `waived`. Every case here
+        # passed --assume-fresh, so dropping `args.force` from it survived.
+        forced_unread2 = shims(Path(d) / "fu2", rows, read_exit=1)
+        r2 = assign(["w1:p2", "198", "--force"], forced_unread2)
+        check("--force alone also gets past a pane that would not read",
+              r2.returncode == 0 and len(prompts(forced_unread2)) == 1,
+              f"exit {r2.returncode}: {(r2.stdout + r2.stderr)[:250]}")
         check("...printing ONE --force line, not two about the same verdict",
               out.count("assigning anyway") == 1
               and "assigning without reading the pane" not in out, out[:400])

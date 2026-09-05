@@ -1457,8 +1457,8 @@ exit 1
         # `campaign-assign.py` reads exactly this; keyed on the compaction's own
         # success line instead, a release that could not compact read as a pane
         # that never released and was assigned.
-        check("...and prints the release anchor, naming the branch",
-              f"{m.RELEASED} campaign-9999/4-done" in out, out[:300])
+        check("...and prints the release anchor, naming branch AND pane",
+              f"{m.RELEASED} campaign-9999/4-done in w1:p2" in out, out[:300])
         check("...sending exactly one /compact, to its own pane, guarded",
               len(sent) == 1 and "pane=w1:p2" in sent[0]
               and "prompt=/compact" in sent[0] and "HERDR_ENV=1" in sent[0],
@@ -1481,8 +1481,12 @@ exit 1
         # still leave the release line, or the next `campaign-assign` reads the
         # pane as one that never released and assigns it -- which is the single
         # case its guard is for.
-        check("...and the release anchor is there even though nothing compacted",
-              f"{m.RELEASED} campaign-9999/4-done" in out, out[:400])
+        # A PANE THIS COULD NOT NAME IS SAID SO, and reads as no anchor at all
+        # to `campaign-assign.py`, which refuses -- the right direction, since
+        # the compaction was not sent either.
+        check("...and the anchor is there, saying the pane is unknown",
+              f"{m.RELEASED} campaign-9999/4-done in <pane unknown>" in out,
+              out[:400])
         check("...and sends nothing at all",
               prompts(miss) == [], repr(prompts(miss)))
 
@@ -1540,8 +1544,8 @@ exit 1
         check("...sending exactly one /compact from that exit as well",
               len(prompts(noref)) == 1 and "pane=w1:p2" in prompts(noref)[0],
               repr(prompts(noref)))
-        check("...and printing the release anchor there too",
-              f"{m.RELEASED} campaign-9999/4-done" in out, out[:400])
+        check("...and printing the release anchor, with the pane, there too",
+              f"{m.RELEASED} campaign-9999/4-done in w1:p2" in out, out[:400])
 
         # HERDR ABSENT: `release` refuses long before this on the occupancy
         # sweep, so the compaction is not what is being read here -- and that

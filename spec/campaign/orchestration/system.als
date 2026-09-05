@@ -327,9 +327,8 @@ pred launch[a: Agent] {
 
      Taking a sub-issue is what grows the taking session's context, so the bit
      goes now and only a release returns it. */
-  (some a.peer) implies (Who.session in Compacted
-                         and Compacted' = Compacted - Who.session)
-                   else Compacted' = Compacted
+  Who.session in Compacted
+  Compacted' = Compacted - Who.session
   LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
   keepReview and keepMessages and keepShutdown
   Target.agent = a

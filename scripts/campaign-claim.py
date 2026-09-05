@@ -772,8 +772,18 @@ COMPACT = "/compact"
 SESSION_ID_VAR = "CLAUDE_CODE_SESSION_ID"
 
 # THE ONE LINE A LATER READER ANCHORS ON. Printed at both of `release`'s
-# success exits and nowhere else, and printed BEFORE the compaction is
-# attempted, so it is there whether or not the compaction happened.
+# success exits and nowhere else, and printed whether or not the compaction
+# that follows it succeeded.
+#
+# IT NAMES THE PANE, and that is not decoration. A pane's text holds whatever
+# it has DISPLAYED as well as whatever it printed -- `herdr agent read` puts
+# another session's output into the reader's own scrollback, which AGENTS.md
+# makes the ordinary planner move. Without the pane, a planner that released
+# and then read a delegate's pane found its own anchor and the delegate's
+# compaction marker, in order, and read itself as compacted. With it, an anchor
+# copied from elsewhere names the pane it came from and is not this one's.
+# Found by review at e680ef8. The marker cannot be qualified this way, so the
+# residue is kalaluthien/campaign-base#220.
 #
 # `campaign-assign.py` reads it to answer "has this pane compacted since its
 # last release". Keyed on the compaction's own success line instead -- which is
@@ -856,6 +866,17 @@ def compact_own_pane(sessions, session_id):
         return None
     print(f"sent {COMPACT} to {pane}; it runs when this turn ends")
     return pane
+
+
+def release_line(pane, branch):
+    """The anchor, naming the pane it was printed in.
+
+    A pane this could not name is said so, and reads as no anchor at all to
+    `campaign-assign.py` -- which refuses. That is the right direction: a
+    release whose pane is unknown is one whose compaction was not sent
+    either, since both come from the same join."""
+    where = pane or "<pane unknown>"
+    print(f"{RELEASED} {branch} in {where}")
 
 
 def parse_worktrees(text):
@@ -1504,8 +1525,8 @@ def cmd_release(args):
             return 1
         print(f"{repo} has no ref {branch}, and it was {text}: nothing "
               f"beyond main, and no ref to delete")
-        print(f"{RELEASED} {branch}")
-        compact_own_pane(sessions, os.environ.get(SESSION_ID_VAR))
+        release_line(compact_own_pane(sessions,
+                                      os.environ.get(SESSION_ID_VAR)), branch)
         return 0
     n = ahead_count(r.returncode, r.stdout)
     ok, refusal = ahead_verdict(n, r.stdout, r.stderr, repo, branch)
@@ -1597,12 +1618,12 @@ def cmd_release(args):
               file=sys.stderr)
         return 1
     print(f"deleted {branch}")
-    print(f"{RELEASED} {branch}")
     # LAST, and after the delete rather than before it: the release is what
     # this command is for, and compaction is a cost rule that must not be able
     # to stop one. Last also because the prompt fires when the turn ends, so
     # anything printed after it is printed by a session about to be compacted.
-    compact_own_pane(sessions, os.environ.get(SESSION_ID_VAR))
+    release_line(compact_own_pane(sessions, os.environ.get(SESSION_ID_VAR)),
+                 branch)
     return 0
 
 
