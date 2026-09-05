@@ -130,7 +130,17 @@ pred coLocated[s: Session, a: Agent] { s.machine = a.host }
    agent whose campaign-directory checkout is on its branch. herdr's row is
    still read for two things -- liveness, and its `cwd` as one more root to
    sweep and as the tie between an unnamed session and this campaign -- but
-   never for which branch anyone holds. */
+   never for which branch anyone holds.
+
+   AND THE MODEL STOPS ABOVE `checkedOut`, deliberately -- #187's N2 rider asked
+   for the derivation or the reason. `Claimed` is a fact about GitHub and
+   `checkedOut` is a fact about a workspace, and deriving one from the other
+   would assert a join this machine cannot make: measured 2026-09-04, herdr
+   reports where a session STARTED, a base executor works in a worktree, and the
+   repository owning that worktree is not even the clone the session sits in.
+   So `holder` names a workspace and not a session, and the two facts stay
+   separate because nothing observable connects them. #181 putting the campaign
+   number in the directory name is what would change that. */
 fun holder[i: Issue]: set Agent {
   { a: Agent | a.task = i
                and campaignDirAt[campaignOf[i], a.host].checkedOut[i.repo] = a.branch }

@@ -298,8 +298,11 @@ pred writeBody[c: Campaign] {
    has no such state, and its worst case -- both yield, the sub-issue is left
    unclaimed -- the next `take` fixes.
 
-   Scoped to a single repository, as `Claimed`'s own comment above says: #187 is
-   where this becomes what the signature already asserts. */
+   NOT scoped to a single repository any more, and the sentence that said so
+   pointed at a `Claimed` comment #187 rewrote to say the opposite. A claim is
+   the sub-issue, and the repository is the sub-issue's own -- see
+   `claimOnTheIssuesRepo` in orchestration/scenarios.als, whose R8b is what
+   reddens if that stops holding. */
 pred claim[i: Issue] {
   i in Campaign.memberIssues and i in Open
   Claimed' = Claimed + i

@@ -60,9 +60,10 @@ record this replaced was keyed on the sub-issue and gave that for free. So
 sub-issue, whatever its topic -- and then lists AGAIN after its own create-ref.
 The first read is a narrowing and is not atomic on its own: two takers on two
 topics both see no sibling and both create. The second read is what settles it,
-because by then both refs exist, both takers see the same set, and the
-lexicographically smallest ref wins a race neither of them has to talk about.
-The loser deletes the ref it just cut, which held nothing.
+because by then both refs exist and both takers see the same set. EVERYONE WHO
+SEES A RIVAL YIELDS and deletes the ref it just cut, which held nothing; a
+smallest-name tiebreak was the first shape of this and left both racers holding
+in two interleavings, because they do not read the same set at the same moment.
 
 That matters because the record this replaced was keyed on the sub-issue and
 `O_EXCL` was COMPLETE on one machine -- and one machine is the only place a
@@ -304,8 +305,10 @@ REPOSITORY_LINE = re.compile(r"^Repository:\s*(\S+)\s*$", re.MULTILINE)
 
 
 def issue_repo(issue, default_repo):
-    """(repo, note) -- the repository a sub-issue's work lands in, read from the
-    sub-issue's own body. `None` for repo means the reading did not happen.
+    """(repo, named, note) -- the repository a sub-issue's work lands in, read
+    from the sub-issue's own body. `None` for repo means the reading did not
+    happen; `named` is that repository when the body named a member one and
+    None when it said `none`, which is what the `## Repos` scope check reads.
 
     THE DESTINATION IS A FACT ABOUT THE SUB-ISSUE, NOT AN ARGUMENT. `--repo`
     used to decide it, so two takers naming different repositories both cut a
@@ -629,9 +632,9 @@ def cmd_take(args):
     # create-ref refuses neither because the names differ. Reading AGAIN after
     # the create closes it, because by then both refs exist and both takers see
     # the same set -- so a rule they can both apply without talking settles it.
-    # The rule is the lexicographically smallest ref, which is a total order on
-    # a set they agree about; the loser deletes what it just cut and reports the
-    # winner. Do not replace this with a longer survey before the create: no
+    # The rule is that EVERYONE WHO SEES A RIVAL YIELDS, spelled out at the
+    # block below; a smallest-name tiebreak is what this replaced and must not
+    # come back. Do not replace this with a longer survey before the create: no
     # amount of looking first makes a read-then-write atomic.
     after, why = matching_refs(repo, args.campaign_issue)
     if why:
@@ -880,16 +883,27 @@ def remote_of(clone):
     return m.group(1) if m else None
 
 
-def claim_repos(default_repo, root, only=None):
+def claim_repos(default_repo, root, only=None, campaign_issue=None):
     """Every repository this campaign's claims can be on. Returns (repos, note).
 
     A CLAIM IS CUT ON THE REPOSITORY THE WORK LANDS IN, so `--repo` alone
     answers for the base and for nothing else: a member-repo sub-issue's branch
     is on that member's remote, and reading only the base returned `0 occupied,
     0 vacant` over a delegate standing in one -- a close passing over a held
-    claim. The list is derived from the clones on disk rather than from the
-    campaign issue's `## Repos`, because a clone is what a branch can actually
-    be checked out in, and `campaign-repos.py` reads the other."""
+    claim.
+
+    TWO SOURCES, AND THE CLONES ALONE ARE NOT ENOUGH. A clone is what a branch
+    can be checked out in, so it answers "where might somebody be standing";
+    `## Repos` is what the campaign is FOR, so it answers "where might a claim
+    be". They differ exactly when a member repository was never cloned here or
+    its clone was removed -- and then the claim on it is real, on the remote,
+    and invisible: `live` printed "all three readings were made, 0 occupied, 0
+    vacant" and a close passed over a held claim. That is the false-clean this
+    reading exists to prevent, so `## Repos` is read too, through
+    `campaign-repos.py`, which owns what that list admits.
+
+    A `## Repos` that will not read is NAMED in the note and does not silently
+    narrow the sweep: the caller prints the note beside its counts."""
     repos, seen = [default_repo], {default_repo}
     if not root:
         return repos, "no base root, so only the named repository was read"
@@ -899,7 +913,21 @@ def claim_repos(default_repo, root, only=None):
         if name and name not in seen:
             seen.add(name)
             repos.append(name)
-    return repos, f"{len(repos)} repositor(y/ies) hold this campaign's claims"
+    listed_note = ""
+    if campaign_issue is not None:
+        listed, why = campaign_repos(campaign_issue)
+        if listed is None:
+            listed_note = f"; {why}, so a repository it names may be unread"
+        else:
+            extra = [r for r in listed if r not in seen]
+            for r in extra:
+                seen.add(r)
+                repos.append(r)
+            if extra:
+                listed_note = (f"; {', '.join(extra)} from `## Repos` with no "
+                               f"clone here")
+    return repos, (f"{len(repos)} repositor(y/ies) hold this campaign's claims"
+                   f"{listed_note}")
 
 
 def all_refs(repos, campaign_issue):
@@ -1051,7 +1079,8 @@ def cmd_live(args):
     # `Repository:` line to consult; the base is where it starts and the clones
     # on disk widen it. `--repo` here is a starting point, not an assertion
     # about one sub-issue's home.
-    repos, repo_note = claim_repos(args.repo or DEFAULT_REPO, root, mine)
+    repos, repo_note = claim_repos(args.repo or DEFAULT_REPO, root, mine,
+                                   args.campaign_issue)
     found, unread1 = all_refs(repos, args.campaign_issue)
     branches = sorted(found)
     why1 = "; ".join(unread1) if unread1 else None
@@ -1276,7 +1305,8 @@ def cmd_release(args):
         print(f"refusing: --repo says {args.repo}, #{args.issue} says "
               f"{subject}.\n  The sub-issue decides.", file=sys.stderr)
         return 1
-    repos, repo_note = claim_repos(subject, root, mine)
+    repos, repo_note = claim_repos(subject, root, mine,
+                                   args.campaign_issue)
     found, unread1 = all_refs(repos, args.campaign_issue)
     if unread1 and not args.branch:
         print(f"refusing: {'; '.join(unread1)}\n  A ref listing that did not "

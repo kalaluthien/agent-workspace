@@ -877,7 +877,7 @@ def scope_cases(m):
         m.matching_refs = lambda repo, ci: ([], None)
         m.herdr_sessions = lambda: ({}, None)
         m.checkouts = lambda roots: ({}, [])
-        m.claim_repos = lambda r, root, only=None: (seen.setdefault(
+        m.claim_repos = lambda r, root, only=None, ci=None: (seen.setdefault(
             "claim_repos", only) and [r] or [r], "note")
         def spy(sessions, only=None):
             seen["sweep_roots"] = only
@@ -929,6 +929,63 @@ def scope_cases(m):
     finally:
         (m.own_campaign_dir, m.sweep_roots, m.base_root, m.matching_refs,
          m.herdr_sessions, m.checkouts, m.claim_repos, m.scope_for) = real
+
+
+def sweep_scope_cases(m):
+    """The hop INSIDE sweep_roots, which the other two cases jump over.
+
+    `sweep_roots({}, None)` covers `campaign_clones(only)` and the wiring spy
+    replaces `sweep_roots` wholesale, so both ends were pinned and the wire
+    between them was not: passing `None` through to `campaign_clones` left every
+    case green while the worktree sweep went machine-wide again. Eighth instance
+    of that shape here.
+    """
+    real = m.campaign_clones
+    seen = {}
+    try:
+        def spy(root, only=None):
+            seen["only"] = only
+            return [], []
+        m.campaign_clones = spy
+        m.sweep_roots({}, "THE-SCOPE")
+        check("sweep_roots passes its scope through to campaign_clones",
+              seen.get("only") == "THE-SCOPE", f"got {seen.get('only')!r}")
+    finally:
+        m.campaign_clones = real
+
+
+def listed_repo_cases(m):
+    """#187 Q1 third defect: `## Repos` is read, not only the clones on disk."""
+    real = m.campaign_repos
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            (root / "demo-260904" / "repos").mkdir(parents=True)
+            # A member repository the campaign is FOR, whose clone was never
+            # made here. Its claim is real, on the remote, and was invisible:
+            # `live` printed "0 occupied, 0 vacant" and a close passed over a
+            # held claim. The clones answer "where might somebody be standing";
+            # `## Repos` answers "where might a claim be", and they differ
+            # exactly when a member repository was never cloned or was removed.
+            m.campaign_repos = lambda ci: (["owner/member"], "listed")
+            repos, note = m.claim_repos("base/base", str(root), None, "1")
+            check("a `## Repos` member with no clone here is still read",
+                  "owner/member" in repos, str(repos))
+            check("...and the note says it had no clone, so the reader knows why",
+                  "no clone here" in note, note)
+            # ...and a list that would not READ narrows nothing silently.
+            m.campaign_repos = lambda ci: (None, "the list did not read")
+            repos, note = m.claim_repos("base/base", str(root), None, "1")
+            check("a `## Repos` that would not read is named, not skipped",
+                  "may be unread" in note, note)
+            # ...and with no campaign issue passed, the old behaviour stands,
+            # so a caller that names its own repository asks nothing extra.
+            m.campaign_repos = lambda ci: (["owner/member"], "listed")
+            repos, _ = m.claim_repos("base/base", str(root), None, None)
+            check("...and nothing is read from `## Repos` when none is asked for",
+                  "owner/member" not in repos, str(repos))
+    finally:
+        m.campaign_repos = real
 
 
 def sweep_cases(m):
@@ -1229,7 +1286,7 @@ def main():
     spec.loader.exec_module(m)
 
     for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
-               scope_cases, sweep_cases, verdict_cases, peer_cases,
+               scope_cases, sweep_scope_cases, listed_repo_cases, sweep_cases, verdict_cases, peer_cases,
                robustness_cases,
                root_cases, repos_cases):
         fn(m)

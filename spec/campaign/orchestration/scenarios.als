@@ -351,9 +351,24 @@ pred R4g_ClaimWithoutAtomicityStillShared {
    The claim ends where the work does. This is the same reading `release`
    already makes on the merged path -- a branch whose pull request merged is
    finished work and not a fresh claim -- stated once, here, so `take` and
-   `release` cannot drift about when a ref stops meaning "somebody holds this". */
+   `release` cannot drift about when a ref stops meaning "somebody holds this".
+
+   SPELLED ON `Claim` AND NOT ON `CloseIssue`, and the first draft got that
+   wrong in a way worth keeping written down. Written as "a close leaves the
+   issue unclaimed", and with `closeIssue` framing `Claimed' = Claimed`, it
+   reduced to "no sub-issue may close while it is claimed" -- which FORBIDS THE
+   ORDINARY LANDING the code makes every time: the pull request merges, GitHub
+   auto-closes the sub-issue with its ref still standing, and `release` deletes
+   the ref afterwards. The spec said the code's happy path was illegal, and two
+   comments in `campaign-claim.py` cited it as the statement they follow.
+
+   What the code actually reads is on the TAKE side: a second claim on an
+   already-claimed sub-issue is admitted exactly when the first is residue of a
+   merged pull request. That is `partition_refs`, and it is what makes
+   reopen-then-take work. */
 pred settledLeavesNoClaim {
-  always (Now.event = CloseIssue implies Now.issue not in Claimed')
+  always (Now.event = Claim and Now.issue in Claimed
+            implies Now.issue.pullRequest in Merged)
 }
 
 /* R8. THE DEFECT #187 FIXES, in the smallest world that holds it: one
@@ -388,9 +403,9 @@ pred R8c_RepairAdmitsTheOrdinaryClaim {
    so this is not the atomicity hole either: the sub-issue is closed, nobody is
    working it, and its claim stands anyway. */
 pred R9_SettledSubIssueStaysClaimed {
-  claimAtomic
-  some i: Issue | eventually (Now.event = CloseIssue and Now.issue = i
-                              and i in Claimed')
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i
+                              and i in Claimed
+                              and i.pullRequest not in Merged)
 }
 
 /* R9b. CONTROL: the repair excludes it. */
@@ -403,10 +418,10 @@ pred R9b_RepairExcludesIt {
    settled, which is the ordinary life of every one of them. A rule that made
    the close unreachable would satisfy R9b just as well. */
 pred R9c_RepairAdmitsClaimThenSettle {
-  settledLeavesNoClaim and claimAtomic
+  settledLeavesNoClaim
   some i: Issue | eventually (Now.event = Claim and Now.issue = i
-                              and eventually (Now.event = CloseIssue
-                                              and Now.issue = i))
+                              and i in Claimed
+                              and i.pullRequest in Merged)
 }
 
 /* R7e. CONTROL FOR THE `settled` DISJUNCT #187 Q2 added: a sub-issue DROPPED
@@ -507,6 +522,21 @@ pred R12d_AcquireIsWhatPrinciplesAClone {
                 and a.task.repo in
                     campaignDirAt[campaignOf[a.task], a.host].principled')
   }
+}
+
+/* R9d. THE ORDINARY LANDING, and the case whose absence let the first spelling
+   of `settledLeavesNoClaim` through: claim, merge, and the sub-issue closes
+   with its ref still standing, because GitHub auto-closes on merge and
+   `release` runs afterwards. Spelled on CloseIssue, the rule made this UNSAT --
+   the spec forbidding what the code does every time, with two comments in
+   `campaign-claim.py` citing it as what they follow. A discipline needs a
+   witness for the path it must NOT block, not only for the one it must. */
+pred R9d_OrdinaryLandingStillAllowed {
+  settledLeavesNoClaim
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i
+                              and eventually (Now.event = CloseIssue
+                                              and Now.issue = i
+                                              and i in Claimed))
 }
 
 /* R4h. THE HOLE, and the one this campaign actually fell into: a session works
@@ -1046,6 +1076,7 @@ run R8c_RepairAdmitsTheOrdinaryClaim for 4 Issue, 1 PullRequest, 1 Campaign, 2 S
 run R9_SettledSubIssueStaysClaimed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R9b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R9c_RepairAdmitsClaimThenSettle for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R9d_OrdinaryLandingStillAllowed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R7e_WorkerRuleAdmitsTheDroppedSubIssue for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R11_HolderThroughAnotherCampaignsDir for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 10 steps expect 0
 run R12_DelegateLaunchedWithoutPrinciples for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
