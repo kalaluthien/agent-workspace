@@ -898,8 +898,16 @@ def scope_cases(m):
         m.matching_refs = lambda repo, ci: ([], None)
         m.herdr_sessions = lambda: ({}, None)
         m.checkouts = lambda roots: ({}, [])
-        m.claim_repos = lambda r, root, only=None, ci=None: (seen.setdefault(
-            "claim_repos", only) and [r] or [r], "note")
+        def claim_repos_spy(r, root, only=None, ci=None):
+            seen["claim_repos"] = only
+            # THE SECOND ARGUMENT, recorded too. Pinning `only` alone left the
+            # `## Repos` reading unwired-testable: dropping `args.campaign_issue`
+            # from either caller kept every case green, and `live` would print
+            # "0 occupied, 0 vacant" over a held claim on an uncloned member --
+            # the exact false-clean this branch exists to prevent.
+            seen["claim_repos_ci"] = ci
+            return [r], "note"
+        m.claim_repos = claim_repos_spy
         def spy(sessions, only=None):
             seen["sweep_roots"] = only
             return ([], [], None)
@@ -924,6 +932,9 @@ def scope_cases(m):
         check("...and scopes the repository reading the same way",
               seen.get("claim_repos") == Path("/the-scope-260905"),
               f"got {seen.get('claim_repos')!r}")
+        check("...and names the campaign, so `## Repos` is read at all",
+              seen.get("claim_repos_ci") == "9999",
+              f"got {seen.get('claim_repos_ci')!r}")
         # FINDING 4: THE OTHER COMMAND. `cmd_release` has the same two calls
         # and the spy covered only `cmd_live`, so dropping the scope from
         # release changed no case at all -- the helper-covered, caller-
@@ -947,6 +958,9 @@ def scope_cases(m):
         check("cmd_release scopes its repository reading the same way",
               seen.get("claim_repos") == Path("/the-scope-260905"),
               f"got {seen.get('claim_repos')!r}")
+        check("...and names the campaign there too",
+              seen.get("claim_repos_ci") == "9999",
+              f"got {seen.get('claim_repos_ci')!r}")
     finally:
         (m.own_campaign_dir, m.sweep_roots, m.base_root, m.matching_refs,
          m.herdr_sessions, m.checkouts, m.claim_repos, m.scope_for) = real

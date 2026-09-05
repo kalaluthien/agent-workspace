@@ -365,10 +365,18 @@ pred R4g_ClaimWithoutAtomicityStillShared {
    What the code actually reads is on the TAKE side: a second claim on an
    already-claimed sub-issue is admitted exactly when the first is residue of a
    merged pull request. That is `partition_refs`, and it is what makes
-   reopen-then-take work. */
+   reopen-then-take work.
+
+   `some ... .pullRequest` IS LOAD-BEARING and was missing. `none in Merged`
+   holds vacuously in Alloy, so without it the rule also admitted a second claim
+   on a sub-issue with NO pull request at all -- which `partition_refs` refuses,
+   since a ref with no merged pull request is a live claim. The comment said
+   "exactly when", and it was not exactly. R9e is the control for that branch;
+   without the conjunct it goes SAT. */
 pred settledLeavesNoClaim {
   always (Now.event = Claim and Now.issue in Claimed
-            implies Now.issue.pullRequest in Merged)
+            implies (some Now.issue.pullRequest
+                     and Now.issue.pullRequest in Merged))
 }
 
 /* R8. THE DEFECT #187 FIXES, in the smallest world that holds it: one
@@ -537,6 +545,19 @@ pred R9d_OrdinaryLandingStillAllowed {
                               and eventually (Now.event = CloseIssue
                                               and Now.issue = i
                                               and i in Claimed))
+}
+
+/* R9e. THE BRANCH THE FIRST SPELLING LEFT OPEN: a second claim on a sub-issue
+   that is claimed and has NO pull request at all. `none in Merged` is vacuously
+   true, so the rule admitted it and no case said otherwise -- R9's witness asks
+   for `pullRequest not in Merged`, which is FALSE of an empty pullRequest, so
+   R9 and R9b never reached this shape. The code refuses it: a ref with no
+   merged pull request is a live claim, and `partition_refs` puts it in `held`.
+   Expect 0, and it goes SAT the moment the `some` conjunct is dropped. */
+pred R9e_SecondClaimOnAPullRequestLessSubIssue {
+  settledLeavesNoClaim
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i
+                              and i in Claimed and no i.pullRequest)
 }
 
 /* R4h. THE HOLE, and the one this campaign actually fell into: a session works
@@ -1077,6 +1098,7 @@ run R9_SettledSubIssueStaysClaimed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Ses
 run R9b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R9c_RepairAdmitsClaimThenSettle for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R9d_OrdinaryLandingStillAllowed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R9e_SecondClaimOnAPullRequestLessSubIssue for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R7e_WorkerRuleAdmitsTheDroppedSubIssue for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R11_HolderThroughAnotherCampaignsDir for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 10 steps expect 0
 run R12_DelegateLaunchedWithoutPrinciples for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1

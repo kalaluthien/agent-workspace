@@ -127,6 +127,7 @@
     ["orchestration/scenarios.als", "run", "R9b_RepairExcludesIt"],
     ["orchestration/scenarios.als", "run", "R9c_RepairAdmitsClaimThenSettle"],
     ["orchestration/scenarios.als", "run", "R9d_OrdinaryLandingStillAllowed"],
+    ["orchestration/scenarios.als", "run", "R9e_SecondClaimOnAPullRequestLessSubIssue"],
     ["orchestration/scenarios.als", "run", "ReportIsNotEvidence"],
     ["orchestration/scenarios.als", "run", "S3_DelegateDiesAfterPushing"],
     ["orchestration/scenarios.als", "run", "S4_ReportWithoutPush"],
