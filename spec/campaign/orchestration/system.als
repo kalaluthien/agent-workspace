@@ -100,6 +100,16 @@ fun campaignPlaneEvents: set Event {
   FileCampaignIssue + AddMember + RemoveMember + CloseIssue + WriteBody
   + Claim + Release + CreateDir + DeleteDir
 }
+
+/* WHAT THIS SET CANNOT SAY, and where the guard says it instead. A file
+   written INSIDE a campaign directory has no event here: no atom carries a
+   path, so the model reaches the directory's existence (CreateDir, DeleteDir)
+   and not its contents. The guard therefore decides that one itself, and
+   `check-campaign-claim.py`'s planner branch is where it is stated: a target
+   in a CHECKOUT is the code plane, a target in a campaign directory and no
+   checkout is campaign-plane scratch, which is why a planner may keep the
+   notes it plans from. Recorded here so the split is not discovered only in
+   the code -- the same shape `claimBeforeWork` uses for the target reading. */
 fun codePlaneEvents: set Event { Work + Push + CommitLocal + OpenPullRequest }
 
 /* `lone` holds because the two sets above are disjoint; DisjointPlanes in

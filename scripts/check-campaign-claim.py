@@ -42,6 +42,8 @@ read: path, branch, and whether the ref came from `origin/` or the remote.
 EXIT. 0 allows; 2 refuses with the reading on stderr, where the model reads
 it. A `gh` write from a cwd under no base is allowed as not in a campaign.
 """
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -51,12 +53,20 @@ import sys
 from pathlib import Path
 
 # What makes a directory this repository's root: the script that cuts a claim.
+HERE = Path(__file__).resolve().parent
 BASE_MARKER = Path("scripts") / "campaign-claim.py"
 # `<slug>-<YYMMDD>`: AGENTS.md's shape for a campaign directory at the root.
 CAMPAIGN_DIR = re.compile(r"-\d{6}$")
 # The claim's shape. Only `<N>` is read from it.
 CLAIM_BRANCH = re.compile(r"^campaign-(\d+)/(\d+)-")
 
+# A name that resolved to no role, as distinct from a role that could not
+# be read at all. The table's last row refuses this one; the other falls
+# back to the claim reading.
+NO_ROLE = "no-role"
+NAMELESS = ("A session with no campaign name has no role, and a session with "
+            "no role is refused on both planes. Name it: "
+            "scripts/campaign-name-session.py <pane> campaign-<N>-<role>-<n>")
 FILE_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 PATH_KEYS = ("file_path", "notebook_path", "path")
 
@@ -80,6 +90,73 @@ PREFIXES = {"env", "command", "time", "nohup", "sudo", "exec", "do", "then",
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
 # Words whose OPERAND is itself a command string, re-read as one.
 EVALS = {"eval"}
+
+
+def name_pattern():
+    """`campaign-name-session.py`'s NAME regex, imported rather than restated.
+    That script owns the shape; a second copy here would admit names it
+    refuses, and the two would drift apart on the first change to either."""
+    src = HERE / "campaign-name-session.py"
+    spec = importlib.util.spec_from_loader(
+        "cns", importlib.machinery.SourceFileLoader("cns", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m.NAME
+
+
+def role_of(session_id):
+    """(campaign issue, role, how). THREE OUTCOMES, KEPT APART, because they
+    license different things:
+
+      * a name of the shape the pattern admits -- the role decides, per #185's
+        table, and the campaign number bounds an executor;
+      * a row found whose name is absent or of another shape -- LOOKED AND
+        FOUND NOTHING, which the table's last row refuses;
+      * herdr or the pattern unreadable -- COULD NOT LOOK, which falls back to
+        the claim reading alone and prints that it did. This guard runs for
+        every session on this machine, so a failed read must not wall them
+        all; the floor is the pre-#185 behaviour, which is a gate and not a
+        bypass.
+
+    The second is returned as `NO_ROLE`; the third as `None`."""
+    if not session_id:
+        return None, None, "the payload carries no session id"
+    try:
+        pattern = name_pattern()
+    except Exception as e:                  # noqa: BLE001 -- reported, not raised
+        return None, None, ("could not read the name pattern from "
+                            "campaign-name-session.py "
+                            f"({e.__class__.__name__})")
+    try:
+        r = subprocess.run(["herdr", "agent", "list"], capture_output=True,
+                           text=True)
+    except OSError as e:
+        return None, None, f"herdr could not run ({e.__class__.__name__})"
+    if r.returncode != 0:
+        return None, None, (f"herdr agent list exited {r.returncode}: "
+                            f"{r.stderr.strip()[:100]}")
+    try:
+        rows = json.loads(r.stdout)["result"]["agents"]
+    except (ValueError, KeyError, TypeError) as e:
+        return None, None, ("could not parse herdr output "
+                            f"({e.__class__.__name__})")
+    if not isinstance(rows, list):
+        return None, None, "herdr agents was not a list"
+    for a in rows:
+        if not isinstance(a, dict):
+            continue
+        if (a.get("agent_session") or {}).get("value") != session_id:
+            continue
+        name = a.get("name") or ""
+        m = pattern.match(name)
+        if not m:
+            return None, NO_ROLE, (f"session {session_id} is named "
+                                   f"{name or 'nothing'}, which the campaign "
+                                   f"name pattern does not admit")
+        role = "planner" if "-planner-" in name else "executor"
+        return m.group(1), role, f"session {session_id} is {name}"
+    return None, None, (f"no herdr row names session {session_id}, so its "
+                        f"role could not be read")
 
 
 def git(args, cwd):
@@ -123,17 +200,26 @@ def campaign_dir_of(path: Path, base: Path):
 
 
 def classify(target: Path):
-    """(inside?, where, checkout toplevel or None). Inside means campaign work:
-    a base tree read through git, or a campaign directory read by shape."""
+    """(inside?, where, checkout toplevel or None, campaign directory or None).
+
+    Inside means campaign work: a base tree read through git, or a campaign
+    directory read by shape. The last two are different questions and #185 needs
+    both -- a campaign directory sits AT the base root, so a target under it is
+    inside the base checkout too and `top` alone cannot tell the code plane from
+    campaign-plane scratch."""
     main, top, note = checkout_of(target)
     by_git = main is not None and (main / BASE_MARKER).is_file()
     base = main if by_git else base_above(target)
     if base is None:
-        return False, f"in no base tree and no campaign directory ({note or main})", top
+        return (False,
+                f"in no base tree and no campaign directory ({note or main})",
+                top, None)
     camp = campaign_dir_of(target, base)
     if camp is not None:
-        return True, f"inside the campaign directory {camp}", top
-    return True, f"inside the base {base}" + (f" (checkout {top})" if by_git else ""), top
+        return True, f"inside the campaign directory {camp}", top, camp
+    return (True,
+            f"inside the base {base}" + (f" (checkout {top})" if by_git else ""),
+            top, None)
 
 
 def ref_exists(branch, repo_root):
@@ -403,11 +489,36 @@ TAKE = ("Take the claim first: scripts/campaign-claim.py take <campaign issue> "
         "<issue> <topic>, then work in a checkout on its branch.")
 
 
-def file_call(tool, target: Path, cwd: Path):
-    inside, where, top = classify(target)
+def file_call(tool, target: Path, cwd: Path, session_id=""):
+    inside, where, top, camp = classify(target)
     if not inside:
         return allow([f"{tool} -> {target} is {where}; not campaign work."])
     read = [f"{tool} -> {target}, {where}."]
+    campaign, role, how_role = role_of(session_id)
+    read.append(how_role)
+    if role == NO_ROLE:
+        return refuse(read + [NAMELESS])
+    if role == "planner":
+        # A PLANNER NEVER TOUCHES CODE, and a checkout is where code lives:
+        # a base tree, a linked worktree, a delegate clone, a member
+        # repository. A campaign DIRECTORY is campaign-plane scratch, which a
+        # planner is precisely for -- refusing it would stop a planner keeping
+        # the notes it plans from, and #185 puts the campaign directories on
+        # the campaign plane beside the issues.
+        #
+        # NOT keyed on `top`: a campaign directory sits at the base root, so a
+        # target under it is inside the base checkout as well and `top` is set
+        # for both. `camp` is the question actually being asked.
+        if camp is None and top is not None:
+            return refuse(read + [
+                f"a planner may not change code, and {target} is in the "
+                f"checkout {top}.",
+                "Hand it to an executor: a session of its own on this "
+                "machine, or a herdr delegate in the repository clone.",
+            ])
+        return allow(read + ["a planner writes the campaign plane, and a "
+                             "campaign directory outside every checkout is "
+                             "campaign-plane scratch."])
     if top is not None:
         branch, is_claim, source = claim_on(top)
         if is_claim:
@@ -418,6 +529,18 @@ def file_call(tool, target: Path, cwd: Path):
     if root is None:
         return refuse(read + [how, "No checkout to read a claim from.", TAKE])
     holders, detail = held(root)
+    if role == "executor" and campaign is not None:
+        # ITS OWN CAMPAIGN AND NO OTHER. The clauses ask whether SOME claim
+        # covers the target; the name says which campaign this session is of,
+        # so a claim of another campaign is not this session's to stand on.
+        kept = [h for h in holders
+                if CLAIM_BRANCH.match(h[1]).group(1) == campaign]
+        if holders and not kept:
+            return refuse(read + [
+                f"the claims under {root} are of another campaign, and this "
+                f"session is of campaign #{campaign}.",
+                *[f"{h[0]} is on {h[1]}" for h in holders], TAKE])
+        holders = kept
     if holders:
         path, branch, source = holders[0]
         return allow(read + [f"Clause 2 (the weaker gate; the commit gate is "
@@ -426,7 +549,7 @@ def file_call(tool, target: Path, cwd: Path):
     return refuse(read + [f"Clause 2 does not hold: {how}.", *detail, TAKE])
 
 
-def bash_call(command, cwd: Path):
+def bash_call(command, cwd: Path, session_id=""):
     segs, why = segments(command)
     if segs is None:
         return refuse([why, "A gh call this cannot split is not read as harmless."])
@@ -447,6 +570,17 @@ def bash_call(command, cwd: Path):
                         "gated where it lands, by the pre-commit claim gate."])
     what = ", ".join([w for _, is_write, w in gh if is_write]
                      + [f"a `gh` this cannot read as a call, in `{x}`" for x in stray])
+    campaign, role, how_role = role_of(session_id)
+    if role == NO_ROLE:
+        return refuse([f"{what}: a campaign-plane write.", how_role, NAMELESS])
+    if role == "planner":
+        # THE ROW THAT PROMPTED #185. A planner writes the campaign plane of
+        # ANY campaign -- a comment on a campaign issue it does not work, a
+        # sub-issue body, a close, a claim cut for a delegate. There is no
+        # claim to hold for any of those, which is why the claim reading alone
+        # had no passing form for them and the closes were run by hand.
+        return allow([f"{what}: {how_role}, and a planner writes the campaign "
+                      f"plane of any campaign."])
     root, how = session_root(cwd)
     # A repository is not a base. `session_root` answers "which repository root"
     # and any git checkout has one, so gating on `root is None` alone walled
@@ -462,6 +596,15 @@ def bash_call(command, cwd: Path):
     # claimed issue was the shape a review turned into a bypass. A write whose
     # issue this could not read still falls back to the unnarrowed question,
     # which is the weaker gate and is printed as such.
+    if role == "executor" and campaign is not None:
+        mine, foreign = [], []
+        for h in held(root)[0]:
+            (mine if CLAIM_BRANCH.match(h[1]).group(1) == campaign
+             else foreign).append(h)
+        if foreign and not mine:
+            return refuse([f"{what}: a campaign-plane write, and every claim "
+                           f"under {root} is of another campaign.", how_role,
+                           *[f"{h[0]} is on {h[1]}" for h in foreign], TAKE])
     issues = sorted({issue_target(x) for x in writes} - {None})
     unreadable = stray or any(issue_target(x) is None for x in writes)
     own = own_claim(cwd)
@@ -499,6 +642,7 @@ def bash_call(command, cwd: Path):
 
 
 def pre(payload):
+    session_id = payload.get("session_id") or ""
     tool = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}
     try:
@@ -509,11 +653,11 @@ def pre(payload):
             if not raw:
                 return refuse([f"{tool} names no path this can read."])
             target = cwd / Path(os.path.expanduser(str(raw)))
-            return file_call(tool, target.resolve(), cwd)
+            return file_call(tool, target.resolve(), cwd, session_id)
     except (OSError, RuntimeError) as e:
         return refuse([f"a path would not resolve ({e.__class__.__name__})."])
     if tool == "Bash":
-        return bash_call(tool_input.get("command") or "", cwd)
+        return bash_call(tool_input.get("command") or "", cwd, session_id)
     return 0
 
 

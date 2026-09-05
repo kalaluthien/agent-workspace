@@ -86,7 +86,10 @@ def main() -> int:
                        f"{why}", "A hook that cannot find its checkout has "
                        "read nothing."])
     top = Path(out.strip()).resolve()
-    inside, where, _ = guard.classify(top)
+    # `classify` gained a fourth member in #185 -- which campaign directory,
+    # if any. This half does not read it: a commit is judged by the branch
+    # of the checkout it lands in, and that is the same question either way.
+    inside, where, _, _ = guard.classify(top)
     if not inside:
         print(f"check-commit-claim: {top} is {where}; not campaign work, "
               f"no claim needed. {who}.")

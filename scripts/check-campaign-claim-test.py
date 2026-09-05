@@ -26,6 +26,7 @@ named for its row.
 Usage: scripts/check-campaign-claim-test.py
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -129,10 +130,40 @@ class Fixture:
         return dest.resolve()
 
 
+def herdr_stub(d, sessions):
+    """A directory to put first on PATH holding a `herdr` that prints the
+    listing `sessions` describes: {session_id: name}. A stub on PATH rather
+    than an environment variable the guard reads, because the guard's subject
+    is what the CALLING session may do, and a seam that session can set is a
+    bypass wearing a test's clothes."""
+    listing = {"result": {"agents": [
+        {"agent_session": {"value": sid}, "name": name, "pane_id": f"p{i}"}
+        for i, (sid, name) in enumerate(sessions.items())]}}
+    # One directory PER STUB: they used to share `d/stub`, so the last call
+    # silently rewrote every earlier one and five cases were answered by a
+    # listing they never asked for.
+    tag = "-".join(sorted(sessions.values())) or "unnamed"
+    bindir = Path(d) / f"stub-{abs(hash(tag)) % 10**8}"
+    bindir.mkdir(exist_ok=True)
+    body = json.dumps(listing).replace("'", "'\\''")
+    (bindir / "herdr").write_text(f"#!/bin/sh\nprintf '%s' '{body}'\n")
+    (bindir / "herdr").chmod(0o755)
+    return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}"}
+
+
+def no_herdr(d):
+    """A PATH on which `herdr` exits non-zero: the COULD NOT LOOK case."""
+    bindir = Path(d) / "nostub"
+    bindir.mkdir(exist_ok=True)
+    (bindir / "herdr").write_text("#!/bin/sh\necho 'herdr: gone' >&2\nexit 127\n")
+    (bindir / "herdr").chmod(0o755)
+    return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}"}
+
+
 def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
-        tool_input=None):
+        tool_input=None, env=None, session="sid-1"):
     payload = {
-        "session_id": "sid-1",
+        "session_id": session,
         "cwd": str(cwd),
         "tool_name": tool,
         "tool_input": tool_input if tool_input is not None else (
@@ -140,9 +171,11 @@ def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
             else {"file_path": path or str(Path(cwd) / "a.txt")}),
         "hook_event_name": event or "PreToolUse",
     }
-    return subprocess.run([sys.executable, str(GUARD)],
-                          input=stdin if stdin is not None else json.dumps(payload),
-                          capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, str(GUARD)],
+        input=stdin if stdin is not None else json.dumps(payload),
+        capture_output=True, text=True,
+        env=dict(os.environ, **(env or {})))
 
 
 UNREAD = "was not read for a target"
@@ -583,6 +616,85 @@ def main():
         r = ask(f.base, tool="Read", tool_input={"file_path": str(f.base / "x")})
         check("a tool this guard has no opinion about exits 0",
               r.returncode == 0, out(r)[:200])
+
+
+    # 9. #185's permission table, one case per cell. The role is read from the
+    # session's name through `herdr agent list`, so each case stubs the listing
+    # it needs; `campaign-name-session.py` owns the name pattern and the guard
+    # imports it rather than restating it.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        planner = herdr_stub(d, {"sid-1": "campaign-1-planner-3"})
+        executor = herdr_stub(d, {"sid-1": "campaign-1-executor-4"})
+        stranger = herdr_stub(d, {"sid-1": "campaign-9-executor-1"})
+        unnamed = herdr_stub(d, {"sid-1": ""})
+        gone = no_herdr(d)
+
+        # THE CASE THAT PROMPTED #185, from a planner session that really was
+        # refused this write on 2026-09-05: a comment on the campaign issue,
+        # which no claim can ever cover because #1 is nobody's sub-issue.
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+                env=planner)
+        check("a planner comments on the campaign issue, which no claim covers",
+              r.returncode == 0 and "planner writes the campaign plane" in r.stdout,
+              out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+                env=executor)
+        check("...and the same write from an executor with no claim is refused",
+              r.returncode == 2, out(r)[:400])
+
+        # planner, campaign plane, ANOTHER campaign's issue
+        r = ask(f.base, tool="Bash", command="gh issue close 116", env=planner)
+        check("a planner closes an issue of a campaign it does not work",
+              r.returncode == 0 and "any campaign" in r.stdout, out(r)[:300])
+
+        # planner, code plane: refused, and told which shape to use
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=planner)
+        check("a planner may not change code in a checkout",
+              r.returncode == 2 and "may not change code" in r.stderr
+              and "Hand it to an executor" in r.stderr, out(r)[:400])
+        # ...but its own campaign-directory scratch is campaign-plane
+        r = ask(f.base, path=str(f.camp / "notes.md"), env=planner)
+        check("...and a planner writes its campaign directory, which is no "
+              "checkout",
+              r.returncode == 0 and "campaign-plane scratch" in r.stdout,
+              out(r)[:400])
+
+        # the last row: a name the pattern does not admit, on BOTH planes
+        r = ask(f.base, tool="Bash", command="gh issue close 9", env=unnamed)
+        check("a session with no campaign name is refused on the campaign plane",
+              r.returncode == 2 and "no role" in r.stderr, out(r)[:300])
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=unnamed)
+        check("...and on the code plane too", r.returncode == 2
+              and "no role" in r.stderr, out(r)[:300])
+
+        # COULD NOT LOOK is not the same as looked-and-found-nothing: with no
+        # herdr the guard falls back to the claim reading and says so, which is
+        # the pre-#185 behaviour and neither a wall nor a bypass.
+        r = ask(f.base, tool="Bash", command="gh issue close 9", env=gone)
+        check("herdr unreadable falls back to the claim reading, not to a wall",
+              r.returncode == 2 and "could not be read" not in r.stderr
+              and "no claim covering" in r.stderr, out(r)[:400])
+        r = ask(d, tool="Bash", command="gh issue close 9", env=gone)
+        check("...and outside every base it still allows, as it always did",
+              r.returncode == 0, out(r)[:300])
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("campaign-1/7-x",))
+        executor = herdr_stub(d, {"sid-1": "campaign-1-executor-4"})
+        stranger = herdr_stub(d, {"sid-1": "campaign-9-executor-1"})
+        # executor, its own campaign and the sub-issue it holds
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=executor)
+        check("an executor of campaign 1 closes the sub-issue it claimed",
+              r.returncode == 0, out(r)[:300])
+        # executor of ANOTHER campaign, standing at the same root
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=stranger)
+        check("an executor of another campaign may not stand on this "
+              "campaign's claim",
+              r.returncode == 2 and "another campaign" in r.stderr, out(r)[:400])
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=stranger)
+        check("...and the file half says the same",
+              r.returncode == 2 and "another campaign" in r.stderr, out(r)[:400])
 
     if not ran:
         print("FAIL  the suite ran no case at all")
