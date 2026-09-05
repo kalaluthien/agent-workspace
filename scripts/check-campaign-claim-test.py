@@ -1080,6 +1080,20 @@ def main():
         check("ALLOW beside them: a real heredoc body is still data",
               r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
 
+        # A `#` AT WORD START ENDS THE LINE. The carry above is what made this
+        # load-bearing: without a comment branch the comment's stray quote was
+        # handed to the next line and ate the real opener there. Both
+        # directions, one case each, and an allow beside them.
+        r = ask(wt7, tool="Bash",
+                command="# it's fine\nbash <<'M'\ngh issue close 11\nM")
+        check("a quote inside a comment does not hide the next line's heredoc",
+              r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:400])
+        r = ask(wt7, tool="Bash",
+                command="# don't do this\ngit commit -F - <<'M'\n"
+                        "it's fine\nM")
+        check("...and does not make the whole call unsplittable either (#193)",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+
         # THE REFUSAL NAMES ONLY WHAT IT READ (#193 defect 2). Two branches,
         # one case each, asserted on the sentence: the exit status is the same.
         r = ask(wt7, tool="Bash", command='echo "unterminated')

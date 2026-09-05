@@ -37,7 +37,14 @@ kinds of target:
 THE COMMAND IT READS IS THE LOGGED ONE, cut at 200 bytes by the guard, so a
 `gh` write past that cut is invisible here and the call falls to the basename
 reading. Widening the cut would put whole document bodies in a machine-local
-log this never deletes; the loss is a pair not made, never a pair invented.
+log this never deletes. THE COST IS NOT ONLY A PAIR NOT MADE, which an earlier
+draft of this paragraph claimed. The basename is the BROADER key, so a `gh`
+past the cut can pair with any later call sharing its first word: a pair
+INVENTED. Measured over the 547 commands of `scripts/fixtures/guard-allow-corpus.jsonl`
+at this sha, cutting each at 200 bytes and comparing `targets()` on both:
+85 change target set, and 77 of those fall back to the `argv0` reading alone.
+No number reported so far is affected -- the log this has been run over had no
+row at the cut -- but a longer one will be.
 
 WHAT A NUMBER HERE IS AND IS NOT. A suspected false positive is a PAIR, not a
 verdict: a session may legitimately be refused and then legitimately allowed

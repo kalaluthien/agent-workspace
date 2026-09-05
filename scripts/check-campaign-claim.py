@@ -504,7 +504,22 @@ def openers(line, quote):
 
     `quote` is therefore a stack in flight and one value across lines: a
     substitution does not survive a newline in any spelling this reads, and the
-    quote it sits inside does."""
+    quote it sits inside does.
+
+    A `#` AT WORD START ENDS THE LINE, and leaving it out was worse than not
+    tracking quotes at all, because the cross-line carry above then handed the
+    comment's stray quote to the next line. `# it's fine` / `bash <<'M'` /
+    `gh issue close 11` / `M` was refused at 1a3138e and ALLOWED without this
+    branch -- the apostrophe opened a quote, so the real opener on the next
+    line was read as quoted and the body stayed a command nobody split. The
+    other direction too: `# don't do this` before a `git commit -F - <<'M'`
+    made the whole call unsplittable, which is #193 reopened.
+
+    A `#` ANYWHERE UNQUOTED ENDS IT, not only at word start. The shell means
+    word start, but `shlex` -- which splits every line this hands on -- takes a
+    mid-word `#` as a comment too, so `echo a#b && gh issue close 11` is
+    already unread downstream and no case here can tell the two rules apart. A
+    word-start test would be a branch nothing could fail."""
     found, i, n, stack = [], 0, len(line), []
     while i < n:
         c = line[i]
@@ -528,6 +543,8 @@ def openers(line, quote):
             quote = None if c == '"' else quote
             i += 1
             continue
+        if c == "#":
+            break
         if c in "'\"":
             quote = c
             i += 1
