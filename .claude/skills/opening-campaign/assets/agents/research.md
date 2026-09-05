@@ -35,5 +35,6 @@ re-derived and most likely to be repeated.
 
 - A conclusion drawn from one source, one sample, or one run.
 - Changing a member repository's code beyond a scratch probe. A change your
-  findings motivate is a separate sub-issue: report it, do not file it yourself.
+  findings motivate is not yours to file: report it, and the campaign session
+  decides whether it is a sub-issue or an item on work already open.
 - Answering a question the campaign did not ask because it was nearby.

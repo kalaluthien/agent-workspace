@@ -19,12 +19,28 @@ Launch in `<campaign>/repos/<repo>/`.
 - **Put the prompt before any variadic flag.** `--add-dir` and `--allowedTools`
   swallow a trailing prompt as one of their own values, and the run dies on
   "Input must be provided".
-- **Pass `--add-dir <base> [<other paths the sub-issue names>]`**, always at
-  least the base. A member-repo delegate's cwd is `<campaign>/repos/<repo>/`,
-  and the claim script under `<base>/scripts/` lies outside it, so without the
-  flag its first claim stops on a permission prompt -- a fourth silent stop
-  beside the three below, observed 2026-09-02. Add every source checkout the
-  sub-issue points at the same way; the flag is variadic.
+- **Pass `--add-dir <base> [<other paths the sub-issue names>]` for a MEMBER
+  repository.** Its delegate's cwd is `<campaign>/repos/<repo>/`, and the claim
+  script under `<base>/scripts/` lies outside it, so without the flag its first
+  claim stops on a permission prompt -- a fourth silent stop beside the three
+  below, observed 2026-09-02. Add every source checkout the sub-issue points at
+  the same way; the flag is variadic.
+- **A delegate in the base's own clone is launched without it.** `<base>/scripts/`
+  is already in its own tree, so the flag adds a working directory that buys
+  nothing.
+
+  **It does not buy back the duplicated rules #202 measured, and the probe says
+  why.** Probed 2026-09-06 in `<campaign>/repos/campaign-base/` with the flag
+  absent: the delegate listed its loaded instruction files as
+  `~/.claude/CLAUDE.md`, `~/.claude/RTK.md`, then `<base>/CLAUDE.md` and
+  `<base>/AGENTS.md`, then the campaign directory's pair, then the clone's own
+  pair. The base's rules arrive twice with the flag gone, because the campaign
+  directory lives *under* the base root and the outer copy loads as an ancestor
+  import. The duplication is the clone's location, not the flag, and removing
+  the flag recovers none of the 28,466 duplicated bytes #202 measured on
+  2026-09-05 — a figure pinned to that day's `AGENTS.md`, which every edit to it
+  moves. The probe's raw output is kept as a comment on #210; it is the
+  delegate's own report of what it loaded, not an observation of the loader.
 - Choose the session UUID in advance (`--session-id`) so the transcript path is
   known before the agent starts, and `--name` it `campaign-<N>-executor-<n>` per
   § The session name -- a delegate is always the executor role. `--name`
