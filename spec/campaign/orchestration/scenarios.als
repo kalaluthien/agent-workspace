@@ -249,16 +249,25 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    claim on some other sub-issue makes an irreversible write no safer. The
    guard's own `OWN_CAMPAIGN_GH` is the verb list; this is the event.
 
-   WHICH CAMPAIGN'S issue is NOT held by this rule, and there is no command
-   here that could show it. `sessionCloseIssue` in session/system.als already
-   pins every campaign-issue close to the acting session's own campaign, for
+   WHICH CAMPAIGN'S issue this rule DOES hold -- `i = s.worksOn.campaignIssue`
+   is the session's own and no other -- but NO COMMAND HERE CAN SHOW IT, and
+   that gap is the thing to know before touching the conjunct. Widening it to
+   `i in Campaign.campaignIssue` leaves every command in this file green, so
+   the conjunct is load-bearing and unpinned at once: delete it on the
+   suite's word and nothing goes red. Its two neighbours are not like that --
+   dropping the disjunct reddens `Q11`, dropping `i not in
+   Campaign.memberIssues` reddens `Q4`.
+
+   The reason no command can reach it: `sessionCloseIssue` in
+   session/system.als already pins every campaign-issue close to the acting session's own campaign, for
    every role and independently of `mayAct` -- so a scenario asserting an
    executor cannot close ANOTHER campaign's issue comes out UNSAT whatever this
    predicate says, and one was written and deleted for exactly that reason: it
    survived widening the carve-out to every campaign issue, with the whole
    model still green. `Q11` is the honest half, and measures that the carve-out
-   is what makes the write reachable AT ALL. The guard's own campaign bound is
-   tested where it can fail, in check-campaign-claim-test.py.
+   is what makes the write reachable AT ALL. The campaign bound itself is
+   tested where it CAN fail, in check-campaign-claim-test.py: dropping
+   `i == campaign` from the guard's carve-out fails two named cases there.
 
    `i not in Campaign.memberIssues` is not decoration. Nothing in github/system
    forbids one campaign's ISSUE from being another campaign's SUB-ISSUE -- an
