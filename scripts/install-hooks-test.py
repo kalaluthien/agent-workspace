@@ -420,6 +420,29 @@ def main():
               out.returncode != 0 and "without the no-main-commits guard"
               in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+
+        # ...AND ONE WHOSE HOOK ONLY MENTIONS IT (#214). That verification was
+        # `grep -q 'no-main-commits'` over the whole file until then, three
+        # lines from the overwrite test with the same defect, so a hook naming
+        # the guard in a COMMENT passed as one chaining it -- acquire returning
+        # 0 over a clone whose commits nothing stops. The allow control is the
+        # "ships" case above, which runs the REAL install-hooks.sh: if the
+        # whole-line pattern stops matching what this repository writes, that
+        # case reddens rather than this one.
+        dest = checkout("mentions", False)
+        bad = dest / "scripts" / "install-hooks.sh"
+        bad.write_text(
+            "#!/bin/sh\nprintf '#!/bin/sh\\n"
+            "# we deliberately do not run no-main-commits\\necho lint\\n' >| "
+            ".git/hooks/pre-commit\nchmod +x .git/hooks/pre-commit\n")
+        bad.chmod(0o755)
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        check("an installer whose hook names the guard only in a comment is "
+              "refused too",
+              out.returncode != 0 and "without the no-main-commits guard"
+              in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
         # An installer that fails: the status it gave is what is reported.
         # `$?` read inside an `if !` branch is 0, which is the false answer in
         # the direction that reads as success.
