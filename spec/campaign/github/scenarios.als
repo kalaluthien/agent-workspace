@@ -189,6 +189,26 @@ pred S18a_PlainBaseIssueUnderClosedWorld {
   baseIssuesAreCampaignIssues and S18_PlainBaseIssue
 }
 
+/* S20. THE BASE IS NEVER IN `## Repos` (kalaluthien/campaign-base#205). The
+   premise `claimWithinScope`'s `Base` disjunct rests on, and until #205 it was
+   prose in three files: `campaign-repos.py` accepted `- kalaluthien/campaign-base`
+   and exited 0, and this model let a trace put `Base` in `reposInBody`. Both
+   have a reader now, and this is the model's.
+
+   EXPECT 0 WITH THE FACT. Dropping `always Base not in Campaign.reposInBody`
+   from `WellFormed` makes it SAT, which is what tells the fact from a comment
+   about the fact. S20a beside it is the control: a NON-base repository in the
+   list is ordinary and must stay SAT, or the fact has emptied the relation
+   rather than bounded it -- which a single `expect 0` cannot tell apart.
+
+   Not R14d's job, and R14d cannot be given it: that command ASSUMES
+   `Base not in c.reposInBody` inside its own witness, so it is satisfied by a
+   world the fact forbids and by a world it permits alike. */
+pred S20_TheBaseIsNeverListed { eventually Base in Campaign.reposInBody }
+pred S20a_ControlANonBaseRepoIsListed {
+  some r: Repo | r != Base and eventually r in Campaign.reposInBody
+}
+
 /* ---------------- commands ---------------- */
 
 -- control: settlement is weaker
@@ -215,3 +235,6 @@ run S16a_BaseMemberUnderNarrowReading for exactly 2 Issue, 1 PullRequest, exactl
 run S18_PlainBaseIssue              for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 1
 -- control: the clause bites
 run S18a_PlainBaseIssueUnderClosedWorld for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 0
+-- #205: the base is never in `## Repos`, and the list is not thereby empty
+run S20_TheBaseIsNeverListed          for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
+run S20a_ControlANonBaseRepoIsListed  for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 1

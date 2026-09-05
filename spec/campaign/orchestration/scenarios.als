@@ -124,20 +124,31 @@ pred claimOnTheIssuesRepo {
    every sub-issue of such a campaign was unclaimable. R14d is that world, and
    it goes UNSAT the moment this disjunct is dropped.
 
-   THE READER APPROXIMATES THIS IN ONE NAMED WAY, which is the reader's fault
-   and not a reason to narrow the rule. `campaignOf[Now.issue]` is the
-   sub-issue's ACTUAL parent; campaign-claim.py reads the `## Repos` of whatever
-   campaign number the caller typed and never asks GitHub for the parent, so the
-   two agree exactly when the caller types the right one:
-   kalaluthien/campaign-base#206, and nothing here changes when it lands.
+   THE READER HAS COME UP TO THIS, and the rule did not move to meet it.
+   `campaignOf[Now.issue]` is the sub-issue's ACTUAL parent. campaign-claim.py
+   used to read the `## Repos` of whatever campaign number the caller typed and
+   never ask GitHub for the parent, so the two agreed exactly when the caller
+   typed the right one; since kalaluthien/campaign-base#206 its `take` reads
+   the parent and refuses a sub-issue whose parent is a campaign other than the
+   one named. Two outcomes it does NOT refuse, and each prints apart: a parent
+   that could not be read (not a parent that disagrees), and an issue with no
+   parent at all, which #1 sitting at GitHub's 100-sub-issue cap keeps
+   producing. `release` and `live` stay keyed on the typed number on purpose --
+   they read refs already cut, so a parentage check there would refuse to reach
+   exactly the mis-cut ref this closes.
 
    `campaignOf` is NEVER EMPTY at a Claim, so no vacuous branch hides in the
    second disjunct: `claim` in github/system.als already requires
    `i in Campaign.memberIssues`. That is why the membership conjunct in R14 and
    R14c is a statement of the world rather than a constraint, and why removing
    it moves no verdict.
-   Separately, the base's absence from `## Repos` is assumed by R14d's witness
-   and enforced by no reader and no fact: kalaluthien/campaign-base#205. */
+   Separately, the base's absence from `## Repos` was assumed by R14d's witness
+   and enforced by no reader and no fact until kalaluthien/campaign-base#205.
+   It is now `WellFormed`'s last conjunct in github/system.als, pinned by
+   `S20_TheBaseIsNeverListed`, and refused by `campaign-repos.py`. R14d's own
+   `Base not in c.reposInBody` is therefore a statement of the world rather
+   than a constraint, and removing it moves no verdict -- it is kept because
+   the command's comment argues from it. */
 pred claimWithinScope {
   always (Now.event = Claim implies
             (Now.issue.repo = Base
