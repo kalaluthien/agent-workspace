@@ -543,9 +543,11 @@ def cmd_take(args):
     # because the base is never in the list and a campaign that changes it is
     # not thereby out of its own scope. The model is `claimWithinScope`, whose
     # `Base` disjunct R14d pins. That the base is never in the list is a
-    # convention no reader enforces -- kalaluthien/campaign-base#205 -- and the
-    # exemption does not rest on it: a campaign that listed the base would admit
-    # the same claim through `listed` instead.
+    # convention no reader enforces -- kalaluthien/campaign-base#205 -- and
+    # nothing here rests on it: a campaign that listed the base still reaches
+    # this block with `named` None, so the list is not consulted and the claim
+    # is admitted either way. The convention decides nothing HERE; #205 is about
+    # the second clone it would produce at acquire time.
     if named is not None:
         listed, repos_note = campaign_repos(args.campaign_issue)
         if listed is None:

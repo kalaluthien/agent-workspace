@@ -124,14 +124,18 @@ pred claimOnTheIssuesRepo {
    every sub-issue of such a campaign was unclaimable. R14d is that world, and
    it goes UNSAT the moment this disjunct is dropped.
 
-   THE READER APPROXIMATES THIS IN TWO NAMED WAYS, both of them the reader's
-   fault and neither a reason to narrow the rule. `campaignOf[Now.issue]` is the
+   THE READER APPROXIMATES THIS IN ONE NAMED WAY, which is the reader's fault
+   and not a reason to narrow the rule. `campaignOf[Now.issue]` is the
    sub-issue's ACTUAL parent; campaign-claim.py reads the `## Repos` of whatever
    campaign number the caller typed and never asks GitHub for the parent, so the
-   two agree exactly when the caller types the right one. And `x in none` is
-   FALSE, so this also forbids a claim on an issue no campaign holds as a
-   member, which the reader does not check either. Both are
+   two agree exactly when the caller types the right one:
    kalaluthien/campaign-base#206, and nothing here changes when it lands.
+
+   `campaignOf` is NEVER EMPTY at a Claim, so no vacuous branch hides in the
+   second disjunct: `claim` in github/system.als already requires
+   `i in Campaign.memberIssues`. That is why the membership conjunct in R14 and
+   R14c is a statement of the world rather than a constraint, and why removing
+   it moves no verdict.
    Separately, the base's absence from `## Repos` is assumed by R14d's witness
    and enforced by no reader and no fact: kalaluthien/campaign-base#205. */
 pred claimWithinScope {
