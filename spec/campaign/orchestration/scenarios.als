@@ -105,6 +105,45 @@ pred claimOnTheIssuesRepo {
   always (Now.event = Claim implies Now.repo = Now.issue.repo)
 }
 
+/* ...AND THE SUB-ISSUE'S REPOSITORY IS ONE THE CAMPAIGN IS FOR. The rule above
+   makes the destination the sub-issue's own fact; this is the other half, that
+   the fact agrees with the charter. `## Repos` is what a person signed up for
+   (`Campaign.reposInBody`), so a sub-issue naming a member repository outside
+   it is a scope change filed as a typo, and cutting the ref would widen the
+   campaign silently.
+
+   THE `Base` DISJUNCT IS THE WHOLE DIFFICULTY, and it is not a special case
+   bolted on: `## Repos` lists the MEMBER repositories a campaign clones when it
+   opens, and the base is a member of its own campaign by another route, so no
+   campaign lists it and no campaign is out of scope for changing it.
+   `baseIssuesAreCampaignIssues` in github/system.als already says a sub-issue
+   may land in the base; `R4_RepolessCampaign` already claims one with
+   `always no c.reposInBody`. What neither covers is a NON-EMPTY list that does
+   not hold the base -- the shape every campaign with a member repository has --
+   and campaign-claim.py refused exactly that shape from #187 until #203, so
+   every sub-issue of such a campaign was unclaimable. R14d is that world, and
+   it goes UNSAT the moment this disjunct is dropped.
+
+   THE READER APPROXIMATES THIS IN ONE NAMED WAY, which is the reader's fault
+   and not a reason to narrow the rule. `campaignOf[Now.issue]` is the
+   sub-issue's ACTUAL parent; campaign-claim.py reads the `## Repos` of whatever
+   campaign number the caller typed and never asks GitHub for the parent, so the
+   two agree exactly when the caller types the right one:
+   kalaluthien/campaign-base#206, and nothing here changes when it lands.
+
+   `campaignOf` is NEVER EMPTY at a Claim, so no vacuous branch hides in the
+   second disjunct: `claim` in github/system.als already requires
+   `i in Campaign.memberIssues`. That is why the membership conjunct in R14 and
+   R14c is a statement of the world rather than a constraint, and why removing
+   it moves no verdict.
+   Separately, the base's absence from `## Repos` is assumed by R14d's witness
+   and enforced by no reader and no fact: kalaluthien/campaign-base#205. */
+pred claimWithinScope {
+  always (Now.event = Claim implies
+            (Now.issue.repo = Base
+             or Now.issue.repo in campaignOf[Now.issue].reposInBody))
+}
+
 /* The gate on LAUNCH covers the agent a session starts and says nothing
    about the agent a session IS: `work` carries no `Who.session`, so a session
    working its own claim reaches the same sub-issue along an edge
@@ -405,6 +444,73 @@ pred R8b_RepairExcludesIt {
 pred R8c_RepairAdmitsTheOrdinaryClaim {
   claimOnTheIssuesRepo and claimAtomic
   some i: Issue | eventually (Now.event = Claim and Now.issue = i)
+}
+
+/* R14. THE SCOPE DEFECT, without the rule: a sub-issue lands in a member
+   repository the campaign issue's `## Repos` never listed, and its ref is cut
+   anyway. `claimOnTheIssuesRepo` is asserted, so this is not R8 -- the taker
+   and the sub-issue agree about the destination, and the destination is one
+   the campaign was never for. */
+pred R14_ClaimOnARepoOutsideTheScope {
+  claimAtomic and claimOnTheIssuesRepo
+  some c: Campaign, i: Issue |
+    eventually (Now.event = Claim and Now.issue = i and i in c.memberIssues
+                and i.repo != Base and i.repo not in c.reposInBody)
+}
+
+/* R14b. CONTROL: the repair excludes it. */
+pred R14b_RepairExcludesIt {
+  claimWithinScope
+  R14_ClaimOnARepoOutsideTheScope
+}
+
+/* R14c. ...and it still admits the ordinary claim on a listed member, or the
+   rule refuses the only thing a member repository is for. */
+pred R14c_ScopeAdmitsTheListedMember {
+  claimWithinScope and claimAtomic and claimOnTheIssuesRepo
+  some c: Campaign, i: Issue |
+    eventually (Now.event = Claim and Now.issue = i and i in c.memberIssues
+                and i.repo != Base and i.repo in c.reposInBody)
+}
+
+/* R14d. THE LIVE DEFECT #203 IS FOR, and the one command of these four that
+   was missing when the reader shipped. The campaign has a member repository,
+   so `## Repos` is NOT empty -- which is what separates this from
+   `R4_RepolessCampaign`, whose list is empty and which therefore passes a
+   reader that admits the base only by way of `none`. The sub-issue lands in
+   the base, the list does not hold the base, and the claim must still be cut.
+   Expects 1 WITH the rule asserted: dropping the `Base` disjunct from
+   `claimWithinScope` makes it UNSAT, which is the shape campaign-claim.py was
+   in between #187 and #203. */
+/* R14e. WHOSE list, pinned. Every command above runs at `1 Campaign`, where
+   `campaignOf[Now.issue].reposInBody` and `Campaign.reposInBody` are the same
+   relation and the choice between them is free -- so the four of them together
+   say nothing about which campaign's scope a claim is judged against. Two
+   campaigns, and the sub-issue's OWN parent does not list its repository while
+   the other campaign does. Replacing `campaignOf[Now.issue]` with `Campaign`
+   in `claimWithinScope` makes this SAT and moves no other verdict, which is
+   the only thing that tells the two readings apart.
+
+   The reader makes exactly this mistake in the other direction -- it judges
+   against the campaign the caller typed, not the parent -- which is
+   kalaluthien/campaign-base#206 and not something this command can fix. */
+pred R14e_TheParentsListIsTheOneThatCounts {
+  claimWithinScope and claimAtomic and claimOnTheIssuesRepo
+  some c, other: Campaign, i: Issue |
+    c != other and
+    eventually (Now.event = Claim and Now.issue = i and i in c.memberIssues
+                and i.repo != Base
+                and i.repo not in c.reposInBody
+                and i.repo in other.reposInBody)
+}
+
+pred R14d_ScopeAdmitsTheBaseWhateverTheListHolds {
+  claimWithinScope and claimAtomic and claimOnTheIssuesRepo
+  some c: Campaign, i: Issue, r: Repo |
+    eventually (Now.event = Claim and Now.issue = i and i in c.memberIssues
+                and i.repo = Base
+                and r != Base and r in c.reposInBody
+                and Base not in c.reposInBody)
 }
 
 /* R9. A settled sub-issue whose claim outlives it. `claimAtomic` is asserted,
@@ -1094,6 +1200,14 @@ run R4g_ClaimWithoutAtomicityStillShared for 4 Issue, 1 PullRequest, 1 Campaign,
 run R8_ClaimCutOnAnotherRepo for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R8b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R8c_RepairAdmitsTheOrdinaryClaim for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- the scope half: a claim on a repository the campaign is not for
+run R14_ClaimOnARepoOutsideTheScope for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R14b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R14c_ScopeAdmitsTheListedMember for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- ...judged against the sub-issue's OWN campaign, which needs two to see
+run R14e_TheParentsListIsTheOneThatCounts for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+-- ...and the base, whose absence from `## Repos` is the point
+run R14d_ScopeAdmitsTheBaseWhateverTheListHolds for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R9_SettledSubIssueStaysClaimed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R9b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R9c_RepairAdmitsClaimThenSettle for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1

@@ -93,6 +93,9 @@ case "$*" in
   *"issue view 404 "*) echo 'no Repository line here'; exit 0 ;;
   *"issue view 502 "*) echo 'Repository: outside/scope'; exit 0 ;;
   *"issue view 500 "*) echo 'Repository: other/elsewhere'; exit 0 ;;
+  # THE BASE SPELLED OUT, which `none` above cannot stand in for: `## Repos`
+  # never holds the base, so this is the one line whose two readings differ.
+  *"issue view 503 "*) echo 'Repository: kalaluthien/campaign-base'; exit 0 ;;
   *"issue view 501 "*) exit 1 ;;
   *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/campaign-9999/1-alpha","refs/heads/campaign-9999/2-beta"]'; exit 0 ;;
@@ -431,6 +434,33 @@ def take_cases(m):
         out = r.stdout + r.stderr
         check("a sub-issue naming no member repository cuts on the base",
               "names no member repository" in out and "cut from" in out,
+              out[:300])
+        # ------ #203: THE BASE SPELLED OUT IS NOT OUT OF SCOPE ------
+        # The case the #187 scope check shipped without, and the one value for
+        # which the two readings differ: `Repository: <the base>`. `## Repos`
+        # lists the MEMBER repositories a campaign clones, so it never holds
+        # the base, and reading only the literal `none` as "the base" refused
+        # every sub-issue of every campaign whose work lands here. Campaign
+        # 9999's list is `other/elsewhere`, so the base is genuinely absent
+        # from it -- a fixture listing the base would answer this in place of
+        # the code. `R14d_ScopeAdmitsTheBaseWhateverTheListHolds` is the model.
+        r = claim(["take", "9999", "503", "epsilon"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue naming the base by name cuts its ref",
+              "which every campaign is for" in out and "cut from" in out,
+              out[:300])
+        # ASSERTED ON THE REFUSAL'S ABSENCE TOO, because that is what the
+        # defect emitted: reverting the exemption brings this sentence back
+        # while the run still exits non-zero for its own reasons.
+        check("...and the scope refusal is not what it printed",
+              "belongs in the campaign issue" not in out, out[:300])
+        # ...and the exemption is decided BEFORE the list is read, not by the
+        # list happening to admit it: campaign 8888's body has no `## Repos`
+        # heading at all, which denies a claim naming a member repository.
+        r = claim(["take", "8888", "503", "zeta"], path)
+        out = r.stdout + r.stderr
+        check("a base sub-issue is claimable though the campaign's list will not read",
+              "cut from" in out and "not a scope that admits it" not in out,
               out[:300])
 
         # ------ #187 Q3: A SETTLED SUB-ISSUE'S REF IS RESIDUE ------
