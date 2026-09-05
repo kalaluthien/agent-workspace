@@ -27,12 +27,14 @@ Claude transcripts under `~/.claude/projects/`, for `Bash` and the file tools.
      and `gh_token` find no `gh` is one it allows unread, so its verdict
      cannot change without the allow-unread branch itself changing, and its
      text is 2.3 MB of shell that no reviewer can read. `--all` keeps them.
-     THE COST, STATED: the split branch runs on every command, so dropping
-     these narrows what the corpus can catch there to the commands that DO
-     carry a `gh` -- which is where the heredoc bodies are, `gh issue comment
-     --body "$(cat <<'X' ... X)"` being the campaign's ordinary spelling, so
-     the branch is exercised and not abandoned. #193's named cases are the
-     rest of that branch's cover.
+     A command the guard cannot SPLIT is kept whatever it holds: it was
+     allowed when it ran, so a guard refusing it now is a regression, and
+     dropping it let the corpus miss the one defect it was built to catch.
+     THE COST, STATED: the split branch runs on every command, and what this
+     filter drops is the commands it splits SUCCESSFULLY and reads no `gh` in.
+     So the corpus catches a splitter regression (those are kept, above) and a
+     new refusal over a `gh` call, and it cannot catch a change to the
+     allow-unread branch itself. #193's named cases are that branch's cover.
 
 A call that a session made and the guard allowed is the corpus's subject, and
 a session under the base root during this campaign was a session holding a
@@ -100,12 +102,20 @@ def guard():
 
 
 def reads_for_a_target(g, command):
-    """Whether the guard reads this Bash command for a target at all. A
-    command it cannot split is one it REFUSES, so it is not an allow and not
-    the corpus's business either."""
+    """Whether the guard reads this Bash command for a target at all.
+
+    A COMMAND THE GUARD CANNOT SPLIT IS KEPT, and the first cut of this dropped
+    it as "not an allow". That was the filter reading the CURRENT guard's
+    verdict to decide what the corpus may witness, which is circular: the
+    entries were recorded as ALLOWED when they ran, so one the guard now
+    refuses is a splitter regression -- exactly what a replay corpus is for.
+    Four such commands existed at 1a3138e, all from one defect this filter had
+    hidden from the very sweep meant to catch it (found by review, not by the
+    corpus). Filter 3 is what keeps a genuine refusal out; this one only asks
+    whether the guard READS the command at all."""
     segs, _why = g.segments(command)
     if segs is None:
-        return False
+        return True
     return any(g.head(s)[0] == "gh" or any(g.gh_token(t) for t in s)
                for s in segs)
 

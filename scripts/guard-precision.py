@@ -29,9 +29,15 @@ kinds of target:
     guard's own `issue_target` -- imported, so a change to how the guard reads a
     number moves this with it;
   * the file path, for a file tool;
-  * the command's first word, reduced to a basename, for everything else. This
-    is the loosest of the three and it is what catches the shape that keeps
-    happening: `git commit` refused, then `git commit` allowed a minute later.
+  * the command's first word, reduced to a basename, and only when neither of
+    the other two found anything. This is the loosest of the three and it is
+    what catches the shape that keeps happening: `git commit` refused, then
+    `git commit` allowed a minute later.
+
+THE COMMAND IT READS IS THE LOGGED ONE, cut at 200 bytes by the guard, so a
+`gh` write past that cut is invisible here and the call falls to the basename
+reading. Widening the cut would put whole document bodies in a machine-local
+log this never deletes; the loss is a pair not made, never a pair invented.
 
 WHAT A NUMBER HERE IS AND IS NOT. A suspected false positive is a PAIR, not a
 verdict: a session may legitimately be refused and then legitimately allowed

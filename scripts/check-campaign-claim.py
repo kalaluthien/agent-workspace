@@ -473,6 +473,76 @@ def held(repo_root, issue=None):
     return out, detail
 
 
+def openers(line, quote):
+    """([(delimiter, is `<<-`)], the quote state at the end of the line).
+
+    A `<<` IS ONLY A HEREDOC WHERE IT IS SYNTAX. Searching the raw line for one
+    read `git commit -m 'about the <<EOF form'` as opening a heredoc, deleted
+    every following line as its body, and so hid the `gh issue close 9` on the
+    next line -- a write `main` refuses and this allowed. The same mistake in
+    the other direction ate the closing quote of a multi-line
+    `gh issue comment --body "... <<EOF ..."` and refused it as unsplittable.
+    Both were found by a review at 1a3138e, in a differential over 6217 real
+    transcript commands.
+
+    So the scan tracks quoting, and it tracks it ACROSS LINES, because that is
+    what the second shape needs: the quote a `<<` sits inside was opened on an
+    earlier line. A heredoc BODY is not scanned -- it is data, and shell quoting
+    does not cross it -- which is why the caller passes the state back in rather
+    than this reading the whole command.
+
+    A backslash outside single quotes escapes the next character; inside single
+    quotes it does not, which is why the single-quote branch is separate.
+
+    A COMMAND SUBSTITUTION RE-OPENS COMMAND CONTEXT INSIDE A QUOTE, and leaving
+    that out broke the campaign's most common spelling of a body:
+    `gh issue comment --body "$(cat <<'EOF' ... EOF )"` puts the opener inside
+    double quotes, where the shell still reads it as a heredoc. Two entries of
+    the 611-call corpus are exactly that, and both went from allowed to refused
+    the moment quoting was tracked without it -- caught by the corpus, which is
+    what the corpus is for. So `$(` pushes the quote aside and `)` restores it.
+
+    `quote` is therefore a stack in flight and one value across lines: a
+    substitution does not survive a newline in any spelling this reads, and the
+    quote it sits inside does."""
+    found, i, n, stack = [], 0, len(line), []
+    while i < n:
+        c = line[i]
+        if quote == "'":
+            quote = None if c == "'" else quote
+            i += 1
+            continue
+        if c == "\\":
+            i += 2
+            continue
+        if line.startswith("$(", i):
+            stack.append(quote)
+            quote = None
+            i += 2
+            continue
+        if c == ")" and stack:
+            quote = stack.pop()
+            i += 1
+            continue
+        if quote == '"':
+            quote = None if c == '"' else quote
+            i += 1
+            continue
+        if c in "'\"":
+            quote = c
+            i += 1
+            continue
+        if line.startswith("<<", i):
+            m = HEREDOC_OPEN.match(line, i)
+            if m:
+                found.append((m.group(2) or m.group(3),
+                              m.group(0).startswith("<<-")))
+                i = m.end()
+                continue
+        i += 1
+    return found, quote
+
+
 def strip_heredocs(command):
     """(the command with every heredoc BODY removed, the bodies in the order
     their openers appear).
@@ -489,13 +559,12 @@ def strip_heredocs(command):
     for `<<-`. An unterminated body runs to the end, which is what a shell
     would fail on and what this must not traceback on."""
     lines = command.split("\n")
-    out, bodies = [], []
+    out, bodies, quote = [], [], None
     i = 0
     while i < len(lines):
         line = lines[i]
         out.append(line)
-        opens = [(m.group(2) or m.group(3), m.group(0).startswith("<<-"))
-                 for m in HEREDOC_OPEN.finditer(line)]
+        opens, quote = openers(line, quote)
         i += 1
         for delim, dash in opens:
             body = []
@@ -1037,11 +1106,23 @@ def pre(payload):
 
 
 def main() -> int:
+    # THE PAYLOAD THAT WOULD NOT READ IS A VERDICT TOO, and it used to return
+    # here -- past the log write below, so the one refusal that means the guard
+    # was handed something broken was the one refusal nothing recorded and
+    # nothing said was unrecorded. That is the exact silence this file argues
+    # against. `payload` is empty, so the row carries no session and no
+    # command, which is what there was to read.
     try:
         payload = json.load(sys.stdin)
     except (ValueError, OSError) as e:
-        return refuse([f"the hook payload would not read ({e.__class__.__name__})",
-                       "A guard that was handed nothing has permitted nothing."])
+        payload = {}
+        status = refuse([f"the hook payload would not read "
+                         f"({e.__class__.__name__})",
+                         "A guard that was handed nothing has permitted "
+                         "nothing."])
+        note = log_verdict(payload, status, None, Path(os.getcwd()))
+        print(note, file=sys.stderr)
+        return status
     event = payload.get("hook_event_name", "")
     if event and event != "PreToolUse":
         status = refuse([f"registered on {event}, but this is a PreToolUse guard "

@@ -177,7 +177,11 @@ def no_herdr(d):
 
 
 def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
-        tool_input=None, env=None, session="sid-1"):
+        tool_input=None, env=None, session="sid-1", run_cwd=None):
+    """`cwd` is what the PAYLOAD says; `run_cwd` is where the process runs.
+    They are the same question everywhere except one case: a payload that will
+    not parse carries no cwd, so the guard falls back to its own, and a case
+    that did not set it would write that verdict into the REAL campaign log."""
     payload = {
         "session_id": session,
         "cwd": str(cwd),
@@ -190,7 +194,7 @@ def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
     return subprocess.run(
         [sys.executable, str(GUARD)],
         input=stdin if stdin is not None else json.dumps(payload),
-        capture_output=True, text=True,
+        capture_output=True, text=True, cwd=str(run_cwd) if run_cwd else None,
         env=dict(os.environ, **(env or {})))
 
 
@@ -1032,6 +1036,50 @@ def main():
                         "done\nM")
         check("a gh write beside a heredoc is still read",
               r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:300])
+        # A `<<` IS ONLY A HEREDOC WHERE IT IS SYNTAX. Found by the review at
+        # 1a3138e: the opener was matched on the raw line, so a `<<` inside
+        # quotes ate every line after it. One defect, two differentials against
+        # `main`, and a case for each -- a REFUSAL that became an allow, and an
+        # allow that became a refusal.
+        r = ask(wt7, tool="Bash",
+                command="git commit -m 'about the <<EOF form' &&\n"
+                        "gh issue close 11")
+        check("a quoted `<<` does not swallow the write on the next line",
+              r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:400])
+        r = ask(wt7, tool="Bash",
+                command='gh issue comment 7 --body "line one\n'
+                        'mentions <<EOF in passing\nline three"')
+        check("...and a quote a `<<` sits inside is not eaten either, so a "
+              "multi-line body still splits",
+              r.returncode == 0 and "It covers #7" in r.stdout, out(r)[:400])
+        # ...and the quote state is carried ACROSS lines, which is what the
+        # second shape needs: the quote was opened on an earlier line.
+        r = ask(wt7, tool="Bash",
+                command='echo "opened here\nand a <<EOF inside it\nclosed here"'
+                        '\ngh issue close 11')
+        # Refused as a `gh` it cannot read as a call, not as a write to #11: a
+        # NEWLINE is not a separator here (it never was -- `echo hi\ngh issue
+        # close 5` is in the stray list above), so the two lines are one
+        # segment whose command word is `echo`. What this pins is that the
+        # quote CLOSED on line three, leaving the `gh` visible at all; without
+        # the carry it was swallowed and the call exited 0.
+        # ASSERTED ON THE `gh` BEING SEEN, not on the verdict. A NEWLINE is not
+        # a separator here and never was (`echo hi` + `gh issue close 5` on two
+        # lines is in the stray list above), so these two lines are one segment
+        # whose command word is `echo` and whose `gh` is a stray token -- which
+        # this session's claim then covers, exit 0. What the case pins is that
+        # the quote CLOSED on line three and the `gh` survived to be read at
+        # all; before the carry, the `<<EOF` on line two ate lines three and
+        # four and the guard saw no `gh` anywhere.
+        check("...tracked across lines, not restarted at each one",
+              "cannot read as a call" in out(r) and "gh issue" in out(r),
+              out(r)[:400])
+        # ALLOW beside all three: the real heredoc still has its body removed.
+        r = ask(wt7, tool="Bash",
+                command="git commit -F - <<'M'\nthe machine's own\nM")
+        check("ALLOW beside them: a real heredoc body is still data",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+
         # THE REFUSAL NAMES ONLY WHAT IT READ (#193 defect 2). Two branches,
         # one case each, asserted on the sentence: the exit status is the same.
         r = ask(wt7, tool="Bash", command='echo "unterminated')
@@ -1194,6 +1242,19 @@ def main():
               camp_log.is_file()
               and last(camp_log).get("target")
               == str((f.camp / "notes.md").resolve()), out(r)[:300])
+        # THE PAYLOAD THAT WOULD NOT READ IS A VERDICT TOO, and it used to
+        # return past the log write -- so the one refusal meaning the guard was
+        # handed something broken was the one nothing recorded and nothing said
+        # was unrecorded. `run_cwd` because that payload carries no cwd.
+        r = ask(f.base, stdin="{not json", run_cwd=f.base)
+        check("a payload that would not read is logged like any other verdict",
+              last(base_log).get("reason", "").startswith("the hook payload "
+                                                          "would not read"),
+              last(base_log))
+        check("...and the guard says where that verdict went",
+              r.returncode == 2 and f"logged to {base_log}" in r.stderr,
+              out(r)[:300])
+
     with tempfile.TemporaryDirectory() as d:
         # A call under no base is not campaign work, and saying "logged" about
         # it would put every session on this machine in the measurement.
@@ -1244,6 +1305,13 @@ def main():
                             under=f.camp / "worktrees")
             member = f.member(branch="campaign-1/7-x")
             env = herdr_stub(d, {"sid-1": "campaign-1-executor-1"})
+            # FOUR SLOTS, AND TODAY'S CORPUS FILLS TWO. Every file entry in it
+            # is `campaign` or `worktree`, because that is where this
+            # campaign's sessions wrote; `base` and `member` are exercised by
+            # the hand-written cases above and by nothing here. Kept anyway, so
+            # a corpus extracted on a machine that works differently replays
+            # without a change -- and said out loud, because a slot nothing
+            # reaches reads exactly like a slot that passed.
             where = {"base": f.base, "campaign": f.camp, "worktree": wt,
                      "member": member}
             refused, replayed = [], 0

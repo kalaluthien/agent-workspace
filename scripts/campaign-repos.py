@@ -190,20 +190,24 @@ def main():
     # Every entry becomes a checkout at repos/<name>/, so two entries ending in
     # the same name are one directory and the second acquire overwrites the
     # first. Case-folded: the filesystem here does not tell `Web` from `web`.
+    # `where` and not `key`: `key` is this module's exported reader, and a local
+    # of that name shadowed it inside the one function that might come to need
+    # it. Latent when a review found it, and a rename is cheaper than the day it
+    # is not.
     seen = {}
     for i in repos:
-        key = i.rsplit("/", 1)[-1].casefold()
-        if key in seen:
-            if seen[key] == i:
+        where = i.rsplit("/", 1)[-1].casefold()
+        if where in seen:
+            if seen[where] == i:
                 sys.exit(f"campaign-repos: duplicate entry under ## Repos: {i}")
             sys.exit("campaign-repos: two entries share the checkout directory"
-                     f" repos/{i.rsplit('/', 1)[-1]}/: {seen[key]} and {i}")
-        seen[key] = i
+                     f" repos/{i.rsplit('/', 1)[-1]}/: {seen[where]} and {i}")
+        seen[where] = i
 
     print("\n".join(repos))
 
 
-# GUARDED, so campaign-claim.py can import `normalize` and `BASE_REPO` without
+# GUARDED, so campaign-claim.py can import `slug`, `key` and `BASE_REPO` without
 # running the reader. It used to call `main()` at import time, which is why that
 # file ran this one as a subprocess; it still does for the LIST, because the
 # refusals above are exit strings and reading them back as a verdict is what
