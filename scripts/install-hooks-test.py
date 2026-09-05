@@ -475,11 +475,10 @@ def main():
         check("the guard is registered on PreToolUse",
               any("check-campaign-claim.py" in c for c in commands("PreToolUse")),
               str(settings)[:200])
-        # The release half is on PostToolUse and carries --released. Asserted
-        # apart from the entry existing: a PostToolUse slot holding the PRE
-        # command would register, run, exit 2 and enforce nothing.
-        check("...and the release half is on PostToolUse with --released",
-              any(c.endswith("--released") for c in commands("PostToolUse")),
+        # Nothing on PostToolUse: the --released half went with #176's
+        # records, and a guard left there would run and enforce nothing.
+        check("...and nothing of it is registered on PostToolUse",
+              not any("check-campaign-claim.py" in c for c in commands("PostToolUse")),
               str(commands("PostToolUse"))[:200])
         check("...and the installer says where it wrote them",
               "settings.json PreToolUse" in out.stdout, out.stdout[:200])
@@ -502,8 +501,23 @@ def main():
                       f"exit {run.returncode} from `{cmd}`; "
                       f"{run.stderr.strip()[:120]}")
 
-        # Idempotent: a second clone must not leave the guard running twice.
-        installer(r.root)
+        # Idempotent: a second clone must not leave the guard running twice,
+        # and an entry an earlier install left on the retired event is swept.
+        shutil.copy(SCRIPTS / "check-campaign-claim.py",
+                    r.root / "scripts" / "check-campaign-claim.py")
+        settings["hooks"].setdefault("PostToolUse", []).append(
+            {"matcher": "Bash", "hooks": [{"type": "command",
+             "command": 'python3 "/old/check-campaign-claim.py" --released'}]})
+        (r.root.parent / "home" / ".claude" / "settings.json").write_text(
+            json.dumps(settings))
+        out = installer(r.root)
+        settings = json.loads((r.root.parent / "home" / ".claude"
+                               / "settings.json").read_text())
+        check("a retired PostToolUse registration is removed on re-install, and "
+              "the installer says so",
+              not any("check-campaign-claim.py" in c for c in commands("PostToolUse"))
+              and "removed:" in out.stdout and "PostToolUse" in out.stdout,
+              out.stdout[:300] + str(commands("PostToolUse"))[:200])
         settings = json.loads((r.root.parent / "home" / ".claude"
                                / "settings.json").read_text())
         check("re-running replaces the entry rather than stacking one",

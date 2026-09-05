@@ -52,39 +52,48 @@ esac
 
 Stop on either.
 
-Holds when: the campaign issue's latest `BOUND` comment names this machine, and
+Holds when: the campaign issue carries one `bound:` label naming this machine, and
 `$CAMPAIGN_DIR` is absolute, a direct child of the base, and named
 `<slug>-<YYMMDD>`.
 
-### 1. Refuse while a peer holds a claim or has not stood down
+### 1. Refuse while a claim is occupied or a session is still running
 
 **If `TOOK_IT_HERE` is set, this step and step 2 are not applicable — report
-that, not a pass**; run them anyway, they cost one command. The gate reads
-*agreement*, not presence: a peer that has finished, released its claims and
-posted `STOOD DOWN` on the campaign issue passes whatever its cwd, and a peer
-that has not is asked, not killed. One reader makes all three readings —
-herdr's liveness, the claim records, and the campaign issue's `STOOD DOWN`
-comments — joined on the session id:
+that, not a pass**; run them anyway, they cost one command. **A peer leaves the
+campaign by fact**: it stops its pane, or leaves the base tree. A rename alone
+does not, unless the new name is another campaign's; a name that says nothing
+still counts while the session sits under the base root.
+There is nothing to say and nothing to post, and a peer still listed is asked,
+not killed. One reader makes all three readings — the remote's claim refs, where
+each is checked out, and herdr's liveness:
 
 ```sh
-"$BASE/scripts/campaign-claim.py" live "$N" --dir "$CAMPAIGN_DIR"
+"$BASE/scripts/campaign-claim.py" live "$N"
 ```
 
-Read the word, never the exit status, and refuse on any of:
+Read the words, never the exit status, and refuse on any of:
 
-- a non-zero exit — one of the three readings did not happen;
-- any row under **claims answered by a live session** — a live claim;
-- any row under **claims no live session on this machine answers** that does not
-  read `dead` — a pid this machine cannot vouch for;
-- any row under **live sessions under … with neither a claim nor a STOOD DOWN**.
+- a non-zero exit — one of the readings did not happen, an unreadable repository
+  included;
+- any row under **claims checked out on this machine** — a workspace is standing
+  in a claim;
+- any row under **claims checked out nowhere on this machine** that does NOT
+  read `landed as #<pr>` — a claim that outlived its workspace, or one held on a
+  machine this cannot see. **`landed` blocks nothing**: its work is on `main`
+  and only the ref survived, which is the ordinary state of this tracker
+  (`delete_branch_on_merge` is off), and refusing on the whole group made the
+  close unpassable — measured on campaign #1, whose `campaign-1/154-…` landed as
+  #162 months ago. A row reading `MERGE UNREADABLE` refuses like any other
+  failed reading;
+- any row under **live sessions of campaign-N**.
 
 For each row of the last kind, send `STATUS`, then `STAND DOWN`, to every such
-session (`AGENTS.md` § The four messages), not only the first; the peer posts
-its own `STOOD DOWN` with `campaign-claim stood-down` once its work is on
-GitHub, and this step is re-run. This skill never kills an agent, and never
-posts a `STOOD DOWN` for anyone else: the comment is the peer's word, which is
-why it is evidence (`references/rationale.md`). No rows still leaves two cases
-step 2 is what catches.
+session (`AGENTS.md` § The four messages), not only the first, and re-run this
+step once its pane is gone. **`live` cannot say which session holds which claim
+and does not pretend to** — herdr reports where a session started, not the
+worktree it works in — so the sessions it lists are exactly who to ask
+(`references/rationale.md`). This skill never kills an agent. No rows still
+leaves two cases step 2 is what catches.
 
 Holds when: `campaign-claim live` exited 0 and printed no row of the three
 refusing kinds — or `TOOK_IT_HERE` is set and this step reported not applicable
@@ -257,8 +266,9 @@ and read back through `campaign-repos` after.
 ### 5. Say you are closing, then close, then delete the directory
 
 Only after the person confirms. **Say it on the campaign issue first, and read who
-answers** — the campaign issue is the one place a machine working this campaign against
-its `BOUND` could answer. Say what the delete will destroy in the same comment.
+answers** — the campaign issue is the one place a machine working this campaign
+against its `bound:` label could answer. Say what the delete will destroy in the
+same comment.
 
 ```sh
 HOST=$(hostname -s)
@@ -341,6 +351,6 @@ The probes and the failures behind these: `references/gotchas.md`.
   `${spec##*:}` instead.
 - `diff` is shadowed in a Claude Code shell on this machine. Write `command diff`.
 - Every session of a campaign shares its one directory, so this delete may hit a
-  peer's live workspace — `runtime/claims/` catches that in step 1,
-  `campaign-local-work` in step 2; the herdr `cwd` gate alone cannot, since a
+  peer's live workspace — the checked-out claims catch that in step 1,
+  `campaign-local-work` in step 2; a herdr `cwd` gate alone cannot, since a
   session working from the base root has the base as its `cwd`.

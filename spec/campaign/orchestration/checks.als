@@ -71,6 +71,34 @@ assert DisjointPlanes { no campaignPlaneEvents & codePlaneEvents }
    forbidding work altogether. */
 assert PermissionImpliesClaimGates { permissionByRole implies claimBeforeWork }
 
+/* ATTRIBUTION, AND WHAT DERIVING IT COSTS. `holder` reads the claim's owner
+   off the checkout, so a live agent is its own task's holder exactly while the
+   checkout stays on its branch. `Acquire` is what moves one, and nothing
+   forbids moving it under a live agent -- R4c is that trace and A17 is the
+   state it leaves. Stated as a property rather than a fact because the fact
+   would forbid R4c and call the silence safety. */
+assert AttributionIsSound { always all a: Live | a in holder[a.task] }
+
+/* The repair, and THREE events have to be refused, each of which un-names the
+   holder a different way. `Acquire` moves the checkout out from under the
+   agent -- R4c. `DeleteDir` takes the checkout away with the tree -- A10, and
+   `noDeleteUnderLiveAgent` is the gate A11 already measures. `RemoveMember`
+   empties `campaignOf`, so there is no campaign directory left to read a
+   checkout in and the holder set goes empty with the checkout untouched.
+   Each conjunct was found by dropping it and reading the counterexample, and
+   deleting any one of the three reddens the check below. */
+pred holderStaysAttributed {
+  always (Now.event = Acquire implies
+            no a: Agent | a in Live and a.host = Where.machine
+                          and a in holder[a.task] and a.task.repo = Where.repo)
+  always (Now.event = RemoveMember implies
+            no a: Agent | a in Live and a.task = Now.issue)
+  noDeleteUnderLiveAgent
+}
+assert AttributionIsSoundIfCheckoutHeld {
+  holderStaysAttributed implies (always all a: Live | a in holder[a.task])
+}
+
 /* Every delegate was launched by its planner: the launching session holds a
    Planner atom on the delegate's sub-issue. Dropping the planner conjunct from
    `launch` reddens it; P2 in scenarios is the control that delegates still
@@ -95,7 +123,6 @@ pred Cov_Confirm          { eventually Now.event = Confirm }
 pred Cov_ConfirmElsewhere { eventually Now.event = ConfirmElsewhere }
 pred Cov_Review           { eventually Now.event = Review }
 pred Cov_StandDown        { eventually Now.event = StandDown }
-pred Cov_StoodDownPosted  { eventually Now.event = StoodDownPosted }
 pred Cov_Retire           { eventually Now.event = Retire }
 pred Cov_AgentDie         { eventually Now.event = AgentDie }
 pred Cov_GuardedRelease   { eventually Now.event = Release }
@@ -127,6 +154,11 @@ check PermissionImpliesClaimGates for 3 Issue, 1 PullRequest, 1 Campaign, 2 Sess
 -- every delegate has a planner behind its launch
 check DelegateLaunchedByPlanner       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 
+-- the derived attribution is NOT sound on its own: an acquire moves the checkout out from under a live agent
+check AttributionIsSound              for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Branch, 1 CampaignDir, 10 steps expect 1
+-- and it is once the acquire is refused
+check AttributionIsSoundIfCheckoutHeld for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Branch, 1 CampaignDir, 10 steps expect 0
+
 -- every own event fires in some trace
 run Cov_LaunchAgent      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 -- a delegate launch needs the planner atom beside it, so this runs at 2 Agent
@@ -142,7 +174,6 @@ run Cov_Confirm          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Ag
 run Cov_ConfirmElsewhere for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Review           for 3 Issue, 2 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 run Cov_StandDown        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
-run Cov_StoodDownPosted  for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Retire           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_AgentDie         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_GuardedRelease   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1

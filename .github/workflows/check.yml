@@ -46,25 +46,13 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
-      - name: Every guard that refuses a commit also refuses here
+      # check-commit-claim.py is deliberately absent: it refuses a branch that
+      # is not a claim, and a pull request runner's branch never is.
+      - name: The three guards that read the tree, as the pre-commit runs them
         run: |
           scripts/check-rule-readers.py
           scripts/check-tree-shape.py
           scripts/check-cross-references.py
-
-      # check-campaign-claim reads its changing-command pattern from
-      # ~/.claude/hooks/stop-takeaway-check.py -- owned there, imported by path,
-      # never copied (its header says why). The runner has no ~/.claude, and
-      # the guard refuses when it cannot read the pattern, so without this
-      # step its whole suite fails closed. The clone is the same repository
-      # the machine's ~/.claude is a checkout of, at its default branch: what
-      # this suite proves is that the guard works against the pattern the
-      # machine actually runs, which no pin could give.
-      - name: The machine-wide hooks the claim guard imports from
-        run: |
-          test ! -e "$HOME/.claude" || { echo "runner has a ~/.claude already"; exit 1; }
-          git clone -q --depth 1 https://github.com/kalaluthien/dotclaude.git "$HOME/.claude"
-          test -f "$HOME/.claude/hooks/stop-takeaway-check.py"
 
       # Every suite, found rather than listed: a hand-kept list is one more copy
       # to forget, and the five suites #111 added were run by nobody here until

@@ -337,11 +337,11 @@ def skill_root(rel):
 
     `.claude/skills/<skill>/` is the root a relative `references/x.md` resolves
     against -- not the citing file's own directory, which is why
-    `references/launching.md` may correctly name `assets/handover.md`.
+    `references/launching.md` may correctly name `assets/sub-issue.md`.
     """
     # Exactly `.claude/skills/<skill>`: three segments, so two slashes. A
     # deeper ancestor is a subdirectory of the skill, and resolving against it
-    # makes `references/launching.md` look for `references/assets/handover.md`.
+    # makes `references/launching.md` look for `references/assets/sub-issue.md`.
     parts = rel.split("/")
     for i in range(len(parts) - 1, 0, -1):
         d = "/".join(parts[:i])

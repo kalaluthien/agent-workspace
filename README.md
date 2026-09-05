@@ -22,7 +22,7 @@ campaign-base/
   auth-refactor-260828/          a campaign, git-ignored
     AGENTS.md CLAUDE.md          engineering principles for this campaign
     README.md                    the campaign issue body, section for section
-    runtime/                     data, state, artifacts, handover briefs
+    runtime/                     data, state and artifacts of this campaign
     scripts/                     scripts built for this campaign; scratch,
                                  listed at the close and deleted with the directory
     repos/api/  repos/web/       member repositories, each its own git repo
@@ -47,7 +47,7 @@ makes is the whole index; a member repository receives only branches and pull
 requests. That makes
 GitHub the single record: a campaign can move from one machine to another, and a
 phone can read it, without anything local having to agree. It runs on one
-machine at a time, and the campaign issue's latest `BOUND` comment says which.
+machine at a time, and one `bound:<machine>` label on the campaign issue says which.
 
 ## Setup
 
@@ -58,8 +58,8 @@ scripts/install-hooks.sh
 ```
 
 It installs the `pre-commit` that chains the machine-wide no-commits-on-`main`
-guard with this repository's three (`check-rule-readers`, `check-tree-shape`,
-`check-cross-references`), the `post-commit` that pushes a campaign branch on
+guard with this repository's own guards (the `# runs:` line the installer
+writes is the one list), the `post-commit` that pushes a campaign branch on
 its first commit, and the harness claim guard in `~/.claude/settings.json`. It
 refuses rather than overwrites a hook it did not write, with one exception it
 announces: the two-line `no-main-commits` shim `acquire-repo.sh` leaves in a

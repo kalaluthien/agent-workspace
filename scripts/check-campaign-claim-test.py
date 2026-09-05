@@ -1,26 +1,32 @@
 #!/usr/bin/env python3
 """Prove the claim guard refuses for the reason it prints, and allows for one too.
 
-Every case runs the shipped script against a fixture base built here --
-never the real one -- and hands it a hook payload on stdin. No case reaches the
-network: the guard's PreToolUse half makes no request at all, and its PostToolUse
-half is covered only up to the point where it would ask GitHub whether an issue
-is closed, since a fixture that mocked `gh` would be testing the mock.
+Every case runs the shipped script against a fixture built here -- never the
+real base -- and hands it a hook payload on stdin. The fixture is a real
+repository with a real remote (a local bare one), because after #176 a claim
+is a branch whose ref exists on the remote and the guard reads refs and
+checkouts and nothing else. No case reaches the network.
 
 WHAT EACH GROUP PINS
 
-Allowing is as load-bearing as refusing here. A guard installed machine-wide that
+Allowing is as load-bearing as refusing. A guard installed machine-wide that
 refused outside a campaign would stop every session on this machine, so the
-"exits 0" cases are not filler: they are the ones whose failure is worst.
+"exits 0" cases are not filler: they are the ones whose failure is worst. And
+an allow that prints WHY -- which clause admitted it, or that the command was
+not read and the commit gate covers it -- is the whole of F1's closing, so the
+sentence is asserted and not only the status.
 
 The refusals are broken apart one at a time, because they share an exit status
 and a stream. A case that only asserted `exit 2` would pass while any single
 branch was deleted, so each asserts the sentence that branch alone prints.
 
+#180's reproduction rows are the cases under "where the session sits", each
+named for its row.
+
 Usage: scripts/check-campaign-claim-test.py
 """
 import json
-import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -30,47 +36,117 @@ HERE = Path(__file__).resolve().parent
 GUARD = HERE / "check-campaign-claim.py"
 CLAIM = HERE / "campaign-claim.py"
 
-SESSION = "sid-1"
-RECORD = f"session {SESSION}\nname exec-1\npid 1\nbranch campaign-1/7-x\nlocal yes\n"
-RELEASED = RECORD + "released 2026-09-02T10:00:00+0900 by " + SESSION + "\n"
-OTHER = "session sid-2\nname exec-2\npid 1\nbranch campaign-1/7-x\nlocal yes\n"
+
+def git(cwd, *args):
+    return subprocess.run(["git", "-C", str(cwd), "-c", "user.email=t@t",
+                           "-c", "user.name=t", *args],
+                          capture_output=True, text=True)
 
 
-def base(d, campaigns):
-    """A fixture base: the marker script the guard resolves a root by, and
-    the campaign directories asked for. `campaigns` maps a directory name to a
-    dict of claim records, or to None for a directory with no runtime/claims/."""
-    root = Path(d) / "base"
-    (root / "scripts").mkdir(parents=True)
-    # A copy and not a symlink: the guard imports it by path, and the record's
-    # shape must come from the shipped script rather than a stand-in.
-    (root / "scripts" / "campaign-claim.py").write_text(CLAIM.read_text())
-    for name, records in campaigns.items():
-        camp = root / name
-        camp.mkdir()
-        if records is None:
-            continue
-        claims = camp / "runtime" / "claims"
-        claims.mkdir(parents=True)
-        for issue, body in records.items():
-            (claims / issue).write_text(body)
-    return root
+class Fixture:
+    """A base with a remote, one campaign directory, and the checkouts asked
+    for. `claims` are branches cut and pushed, each in a worktree at a SIBLING
+    path (outside the base root, which is #180's shape); `unpushed` are
+    campaign branches in worktrees whose ref exists nowhere on the remote;
+    `feature` is a worktree on a plain branch."""
+
+    def __init__(self, d, claims=("campaign-1/7-x",), unpushed=(), feature=None):
+        self.d = Path(d)
+        self.remote = self.d / "r.git"
+        self.base = self.d / "base"
+        # `main` pinned by hand: the cases assert the branch by name, and a
+        # runner's init.defaultBranch is whatever its git ships (`master` on
+        # the CI image).
+        subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main",
+                        str(self.remote)], check=True)
+        subprocess.run(["git", "clone", "-q", str(self.remote), str(self.base)],
+                       capture_output=True, check=True)
+        git(self.base, "symbolic-ref", "HEAD", "refs/heads/main")
+        (self.base / "scripts").mkdir()
+        (self.base / "scripts" / "campaign-claim.py").write_text(CLAIM.read_text())
+        self.camp = self.base / "demo-260904"
+        self.camp.mkdir()
+        # The allowlist shape check-tree-shape requires, which also ignores
+        # the campaign directory: the commit gate's suite commits through the
+        # installed hooks over this same fixture.
+        (self.base / ".gitignore").write_text(
+            "/*\n!/.gitignore\n!/scripts/\n!/spec/\n!/docs/\n")
+        git(self.base, "add", "-A")
+        git(self.base, "commit", "-qm", "init")
+        git(self.base, "push", "-q", "origin", "HEAD")
+        self.trees = {}
+        for i, b in enumerate(claims):
+            git(self.base, "branch", b)
+            git(self.base, "push", "-q", "origin", b)
+            self.trees[b] = self.worktree(f"wt-c{i}", b)
+        for i, b in enumerate(unpushed):
+            git(self.base, "branch", b)
+            self.trees[b] = self.worktree(f"wt-u{i}", b)
+        if feature:
+            git(self.base, "branch", feature)
+            self.trees[feature] = self.worktree("wt-f", feature)
+
+    def worktree(self, name, branch, under=None):
+        path = (under or self.d) / name
+        r = git(self.base, "worktree", "add", "-q", str(path), branch)
+        assert r.returncode == 0, r.stderr
+        return path.resolve()
+
+    def clone(self, branch=None):
+        """A delegate's clone under the campaign directory."""
+        dest = self.camp / "repos" / "campaign-base"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "clone", "-q", str(self.remote), str(dest)],
+                       capture_output=True, check=True)
+        if branch:
+            git(dest, "switch", "-q", "--track", f"origin/{branch}")
+        return dest.resolve()
+
+    def member(self, branch=None):
+        """A MEMBER repository's clone under the campaign directory: its own
+        remote, and no marker of its own. That last part is what makes it a
+        different case from `clone()` above -- a clone of the base carries the
+        marker and so answers as a base, while a member repository does not,
+        and the guard has to resolve it through the base above it."""
+        remote = self.d / "m.git"
+        subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main",
+                        str(remote)], check=True)
+        seed = self.d / "m-seed"
+        subprocess.run(["git", "clone", "-q", str(remote), str(seed)],
+                       capture_output=True, check=True)
+        (seed / "code.txt").write_text("x\n")
+        git(seed, "add", "-A")
+        git(seed, "commit", "-qm", "init")
+        git(seed, "push", "-q", "origin", "HEAD")
+        git(seed, "branch", "campaign-1/7-x")
+        git(seed, "push", "-q", "origin", "campaign-1/7-x")
+        dest = self.camp / "repos" / "member"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "clone", "-q", str(remote), str(dest)],
+                       capture_output=True, check=True)
+        if branch:
+            git(dest, "switch", "-q", "--track", f"origin/{branch}")
+        return dest.resolve()
 
 
-def ask(cwd, tool="Edit", command=None, session=SESSION, post=False,
-        event=None, path=None, stdin=None):
+def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
+        tool_input=None):
     payload = {
-        "session_id": session,
+        "session_id": "sid-1",
         "cwd": str(cwd),
         "tool_name": tool,
-        "tool_input": ({"command": command} if command is not None
-                       else {"file_path": path or str(Path(cwd) / "a.txt")}),
-        "hook_event_name": event or ("PostToolUse" if post else "PreToolUse"),
+        "tool_input": tool_input if tool_input is not None else (
+            {"command": command} if command is not None
+            else {"file_path": path or str(Path(cwd) / "a.txt")}),
+        "hook_event_name": event or "PreToolUse",
     }
-    args = [sys.executable, str(GUARD)] + (["--released"] if post else [])
-    return subprocess.run(args, input=stdin if stdin is not None
-                          else json.dumps(payload),
+    return subprocess.run([sys.executable, str(GUARD)],
+                          input=stdin if stdin is not None else json.dumps(payload),
                           capture_output=True, text=True)
+
+
+UNREAD = "was not read for a target"
+GATE = "pre-commit claim gate"
 
 
 def main():
@@ -84,528 +160,435 @@ def main():
     def out(r):
         return r.stdout + r.stderr
 
-    # 1. Outside a base it must be invisible. This is the case that decides
+    # 1. Outside every base and campaign directory. The case that decides
     # whether a machine-wide registration is safe at all.
     with tempfile.TemporaryDirectory() as d:
-        r = ask(d)
-        check("no base above cwd exits 0 and says nothing",
-              r.returncode == 0 and not out(r).strip(),
-              f"exit {r.returncode}: {out(r)[:200]}")
+        r = ask(d, path=str(Path(d) / "x.md"))
+        check("a Write to a path in no base and no campaign is allowed",
+              r.returncode == 0 and "not campaign work" in r.stdout, out(r)[:200])
+        check("...and the allow names the path and says it looked",
+              str(Path(d).resolve() / "x.md") in r.stdout
+              and "no base tree and no campaign directory" in r.stdout, out(r)[:300])
+        r = ask(d, tool="Bash", command="gh issue close 9")
+        check("a gh write from a cwd in no repository and no base is allowed "
+              "as not in a campaign",
+              r.returncode == 0 and "in no campaign" in r.stdout, out(r)[:200])
+        r = ask(d, tool="Bash", command="rm -rf x")
+        check("a shell command outside is allowed unread",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:200])
+        # A REPOSITORY IS NOT A BASE, and this guard is registered for every
+        # session on the machine: gating the gh half on "has a repository root"
+        # walled every campaign-plane write in every unrelated checkout. The
+        # case above cannot catch it -- its cwd has no repository at all.
+        plain = Path(d) / "plain"
+        plain.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(plain)], check=True)
+        for cmd in ("gh issue close 9", "gh pr merge 9 --merge",
+                    "gh pr comment 9 --body x"):
+            r = ask(plain, tool="Bash", command=cmd)
+            check(f"`{cmd}` from an ordinary git repository that is no base is "
+                  f"allowed, naming why",
+                  r.returncode == 0 and "in no campaign" in r.stdout
+                  and "not a base" in r.stdout, out(r)[:300])
 
-    # 2. A base with no campaign on it is not a campaign session either.
+    # 2. The two clauses, and the refusal when neither holds.
     with tempfile.TemporaryDirectory() as d:
-        root = base(d, {})
-        r = ask(root)
-        check("a base with no campaign directory exits 0",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:200]}")
+        f = Fixture(d, feature="feature")
+        wt7 = f.trees["campaign-1/7-x"]
+        r = ask(d, path=str(wt7 / "a.md"))
+        check("clause 1: a write into a checkout on a claimed branch is allowed "
+              "from any cwd",
+              r.returncode == 0 and "Clause 1" in r.stdout
+              and "campaign-1/7-x, a claim" in r.stdout, out(r)[:300])
+        check("...and says the ref was read from the local origin/ copy",
+              "refs/remotes/origin/campaign-1/7-x" in r.stdout, out(r)[:300])
+        r = ask(f.trees["feature"], path=str(f.base / "AGENTS.md"))
+        check("clause 2: a write into the main checkout on main is allowed when "
+              "the session's root has a worktree on a claim",
+              r.returncode == 0 and "Clause 2" in r.stdout
+              and str(wt7) in r.stdout, out(r)[:400])
+        check("...and it says clause 1 did not hold and why",
+              "Clause 1 does not hold" in r.stdout and "on main, not a campaign "
+              "branch" in r.stdout, out(r)[:400])
+        check("...and calls itself the weaker gate, naming the commit gate",
+              "weaker gate" in r.stdout and "commit gate is what holds" in r.stdout,
+              out(r)[:400])
+        r = ask(f.base, path=str(f.camp / "notes.md"))
+        check("a write under the campaign directory is campaign work, named as such",
+              r.returncode == 0 and "inside the campaign directory" in r.stdout,
+              out(r)[:300])
+        r = ask(f.base, tool="Bash", command="perl -pi -e s/a/b/ AGENTS.md")
+        check("a shell write inside is allowed unread, saying the commit gate "
+              "covers it",
+              r.returncode == 0 and UNREAD in r.stdout and GATE in r.stdout,
+              out(r)[:300])
 
-    # 3. The refusal, and its four separable parts.
     with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {}})
-        r = ask(root)
-        check("a changing call with no claim is refused",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
-        check("...and the refusal is on stderr, where the model reads it",
-              "REFUSED" in r.stderr, out(r)[:200])
-        # An empty claims/ is a READING. Asserted apart from the refusal: the
-        # refusal happens either way, and only this sentence separates "nobody
-        # claimed anything here" from "I could not look".
-        check("...and an empty claims directory is reported as read, not missing",
-              "is empty: no claim was taken here" in r.stderr, out(r)[:400])
-        check("...and it names the session it looked for",
-              SESSION in r.stderr, out(r)[:400])
-        check("...and it names the directory it read",
-              "demo-260902" in r.stderr, out(r)[:400])
+        f = Fixture(d, claims=(), feature="feature")
+        r = ask(f.base, path=str(f.base / "AGENTS.md"))
+        check("a write into the base with no claim anywhere is refused",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...on stderr, where the model reads it", "REFUSED" in r.stderr)
+        check("...saying neither clause held, and what it read",
+              "Clause 1 does not hold" in r.stderr and "Clause 2 does not hold"
+              in r.stderr and "no checkout under" in r.stderr, out(r)[:400])
+        check("...and says how to take one", "campaign-claim.py take" in r.stderr)
+        # A REMEDY THAT DOES NOT RUN IS NOT A REMEDY. `--dir` went with the
+        # record in #176 and argparse now rejects it, so the refusal sent the
+        # reader to a command that fails. Asserted against `take --help`
+        # rather than against a literal, so the next retired flag is caught
+        # too.
+        usage = subprocess.run([sys.executable, str(CLAIM), "take", "--help"],
+                               capture_output=True, text=True).stdout
+        remedy = next(x for x in r.stderr.splitlines()
+                      if "campaign-claim.py take" in x)
+        unknown = [w.strip(",.") for w in remedy.split()
+                   if w.startswith("--") and w.strip(",.") not in usage]
+        check("...and every option the remedy prints is one `take` accepts",
+              not unknown, f"not in `take --help`: {unknown}; remedy: {remedy}")
+        r = ask(f.base, path=str(f.camp / "notes.md"))
+        check("a write under the campaign directory with no claim is refused",
+              r.returncode == 2 and "inside the campaign directory" in r.stderr,
+              out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue close 9")
+        check("a gh write with no claim is refused",
+              r.returncode == 2 and "no claim covering a write to #9" in r.stderr,
+              out(r)[:300])
 
-    # 4. Not every call is a changing call, and the guard must not be a wall.
+    # 3. The ref is the claim, and a ref that cannot be read is not an absence.
     with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {}})
-        for tool, command, why in (
-                ("Read", None, "a read is not a change"),
-                ("Bash", "git status", "a read-only shell command is not a change"),
-                ("Bash", "grep -r x .", "a search is not a change"),
-                ("Bash", 'gh issue create -R o/r --title t --body "run git mv a b"',
-                 "a changing word inside quoted argument text is not a change"),
-                ("Bash", "gh issue create -R o/r --body-file /tmp/b.md",
-                 "filing an issue is not a change"),
-                ("Bash", "gh issue create -R o/r --body 'the $(git mv a b) is prose'",
-                 "a $( inside a single-quoted body is literal, not a change"),
-                ("Bash", 'gh issue create -R o/r --body "$(cat <<\'EOF\'\nrun git mv a b\nEOF\n)"',
-                 "a heredoc read into a body keeps only `cat`, not a change"),
-                ("Bash", 'gh pr create --title "mv the file" --body-file x.md',
-                 "a title is prose, not a change"),
-                ("Bash", 'gh issue create -R o/r --title "R&D notes" --body "run git mv x y"',
-                 "an & in an earlier title does not unblank a later body")):
-            r = ask(root, tool=tool, command=command)
-            check(f"{why}", r.returncode == 0,
+        f = Fixture(d, claims=(), unpushed=("campaign-1/8-y",))
+        wt8 = f.trees["campaign-1/8-y"]
+        r = ask(wt8, path=str(wt8 / "a.md"))
+        check("a campaign branch whose ref is on no remote is not a claim",
+              r.returncode == 2 and "no such head" in r.stderr, out(r)[:400])
+        check("...and says it asked the remote, having found no local copy",
+              "ls-remote origin campaign-1/8-y" in r.stderr, out(r)[:400])
+        git(f.base, "remote", "set-url", "origin", str(f.d / "nowhere.git"))
+        r = ask(wt8, path=str(wt8 / "a.md"))
+        check("a remote that cannot be asked is printed as unreadable, not absent",
+              r.returncode == 2 and "could not be read" in r.stderr
+              and "no such head" not in r.stderr, out(r)[:400])
+
+    # 4. Where the session sits: #180's rows, on a worktree at a sibling path.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=(), feature="feature")
+        wt1 = f.trees["feature"]
+        r = ask(wt1, path=str(wt1 / "scripts" / "x.py"))
+        check("#180 row 6: a Write into a sibling worktree, cwd inside it, no "
+              "claim, is refused", r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...naming the MAIN checkout as the base it read",
+              f"inside the base {f.base.resolve()}" in r.stderr, out(r)[:400])
+        r = ask(wt1, path=str(f.base / "AGENTS.md"))
+        check("#180 row 7: a Write from there into the main checkout is refused",
+              r.returncode == 2, out(r)[:300])
+        r = ask(wt1, path=str(f.camp / "notes.md"))
+        check("#180 row 8: a Write from there into the campaign directory is refused",
+              r.returncode == 2, out(r)[:300])
+        r = ask(wt1, tool="Bash", command="gh issue close 999")
+        check("#180 row 11: gh issue close from there with no claim is refused",
+              r.returncode == 2 and "a write to #999" in r.stderr, out(r)[:300])
+        r = ask(wt1, tool="Bash", command=f"rm -rf {f.camp}")
+        check("#180 row 10: a shell delete of the campaign directory is allowed "
+              "UNREAD -- the named cost -- and says the commit gate is the reader",
+              r.returncode == 0 and UNREAD in r.stdout and GATE in r.stdout,
+              out(r)[:300])
+        r = ask(wt1, tool="Bash", command="git commit -m x")
+        check("#180 row 9: git commit is not read here; it is the commit gate's",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, feature="feature")
+        wt1 = f.trees["feature"]
+        r = ask(wt1, path=str(wt1 / "scripts" / "x.py"))
+        check("...and the same Write with a claim held under the root is allowed",
+              r.returncode == 0 and "Clause 2" in r.stdout, out(r)[:300])
+        git(f.base, "branch", "feature2")
+        nested = f.worktree("x", "feature2", under=f.base / ".claude" / "worktrees")
+        r = ask(nested, path=str(nested / "scripts" / "x.py"))
+        check("a worktree nested under .claude/worktrees/ resolves to the base too",
+              r.returncode == 0 and f"inside the base {f.base.resolve()}" in r.stdout,
+              out(r)[:300])
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "nogit"
+        p.mkdir()
+        r = ask(p, path=str(p / "x.md"))
+        check("a directory with no marker and no git is allowed, printing that "
+              "it looked and found no base",
+              r.returncode == 0 and "not a git repository" in r.stdout
+              and "not campaign work" in r.stdout, out(r)[:300])
+
+    # 5. A delegate's clone under the campaign directory is a base tree of its
+    # own, and its claim is its own branch.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("campaign-1/7-x",))
+        clone = f.clone()
+        r = ask(clone, path=str(clone / "AGENTS.md"))
+        check("a clone on main under the campaign directory, holding nothing, "
+              "is refused", r.returncode == 2 and f"inside the base {clone}"
+              in r.stderr, out(r)[:400])
+        git(clone, "switch", "-q", "--track", "origin/campaign-1/7-x")
+        r = ask(clone, path=str(clone / "AGENTS.md"))
+        check("...and on a claimed branch it is allowed by clause 1",
+              r.returncode == 0 and "Clause 1" in r.stdout, out(r)[:300])
+    # 5b. THE ORDINARY DELEGATE SHAPE, which is NOT the clone above: a MEMBER
+    # repository's clone carries no marker, so it resolves through the base,
+    # and `held` then sweeps the BASE's worktrees -- which structurally cannot
+    # see the member clone's own branch. A delegate standing on its own pushed
+    # claim read as holding none, and every gh write it made was refused.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        member = f.member(branch="campaign-1/7-x")
+        r = ask(member, tool="Bash", command="gh issue close 7")
+        check("a gh write from a member clone standing on its own claim is "
+              "allowed, though no worktree of the base is on it",
+              r.returncode == 0 and "campaign-1/7-x, a claim" in r.stdout,
+              out(r)[:400])
+        r = ask(member, tool="Bash", command="gh issue close 9")
+        check("...and it is still narrowed: a write to another issue is refused",
+              r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:400])
+        git(member, "switch", "-q", "main")
+        r = ask(member, tool="Bash", command="gh issue close 7")
+        check("...and the same clone off the claim holds none of its own",
+              r.returncode == 2 and "a write to #7" in r.stderr, out(r)[:400])
+
+    # 6. gh: the table, the exemption, the narrowing, the parse.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        for cmd, what in [
+            ("gh pr comment 5 --body hi", "gh pr comment"),
+            ("gh pr review 5 --approve", "gh pr review"),
+            ("gh pr edit 5 --title x", "gh pr edit"),
+            ("gh pr merge 5 --merge", "gh pr merge"),
+            ("gh pr create --title x --body y", "gh pr create"),
+            ("gh issue reopen 5", "gh issue reopen"),
+            ("gh issue develop 5", "gh issue develop"),
+            ("gh issue transfer 5 o/r", "gh issue transfer"),
+            ("gh issue delete 5 --yes", "gh issue delete"),
+            ("gh issue edit 5 --body x", "gh issue edit"),
+            ("gh issue comment 5 --body x", "gh issue comment"),
+            ("gh api repos/o/r/issues -f title=x", "gh api with a field"),
+            ("gh api -X PATCH repos/o/r/issues/5 --input body.json", "gh api PATCH"),
+            ("gh api --method=DELETE repos/o/r/issues/5", "gh api DELETE"),
+        ]:
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd}` is a campaign-plane write and is refused without a claim",
+                  r.returncode == 2 and what in r.stderr,
+                  f"exit {r.returncode}: {out(r)[:200]}")
+        for cmd in ("gh issue create --title x --body 'git mv a b; gh issue close 3'",
+                    "gh issue view 5", "gh pr view 5 --json state",
+                    "gh api repos/o/r/issues/5", "gh repo clone o/r"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd}` is not a write and is allowed",
+                  r.returncode == 0, f"exit {r.returncode}: {out(r)[:200]}")
+        r = ask(f.base, tool="Bash", command="gh issue create --title x")
+        check("...and the issue-create allow names the exemption",
+              "minted there" in r.stdout, out(r)[:200])
+        r = ask(f.base, tool="Bash", command='gh pr comment 5 --body "unbalanced')
+        check("a gh command shlex cannot split is refused, naming why",
+              r.returncode == 2 and "would not split" in r.stderr
+              and "No closing quotation" in r.stderr, out(r)[:200])
+        r = ask(f.base, tool="Bash", command="echo ok && gh issue close 5")
+        check("a gh write in a later segment is read",
+              r.returncode == 2 and "a write to #5" in r.stderr, out(r)[:200])
+        r = ask(f.base, tool="Bash", command="gh -R o/r issue close 5")
+        check("a valued flag before the subcommand does not hide it",
+              r.returncode == 2 and "a write to #5" in r.stderr, out(r)[:200])
+        r = ask(f.base, tool="Bash",
+                command="gh issue close https://github.com/o/r/issues/12 -R o/r")
+        check("the closed issue is read from a URL too",
+              r.returncode == 2 and "a write to #12" in r.stderr, out(r)[:200])
+        # A PATH IS NOT AN ISSUE NUMBER. Reading the tail of any token holding
+        # a slash made `--body-file /tmp/123` name #123 and refuse the write
+        # for a claim nobody could hold.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment --body-file /tmp/123 7")
+        check("a file path operand is not read as the issue number",
+              r.returncode == 2 and "a write to #7" in r.stderr
+              and "#123" not in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue close docs/2024/9")
+        check("...nor is any other slashed word that is not an issue URL",
+              "a write to #9" not in r.stderr, out(r)[:300])
+        # And a flag's value that IS a bare number must not be read as the
+        # issue either -- which the path rule alone cannot catch, since the
+        # value has no slash. VALUED is what skips it.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment --body-file 9 7")
+        check("a valued flag's numeric value is not the issue the write names",
+              r.returncode == 2 and "a write to #7" in r.stderr
+              and "#9" not in r.stderr, out(r)[:300])
+        # Position must not hide the call: every executing form the old
+        # SERVICE_DOORS regex caught, the table catches too.
+        for cmd in ("(gh issue close 5)",
+                    "{ gh issue close 5; }", "/opt/homebrew/bin/gh issue close 5",
+                    "env gh issue close 5", "GH_TOKEN=x gh issue close 5",
+                    "command gh issue close 5", "time gh issue close 5",
+                    "for i in 1; do gh issue close 5; done",
+                    "if true; then gh issue close 5; fi",
+                    "bash -c 'gh issue close 5'",
+                    # The four the fix round's own spec-conformance audit found
+                    # still open at 1918ce7: a backquoted call, eval's operand,
+                    # and a -c spelled last in a short-option cluster.
+                    "`gh issue close 5`", 'eval "gh issue close 5"',
+                    "bash -lc 'gh issue close 5'", "sh -ec 'gh issue close 5'"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd!r}` is read as the gh write it is",
+                  r.returncode == 2 and "a write to #5" in r.stderr,
+                  f"exit {r.returncode}: {out(r)[:200]}")
+        for cmd in ("xargs gh issue close", "echo gh issue close 5",
+                    "echo hi\ngh issue close 5", "cat <<EOF\nsee gh\nEOF",
+                    # The fourth: an assignment's VALUE names gh and the call
+                    # itself is an expansion this cannot resolve.
+                    "G=gh; $G issue close 5"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd!r}`: a gh token this cannot read as the call is a "
+                  f"write of unknown kind, refused without a claim",
+                  r.returncode == 2 and "cannot read as a call" in r.stderr
+                  and GATE not in r.stdout, f"exit {r.returncode}: {out(r)[:200]}")
+        r = ask(f.base, tool="Bash", command="gh api -X GET search/issues -f q=x")
+        check("gh api with an explicit GET is a read, fields or not",
+              r.returncode == 0 and "gh api GET" in r.stdout, out(r)[:200])
+        # `--method=X` carries its value, so it can be the LAST token where
+        # `-X X` cannot. The method scan sliced the last token off and read the
+        # attached spelling as absent, which allowed the write.
+        r = ask(f.base, tool="Bash",
+                command="gh api repos/o/r/issues/1 --method=DELETE")
+        check("an attached --method= is read even as the last word",
+              r.returncode == 2 and "gh api DELETE" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh api repos/o/r/issues/1 --method=GET")
+        check("...and an attached GET is still a read", r.returncode == 0
+              and "gh api GET" in r.stdout, out(r)[:300])
+        # A STRING HANDED TO A SHELL IS NOT READ, and these say so rather than
+        # leaving it to the absence of a case. Reading them cost two blocking
+        # findings -- a machine-wide over-refusal and a decoy that widened the
+        # claim check -- so the boundary is here and is asserted here.
+        for cmd in ('bash <<< "gh issue close 5"',
+                    "echo 'gh issue close 5' | bash",
+                    "echo hi | bash", "ls -la | wc -l"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd}` is allowed unread: a string a shell is handed is a "
+                  f"shell string",
+                  r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        # The over-refusals that reading them produced, each an ordinary
+        # command on a guard every session runs.
+        for cmd in ('gh issue create --title t --body "then gh issue close 9"'
+                    ' && bash run.sh',
+                    'git commit -m "fix gh issue close parsing" && bash deploy.sh',
+                    'echo "see gh docs" | bash'):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd[:44]}...` is allowed: a quoted string is data",
+                  r.returncode == 0, out(r)[:300])
+        # The list is a LIST, and the spec says so: a shell it does not name
+        # has its -c string unread, like any other interpreter. Without this
+        # case the sentence has no reader and drifts on the next name added.
+        for sh in ("csh", "tcsh"):
+            r = ask(f.base, tool="Bash", command=f"{sh} -c 'gh issue close 5'")
+            check(f"{sh} is not in the named list, so its -c string is unread",
+                  r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        for sh in ("ksh", "fish"):
+            r = ask(f.base, tool="Bash", command=f"{sh} -c 'gh issue close 5'")
+            check(f"{sh} runs a -c string like every other shell that does",
+                  r.returncode == 2 and "a write to #5" in r.stderr, out(r)[:200])
+        # `do` is a PREFIX, so a for-body is read as the call it is -- the
+        # docstring used to name it as unreadable, which was the other way
+        # round.
+        r = ask(f.base, tool="Bash",
+                command="for i in 1 2; do gh issue close 9; done")
+        check("a loop body is read as the call it is, not as a stray token",
+              r.returncode == 2 and "a write to #9" in r.stderr
+              and "cannot read as a call" not in r.stderr, out(r)[:300])
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("campaign-1/7-x",))
+        # THE ORDINARY DELEGATE SHAPE. A member repository under a campaign
+        # directory is a git repository with no marker, so resolving a cwd to
+        # its own common dir read it as "in no campaign" and allowed every
+        # campaign-plane write there, while file_call refused the same target.
+        # Both halves are asserted, because the bug was that they disagreed.
+        member = f.camp / "repos" / "member"
+        member.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(member)], check=True)
+        r = ask(member, tool="Bash", command="gh issue close 9")
+        check("a gh write from inside a member clone is judged by the base "
+              "above it, not by the clone",
+              r.returncode == 2 and "no claim covering a write to #9" in r.stderr,
+              out(r)[:400])
+        r = ask(member, path=str(member / "a.txt"))
+        check("...and the file half resolves the same target to the same "
+              "campaign, which is what the two halves must agree on",
+              str(f.camp) in out(r), out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue close 7 -R a/b")
+        check("closing the sub-issue a held claim names is allowed",
+              r.returncode == 0 and "covers #7" in r.stdout, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue close 9 -R a/b")
+        check("closing another sub-issue is refused, naming the issue",
+              r.returncode == 2 and "a write to #9" in r.stderr
+              and "not a claim on #9" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue edit 9 --body x")
+        check("every gh issue write naming a number is narrowed to it, not only close",
+              r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue comment 7 --body x")
+        check("...and one naming the held claim's issue is allowed",
+              r.returncode == 0 and "covers #7" in r.stdout, out(r)[:300])
+        # EVERY ISSUE NAMED MUST BE COVERED. Collapsing two to "any claim at
+        # all" let a claim on #7 admit a write to #9 standing beside it -- and
+        # a decoy naming #7 was the shape a review turned into a bypass.
+        r = ask(f.base, tool="Bash",
+                command="gh issue close 9; gh issue close 7")
+        check("a claim on one issue does not admit a write to another beside it",
+              r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:400])
+        r = ask(f.base, tool="Bash",
+                command="gh issue close 7; gh issue comment 7 --body x")
+        check("...and two writes to the SAME claimed issue are allowed",
+              r.returncode == 0 and "It covers #7" in r.stdout, out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh pr comment 5 --body hi")
+        check("a gh write that names no issue is covered by any held claim",
+              r.returncode == 0 and "campaign-1/7-x, a claim" in r.stdout,
+              out(r)[:300])
+        # A worktree directory that is gone is a claim git itself calls
+        # prunable, and clause 2 must not stand on it.
+        shutil.rmtree(f.trees["campaign-1/7-x"])
+        r = ask(f.base, path=str(f.base / "AGENTS.md"))
+        check("a prunable worktree does not hold clause 2 open",
+              r.returncode == 2 and "no checkout under" in r.stderr, out(r)[:300])
+
+    # 7. F1/F2/F3: the probes the verb parser missed. Allowed, and the allow
+    # says the command was not read and what covers it. That sentence is the
+    # closing of F1: an allow that said nothing was the hole.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        for cmd in ("git -C /x commit -m y", "git -c a=b push",
+                    "git -C /x cherry-pick abc",
+                    "python3 -c 'open(\"AGENTS.md\",\"w\")'",
+                    "perl -pi -e s/a/b/ AGENTS.md", "npm run build",
+                    "sed -i s/a/b/ AGENTS.md", "install-hooks.sh"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd}` is allowed printing that it was unread and the "
+                  f"commit gate covers it",
+                  r.returncode == 0 and UNREAD in r.stdout and GATE in r.stdout,
                   f"exit {r.returncode}: {out(r)[:200]}")
 
-    # The quoted-text carve-out must not swallow the command itself: the same
-    # words unquoted are still a change.
+    # 8. The payload and the registration.
     with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {}})
-        r = ask(root, tool="Bash", command="git mv a b")
-        check("the same words outside quotes are still a change",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
-        r = ask(root, tool="Bash", command='echo "x" > out.txt')
-        check("a redirect outside the quotes is still a change",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
-        # Quoted text that is not a prose sink stays visible, whatever runs it:
-        # the sinks that execute text cannot be listed, so nothing else is hidden.
-        for command, why in (
-                ('gh issue create --body "$(git mv a b)"',
-                 "a command substitution inside a double-quoted body is still a change"),
-                ('gh issue create --body "`git mv a b`"',
-                 "a backtick substitution inside a double-quoted body is still a change"),
-                ('eval "git mv a b"', "an eval'd string is still a change"),
-                ('bash -c "git mv a b"', "a -c string is still a change"),
-                ("bash -lc 'git mv a b'", "a -c in a flag cluster, single-quoted, is still a change"),
-                ('bash -cx "git mv a b"', "a -c anywhere in the cluster is still a change"),
-                ('ssh host "git mv a b"', "a string handed to ssh is still a change"),
-                ("printf '%s' 'git mv a b' | bash", "a string piped into a shell is still a change"),
-                ("xargs -t 'git mv a b'", "a sink-like flag on a program other than gh blanks nothing")):
-            r = ask(root, tool="Bash", command=command)
-            check(why, r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
+        f = Fixture(d)
+        r = ask(f.base, stdin="{ not json")
+        check("a payload that will not read refuses", r.returncode == 2
+              and "permitted nothing" in r.stderr, out(r)[:200])
+        r = ask(f.base, event="PostToolUse")
+        check("invoked on any event but PreToolUse it refuses and says so",
+              r.returncode == 2 and "PostToolUse" in r.stderr
+              and "install-hooks" in r.stderr, out(r)[:200])
+        r = ask(f.base, tool="Write", tool_input={})
+        check("a file tool naming no path refuses",
+              r.returncode == 2 and "names no path" in r.stderr, out(r)[:200])
+        r = ask(f.base, tool="Read", tool_input={"file_path": str(f.base / "x")})
+        check("a tool this guard has no opinion about exits 0",
+              r.returncode == 0, out(r)[:200])
 
-    # 5. The two exemptions, each on its own. They are the paths a refused
-    # session has to be able to take to stop being refused.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {}})
-        # Redirected on purpose. A bare `campaign-claim.py take` matches no
-        # changing form and would pass with the exemption deleted, so a case
-        # written that way pins nothing; the redirect is what makes the call
-        # changing and the exemption the only thing letting it through.
-        r = ask(root, tool="Bash",
-                command=f"{root}/scripts/campaign-claim.py take --local 1 7 x "
-                        f"> /tmp/claim.log")
-        check("taking a claim cannot itself require one", r.returncode == 0,
-              f"exit {r.returncode}: {out(r)[:200]}")
-        r = ask(root, path=str(root / "demo-260902" / "runtime" / "claims" / "7"))
-        check("a write under runtime/ is exempt", r.returncode == 0,
-              f"exit {r.returncode}: {out(r)[:200]}")
-
-    # 6. A held claim allows, and only for the session that holds it.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {"7": RECORD}})
-        r = ask(root)
-        check("a record naming this session allows the call", r.returncode == 0,
-              f"exit {r.returncode}: {out(r)[:200]}")
-        r = ask(root, session="sid-2")
-        check("...and does not allow another session's",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
-
-    # The close target is read from the filtered command too: prose in a body
-    # must not name the issue a claim is checked against.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {"42": RECORD.replace("campaign-1/7-x", "campaign-1/42-y")}})
-        r = ask(root, tool="Bash",
-                command='gh issue comment 42 -R o/r --body "see gh issue close 5 today"')
-        check("a close named inside a body is not the target the claim is checked against",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
-
-    # A released record is attribution, not a claim. Its own case, because
-    # treating it as one is the exact way a closed sub-issue's claim would keep
-    # licensing writes.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {"7": RELEASED}})
-        r = ask(root)
-        check("a released record licenses nothing", r.returncode == 2,
-              f"exit {r.returncode}: {out(r)[:200]}")
-        check("...and the refusal says the record it found was released",
-              "RELEASED" in r.stderr, out(r)[:400])
-
-    # 7. The delegate's cwd, which is a different git repository. The whole
-    # placement question is this case.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {"7": RECORD}})
-        clone = root / "demo-260902" / "repos" / "dotclaude"
-        clone.mkdir(parents=True)
-        r = ask(clone, tool="Bash", command="git commit -m x")
-        check("a delegate's clone resolves to its campaign and allows",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:200]}")
-        r = ask(clone, tool="Bash", command="git commit -m x", session="sid-2")
-        check("...and refuses a session with no claim from there",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
-        check("...naming the campaign its cwd is inside, not every one",
-              "cwd is inside demo-260902" in r.stderr, out(r)[:400])
-
-    # A linked worktree is itself a checkout of this repository and holds the
-    # marker, so resolving to the NEAREST root would land on a tree with no
-    # campaign under it and read as "not in a campaign" -- a silent pass.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {"7": RECORD}})
-        tree = root / ".claude" / "worktrees" / "x"
-        (tree / "scripts").mkdir(parents=True)
-        (tree / "scripts" / "campaign-claim.py").write_text(CLAIM.read_text())
-        r = ask(tree, session="sid-2")
-        check("a linked worktree resolves to the base, not to itself",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
-
-    # 8. `gh issue close` is per-issue, not per-session. A claim on some other
-    # sub-issue must not close this one.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {"7": RECORD}})
-        r = ask(root, tool="Bash", command="gh issue close 7 -R a/b")
-        check("closing an issue this session holds is allowed",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:200]}")
-        r = ask(root, tool="Bash", command="gh issue close 9 -R a/b")
-        check("closing an issue this session does not hold is refused",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
-        check("...and the refusal names the issue rather than the call",
-              "closing #9" in r.stderr, out(r)[:400])
-
-    # 9. A missing claims/ cannot be enumerated, and that is a refusal. It is
-    # the branch whose wrong answer -- treating it as empty -- is silent.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": None})
-        r = ask(root)
-        check("a campaign directory with no runtime/claims/ refuses",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
-        check("...and says a missing directory says nothing",
-              "a missing one says nothing" in r.stderr, out(r)[:400])
-        # And it refuses even when a claim IS held elsewhere: a directory that
-        # could not be read may hold anything, so a pass from its neighbour is
-        # not a pass for it.
-        root2 = base(Path(d) / "two", {"demo-260902": None,
-                                       "other-260901": {"7": RECORD}})
-        r = ask(root2)
-        check("...and one unreadable directory denies a claim found in another",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:200]}")
-
-    # 10. The guard's own inputs. Each is "I could not look", and none may pass.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {}})
-        r = ask(root, stdin="not json")
-        check("a payload that will not read refuses", r.returncode == 2,
-              f"exit {r.returncode}: {out(r)[:200]}")
-        r = ask(root, session="")
-        check("a payload with no session_id refuses", r.returncode == 2,
-              f"exit {r.returncode}: {out(r)[:200]}")
-        check("...and says a claim is attributed by session id",
-              "no session_id" in r.stderr, out(r)[:300])
-        # The registration and the flag disagreeing is silent in one direction:
-        # a PostToolUse slot running the PRE half enforces nothing.
-        r = ask(root, event="PostToolUse")
-        check("the pre half invoked on the wrong event refuses",
-              r.returncode == 2 and "Re-run" in r.stderr,
-              f"exit {r.returncode}: {out(r)[:200]}")
-
-    # 11. The PostToolUse half exits 0 whatever happens, because exit 2 there
-    # prints and execution continues -- a verdict nobody enforces.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {"7": RECORD}})
-        r = ask(root, tool="Bash", command="echo hi", post=True)
-        check("the release half ignores a call that closed nothing",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:200]}")
-        r = ask(Path(d), tool="Bash", command="gh issue close 7", post=True)
-        check("the release half outside a campaign exits 0",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:200]}")
-        r = ask(root, tool="Bash", command="gh issue close 7", post=True,
-                event="PreToolUse")
-        check("the release half on the wrong event says so and exits 0",
-              r.returncode == 0 and "Re-run" in out(r),
-              f"exit {r.returncode}: {out(r)[:200]}")
-
-    # 12. What the call WRITES TO, which is a different question from where the
-    # session sits. Every case here runs from the base root with no claim
-    # anywhere -- the setting group 3 proved is a refusal -- so a case that
-    # passes does so on the target reading and on nothing else.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {}})
-        OUT = "/tmp/check-campaign-claim-fixture.html"
-
-        r = ask(root, tool="Write", path=OUT)
-        check("a Write to a path in no base and no campaign is allowed",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...and the allow names the path it read and the branch taken",
-              OUT in out(r) and "allowed, target outside" in out(r), out(r)[:300])
-
-        r = ask(root, tool="Bash", command=f"echo hi > {OUT}")
-        check("a shell redirect to a path outside every campaign is allowed",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
-        r = ask(root, tool="Bash", command="mkdir -p /tmp/check-campaign-claim-shot")
-        check("a mkdir outside every campaign is allowed",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...and the allow names the form and the operand it read",
-              "`mkdir`" in out(r) and "/tmp/check-campaign-claim-shot" in out(r),
-              out(r)[:400])
-        r = ask(root, tool="Bash", command=f"sed -i 's/a/b/' {OUT}")
-        check("a sed -i on a file outside every campaign is allowed",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
-
-        # The other side of the same branch: inside is still the claim's.
-        r = ask(root, tool="Write", path=str(root / "demo-260902" / "notes.md"))
-        check("a Write under a campaign directory is still refused",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        r = ask(root, tool="Write", path=str(root / "AGENTS.md"))
-        check("a Write inside the base tree is still refused",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-
-        # A SLASHLESS operand is an operand. The words that look like paths are
-        # not the target: with one unrelated outside path in the command,
-        # reading those allowed a copy over a base file.
-        r = ask(root, tool="Bash", command="cp /tmp/x.md AGENTS.md")
-        check("a slashless operand of a matched form denies the call",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...naming the form and the operand that landed inside",
-              "`cp` operand 'AGENTS.md'" in out(r), out(r)[:400])
-        r = ask(root, tool="Bash", command="echo hi > /tmp/x ; rm -rf scripts")
-        check("a second segment's operand inside denies the whole command",
-              r.returncode == 2 and "`rm` operand 'scripts'" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        r = ask(root, tool="Bash", command=f"sed -i '' -e 's/a/b/' AGENTS.md")
-        check("a sed -i script is not read as its file operand",
-              r.returncode == 2 and "`sed -i` operand 'AGENTS.md'" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-
-        # #154's own gap, folded in here: `sed_files` had no notion of an
-        # ATTACHED long option's value at all, so `--expression=` supplying a
-        # script was never recognised either way. With the value outside
-        # (`/tmp/x.sed`) it is read and passed over, and the real file
-        # operand `AGENTS.md` is no longer mistaken for an unsupplied script
-        # and dropped -- it is the one this refuses on.
-        r = ask(root, tool="Bash",
-                command="sed -i --expression=/tmp/x.sed AGENTS.md")
-        check("an attached script value supplies one, so the file operand is kept",
-              "`sed -i` operand 'AGENTS.md'" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        # A second PR #162 fix round, finding 2: `--expression`'s value is a
-        # SCRIPT, never a file, whatever it looks like -- unlike every other
-        # `--flag=value`, its shape says nothing about a write target, so
-        # `foo.sed` (no `/`) supplies exactly as `/tmp/x.sed` did above rather
-        # than being read for its shape and refused as unreadable.
-        r = ask(root, tool="Bash",
-                command="sed -i --expression=foo.sed AGENTS.md")
-        check("an attached script value supplies one whatever its shape",
-              "`sed -i` operand 'AGENTS.md'" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        # The finding's own example: a script that HAPPENS to contain a `/`
-        # (`s/a/b/`) used to be misread as a path-shaped write target by
-        # `looks_like_path`, refusing as inside a base the script never
-        # touches. The real, sole target is `/tmp/out.txt`, outside.
-        r = ask(root, tool="Bash",
-                command=f"sed -i --expression=s/a/b/ {OUT}")
-        check("a script's own slash is not read as a path",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:400]}")
-        # A SHORT option's own `=` is the same ambiguity operands() refuses
-        # for `-t=/tmp/d`: sed has no `=` syntax for a short option either.
-        r = ask(root, tool="Bash", command="sed -i -e=foo AGENTS.md")
-        check("a short option's `=`-attached value is unread here too",
-              "may be an option's attached value" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-
-        # PR #162's second fix round, finding 1: the dispatch that routes a
-        # command into sed_files() at all only matched the SHORT `-i`
-        # spelling, so `--in-place` bypassed the whole guard as "not a
-        # changing call" -- a false ALLOW on a real in-place edit, not a
-        # message-quality gap. `--in-place=.bak` inside the base is now
-        # read the same as `-i.bak` would be.
-        r = ask(root, tool="Bash",
-                command="sed --in-place=.bak s/a/b/ AGENTS.md")
-        check("sed's long in-place spelling is not a bypass",
-              "`sed -i` operand 'AGENTS.md'" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        # ...and still allows when its real target is outside, so the fix is
-        # a dispatch widening, not a new blanket refusal of `--in-place`.
-        r = ask(root, tool="Bash",
-                command=f"sed --in-place=.bak s/a/b/ {OUT}")
-        check("...and a long in-place edit outside every campaign still allows",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:400]}")
-
-        # A git write's target is the repository. Every path in the command is
-        # a log or a message file, so none of them may carry an allow -- this
-        # is the class the guard exists for.
-        for command in ("git push 2>/tmp/err.log", "git commit -m x 2>/tmp/e",
-                        "git push origin HEAD | tee /tmp/push.log",
-                        "git commit -F /tmp/msg.txt"):
-            r = ask(root, tool="Bash", command=command)
-            check(f"a git write is refused whatever path it carries: {command}",
-                  r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...and says the target is the repository, not the path it read",
-              "target is the repository" in out(r), out(r)[:400])
-
-        # The campaign plane is GitHub issues and has no path at all.
-        for command in ("gh issue comment 150 --body-file /tmp/b.md",
-                        "gh issue close 150 --comment-file /tmp/c.md"):
-            r = ask(root, tool="Bash", command=command)
-            check(f"a gh write to the campaign plane is refused: {command}",
-                  r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...and says the campaign plane has no filesystem target",
-              "no filesystem target" in out(r), out(r)[:400])
-        # With a readable form of its own in the command, only the service-door
-        # short-circuit refuses this: the redirect it carries lands outside.
-        r = ask(root, tool="Bash", command="gh issue close 150 -R o/r > /tmp/close.log")
-        check("a gh campaign write is refused though its redirect lands outside",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        r = ask(root, tool="Bash",
-                command="curl -X POST https://api.example.com/x -o /tmp/out.json")
-        check("a writing HTTP request is refused whatever file it writes",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        r = ask(root, tool="Bash",
-                command="curl -X POST https://api.example.com/x | tee /tmp/resp.json")
-        check("...and is refused though the form it pipes into lands outside",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...saying the target is a service, not the file it read",
-              "target is a service" in out(r), out(r)[:400])
-
-        # A form this cannot parse, and an operand it cannot resolve: two
-        # different "I could not look", and neither is an allow.
-        # A pattern verb glued to a hyphen is a file name, and the file the
-        # README tells a fresh clone to run is the one that installs this guard.
-        for cmd in ("cat scripts/install-hooks.sh | head -1",
-                    "python3 -c 'print(1)' # install-hooks.sh"):
-            r = ask(root, tool="Bash", command=cmd)
-            check(f"a hyphenated name is not the verb: {cmd!r} is allowed",
-                  r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
-        # The write_targets site: a readable segment that lands outside, next
-        # to a segment that is changing only through the hyphenated name.
-        # Without the mask there, the second segment poisons the first.
-        r = ask(root, tool="Bash", command="touch /tmp/x && sh scripts/install-hooks.sh")
-        check("...at the target-reading site too: a masked segment does not "
-              "poison a readable one", r.returncode == 0,
-              f"exit {r.returncode}: {out(r)[:300]}")
-        r = ask(root, tool="Bash", command="pip install hooks")
-        check("...while the verb itself, `pip install`, is still refused",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        r = ask(root, tool="Bash", command="rm a-b.txt")
-        check("...and a hyphenated operand does not hide the verb before it",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        for cmd in ("git merge-file AGENTS.md b.md c.md", "git commit-tree HEAD^{tree}"):
-            r = ask(root, tool="Bash", command=cmd)
-            check(f"...and a hyphenated git subcommand keeps its verb: {cmd!r} is refused",
-                  r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        r = ask(root, tool="Bash", command="npm install lodash")
-        check("a changing form whose target this cannot read is refused",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...and says which segment it could not read, not that one was outside",
-              "'npm install lodash' is a changing command on its own" in out(r),
-              out(r)[:400])
-        # An option's ATTACHED value can be the write target itself, and
-        # dropping the whole word discarded it -- finding 1's shape once more.
-        r = ask(root, tool="Bash", command="cp --target-directory=. /tmp/a")
-        check("an attached option value inside the base denies the call",
-              r.returncode == 2 and "`cp` operand '.'" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        r = ask(root, tool="Bash", command="cp --target-directory=/tmp/b /tmp/a")
-        check("...and an attached option value outside still allows",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
-        # A short cluster is not read either way: `-rf` is two flags and `-t.`
-        # is a target, and no table here tells them apart.
-        r = ask(root, tool="Bash", command="cp -t. /tmp/a")
-        check("a short option carrying an attached value is unread, not allowed",
-              r.returncode == 2 and "may be an option's attached value" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        r = ask(root, tool="Bash", command="rm -rf /tmp/check-campaign-claim-shot")
-        check("...and a purely alphabetic cluster is still read as flags",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
-
-        # #154 reopened: a `=` inside a SHORT word is not a long-option
-        # separator. The `=` split used to run before the short-word test, so
-        # `-t=/tmp/d` read as `--target-directory=/tmp/d` -- attached value
-        # `/tmp/d`, outside, allowed -- while GNU cp reads `-t`'s attached
-        # value as `=/tmp/d` whole, `=` included, relative to cwd and inside.
-        r = ask(root, tool="Bash", command="cp -t=/tmp/d /tmp/a")
-        check("a short option's `=`-attached value is unread, not split off",
-              r.returncode == 2 and "may be an option's attached value" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        # Same misreading with a `..` value: the split used to read the
-        # trailing `..` alone, which resolves outside cwd's own directory,
-        # where GNU cp's real target `=..` resolves inside it.
-        r = ask(root, tool="Bash", command="cp -t=.. /tmp/a")
-        check("...and so is the `..` spelling of the same short-option value",
-              r.returncode == 2 and "may be an option's attached value" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-
-        # #154, both halves. Each refuses either way, so the exit status pins
-        # neither: what the two cases pin is that the sentence names what was
-        # actually read. A `--` word is never a cluster, and the cluster
-        # sentence sent the reader to rule out a reading nothing here made.
-        r = ask(root, tool="Bash", command="cp --no-clobber /tmp/a AGENTS.md")
-        check("a long option is read as a flag, and its command's operands are read",
-              "`cp` operand 'AGENTS.md'" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        check("...and the flag-cluster sentence, which is about short words, is absent",
-              "flag cluster" not in out(r), out(r)[:400])
-        # The ALLOW the misread was withholding, and the only new exit 0 on
-        # this branch. Asserted on its own because a refusal and an allow share
-        # no sentence: the cases above pass while this one is broken.
-        r = ask(root, tool="Bash", command="cp --no-clobber /tmp/a /tmp/b")
-        check("a long option with every operand outside allows",
-              r.returncode == 0 and "REFUSED" not in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        check("...saying it read both operands and found them outside",
-              "'/tmp/a' ->" in out(r) and "'/tmp/b' ->" in out(r), out(r)[:400])
-        # The other half: an attached value that says nothing about being a
-        # path was resolved against the base anyway, so the refusal named
-        # a location the command never asked for.
-        r = ask(root, tool="Bash", command="rm --interactive=never /tmp/x")
-        check("an attached value that does not look like a path is unread",
-              "'--interactive=never' attaches a value" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        check("...and no resolved location is claimed for a word never resolved",
-              "resolves to" not in out(r), out(r)[:400])
-        # An EMPTY attached value used to append '', which the trailing filter
-        # dropped, so the call was allowed on its OTHER operand -- the one
-        # false allow this branch closes, and the one a regression reopens
-        # silently, since nothing about the output would say a word was lost.
-        r = ask(root, tool="Bash", command="cp --target-directory= /tmp/a")
-        check("an empty attached value is unread, not dropped for the next operand",
-              "'--target-directory=' attaches a value" in out(r),
-              f"exit {r.returncode}: {out(r)[:400]}")
-        check("...and the allow its other operand used to supply is not printed",
-              "allowed, target outside" not in out(r), out(r)[:400])
-
-        # A segment the guard cannot parse must answer for ITSELF. Appending a
-        # redirect to somewhere harmless used to supply the allow for it, which
-        # is finding 1's shape in the operand reading: a write the guard cannot
-        # see answered for by one it can.
-        for command in ("sh -c 'rm -rf scripts' > /tmp/log",
-                        "npm install > /tmp/log",
-                        "npm install | tee /tmp/log",
-                        "npm install --prefix . 2>/tmp/e"):
-            r = ask(root, tool="Bash", command=command)
-            check(f"a redirect elsewhere does not answer for an unreadable "
-                  f"changing segment: {command}",
-                  r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...and names the segment it could not read",
-              "is a changing command on its own" in out(r), out(r)[:400])
-        # ...and the case it must NOT catch: `echo` is not changing on its own,
-        # so there the redirect genuinely is the write.
-        r = ask(root, tool="Bash", command=f"echo hi > {OUT} 2>&1")
-        check("a redirect after a command that is not changing on its own allows",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
-
-        r = ask(root, tool="Bash", command="mkdir -p $SCRATCH/x")
-        check("an operand this cannot expand is refused",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...and says the operand is an expansion, not a path outside",
-              "is an expansion or a glob" in out(r), out(r)[:400])
-
-        # A claim still allows what the target reading sent to it, so the new
-        # branch cannot be what makes group 6 pass.
-        root2 = base(Path(d) / "held", {"demo-260902": {"7": RECORD}})
-        r = ask(root2, tool="Write", path=str(root2 / "demo-260902" / "notes.md"))
-        check("a held claim still allows a write inside its campaign",
-              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
-
-    # 13. A SECOND checkout of the base is a base tree too, and it is under
-    # neither this root nor any campaign directory. Only the target's own base
-    # lookup refuses it; the root and campaign-directory tests here both say
-    # "outside", so this is the one case that pins that clause.
-    with tempfile.TemporaryDirectory() as d:
-        root = base(d, {"demo-260902": {}})
-        elsewhere = base(str(Path(d) / "second"), {})
-        r = ask(root, tool="Write", path=str(elsewhere / "AGENTS.md"))
-        check("a Write into another checkout of the base is refused",
-              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
-        check("...naming the base the target is in, not the one cwd is in",
-              str(elsewhere) in out(r), out(r)[:400])
-        r = ask(root, tool="Bash", command=f"cp /tmp/x.md {elsewhere}/AGENTS.md")
-        check("...and so is a shell copy into it", r.returncode == 2,
-              f"exit {r.returncode}: {out(r)[:300]}")
-
-    for f in fails:
-        print(f"FAIL  {f}")
+    if not ran:
+        print("FAIL  the suite ran no case at all")
+        return 1
+    for x in fails:
+        print(f"FAIL  {x}")
     print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
     return 1 if fails else 0
 

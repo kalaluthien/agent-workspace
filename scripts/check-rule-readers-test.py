@@ -23,31 +23,6 @@ def fence(body, lang="sh"):
 # order the owning script itself uses, and the sibling command that answers the
 # same question.
 FORM_CASES = [
-    ("session-alive: the script's own flag order", fence('ps -p "$PID" -o ucomm='), 1),
-    ("session-alive: comm instead of ucomm", fence("ps -o comm= -p 1"), 1),
-    ("session-alive: pgrep answers the same question", fence("pgrep -x claude"), 1),
-    ("session-alive: no `=` on the selector", fence("ps -o comm -p 1"), 1),
-    # One case per alternation of the regex, so a revert of any one
-    # alternation fails here instead of shipping quietly.
-    ("session-alive: the selector combined with other flags", fence("ps -axo ucomm="), 1),
-    ("session-alive: a quoted selector", fence('ps -o "ucomm" -p 1'), 1),
-    # Synthetic, and deliberately so: `\B` is what stops `-o` matching when a
-    # word character precedes the dash, and no realistic line exercises it.
-    # Drop `\B` and this fires. It must hold no `|`, `;` or `&`, since the form
-    # cannot cross one and a piped fixture would pin nothing.
-    ("session-alive: a dash inside a word is not the selector flag",
-     fence("ps -p 1 --color-o ucomm="), 0),
-    # Each of the next two is matched by exactly one alternation: the list-pair
-    # spelling carries no `=`, so only the list form sees it, and the bare
-    # selector names no `ps`, so only the quoted-constant form does. A fixture
-    # matched by both would pin neither.
-    ("session-alive: a Python copy passing the selector as a list element",
-     fence('subprocess.run(["ps", "-o", "comm", "-p", pid])'), 1),
-    ("session-alive: the selector held in a constant",
-     fence('SELECTOR = "ucomm="'), 1),
-    # ...and the boundary the narrowed claim now names, so widening the form
-    # later has to move this row rather than pass silently.
-    ("session-alive: another field first is outside the claim", fence("ps -o pid,ucomm -p 1"), 0),
     # Two spellings of the open-campaign issue survey campaign-anchors owns.
     ("campaign issues: the open-campaign issue survey by label",
      fence("gh issue list -R o/r --label campaign --state open --limit 200"), 1),
@@ -75,26 +50,59 @@ FORM_CASES = [
     ("sub-issues: the index read", fence("gh api --paginate repos/o/r/issues/1/sub_issues"), 1),
     ("sub-issues: the endpoint named in prose is a mention",
      "# t\n\nRead it back from `sub_issues`.\n", 0),
-    # The binding reading: the campaign issue's comments filtered for BOUND, and the
-    # machine comparison. One case per alternation, and then the two shapes
-    # that are the *write* of a binding rather than a reading of one -- both
-    # already in this tree, both of which a bare `hostname` form would refuse.
-    ("bound: the comments endpoint the reading walks",
-     fence("gh api --paginate --slurp repos/o/r/issues/1/comments"), 1),
-    ("bound: the comment bodies filtered for the marker",
-     fence("gh issue view 1 -R o/r --json comments -q '.comments[].body' | grep '^BOUND'"), 1),
-    ("bound: a jq that names the marker",
-     fence("""jq -r '.[] | select(.body | startswith("BOUND"))' comments.json"""), 1),
+    # The binding reading: the `bound:` label picked out of the campaign
+    # issue's labels, and the machine comparison. One case per alternation,
+    # then the shapes that are a *write* rather than a reading -- both already
+    # in this tree, both of which a bare `hostname` form would refuse -- and
+    # the comment read the label replaced, which is nobody's reader now.
+    # One case per alternation of the tool list, so reverting any one of them
+    # fails here instead of shipping quietly -- this file's own rule, and the
+    # first cut of this form shipped three alternations with no case at all.
+    ("bound: grep names the prefix",
+     fence("grep '^bound:' labels.txt"), 1),
+    ("bound: sed names it", fence("sed -n 's/^bound://p' labels.txt"), 1),
+    ("bound: awk names it", fence("awk '/^bound:/ {print}' labels.txt"), 1),
+    ("bound: jq names it", fence("""jq -r '.[] | select(startswith("bound:"))' l.json"""), 1),
+    # No `|` in this one: the form cannot cross a pipe, so a piped fixture
+    # would be matched by `grep` alone and would pin `--jq` not at all.
+    ("bound: --jq names it",
+     fence("""gh api repos/o/r/issues/1 --jq '.labels[0].name == "bound:mac"'"""), 1),
+    ("bound: rg names it", fence("rg '^bound:' labels.txt"), 1),
+    ("bound: the prefix tested in Python",
+     fence('here = [n for n in labels if n.startswith("bound:")]', lang="python"), 1),
+    # ...and the two alternations a first cut had that are NOT tools. Both fired
+    # on ordinary code, which is what a form pointing at prose looks like.
+    ("bound: a comparison beside a comment naming the prefix is not the form",
+     fence('verdict = "here" if a == b else "elsewhere"   # prints bound: <m>'), 0),
+    ("bound: a regex call whose string holds the prefix is not the form",
+     fence('re.sub(r"x", "y", t)   # titles like "bound: mac"', lang="python"), 0),
+    # ...and the boundary, which is why the form does not simply match a labels
+    # read: two skills ask for `--json labels` to CLASSIFY a campaign issue, and
+    # `campaign-tracker bound`'s own request is the same call character for
+    # character. Widening the form later has to move this row, not pass quietly.
+    ("bound: a labels read that never names the prefix is outside the claim",
+     fence("gh issue view 1 -R o/r --json labels,parent"), 0),
     ("bound: the machine comparison in shell",
      fence('[ "$M" = "$(hostname -s)" ] && echo here'), 1),
     ("bound: ...and the same comparison written the other way round",
      fence('[ "$(hostname -s)" = "$M" ] && echo here'), 1),
     ("bound: the machine comparison in Python",
      fence("here = machine == socket.gethostname()", lang="python"), 1),
-    ("bound: posting a binding is a write, not a reading",
-     fence('gh issue comment 1 -R o/r --body "BOUND $(hostname -s)"'), 0),
-    ("bound: naming this host in a comment body is a write too",
+    ("bound: naming this host without binding anything is neither",
      fence("HOST=$(hostname -s)"), 0),
+    # The WRITE, which the comment form could not catch and this one must:
+    # `campaign-tracker bind` is the one writer, so a hand-rolled edit in a
+    # document is a second writer of the rule.
+    ("bound: a hand-rolled label edit is the write, and is caught",
+     fence('gh issue edit 1 -R o/r --add-label "bound:$(hostname -s)"'), 1),
+    ("bound: ...and so is creating the label by hand",
+     fence("gh label create bound:mac -R o/r --force"), 1),
+    # The false positive the first cut of this form had: `\bin\b` before
+    # `bound:` fires on an ordinary English sentence in a code block.
+    ("bound: English prose naming the prefix inside a block is not the form",
+     fence("# nothing in here about bound: labels"), 0),
+    ("bound: the comment read the label replaced is nobody's reader now",
+     fence("gh api --paginate --slurp repos/o/r/issues/1/comments"), 0),
     ("repos: a shell parse of the list", fence("grep '^- ' README.md | grep owner/repo"), 1),
     ("repos: the heading named in an error message", fence('echo "REFUSE: the ## Repos list did not read"'), 0),
     ("repos: a parse naming no tool is outside the claim",
@@ -121,67 +129,67 @@ FORM_CASES = [
 # The parser decides what counts as code. Each of these was an unsafe silence:
 # the guard exited 0 on a violation that renders as code.
 PARSER_CASES = [
-    ("prose mentioning a retired form", "# t\n\n`ps -o comm=` is wrong, and here is why.\n", 0),
-    ("a four-space indented code block", "# t\n\nLike so:\n\n    ps -o comm= -p 1\n", 1),
-    ("a tab-indented code block", "# t\n\nLike so:\n\n\tps -o comm= -p 1\n", 1),
+    ("prose mentioning a form", "# t\n\n`grep owner/repo` is wrong, and here is why.\n", 0),
+    ("a four-space indented code block", "# t\n\nLike so:\n\n    grep owner/repo r.md\n", 1),
+    ("a tab-indented code block", "# t\n\nLike so:\n\n\tgrep owner/repo r.md\n", 1),
     # The violation sits *after* the impostor closer and before the real one,
     # so a parser that ends the block early stops scanning and reports clean.
     # With the violation in a later fence both parsers catch it and the case
     # proves nothing.
     ("a ``` run does not close a ```` fence",
-     "# t\n\n````sh\n```\nps -o comm= -p 1\n````\n", 1),
+     "# t\n\n````sh\n```\ngrep owner/repo r.md\n````\n", 1),
     ("a ~~~ run does not close a ``` fence",
-     "# t\n\n```sh\n~~~\nps -o comm= -p 1\n```\n", 1),
-    ("a ~~~ opener closed by ~~~", "# t\n\n~~~sh\nps -o comm= -p 1\n~~~\n", 1),
-    ("`~~~ text` is not a closer", "# t\n\n~~~\n~~~ still open\nps -o comm= -p 1\n~~~\n", 1),
-    ("an unclosed fence keeps scanning", "# t\n\n```sh\nps -o comm= -p 1\n", 1),
-    ("CRLF line endings", "# t\r\n\r\n```sh\r\nps -o comm= -p 1\r\n```\r\n", 1),
+     "# t\n\n```sh\n~~~\ngrep owner/repo r.md\n```\n", 1),
+    ("a ~~~ opener closed by ~~~", "# t\n\n~~~sh\ngrep owner/repo r.md\n~~~\n", 1),
+    ("`~~~ text` is not a closer", "# t\n\n~~~\n~~~ still open\ngrep owner/repo r.md\n~~~\n", 1),
+    ("an unclosed fence keeps scanning", "# t\n\n```sh\ngrep owner/repo r.md\n", 1),
+    ("CRLF line endings", "# t\r\n\r\n```sh\r\ngrep owner/repo r.md\r\n```\r\n", 1),
 ]
 
 # The exemption is the one way to say "this fence must hold the form". Every
 # way it could silently exempt more than it names is a hole in the guard.
 EXEMPTION_CASES = [
     ("a fence exempted by the line above it",
-     "# t\n\n<!-- unguarded: campaign-session-alive -- on purpose -->\n\n```sh\nps -o comm= -p 1\n```\n", 0),
+     "# t\n\n<!-- unguarded: campaign-repos -- on purpose -->\n\n```sh\ngrep '^- ' r.md | grep owner/repo\n```\n", 0),
     ("an exemption separated from the fence by prose",
-     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\nProse intervenes.\n\n```sh\nps -o comm= -p 1\n```\n", 1),
+     "# t\n\n<!-- unguarded: campaign-repos -- x -->\n\nProse intervenes.\n\n```sh\ngrep '^- ' r.md | grep owner/repo\n```\n", 1),
     ("an exemption naming a different owner",
-     "# t\n\n<!-- unguarded: campaign-repos -- x -->\n\n```sh\nps -o comm= -p 1\n```\n", 1),
+     "# t\n\n<!-- unguarded: campaign-bound -- x -->\n\n```sh\ngrep '^- ' r.md | grep owner/repo\n```\n", 1),
     ("two exemptions in a row both apply",
-     "# t\n\n<!-- unguarded: campaign-repos -- x -->\n<!-- unguarded: campaign-session-alive -- y -->\n\n"
-     "```sh\nps -o comm= -p 1\ngrep '^- ' r.md | grep owner/repo\n```\n", 0),
+     "# t\n\n<!-- unguarded: campaign-repos -- x -->\n<!-- unguarded: campaign-subtasks -- y -->\n\n"
+     "```sh\ngrep '^- ' r.md | grep owner/repo\ngh api --paginate repos/o/r/issues/1/sub_issues\n```\n", 0),
     ("an exemption does not survive to the next fence",
-     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n```sh\nps -o comm= -p 1\n```\n\n"
-     "```sh\nps -o comm= -p 1\n```\n", 1),
+     "# t\n\n<!-- unguarded: campaign-repos -- x -->\n\n```sh\ngrep '^- ' r.md | grep owner/repo\n```\n\n"
+     "```sh\ngrep '^- ' r.md | grep owner/repo\n```\n", 1),
     # An indented block after an exempted fence is the one path on which a
     # stale `exempted` is reachable: every fence opener reassigns it, so a
     # fence-only fixture cannot tell a leak from a reset.
     ("an exemption does not reach a later indented block",
-     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n```sh\nps -o comm= -p 1\n```\n\n"
-     "Then:\n\n    ps -o comm= -p 1\n", 1),
+     "# t\n\n<!-- unguarded: campaign-repos -- x -->\n\n```sh\ngrep '^- ' r.md | grep owner/repo\n```\n\n"
+     "Then:\n\n    grep '^- ' r.md | grep owner/repo\n", 1),
     # A malformed exemption must be reported, never skipped. The strict owner
     # token matches nothing in a prose owner, so without a loose detector the
     # line is simply not an exemption and nothing says it was rejected.
     ("an exemption naming a prose owner is reported",
-     "# t\n\n<!-- unguarded: AGENTS.md \u00a7 Naming a session -- x -->\n\n```sh\nps -o comm= -p 1\n```\n", 1,
+     "# t\n\n<!-- unguarded: AGENTS.md \u00a7 Naming a session -- x -->\n\n```sh\ngrep '^- ' r.md | grep owner/repo\n```\n", 1,
      "an exemption naming no script"),
     ("an exemption naming a misspelled script is reported",
-     "# t\n\n<!-- unguarded: campaign-typo-session -- x -->\n\n```sh\nps -o comm= -p 1\n```\n", 1,
+     "# t\n\n<!-- unguarded: campaign-typo-session -- x -->\n\n```sh\ngrep '^- ' r.md | grep owner/repo\n```\n", 1,
      "an exemption naming no script"),
     ("an exemption reaches a following indented block",
-     "# t\n\n<!-- unguarded: campaign-session-alive -- on purpose -->\n\n    ps -o comm= -p 1\n", 0),
+     "# t\n\n<!-- unguarded: campaign-repos -- on purpose -->\n\n    grep '^- ' r.md | grep owner/repo\n", 0),
     ("an exemption spent on an indented block does not reach the next one",
-     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n    ps -o comm= -p 1\n\n"
-     "Then:\n\n    ps -o comm= -p 1\n", 1),
+     "# t\n\n<!-- unguarded: campaign-repos -- x -->\n\n    grep '^- ' r.md | grep owner/repo\n\n"
+     "Then:\n\n    grep '^- ' r.md | grep owner/repo\n", 1),
     ("an exemption inside an indented block exempts nothing",
-     "# t\n\n    <!-- unguarded: campaign-session-alive -- x -->\n    ps -o comm= -p 1\n", 1),
+     "# t\n\n    <!-- unguarded: campaign-repos -- x -->\n    grep '^- ' r.md | grep owner/repo\n", 1),
     # No prose between the fence and the indent: a prose line resets the
     # exemption too, so this alone would not expose a missing fence-close reset.
     ("an exemption does not survive a closed fence into an indented block",
-     "# t\n\n<!-- unguarded: campaign-session-alive -- x -->\n\n```sh\nps -o comm= -p 1\n```\n\n"
-     "    ps -o comm= -p 1\n", 1),
+     "# t\n\n<!-- unguarded: campaign-repos -- x -->\n\n```sh\ngrep '^- ' r.md | grep owner/repo\n```\n\n"
+     "    grep '^- ' r.md | grep owner/repo\n", 1),
     ("an exemption inside an open fence exempts nothing",
-     "# t\n\n```sh\n<!-- unguarded: campaign-session-alive -- x -->\nps -o comm= -p 1\n```\n", 1),
+     "# t\n\n```sh\n<!-- unguarded: campaign-repos -- x -->\ngrep '^- ' r.md | grep owner/repo\n```\n", 1),
 ]
 
 # Three forms now live in one script, `campaign-tracker`. `EXEMPT` takes
@@ -222,9 +230,10 @@ GRANULARITY_CASES = [
     ("tracker: a finding names the script to call and the token to exempt",
      fence("gh api --paginate repos/o/r/issues/1/sub_issues"),
      1, "scripts/campaign-tracker.py (exempt with `campaign-subtasks`)", None),
-    # The same split, on the other merge.
-    ("claim: the liveness form is exempted by its own token, not the script's",
-     "# t\n\n<!-- unguarded: campaign-claim -- x -->\n\n```sh\nps -o comm= -p 1\n```\n",
+    # The same split, on the other merge. `campaign-repos.py` owns exactly one
+    # form, so its SCRIPT name is the tempting token and is not the right one.
+    ("repos: the form is exempted by its own token, not the script's",
+     "# t\n\n<!-- unguarded: campaign-repos.py -- x -->\n\n```sh\ngrep owner/repo r.md\n```\n",
      1, "an exemption naming no script", None),
 ]
 
@@ -242,7 +251,7 @@ def staged_case():
             ["git", "-C", d, *a], capture_output=True, text=True, check=True)
         run_git("init", "-q")
         f = Path(d) / "doc.md"
-        f.write_text("# t\n\n```sh\nps -o comm= -p 1\n```\n")
+        f.write_text("# t\n\n```sh\ngrep owner/repo r.md\n```\n")
         run_git("add", "doc.md")
         f.write_text("# t\n\nnothing to see\n")     # reverted on disk, still staged
         out = subprocess.run([str(GUARD), "--staged"], cwd=d,
