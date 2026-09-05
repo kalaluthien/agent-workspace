@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Refuse a commit on campaign work whose branch is not a claim.
 
-    check-commit-claim.py [--staged]    pre-commit, run by the hook
-                                        scripts/install-hooks.sh writes; the
-                                        flag is accepted and ignored, since
-                                        a branch is not a staged thing
+    check-commit-claim.py [--staged]    pre-commit, run by whichever hook
+                                        installed it -- the one
+                                        scripts/install-hooks.sh writes in a
+                                        repository that ships that script, and
+                                        the shim acquire-repo.sh writes in a
+                                        clone that does not, which is every
+                                        member repository. The flag is accepted
+                                        and ignored, since a branch is not a
+                                        staged thing.
 
 The commit half of the claim gate; scripts/check-campaign-claim.py is the
 pre-tool-use half and holds the reading both share. The model is
