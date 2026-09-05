@@ -203,12 +203,23 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    s.worksOn.memberIssues` refuses an executor every write to the issue of the
    campaign it works -- including a comment, which the model has no
    precondition on. The executor's campaign-plane row therefore admits the
-   campaign issue of its OWN campaign, and `Q11`/`Q11b` are the witnesses.
+   campaign issue of its OWN campaign, and `Q11` is the witness.
 
    Bounded by the EVENT and not by a claim: the guard admits only a comment
    there, because `WriteBody` is the charter and belongs to the close, and a
    claim on some other sub-issue makes an irreversible write no safer. The
    guard's own `OWN_CAMPAIGN_GH` is the verb list; this is the event.
+
+   WHICH CAMPAIGN'S issue is NOT held by this rule, and there is no command
+   here that could show it. `sessionCloseIssue` in session/system.als already
+   pins every campaign-issue close to the acting session's own campaign, for
+   every role and independently of `mayAct` -- so a scenario asserting an
+   executor cannot close ANOTHER campaign's issue comes out UNSAT whatever this
+   predicate says, and one was written and deleted for exactly that reason: it
+   survived widening the carve-out to every campaign issue, with the whole
+   model still green. `Q11` is the honest half, and measures that the carve-out
+   is what makes the write reachable AT ALL. The guard's own campaign bound is
+   tested where it can fail, in check-campaign-claim-test.py.
 
    `i not in Campaign.memberIssues` is not decoration. Nothing in github/system
    forbids one campaign's ISSUE from being another campaign's SUB-ISSUE -- an
@@ -687,22 +698,14 @@ pred R4j_GuardAdmitsClaimedWork {
 
 /* Q11. #207: an executor writes its OWN campaign's issue, which is no
    sub-issue and which no claim can cover. SAT -- and it is the campaign issue
-   that makes it so, not a claim, which Q11b separates. */
+   that makes it so and not a claim: removing the disjunct from `mayAct` makes
+   this command UNSAT against its `expect 1`, which is the whole of what it
+   measures. WHICH campaign's issue is held elsewhere -- see `mayAct`. */
 pred Q11_ExecutorWritesItsOwnCampaignIssue {
   permissionByRole
   some s: Session | s.role = Executor and
     eventually (Now.event = CloseIssue and Who.session = s
                 and Now.issue = s.worksOn.campaignIssue)
-}
-
-/* Q11b. The same write against ANOTHER campaign's issue. UNSAT: the carve-out
-   is bounded by which campaign, exactly as the sub-issue row is. */
-pred Q11b_ExecutorWritesAnotherCampaignIssue {
-  permissionByRole
-  some s: Session, c: Campaign |
-    s.role = Executor
-    and eventually (Now.event = CloseIssue and Who.session = s
-                    and c != s.worksOn and Now.issue = c.campaignIssue)
 }
 
 /* Q10. A planner cuts a claim for a delegate on a sub-issue of ANOTHER campaign
@@ -785,11 +788,11 @@ pred Q3_ExecutorClosesOwnClaim {
    spelling started matching the one write the rule now permits and this
    command went SAT while measuring nothing it was named for.
 
-   `c != s.worksOn` sits INSIDE the `eventually`, as in Q10/Q11b: `worksOn` is
-   var, so a session that differs from `c` at time zero can adopt `c` and then
-   close its issue legitimately, and the command measures nothing. That is the
-   third command in this file to need the fix, which is why every one of them
-   says so. */
+   `c != s.worksOn` sits INSIDE the `eventually`, as in Q10's trio: `worksOn`
+   is var, so a session that differs from `c` at time zero can adopt `c` and
+   then close its issue legitimately, and the command measures nothing. Several
+   commands in this file need that placement; this comment is the one home for
+   why, rather than a sentence repeated at each. */
 pred Q4_ExecutorClosesOtherCampaign {
   permissionByRole
   some s: Session, c: Campaign |
@@ -1440,9 +1443,8 @@ run Q9_ExecutorFilesCampaignIssue         for 3 Issue, 1 PullRequest, 1 Campaign
 run Q9c_ExecutorFilesCampaignIssueUnguarded for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- a claim is a campaign-plane write: a planner may cut one on any campaign
 -- bound HERE, an executor only on its own, and Q10c says which rule refuses
--- #207: an executor writes its own campaign's issue, and no other's
+-- #207: the carve-out is what makes this write reachable at all
 run Q11_ExecutorWritesItsOwnCampaignIssue    for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
-run Q11b_ExecutorWritesAnotherCampaignIssue  for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run Q10_PlannerClaimsOnAnotherBoundCampaign  for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 run Q10b_ExecutorClaimsOnAnotherBoundCampaign for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run Q10c_ExecutorClaimsOnAnotherBoundCampaignUnguarded for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0

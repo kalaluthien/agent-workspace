@@ -100,7 +100,6 @@
     ["orchestration/scenarios.als", "run", "Q10b_ExecutorClaimsOnAnotherBoundCampaign"],
     ["orchestration/scenarios.als", "run", "Q10c_ExecutorClaimsOnAnotherBoundCampaignUnguarded"],
     ["orchestration/scenarios.als", "run", "Q11_ExecutorWritesItsOwnCampaignIssue"],
-    ["orchestration/scenarios.als", "run", "Q11b_ExecutorWritesAnotherCampaignIssue"],
     ["orchestration/scenarios.als", "run", "Q1_PlannerClosesOtherCampaignsIssue"],
     ["orchestration/scenarios.als", "run", "Q2_PlannerCommits"],
     ["orchestration/scenarios.als", "run", "Q2c_PlannerCommitsUnguarded"],

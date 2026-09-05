@@ -155,9 +155,10 @@ planner's pane and dies with it, and carries the planner's session id, so the
 guard reads the PLANNER's role for everything it does. **A planner changes no
 code**, by its own hands or through a subagent — its code modes are a herdr
 delegate or a separate executor session. **#185 enforces that over a FILE
-TOOL's writes and no further**: a shell command is allowed unread for anyone,
-and `check-commit-claim.py` reads no role, so `sed -i` and `git commit` from a
-planner are refused by nothing today. What it does keep is
+TOOL's writes and no further**: a shell command is read only for the `gh`
+writes in it, never for what it does to a file, and `check-commit-claim.py`
+reads no role — so `sed -i` and `git commit` from a planner are refused by
+nothing today. What it does keep is
 the campaign plane of *any* campaign — a comment, a sub-issue, a close, a claim
 cut for a delegate — which is the row the claim reading had no passing form for.
 **A planner holds no claim of its own**: the branch it cuts at a delegate launch
