@@ -117,8 +117,8 @@ def legacy_guard_shim(guard):
 
     Kept because clones acquired then still hold it on disk, and `is_guard_shim`
     still has to adopt it. What acquire-repo writes now carries the claim gate
-    too, is ten lines, and is not spelled here: the cases for it run the shipped
-    script and read the bytes back."""
+    too and is not spelled here, nor is its length: the cases for it run the
+    shipped script and read the bytes back."""
     return f'#!/usr/bin/env sh\nexec "{guard}" "$@"\n'
 
 
@@ -298,24 +298,42 @@ def main():
               and "adopting" not in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:160]}")
 
-    # THE MARKER IS NOT ENOUGH ON ITS OWN. What licenses replacing a hook here
-    # is that the one written below is a strict SUPERSET of it, and a comment
-    # somebody pasted proves nothing about that. A hook carrying the marker on
-    # line 2 and a foreign body must be refused, or the installer overwrites
-    # somebody's decision and announces it as adopting a shim.
-    with tempfile.TemporaryDirectory() as d:
-        r = Repo(d)
-        r.hook("pre-commit").write_text(
-            "#!/usr/bin/env sh\n"
-            "# Written by acquire-repo.sh. Re-run it after changing this file.\n"
-            "exec /usr/bin/true\n")
-        r.hook("pre-commit").chmod(0o755)
-        out = installer(r.root)
-        check("a hook carrying the marker but not the guard is refused, not "
-              "adopted",
-              out.returncode != 0 and "refusing" in out.stderr
-              and "adopting" not in out.stderr,
-              f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
+    # THE MARKER IS NOT ENOUGH ON ITS OWN, and each of the other two conjuncts
+    # gets a case of its own -- three near misses, one per conjunct, or the
+    # branch is pinned by whichever of them happens to be tested. What licenses
+    # replacing a hook here is that the one written below carries everything
+    # read out of this one, and a comment somebody pasted proves nothing.
+    GUARD_CALL = ('"/x/.claude/git-hooks/no-main-commits" "$@" || exit 1\n')
+    MARKER = "# Written by acquire-repo.sh. Re-run it after changing this file.\n"
+    for name, body in (
+            ("but not the guard at all",
+             "#!/usr/bin/env sh\n" + MARKER + "exec /usr/bin/true\n"),
+            # The one that was actually broken: `grep -q no-main-commits` over
+            # the whole file cannot tell a CALL from a mention, so a foreign
+            # hook naming the guard in a comment was adopted and announced as
+            # chaining it.
+            ("but naming the guard only in a comment",
+             "#!/usr/bin/env sh\n" + MARKER
+             + "# nothing here calls no-main-commits\nexec /usr/bin/true\n"),
+            # And the shebang, which nothing pinned until this line: deleting
+            # that conjunct left the suite fully green.
+            ("but not opening with the shebang",
+             "#!/bin/sh\n" + MARKER + GUARD_CALL),
+            # And the marker itself, which the other three cases cannot pin:
+            # deleting that conjunct left the suite green, because every hook
+            # they build carries the marker. Somebody else's hook that happens
+            # to chain the guard is still somebody else's decision.
+            ("replaced by somebody else's comment",
+             "#!/usr/bin/env sh\n# our team's pre-commit\n" + GUARD_CALL)):
+        with tempfile.TemporaryDirectory() as d:
+            r = Repo(d)
+            r.hook("pre-commit").write_text(body)
+            r.hook("pre-commit").chmod(0o755)
+            out = installer(r.root)
+            check(f"a hook carrying the marker {name} is refused, not adopted",
+                  out.returncode != 0 and "refusing" in out.stderr
+                  and "adopting" not in out.stderr,
+                  f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
 
     # 5c. --git-only. The harness half is machine-wide and points at one
     # checkout; a clone running it would repoint every session's guard.
@@ -430,7 +448,7 @@ def main():
         pre = dest / ".git" / "hooks" / "pre-commit"
         gate = SCRIPTS / "check-commit-claim.py"
         body = pre.read_text() if pre.exists() else ""
-        check("a repository with no installer gets the shim, and only the shim",
+        check("a repository with no installer gets the shim, and no post-commit",
               out.returncode == 0 and str(guard) in body
               and not (dest / ".git" / "hooks" / "post-commit").exists(),
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")

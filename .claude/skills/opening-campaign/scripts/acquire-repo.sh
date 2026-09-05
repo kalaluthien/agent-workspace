@@ -280,8 +280,10 @@ install_commit_guard() {
 	hook="$hooks/pre-commit"
 
 	# The remediation is to re-run this script, not a printf to paste: since #190
-	# the hook is ten lines carrying two absolute paths, and a hand-typed copy of
-	# it is the hardcoded second reader this repository refuses everywhere else.
+	# the hook carries two absolute paths over several lines, and a hand-typed
+	# copy of it is the hardcoded second reader this repository refuses
+	# everywhere else. No line count is written down here or in install-hooks.sh:
+	# three comments said "ten" while the hook was eleven.
 	if [ -e "$hook" ] && ! grep -q 'no-main-commits' "$hook"; then
 		log "$hook exists and does not call the guard. Read it, then either"
 		log "chain the two lines below from it by hand, or move it aside and"

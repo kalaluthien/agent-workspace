@@ -97,13 +97,28 @@ fi
 # The pre-#190 form is matched WHOLE -- a shebang and one exec of the
 # machine-wide guard by absolute path, two lines and no more -- because it
 # carries nothing to name itself by. Clones acquired then still hold it.
-# The current form is ten lines, so matching it whole would be a second copy of
-# what acquire-repo.sh writes; it is matched by three things instead, and the
-# marker alone is NOT enough. A hook is adopted here only if it also opens with
-# the shebang and actually calls the guard, because what licenses replacing it
-# is that the hook written below is a STRICT SUPERSET of it -- and a comment
-# somebody pasted proves nothing about that. The marker text lives in
-# acquire-repo.sh's SHIM_MARKER, with a comment pointing back here.
+#
+# The current form is longer (NO COUNT IS WRITTEN DOWN: three comments said
+# "ten lines" while the hook was eleven, and one of them said it while the hook
+# was twelve), so matching it whole would be a second copy of what
+# acquire-repo.sh writes. Three things are matched instead, and the marker alone
+# is NOT enough: the shebang, the marker on line 2, and the guard CALL as a
+# whole line. That last one was `grep -q no-main-commits` for one revision,
+# which cannot tell a call from a comment -- a foreign hook mentioning the guard
+# in a comment was adopted and announced as chaining it.
+#
+# WHAT THIS ESTABLISHES, and what it does not. It establishes that the slot
+# holds the shebang, the marker, and a real call to the guard, so replacing it
+# loses neither. It does NOT establish that the hook is UNMODIFIED acquire
+# output: a shim somebody extended by hand carries all three and its extension
+# is dropped. Accepted rather than closed, because closing it needs either a
+# line count -- the thing that just went stale three times -- or a copy of the
+# template here, which is the second reader this repository refuses. And the
+# path is narrow: this script runs only in a repository that ships it, while
+# shims live in member clones, which ship none.
+#
+# The marker text lives in acquire-repo.sh's SHIM_MARKER, with a comment
+# pointing back here.
 is_guard_shim() {
 	if [ "$(wc -l <"$1" | tr -d ' ')" = 2 ]; then
 		[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
@@ -112,7 +127,7 @@ is_guard_shim() {
 	fi
 	[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
 		sed -n 2p "$1" | grep -qF '# Written by acquire-repo.sh.' &&
-		grep -q 'no-main-commits' "$1"
+		grep -qE '^"[^"]*/\.claude/git-hooks/no-main-commits" "\$@" \|\| exit 1$' "$1"
 }
 
 # Each hook gets the same two refusals, so a second hook cannot arrive with
@@ -131,8 +146,9 @@ check_slot() {
 	# of the one that also carries the claim gate.
 	if [ -e "$slot" ] && is_guard_shim "$slot"; then
 		echo "adopting: $slot is a shim acquire-repo.sh wrote -- $(wc -l <"$slot" | tr -d ' ') lines," >&2
-		echo "calling the no-main-commits guard. The hook written here runs that" >&2
-		echo "guard and this repository's own, so it is a superset; replacing it." >&2
+		echo "opening with the marker and calling the no-main-commits guard. The" >&2
+		echo "hook written here runs that guard and this repository's own, so" >&2
+		echo "nothing read here is lost; replacing it." >&2
 		return 0
 	fi
 	if [ -e "$slot" ] && ! grep -qF "$marker_match" "$slot"; then

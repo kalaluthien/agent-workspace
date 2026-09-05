@@ -70,9 +70,11 @@ A delegate clone gets its hooks from `acquire-repo.sh`. Where the repository
 ships this installer, that means running it with `--git-only`; where it ships
 none -- which is every member repository -- `acquire-repo.sh` writes the shim
 itself, and since #190 that shim carries the claim gate by its absolute path in
-the base, because the clone has no `scripts/` of its own to reach it through. The harness claim guard is registered from one
-checkout for every session on the machine, so a clone must not repoint it at
-itself; `--git-only` is how a second checkout installs the git hooks alone.
+the base, because the clone has no `scripts/` of its own to reach it through.
+
+The harness claim guard is registered from one checkout for every session on
+the machine, so a clone must not repoint it at itself; `--git-only` is how a
+second checkout installs the git hooks alone.
 
 Requires `git`, `gh` (authenticated), `herdr`, `uv`, and Python 3.
 
