@@ -198,14 +198,35 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    the mistake is loud. Stated here because a permission table is the thing a
    reader is most likely to mistake for a security boundary. The sub-issue for
    tying the name to something the named session did not choose is #194. */
+/* THE CAMPAIGN ISSUE IS NOT A SUB-ISSUE, and #207 is the row that follows from
+   that. `memberIssues` excludes it (github/system.als), so `i in
+   s.worksOn.memberIssues` refuses an executor every write to the issue of the
+   campaign it works -- including a comment, which the model has no
+   precondition on. The executor's campaign-plane row therefore admits the
+   campaign issue of its OWN campaign, and `Q11`/`Q11b` are the witnesses.
+
+   Bounded by the EVENT and not by a claim: the guard admits only a comment
+   there, because `WriteBody` is the charter and belongs to the close, and a
+   claim on some other sub-issue makes an irreversible write no safer. The
+   guard's own `OWN_CAMPAIGN_GH` is the verb list; this is the event.
+
+   `i not in Campaign.memberIssues` is not decoration. Nothing in github/system
+   forbids one campaign's ISSUE from being another campaign's SUB-ISSUE -- an
+   overlap that cannot happen on the tracker, where a campaign issue carries
+   the `campaign` label and a sub-issue is somebody's `--parent` -- and without
+   the conjunct the carve-out reached it, which Q4 caught. Bounded here rather
+   than by a new fact, because the fact is github/system's to add and adding it
+   would redden commands this branch is not about. */
 pred mayAct[s: Session, e: Event, i: lone Issue] {
   some s.role
   s.role = Planner implies (planeOf[e] = CampaignPlane
                             and (e = Release implies no claimedIssues.i))
   s.role = Executor implies (
     (planeOf[e] = CampaignPlane implies (e not in plannerOnlyEvents
-                                         and i in s.worksOn.memberIssues
-                                         and (e != Claim implies i in s.claimedIssues)))
+                                         and ((i = s.worksOn.campaignIssue
+                                               and i not in Campaign.memberIssues)
+                                              or (i in s.worksOn.memberIssues
+                                                  and (e != Claim implies i in s.claimedIssues)))))
     and (planeOf[e] = CodePlane implies i in s.claimedIssues))
 }
 
@@ -664,6 +685,26 @@ pred R4j_GuardAdmitsClaimedWork {
 
 /* ============== permission by role, one witness per table cell ============== */
 
+/* Q11. #207: an executor writes its OWN campaign's issue, which is no
+   sub-issue and which no claim can cover. SAT -- and it is the campaign issue
+   that makes it so, not a claim, which Q11b separates. */
+pred Q11_ExecutorWritesItsOwnCampaignIssue {
+  permissionByRole
+  some s: Session | s.role = Executor and
+    eventually (Now.event = CloseIssue and Who.session = s
+                and Now.issue = s.worksOn.campaignIssue)
+}
+
+/* Q11b. The same write against ANOTHER campaign's issue. UNSAT: the carve-out
+   is bounded by which campaign, exactly as the sub-issue row is. */
+pred Q11b_ExecutorWritesAnotherCampaignIssue {
+  permissionByRole
+  some s: Session, c: Campaign |
+    s.role = Executor
+    and eventually (Now.event = CloseIssue and Who.session = s
+                    and c != s.worksOn and Now.issue = c.campaignIssue)
+}
+
 /* Q10. A planner cuts a claim for a delegate on a sub-issue of ANOTHER campaign
    bound to the same machine. SAT: the relaxation in `sessionClaim`.
 
@@ -736,12 +777,26 @@ pred Q3_ExecutorClosesOwnClaim {
                                 and Now.issue in s.claimedIssues))
 }
 
-/* Q4. An executor of one campaign closes another campaign's issue. UNSAT. */
+/* Q4. An executor of one campaign closes ANOTHER campaign's issue. UNSAT.
+
+   Says "belongs to campaign c, and c is not the session's" rather than "not in
+   my memberIssues", which is what it said until #207: the campaign issue of
+   the session's OWN campaign is also outside `memberIssues`, so the old
+   spelling started matching the one write the rule now permits and this
+   command went SAT while measuring nothing it was named for.
+
+   `c != s.worksOn` sits INSIDE the `eventually`, as in Q10/Q11b: `worksOn` is
+   var, so a session that differs from `c` at time zero can adopt `c` and then
+   close its issue legitimately, and the command measures nothing. That is the
+   third command in this file to need the fix, which is why every one of them
+   says so. */
 pred Q4_ExecutorClosesOtherCampaign {
   permissionByRole
-  some s: Session | s.role = Executor and
-    eventually (Now.event = CloseIssue and Who.session = s
-                and some Now.issue and Now.issue not in s.worksOn.memberIssues)
+  some s: Session, c: Campaign |
+    s.role = Executor
+    and eventually (Now.event = CloseIssue and Who.session = s
+                    and c != s.worksOn
+                    and Now.issue in c.memberIssues + c.campaignIssue)
 }
 
 /* Q4b. Its own campaign, a sibling sub-issue it never claimed. UNSAT, and the
@@ -1385,6 +1440,9 @@ run Q9_ExecutorFilesCampaignIssue         for 3 Issue, 1 PullRequest, 1 Campaign
 run Q9c_ExecutorFilesCampaignIssueUnguarded for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- a claim is a campaign-plane write: a planner may cut one on any campaign
 -- bound HERE, an executor only on its own, and Q10c says which rule refuses
+-- #207: an executor writes its own campaign's issue, and no other's
+run Q11_ExecutorWritesItsOwnCampaignIssue    for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+run Q11b_ExecutorWritesAnotherCampaignIssue  for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run Q10_PlannerClaimsOnAnotherBoundCampaign  for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 run Q10b_ExecutorClaimsOnAnotherBoundCampaign for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run Q10c_ExecutorClaimsOnAnotherBoundCampaignUnguarded for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0

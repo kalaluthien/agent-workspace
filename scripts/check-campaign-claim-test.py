@@ -839,6 +839,32 @@ def main():
                 env=stranger)
         check("...and an executor of another campaign may not",
               r.returncode == 2, out(r)[:400])
+        # THE CARVE-OUT IS A VERB, NOT AN ISSUE NUMBER. Keyed on the number
+        # alone it admitted every `gh issue` verb against the campaign issue --
+        # `edit` is the charter body, `close` closes the campaign, `delete` and
+        # `transfer` are irreversible, and a claim on some other sub-issue
+        # makes none of them safer.
+        for verb in ("close", "edit", "reopen", "delete", "transfer", "lock",
+                     "pin", "develop"):
+            cmd = f"gh issue {verb} 1" + (" --body x" if verb == "edit" else "")
+            r = ask(f.base, tool="Bash", command=cmd, env=executor)
+            check(f"the campaign-issue carve-out does not cover `{verb}`",
+                  r.returncode == 2, out(r)[:400])
+        # ...and it covers its own write and nothing standing beside it.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 1 --body x && gh pr merge 12 --merge",
+                env=executor)
+        check("the carve-out carries no other write in the same command",
+              r.returncode == 2 and "covers no other write" in r.stderr,
+              out(r)[:400])
+        # ALLOW beside all of it: the one verb the carve-out is for, and a read.
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+                env=executor)
+        check("ALLOW beside it: the comment the carve-out is for",
+              r.returncode == 0, out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue view 1", env=executor)
+        check("ALLOW beside it: a read of the campaign issue",
+              r.returncode == 0, out(r)[:400])
         # ALLOW beside it: a sub-issue of its own campaign still needs a claim,
         # so the carve-out did not become a general licence.
         r = ask(f.base, tool="Bash", command="gh issue close 99", env=executor)

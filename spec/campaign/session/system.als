@@ -47,7 +47,9 @@ one sig Request { covers: set Campaign }
 
    `lone`, not `one`: a session with no name, or a name of another shape, has no
    role, and that is the last row of #185's table -- refused on both planes,
-   which `mayAct` in orchestration/scenarios.als states.
+   which `mayAct` in orchestration/scenarios.als states. An executor is bounded
+   to its own campaign's sub-issues it has claimed, PLUS that campaign's own
+   issue, which is no sub-issue and which no claim can cover (#207).
 
    It lives HERE and not in orchestration/system.als, where `Role` used to be a
    property of an Agent: the role is per SESSION and per its whole life, where an

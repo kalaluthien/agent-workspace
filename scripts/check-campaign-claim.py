@@ -110,6 +110,15 @@ VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
 # of. Anything not here is not a planner's by this rule and falls through to
 # the claim reading, which refuses it without a claim exactly as before.
 PLANNER_GH = {"issue", "label"}
+
+# WHAT AN EXECUTOR MAY DO TO ITS OWN CAMPAIGN'S ISSUE WITHOUT A CLAIM. No claim
+# can ever cover the campaign issue -- it is nobody's sub-issue -- so #207
+# carved it out. Keyed on the VERB and not on the issue number, which is the
+# conjunct the first cut was missing: `edit` is the charter body, which only
+# `closing-campaign` step 4 writes; `close` closes the CAMPAIGN, a person's
+# decision; `delete` and `transfer` are irreversible. A claim on some other
+# sub-issue makes none of them safer, so the claim was never the missing test.
+OWN_CAMPAIGN_GH = {("issue", "comment")}
 API_WRITE_FLAGS = {"-F", "--field", "-f", "--raw-field", "--input"}
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}", "`"}
 # Words before a command that are not it, and shells that run a string.
@@ -682,10 +691,18 @@ def bash_call(command, cwd: Path, session_id=""):
     # claimed issue was the shape a review turned into a bypass. A write whose
     # issue this could not read still falls back to the unnarrowed question,
     # which is the weaker gate and is printed as such.
-    issues = sorted({issue_target(x) for x in writes} - {None})
+    # (issue, subcommand, verb) per write, so the carve-out below can ask what
+    # is being DONE and not only to which number.
+    per_write = []
+    for x in writes:
+        w = gh_words(x)
+        per_write.append((issue_target(x),
+                          (w[0] if w else ""), (w[1] if len(w) > 1 else "")))
+    issues = sorted({i for i, _, _ in per_write} - {None})
     unreadable = stray or any(issue_target(x) is None for x in writes)
     own = own_claim(cwd)
     detail, uncovered, covering = [], [], []
+    carved = False
     for i in issues:
         holders, d = held(root, i)
         if (not holders and own is not None
@@ -700,9 +717,12 @@ def bash_call(command, cwd: Path, session_id=""):
         # carries that campaign's number -- the same fact the rest of this
         # branch reads. A planner reaches the same write through its own row,
         # on any campaign; this is the executor's, on one (#207).
-        if role == "executor" and campaign is not None and i == campaign:
+        if (role == "executor" and campaign is not None and i == campaign
+                and all((sub, verb) in OWN_CAMPAIGN_GH
+                        for j, sub, verb in per_write if j == i)):
             covering.append((i, [("its own campaign", f"campaign-{campaign}",
                                   "the session name")]))
+            carved = True
             continue
         # AN EXECUTOR STANDS ONLY ON ITS OWN CAMPAIGN'S CLAIMS, and the filter
         # belongs HERE, per issue. Applied once to the whole root instead, it
@@ -725,6 +745,15 @@ def bash_call(command, cwd: Path, session_id=""):
         return refuse([f"{what}: a campaign-plane write, and this session holds "
                        f"no claim covering a write to #{i}.", how, *read_on,
                        *fell_back, *detail, TAKE])
+    if unreadable and carved:
+        # THE CARVE-OUT COVERS ITS OWN WRITE AND NOTHING BESIDE IT. Without
+        # this, `gh issue comment 1 && gh pr merge 12` was admitted: the
+        # comment satisfied the campaign issue, the merge fell to the
+        # unnarrowed fallback, and any claim under the root carried it out.
+        return refuse([f"{what}: the campaign issue is covered by this "
+                       f"session's name, and that covers no other write in "
+                       f"the same command.", how, *read_on, *fell_back,
+                       *detail, TAKE])
     if unreadable:
         holders, d = held(root)
         if role == "executor" and campaign is not None:

@@ -153,8 +153,11 @@ itself is `.claude/skills/opening-campaign/references/launching.md`). A
 separate executor is never the planner's subagent — a subagent shares the
 planner's pane and dies with it, and carries the planner's session id, so the
 guard reads the PLANNER's role for everything it does. **A planner changes no
-code**, by its own hands or through a subagent: #185 refuses it, and its code
-modes are a herdr delegate or a separate executor session. What it does keep is
+code**, by its own hands or through a subagent — its code modes are a herdr
+delegate or a separate executor session. **#185 enforces that over a FILE
+TOOL's writes and no further**: a shell command is allowed unread for anyone,
+and `check-commit-claim.py` reads no role, so `sed -i` and `git commit` from a
+planner are refused by nothing today. What it does keep is
 the campaign plane of *any* campaign — a comment, a sub-issue, a close, a claim
 cut for a delegate — which is the row the claim reading had no passing form for.
 **A planner holds no claim of its own**: the branch it cuts at a delegate launch
@@ -305,7 +308,8 @@ skills of the session or directory they were *started in*, and a skill marked
 Then, within what the repository allows, choose by cost:
 
 - **your own hands** for one small edit needing nothing from the build loop
-  (an executor's hands: a planner's are refused, and the refusal says so);
+  (an executor's hands: a planner's FILE-TOOL writes are refused and the
+  refusal says so, while a shell write is caught by nothing — § The binding);
 - **a subagent on a worktree** when several sub-issues can run at once, or the work
   would eat the session's turns;
 - **a herdr delegate in a clone** when the work needs the repository's own
