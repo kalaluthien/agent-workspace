@@ -323,7 +323,19 @@ def issue_repo(issue, default_repo):
     `none` is the answer for a repo-less sub-issue and means the base: with no
     member repository the only place a ref can be cut is the base, which is what
     `R4_RepolessCampaign` says. Three outcomes, not two -- a body that could not
-    be fetched is not a body with no line in it."""
+    be fetched is not a body with no line in it.
+
+    THE BASE SPELLED OUT IS THE SAME DESTINATION AS `none`, and `named` is None
+    for both. `## Repos` lists the MEMBER repositories a campaign clones when it
+    opens; the base is a member of its own campaign by a different route and no
+    campaign lists it. So a sub-issue writing `Repository: <the base>` -- which
+    every sub-issue landing in `spec/`, `scripts/` or `AGENTS.md` writes, and
+    which the template invites -- is naming the base, not widening the scope,
+    and the scope check below must not see it. #187 read only the literal
+    `none` and so refused every claim in every campaign whose sub-issues land on
+    the base; the model already said otherwise (`claimWithinScope` and
+    `R14d_ScopeAdmitsTheBaseWhateverTheListHolds` in
+    spec/campaign/orchestration/scenarios.als)."""
     r = run("gh", "issue", "view", str(issue), "-R", TRACKER, "--json", "body",
             "--jq", ".body")
     if r.returncode != 0:
@@ -344,6 +356,10 @@ def issue_repo(issue, default_repo):
         return None, None, (
             f"#{issue}'s `Repository:` line reads {named!r}, which is not an "
             f"owner/repo and not `none`")
+    if named == default_repo:
+        return named, None, (
+            f"#{issue} says its work lands in the base ({named}), which every "
+            f"campaign is for")
     return named, named, f"#{issue} says its work lands in {named}"
 
 
@@ -521,8 +537,12 @@ def cmd_take(args):
     # prose on one sub-issue; `## Repos` is the campaign's scope and the thing a
     # person signed up for. A sub-issue naming a repository outside it is a
     # scope change filed as a typo, and cutting the ref would make the campaign
-    # silently wider than its charter. Only a named member repository is
-    # checked: `none` resolves to the base, which is never in the list.
+    # silently wider than its charter. Only a MEMBER repository is checked, and
+    # `issue_repo` is the one reader of which those are: both spellings of the
+    # base -- `none`, and the base's own slug -- come back with `named` None,
+    # because the base is never in the list and a campaign that changes it is
+    # not thereby out of its own scope. The model is `claimWithinScope`, whose
+    # `Base` disjunct R14d pins.
     if named is not None:
         listed, repos_note = campaign_repos(args.campaign_issue)
         if listed is None:
