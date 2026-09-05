@@ -25,6 +25,10 @@ named for its row.
 
 Usage: scripts/check-campaign-claim-test.py
 """
+import contextlib
+import importlib.machinery
+import importlib.util
+import io
 import json
 import os
 import shutil
@@ -191,6 +195,66 @@ def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
 
 UNREAD = "was not read for a target"
 GATE = "pre-commit claim gate"
+CORPUS = HERE / "fixtures" / "guard-allow-corpus.jsonl"
+
+
+def guard_module():
+    """The guard, imported. The corpus replay calls it in-process and every
+    other case runs the shipped script: 500 subprocesses at ~50 ms of
+    interpreter start each is half a minute of nothing, and the replay is a
+    sweep rather than a case. `corpus: in-process and subprocess agree` below
+    is what keeps that from being a fixture standing in for the real thing."""
+    src = HERE / "check-campaign-claim.py"
+    spec = importlib.util.spec_from_loader(
+        "ccc", importlib.machinery.SourceFileLoader("ccc", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def ask_inproc(mod, payload, env):
+    """(exit status, stdout, stderr) from the guard called in this process."""
+    old = dict(os.environ)
+    os.environ.update(env or {})
+    o, e = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(o), contextlib.redirect_stderr(e):
+            rc = mod.pre(payload)
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+    return rc, o.getvalue(), e.getvalue()
+
+
+def corpus_rows():
+    """The corpus, or None when it is not there. NOT AN EMPTY LIST: a replay
+    over zero entries passes exactly like a replay over five hundred, and this
+    file's whole reason for existing is that a check reporting nothing reads
+    like a check that found nothing wrong."""
+    if not CORPUS.is_file():
+        return None
+    return [json.loads(l) for l in CORPUS.read_text().splitlines() if l.strip()]
+
+
+def corpus_issues(mod, rows):
+    """Every sub-issue number a corpus command names. The replay fixture holds
+    a claim on each, because the corpus is the calls sessions made WHILE
+    HOLDING one -- a fixture without them would replay the campaign's ordinary
+    work against a session that had claimed nothing and call the refusals
+    findings."""
+    out = set()
+    for r in rows:
+        if r["tool"] != "Bash":
+            continue
+        segs, _why = mod.segments(r["command"])
+        for seg in segs or []:
+            word, rest = mod.head(seg)
+            if word != "gh" or not mod.gh_write(rest)[0]:
+                continue
+            n = mod.issue_target(rest)
+            if n:
+                out.add(int(n))
+    return sorted(out)
 
 
 def main():
@@ -925,6 +989,88 @@ def main():
         r = ask(f.base, path=str(f.base / "AGENTS.md"), env=executor)
         check("ALLOW beside it: the file half admits the same session",
               r.returncode == 0, out(r)[:400])
+
+    # THE ALLOW CORPUS (#196 step 4, #209 step 1). Every case above is a shape
+    # somebody thought of; these are the shapes the campaign actually typed,
+    # replayed against a fixture in which the session holds the claims it held
+    # then. A refusal here is a false positive with a date on it.
+    #
+    # ONE ROLE, STATED: every entry is replayed as an EXECUTOR of campaign 1,
+    # whatever role the session that typed it had. A planner's campaign-plane
+    # `gh` is admitted to an executor holding the claim too, so the corpus
+    # stays green under the narrower of the two readings; replaying as a
+    # planner instead would refuse every file write into a checkout, which is
+    # the rule working and not a finding.
+    rows = corpus_rows()
+    check("the allow corpus is present", rows is not None,
+          f"{CORPUS} is missing; scripts/guard-corpus.py writes it")
+    if rows:
+        mod = guard_module()
+        issues = corpus_issues(mod, rows)
+        check("the corpus names sub-issues to hold claims on", len(issues) > 1,
+              f"issues={issues}")
+        with tempfile.TemporaryDirectory() as d:
+            # One claim per sub-issue the corpus names, plus one more for the
+            # worktree UNDER the campaign directory: `worktree` entries came
+            # from `<campaign>/worktrees/<n>/`, which is a checkout of its own
+            # and cannot share a branch with the sibling worktrees above.
+            f = Fixture(d, claims=tuple([f"campaign-1/{i}-x" for i in issues]
+                                        + ["campaign-1/909-corpus"]))
+            git(f.base, "worktree", "remove", "--force",
+                str(f.trees["campaign-1/909-corpus"]))
+            wt = f.worktree("209", "campaign-1/909-corpus",
+                            under=f.camp / "worktrees")
+            member = f.member(branch="campaign-1/7-x")
+            env = herdr_stub(d, {"sid-1": "campaign-1-executor-1"})
+            where = {"base": f.base, "campaign": f.camp, "worktree": wt,
+                     "member": member}
+            refused, replayed = [], 0
+            for row in rows:
+                if row["tool"] == "Bash":
+                    ti = {"command": row["command"]}
+                    subject = row["command"]
+                else:
+                    root = where.get(row["kind"])
+                    if root is None:
+                        continue
+                    ti = {"file_path": str(root / row["path"])}
+                    subject = f'{row["tool"]} {row["kind"]}:{row["path"]}'
+                payload = {"session_id": "sid-1", "cwd": str(f.base),
+                           "tool_name": row["tool"], "tool_input": ti,
+                           "hook_event_name": "PreToolUse"}
+                rc, _o, err = ask_inproc(mod, payload, env)
+                replayed += 1
+                if rc != 0:
+                    refused.append(f"{subject[:120]}\n         -> "
+                                   f"{' '.join(err.split())[:200]}")
+            # The count is asserted, not printed: a loop whose body never ran
+            # prints the same clean line as one that replayed everything.
+            check("the corpus replay ran over every entry",
+                  replayed == len(rows), f"{replayed} of {len(rows)}")
+            check(f"the guard refuses none of the {replayed} recorded allows",
+                  not refused, "\n      ".join(refused[:8]))
+
+            # THE REPLAY IS IN-PROCESS, so something must show that the
+            # in-process reading is the shipped script's. A sample of the
+            # corpus goes through the real subprocess and the two verdicts are
+            # compared; without this the whole sweep could be measuring a
+            # module the hook never runs.
+            sample = rows[::max(1, len(rows) // 12)][:12]
+            disagreed = []
+            for row in sample:
+                if row["tool"] != "Bash":
+                    continue
+                rc1, _o, _e = ask_inproc(
+                    mod, {"session_id": "sid-1", "cwd": str(f.base),
+                          "tool_name": "Bash",
+                          "tool_input": {"command": row["command"]},
+                          "hook_event_name": "PreToolUse"}, env)
+                r2 = ask(f.base, tool="Bash", command=row["command"], env=env)
+                if rc1 != r2.returncode:
+                    disagreed.append(f"{row['command'][:80]}: in-process "
+                                     f"{rc1}, subprocess {r2.returncode}")
+            check("corpus: in-process and subprocess agree on the sample",
+                  not disagreed, "; ".join(disagreed))
 
     if not ran:
         print("FAIL  the suite ran no case at all")

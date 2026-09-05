@@ -147,6 +147,22 @@ CASES = [
     ("R3 json: a language with no comments is all code",
      {"scripts/x.json": '{"path": "runtime/holder"}\n'}, "R3"),
 
+    # RECORDED -- a corpus of calls that were really made. R3 stands down over
+    # it and nothing else does, so the four cases below break the exemption
+    # apart: remove it and the first two fail, widen it to the SUFFIX and the
+    # third fails, widen it to the whole sweep and the fourth fails.
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 stands down over a recorded corpus",
+     {"scripts/fixtures/guard-allow-corpus.jsonl":
+      '{"command": "ls runtime/claims", "tool": "Bash"}\n'}, None),
+    ("R3 ...over any file in that directory, not one name",
+     {"scripts/fixtures/older.jsonl":
+      '{"command": "cat runtime/handover/7.md", "tool": "Bash"}\n'}, None),
+    ("R3 ...but the exemption is the PATH and not the suffix",
+     {"scripts/x.jsonl": '{"path": "runtime/holder"}\n'}, "R3"),
+    ("R4 still runs over a recorded path",
+     {"scripts/fixtures/repos/member/x.jsonl": '{"a": 1}\n'}, "R4"),
+
     # A file with no text in it at all -- a guard whose whole point is naming
     # which reading it could not make must not itself die in the decode.
     ("R0 a file that is not text is reported, not a traceback",
