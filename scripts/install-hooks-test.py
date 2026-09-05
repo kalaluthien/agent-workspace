@@ -298,6 +298,21 @@ def main():
               and "adopting" not in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:160]}")
 
+    # ...AND THE OTHER CONJUNCT OF THAT BRANCH, which nothing pinned until a
+    # review of #214 deleted the line-2 pattern and watched both suites stay
+    # green: two lines and the right shebang, with a line 2 that is not the
+    # exec. Somebody's own two-line hook, adopted and replaced.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        r.hook("pre-commit").write_text("#!/usr/bin/env sh\nexec /usr/bin/true\n")
+        r.hook("pre-commit").chmod(0o755)
+        out = installer(r.root)
+        check("a two-line hook with the right shebang but no guard call is "
+              "refused, not adopted",
+              out.returncode != 0 and "refusing" in out.stderr
+              and "adopting" not in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:160]}")
+
     # THE MARKER IS NOT ENOUGH ON ITS OWN, and each of the other two conjuncts
     # gets a case of its own -- three near misses, one per conjunct, or the
     # branch is pinned by whichever of them happens to be tested. What licenses
@@ -420,6 +435,29 @@ def main():
               out.returncode != 0 and "without the no-main-commits guard"
               in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+
+        # ...AND ONE WHOSE HOOK ONLY MENTIONS IT (#214). That verification was
+        # `grep -q 'no-main-commits'` over the whole file until then, three
+        # lines from the overwrite test with the same defect, so a hook naming
+        # the guard in a COMMENT passed as one chaining it -- acquire returning
+        # 0 over a clone whose commits nothing stops. The allow control is the
+        # "ships" case above, which runs the REAL install-hooks.sh: if the
+        # whole-line pattern stops matching what this repository writes, that
+        # case reddens rather than this one.
+        dest = checkout("mentions", False)
+        bad = dest / "scripts" / "install-hooks.sh"
+        bad.write_text(
+            "#!/bin/sh\nprintf '#!/bin/sh\\n"
+            "# we deliberately do not run no-main-commits\\necho lint\\n' >| "
+            ".git/hooks/pre-commit\nchmod +x .git/hooks/pre-commit\n")
+        bad.chmod(0o755)
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        check("an installer whose hook names the guard only in a comment is "
+              "refused too",
+              out.returncode != 0 and "without the no-main-commits guard"
+              in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
         # An installer that fails: the status it gave is what is reported.
         # `$?` read inside an `if !` branch is 0, which is the false answer in
         # the direction that reads as success.
@@ -435,6 +473,28 @@ def main():
                              capture_output=True, text=True)
         check("an installer present but not executable is named, not skipped",
               out.returncode != 0 and "not executable" in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+
+        # THE ALLOW CASE BESIDE IT, and the one that says how far the tightening
+        # went. The first spelling of that check matched a whole-line CALL, and
+        # refused a hook that reaches the guard through a variable -- which the
+        # substring test accepted and which is a perfectly guarded hook. A
+        # refusal here is fatal, so the pattern discriminates a comment-only
+        # mention and nothing more.
+        dest = checkout("indirect", False)
+        ok = dest / "scripts" / "install-hooks.sh"
+        ok.write_text(
+            "#!/bin/sh\nprintf '%s\\n' '#!/bin/sh' "
+            "'g=\"$HOME/.claude/git-hooks/no-main-commits\"' "
+            "'\"$g\" \"$@\"' >| .git/hooks/pre-commit\n"
+            "chmod +x .git/hooks/pre-commit\n")
+        ok.chmod(0o755)
+        out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
+                             capture_output=True, text=True)
+        check("an installer whose hook reaches the guard through a variable is "
+              "accepted, not refused",
+              out.returncode == 0 and "chain the no-main-commits guard"
+              in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
 
         # A repository with no installer of its own gets the shim, and since
