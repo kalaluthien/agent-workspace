@@ -43,7 +43,22 @@ sig CampaignDir {
      nothing. Modelled as a set of repositories rather than a file, because what
      a launch needs is that the clone it launches into carries them; WHICH bytes
      is `acquire-repo.sh`'s. */
-  var principled:  set Repo
+  var principled:  set Repo,
+  /* THE CLONES HERE WHOSE COMMITS SOMETHING REFUSES. `claimBeforeCommit` in
+     orchestration/scenarios.als is the rule -- a commit on a sub-issue names a
+     claim the committer holds -- and it says nothing about whether the checkout
+     making the commit runs anything that reads it. `acquire-repo.sh` ran a
+     clone's own `scripts/install-hooks.sh` only when the clone shipped one, and
+     a member repository ships none, so every member clone got the machine-wide
+     no-main-commits shim and NO CLAIM GATE, while check-campaign-claim.py went
+     on calling that clone campaign work. The rule held in the model and
+     enforced nothing on the trees delegates commit in (#190).
+
+     Separate from `principled` although one step installs both, because they
+     answer different questions: `principled` is what a delegate READS, this is
+     what its commit is REFUSED by. Modelled as a set of repositories and not a
+     file, for the reason given above it. */
+  var gated:       set Repo
 }
 var sig OnDisk in CampaignDir {}
 
@@ -78,13 +93,14 @@ one sig CreateDir, DeleteDir, Acquire extends Event {}
 
 fun directoryEvents: set Event { CreateDir + DeleteDir + Acquire }
 
-pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled }
+pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled and gated' = gated }
 
 pred createDir[t: CampaignDir] {
   t not in OnDisk
   OnDisk' = OnDisk + t
   checkedOut' = checkedOut
   principled' = principled     -- a fresh directory has no clone yet to principle
+  gated' = gated               -- nor one to gate
   Now.event = CreateDir and no Now.issue and Where.machine = t.machine and no Where.repo
 }
 
@@ -96,6 +112,7 @@ pred deleteDir[t: CampaignDir] {
   OnDisk'  = OnDisk - t
   checkedOut' = checkedOut - t->Repo->Branch
   principled' = principled - t->Repo    -- the clones go with the directory
+  gated' = gated - t->Repo              -- and the hooks go with the clones
   Now.event = DeleteDir and no Now.issue and Where.machine = t.machine and no Where.repo
 }
 
@@ -119,6 +136,14 @@ pred acquire[t: CampaignDir, r: Repo, b: Branch] {
      Without this `principled` had no producer at all: every directory event
      left it free, so R12c's witness rested on a set nothing wrote. */
   principled' = principled + t->r
+  /* AND ACQUIRE IS ALSO WHAT GATES A CLONE. The same moment for the same
+     reason, with one difference worth writing down: `install_commit_guard`
+     reaches the gate through the BASE, resolved from `acquire-repo.sh`'s own
+     path, because a member clone holds no copy of `check-commit-claim.py` to
+     run. No atom here carries a path, so which bytes and by which path is the
+     script's; the model says only that a clone leaves an Acquire with something
+     that refuses its commits. */
+  gated' = gated + t->r
   OnDisk' = OnDisk
   Now.event = Acquire and no Now.issue and Where.machine = t.machine and Where.repo = r
 }

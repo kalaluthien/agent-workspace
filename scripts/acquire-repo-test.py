@@ -1,18 +1,30 @@
 #!/usr/bin/env python3
-"""Prove `acquire-repo.sh` leaves the campaign's principles where a delegate reads them.
+"""Prove `acquire-repo.sh` leaves a clone with what a delegate needs: the principles, and a commit gate.
 
-#187 question 5: #176 wrote that channel down as prose and no command wrote the
-file, so a delegate launched by the documented procedure got nothing and nothing
-recorded it. A case made of strings would not have caught that -- the defect was
-the absence of a command -- so every case here runs the SHIPPED function against
-a real git checkout and reads the bytes back.
+Two defects, one shape. #187 question 5: #176 wrote the principles channel down
+as prose and no command wrote the file, so a delegate launched by the documented
+procedure got nothing and nothing recorded it. #190: `install_commit_guard` ran
+a clone's own `scripts/install-hooks.sh` only when the clone shipped one, and a
+member repository ships none, so every member clone got the machine-wide
+no-main-commits guard and NO claim gate -- while check-campaign-claim.py went on
+calling that clone campaign work whose shell writes "land at the commit".
 
-No case reaches the network: `install_principles` is `cp`, `git rev-parse` and
-an append, and the clone is made locally by `git init`.
+A case made of strings would have caught neither, because both defects were the
+absence of a command. So every case here runs SHIPPED code against a real git
+checkout and reads the bytes back, and the gate cases go further and run a real
+`git commit` through the hook that was installed.
+
+No case reaches the network. The principles cases make their clone with `git
+init`; the gate cases clone from a LOCAL BARE REPOSITORY at
+`<dir>/acme/widget.git`, which `remote_slug` reads as `acme/widget` because it
+takes the last two path segments and strips `.git` -- so a local bare repo is a
+member repository as far as `acquire` is concerned, and the whole entry point
+runs offline.
 
 Usage: scripts/acquire-repo-test.py
 """
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -28,8 +40,14 @@ GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,
                GIT_CONFIG_SYSTEM=os.devnull)
 
 HERE = Path(__file__).resolve().parent
-SCRIPT = (HERE.parent / ".claude" / "skills" / "opening-campaign" / "scripts"
+BASE = HERE.parent
+SCRIPT = (BASE / ".claude" / "skills" / "opening-campaign" / "scripts"
           / "acquire-repo.sh")
+# What the installed hook must name. Derived from this file's own location, the
+# same way `install_commit_guard` derives it from the script's -- so a case
+# asserting on it fails when the two stop agreeing, rather than when a copy kept
+# here goes stale.
+GATE = BASE / "scripts" / "check-commit-claim.py"
 RAN, FAILED = [], []
 
 
@@ -95,6 +113,123 @@ def status(clone, *flags):
     return r.stdout
 
 
+
+# ------------------------------------------------------------ the gate fixture
+#
+# Everything below builds the shape `check-commit-claim.py` actually reads, so
+# the refusals and the admissions come from the shipped gate and not from a
+# stand-in: a base root marked by `scripts/campaign-claim.py`, a
+# `<slug>-<YYMMDD>` campaign directory under it, and a clone of a member
+# repository under that directory's `repos/`.
+
+
+def a_base_with_campaign(d):
+    """A base root and a campaign directory under it. Only the MARKER files are
+    built -- `classify` reads the tree's shape, and nothing here runs the base's
+    scripts, so a stub is the honest fixture for the marker and the real script
+    is what runs against it."""
+    base = Path(d) / "base"
+    (base / "scripts").mkdir(parents=True)
+    (base / "scripts" / "campaign-claim.py").write_text("# the base marker\n")
+    camp = base / "demo-260905"
+    camp.mkdir()
+    return base, camp
+
+
+def a_member_repo(d, camp, slug="acme/widget"):
+    """A bare repository and a clone of it under the campaign, offline.
+
+    The bare repo sits at `<d>/remotes/acme/widget.git`, which `remote_slug`
+    reads as `acme/widget` -- last two path segments, `.git` stripped -- so
+    `acquire` treats it as the member repository `acme/widget` and takes its
+    already-present branch, which needs no network. Two branches are pushed:
+    `main`, which is not a claim, and `campaign-1/190-fixture`, which is one,
+    because `ref_exists` reads the clone's `refs/remotes/origin/` copy first."""
+    owner, name = slug.split("/")
+    remote = Path(d) / "remotes" / owner / f"{name}.git"
+    remote.parent.mkdir(parents=True, exist_ok=True)
+    run = lambda *a: subprocess.run(list(a), check=True, capture_output=True,
+                                    env=GIT_ENV)
+    run("git", "init", "-q", "--bare", "-b", "main", str(remote))
+    seed = Path(d) / f"seed-{name}"
+    run("git", "clone", "-q", str(remote), str(seed))
+    def g(*a):
+        run("git", "-C", str(seed), *a)
+    g("config", "user.email", "t@example.invalid")
+    g("config", "user.name", "t")
+    (seed / "tracked").write_text("x")
+    g("add", "tracked")
+    g("commit", "-qm", "init")
+    g("push", "-q", "origin", "HEAD:refs/heads/main")
+    g("push", "-q", "origin", "HEAD:refs/heads/campaign-1/190-fixture")
+    dest = camp / "repos" / name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    run("git", "clone", "-q", str(remote), str(dest))
+    run("git", "-C", str(dest), "config", "user.email", "t@example.invalid")
+    run("git", "-C", str(dest), "config", "user.name", "t")
+    return slug, dest
+
+
+def a_home(d, name="home"):
+    """A HOME holding the machine-wide guard where acquire-repo looks for it.
+
+    It exits 0 and says its own name, so the two halves of the installed hook
+    are told apart: a commit that reaches the gate has run the guard first, and
+    a refusal carrying only one of the two words names which half spoke."""
+    home = Path(d) / name
+    g = home / ".claude" / "git-hooks" / "no-main-commits"
+    g.parent.mkdir(parents=True)
+    g.write_text("#!/bin/sh\necho 'NO-MAIN-COMMITS RAN' >&2\nexit 0\n")
+    g.chmod(0o755)
+    return home
+
+
+def run_acquire(slug, dest, home, script=SCRIPT):
+    """The whole shipped entry point, run offline. Not an extracted function:
+    what #190 broke was a branch of `install_commit_guard`, and what a caller
+    gets is whatever `acquire` calls, so the call site is exercised here rather
+    than asserted about."""
+    return subprocess.run([str(script), slug, str(dest)], capture_output=True,
+                          text=True, env=dict(GIT_ENV, HOME=str(home)))
+
+
+def a_base_copy(d, gate=True, name="otherbase"):
+    """A second base tree holding its own copy of acquire-repo.sh, and its
+    scripts/ with or without the gate. `install_commit_guard` resolves the base
+    from BASH_SOURCE, so running THIS copy is how the missing-gate branch is
+    reached without touching the real checkout."""
+    root = Path(d) / name
+    (root / ".claude" / "skills" / "opening-campaign" / "scripts").mkdir(parents=True)
+    copy = (root / ".claude" / "skills" / "opening-campaign" / "scripts"
+            / "acquire-repo.sh")
+    shutil.copy(SCRIPT, copy)
+    (root / "scripts").mkdir()
+    if gate:
+        shutil.copy(GATE, root / "scripts" / GATE.name)
+        # The gate imports the claim reading from beside itself: one script owns
+        # it, and a copy without its neighbour would refuse for the wrong reason.
+        shutil.copy(HERE / "check-campaign-claim.py",
+                    root / "scripts" / "check-campaign-claim.py")
+    return root, copy
+
+
+def commit_in(clone, home, name, text):
+    (clone / name).write_text(text)
+    subprocess.run(["git", "-C", str(clone), "add", name], check=True,
+                   capture_output=True, env=GIT_ENV)
+    r = subprocess.run(["git", "-C", str(clone), "commit", "-m", "x"],
+                       capture_output=True, text=True,
+                       env=dict(GIT_ENV, HOME=str(home)))
+    return r, r.stdout + r.stderr
+
+
+def on_branch(clone, branch, track=False):
+    args = (["switch", "-q", "--track", f"origin/{branch}"] if track
+            else ["switch", "-q", "-c", branch])
+    subprocess.run(["git", "-C", str(clone), *args], check=True,
+                   capture_output=True, env=GIT_ENV)
+
+
 def main():
     with tempfile.TemporaryDirectory() as d:
         clone = a_campaign(d)
@@ -134,13 +269,105 @@ def main():
         check("...and nothing is written",
               not (clone / "CLAUDE.local.md").exists())
 
-    # THE CALL SITE, and this one is TEXTUAL rather than executed -- said
-    # plainly because a reader is owed the difference. `acquire` clones from
-    # GitHub, and no case here may reach the network, so the entry point cannot
-    # be run offline. Without this the function was covered and the call was
-    # not: deleting `install_principles "$dest"` from `acquire` left all eight
-    # cases green, which is the fifth time that shape has appeared in this
-    # repository.
+
+    # ---- #190. A MEMBER CLONE GETS THE CLAIM GATE, and it is the gate that
+    # runs. Every case here is on the deployed path: the shipped `acquire`, a
+    # real clone, and a real `git commit` going through the hook it installed.
+    with tempfile.TemporaryDirectory() as d:
+        base, camp = a_base_with_campaign(d)
+        home = a_home(d)
+        slug, clone = a_member_repo(d, camp)
+        r = run_acquire(slug, clone, home)
+        out = r.stdout + r.stderr
+        hook = clone / ".git" / "hooks" / "pre-commit"
+        body = text_of(hook) or ""
+        check("a member clone -- one shipping no installer of its own -- gets a "
+              "pre-commit that runs the claim gate",
+              r.returncode == 0 and str(GATE) in body,
+              f"exit {r.returncode}; {out[:240]}")
+        # THE PATH, not merely the name. A member clone has no scripts/ of its
+        # own, so a hook reaching the gate the way this repository's own hook
+        # does -- through `git rev-parse --show-toplevel` -- would resolve to the
+        # clone and find nothing. "Installed" and "runnable" drift apart exactly
+        # here.
+        check("...by its absolute path in the base, which is the only way the "
+              "clone can reach it",
+              f'"{GATE}" --staged' in body, repr(body[-160:]))
+        check("...and it says which gate it installed, so a wrong base is "
+              "readable at acquire time and not at commit time",
+              str(GATE) in out, out[-240:])
+
+        # The refusal, exercised. Asserted on WHAT IT SAID and not on the exit
+        # status: a crash and a refusal share a status, and a hook that silently
+        # did nothing shares a status with one that passed the commit honestly.
+        on_branch(clone, "not-a-claim")
+        c, both = commit_in(clone, home, "a", "1")
+        check("...and that clone refuses a real commit whose branch is not a claim",
+              c.returncode != 0 and "check-commit-claim: REFUSING" in both,
+              f"exit {c.returncode}; {both[:240]}")
+        check("...naming the reading it made, not just failing",
+              "not a campaign branch" in both, both[:240])
+        check("...with the machine-wide guard still running beside it, which is "
+              "the half that was there before",
+              "NO-MAIN-COMMITS RAN" in both, both[:240])
+
+        # ...AND ADMITS ONE, or the gate is a wall rather than a gate. This is
+        # the case a rule that refused everything would fail, and the one the
+        # refusals above cannot distinguish themselves from without it.
+        on_branch(clone, "campaign-1/190-fixture", track=True)
+        c, both = commit_in(clone, home, "b", "2")
+        check("...and admits a commit on a claimed branch",
+              c.returncode == 0, f"exit {c.returncode}; {both[:240]}")
+        check("...saying so, and not merely staying quiet",
+              "is a claim" in both, both[:240])
+
+    # ---- The gate that is named but cannot run, at both moments it can be
+    # read. A hook naming a script that is not there is worse than no hook: it
+    # reads to every session like a rule being enforced.
+    with tempfile.TemporaryDirectory() as d:
+        base, camp = a_base_with_campaign(d)
+        home = a_home(d)
+        slug, clone = a_member_repo(d, camp)
+        _, copy = a_base_copy(d, gate=False)
+        r = run_acquire(slug, clone, home, script=copy)
+        check("a base with no check-commit-claim.py refuses to install rather "
+              "than leaving a hook that cannot run",
+              r.returncode != 0 and "gate it cannot run" in r.stderr,
+              f"exit {r.returncode}; {(r.stdout + r.stderr)[-240:]}")
+        check("...and writes no hook at all",
+              not (clone / ".git" / "hooks" / "pre-commit").exists())
+
+        # The second reading: installed from a base that HAD the gate, and the
+        # gate is gone by the time a commit is made -- a base checkout moved or
+        # deleted months later. The hook re-reads the path rather than trusting
+        # the one baked in at acquire time.
+        other, copy = a_base_copy(d, gate=True, name="gatedbase")
+        r = run_acquire(slug, clone, home, script=copy)
+        check("a base that has the gate installs the hook that names it",
+              r.returncode == 0 and str(other / "scripts" / GATE.name)
+              in (text_of(clone / ".git" / "hooks" / "pre-commit") or ""),
+              f"exit {r.returncode}; {(r.stdout + r.stderr)[-240:]}")
+        (other / "scripts" / GATE.name).unlink()
+        on_branch(clone, "not-a-claim-either")
+        c, both = commit_in(clone, home, "c", "3")
+        check("...and once that gate is gone the hook REFUSES, rather than "
+              "passing the commit it can no longer judge",
+              c.returncode != 0 and "is missing or not executable" in both,
+              f"exit {c.returncode}; {both[:240]}")
+        check("...naming the path it looked for",
+              str(other / "scripts" / GATE.name) in both, both[:240])
+
+    # THE ORDER OF THE CALL, and this one is TEXTUAL rather than executed --
+    # said plainly because a reader is owed the difference. The cases above run
+    # `acquire` for real, so the CALL is covered now; what they cannot cover is
+    # the order, because they reach the already-present branch and `clone_into`
+    # never fires. Until #190 the whole call site was textual on the premise
+    # that `acquire` clones from GitHub and so cannot run offline; a local bare
+    # repository is a member repository as far as `remote_slug` is concerned,
+    # which is what retired that premise. Without the case below the function
+    # would be covered and its position not: deleting `install_principles
+    # "$dest"` from `acquire` left all eight cases green, which is the fifth
+    # time that shape has appeared in this repository.
     body = SCRIPT.read_text()
     acquire = body[body.index("acquire() {"):]
     check("acquire calls install_principles on every checkout it leaves",

@@ -638,6 +638,118 @@ pred R12d_AcquireIsWhatPrinciplesAClone {
   }
 }
 
+/* ================= the gate is installed where the commit lands ============= */
+
+/* A COMMIT IS ONLY REFUSABLE WHERE THE GATE IS INSTALLED (#190).
+   `claimBeforeCommit` above says a commit on a sub-issue names a claim the
+   committer holds. It is silent on whether anything in the checkout the commit
+   is made in reads that -- and for a member repository nothing did.
+   `acquire-repo.sh` ran a clone's own `scripts/install-hooks.sh` only
+   `if [ -x "$installer" ]`, a member repository ships none, so a member clone
+   got the machine-wide no-main-commits shim and NO claim gate, while
+   check-campaign-claim.py went on calling that same clone campaign work. The
+   rule held in the model and enforced nothing on the trees delegates do most of
+   their committing in. That is the shape #187 question 5 hit with the
+   principles channel: a mechanism that existed only as prose.
+
+   NARROWED TO A TASK THAT HAS A CAMPAIGN, deliberately. An agent whose task
+   belongs to no campaign is committing on nothing this base owns, and
+   check-commit-claim.py admits exactly that commit unread -- `classify` returns
+   "not campaign work, no claim needed". A rule stated without the conjunct
+   would forbid it, since `x in none` is false, and would be a claim about the
+   code that the code does not make. R13f is that case's witness, so the
+   narrowing is a decision with a command behind it rather than a silent
+   omission. */
+pred commitGateInstalled {
+  always all a: Agent |
+    (Now.event = CommitLocal and Target.agent = a and some campaignOf[a.task])
+      implies a.task.repo in campaignDirAt[campaignOf[a.task], a.host].gated
+}
+
+/* R13. THE DEFECT, without the rule: a commit on campaign work in a clone that
+   runs nothing. `claimBeforeCommit` is asserted throughout, so a reader can see
+   what this is not -- the claim rule is holding perfectly, over a tree that
+   enforces it on nobody. */
+pred R13_CommitInAnUngatedClone {
+  claimBeforeCommit
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and some campaignOf[a.task]
+                              and a.task.repo not in
+                                  campaignDirAt[campaignOf[a.task], a.host].gated)
+}
+
+/* R13b. CONTROL: the discipline excludes it. */
+pred R13b_RepairExcludesIt {
+  commitGateInstalled and R13_CommitInAnUngatedClone
+}
+
+/* R13c. ...and it still admits the commit in a gated clone, or the rule would
+   be one that forbids committing at all. */
+pred R13c_RepairAdmitsTheGatedCommit {
+  commitGateInstalled
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and some campaignOf[a.task]
+                              and a.task.repo in
+                                  campaignDirAt[campaignOf[a.task], a.host].gated)
+}
+
+/* R13d. ACQUIRE IS WHAT GATES A CLONE, pinned -- R12d's lesson taken up front
+   rather than after a review. R13c is satisfied by a `gated` that was simply
+   true at time zero, so on its own it says nothing about where the gate comes
+   from. Starting from nothing gated, a gated commit is reachable only through
+   an Acquire, so this goes UNSAT the moment `acquire` stops producing. */
+pred R13d_AcquireIsWhatGatesAClone {
+  no gated
+  commitGateInstalled
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and some campaignOf[a.task]
+                              and a.task.repo in
+                                  campaignDirAt[campaignOf[a.task], a.host].gated)
+}
+
+/* R13e. WHOSE directory, pinned. Every command above runs at `1 Campaign` and
+   `1 CampaignDir`, where `campaignDirAt[campaignOf[a.task], a.host].gated` and
+   `CampaignDir.gated` are the same relation -- so together they say nothing
+   about which directory the gate has to be in, and #203 is the round that cost
+   was paid in. R11 pins the campaign filter inside `campaignDirAt`; this pins
+   that THIS rule goes through it.
+
+   Two campaigns on one machine: the agent's own campaign's clone is ungated
+   and a neighbour's clone of the same repository is gated, and the rule must
+   still refuse. Expect 0, and it goes SAT the moment the navigation is replaced
+   by `CampaignDir.gated`.
+
+   EVERY conjunct sits inside the `eventually`, including `some campaignOf` and
+   `c != campaignOf[a.task]`. `memberIssues` is a var relation, so stated
+   outside it they are read at time zero and a trace that moves the sub-issue
+   out of its campaign before the commit satisfies the witness while the rule's
+   antecedent is false -- which is exactly how the first spelling of this went
+   SAT. */
+pred R13e_TheAgentsOwnDirIsTheOneThatCounts {
+  commitGateInstalled
+  some a: Agent, c: Campaign |
+    eventually (Now.event = CommitLocal and Target.agent = a
+                and some campaignOf[a.task]
+                and c != campaignOf[a.task]
+                and a.task.repo not in
+                    campaignDirAt[campaignOf[a.task], a.host].gated
+                and a.task.repo in campaignDirAt[c, a.host].gated)
+}
+
+/* R13f. THE CASE THE RULE DOES NOT COVER, stated rather than left to the
+   reader of the conjunct: an agent committing on a task that belongs to no
+   campaign is admitted with nothing gated anywhere, because that is what
+   check-commit-claim.py does with a checkout outside every base tree and every
+   campaign directory. Without this the narrowing above reads as a silent loss.
+   Expect 1, and it goes UNSAT if `some campaignOf[a.task]` is dropped from the
+   rule. */
+pred R13f_ACommitOnNoCampaignsWorkIsNotGated {
+  commitGateInstalled
+  no gated
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and no campaignOf[a.task])
+}
+
 /* R9d. THE ORDINARY LANDING, and the case whose absence let the first spelling
    of `settledLeavesNoClaim` through: claim, merge, and the sub-issue closes
    with its ref still standing, because GitHub auto-closes on merge and
@@ -1219,6 +1331,12 @@ run R12_DelegateLaunchedWithoutPrinciples for 3 Issue, 1 PullRequest, 1 Campaign
 run R12b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 run R12c_RepairAdmitsThePrincipledLaunch for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run R12d_AcquireIsWhatPrinciplesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R13_CommitInAnUngatedClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R13b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R13c_RepairAdmitsTheGatedCommit for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R13d_AcquireIsWhatGatesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R13e_TheAgentsOwnDirIsTheOneThatCounts for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run R13f_ACommitOnNoCampaignsWorkIsNotGated for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0

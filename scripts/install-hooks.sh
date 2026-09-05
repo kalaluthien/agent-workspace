@@ -25,11 +25,15 @@
 # symlinked hook slot (writing through it would edit a file outside this
 # repository), or a repository with core.hooksPath set (git would never run what
 # gets written to .git/hooks/). One exception, adopted and announced: a
-# pre-commit whose whole body is the two-line shim acquire-repo.sh writes
-# (`exec "<...>/.claude/git-hooks/no-main-commits" "$@"`), because the hook
-# written here chains that same guard and is a strict superset of it. Two
-# writers of one slot, the second refusing the first's output, left every
-# delegate clone with none of this repository's hooks (#178).
+# pre-commit acquire-repo.sh wrote, because the hook written here runs the same
+# guard and the same claim gate and is a strict superset of it. Two writers of
+# one slot, the second refusing the first's output, left every delegate clone
+# with none of this repository's hooks (#178).
+#
+# THAT SHIM HAS TWO SHAPES. Since #190 it carries the claim gate as well as the
+# guard and names itself on line 2; the two-line form written before #190 is
+# still on disk in clones acquired then. `is_guard_shim` below recognises both,
+# and is the one place either shape is spelled.
 #
 # `--git-only` installs the two git hooks and leaves ~/.claude/settings.json
 # alone. The harness registration is machine-wide and points at ONE checkout;
@@ -80,13 +84,29 @@ if hooks_path=$(git config --get core.hooksPath); then
 	exit 1
 fi
 
-# The whole body of the shim acquire-repo.sh writes, and nothing else: a shebang
-# and one exec of the machine-wide guard by absolute path. Anything more is
-# somebody's decision this script cannot read, and is refused below.
+# A pre-commit acquire-repo.sh wrote, in either of its two shapes. Anything else
+# is somebody's decision this script cannot read, and is refused below.
+#
+# BOTH ARE PATTERNS FOR WHAT THAT SCRIPT WRITES, and this is their one home --
+# the same reader it has always been, with a second shape added, not a second
+# reader. It cannot be derived from acquire-repo.sh at run time: this installer
+# runs inside whatever repository is being set up, and a member clone holds no
+# copy of that script, so a derived read would refuse to adopt in exactly the
+# clones the shim is written into.
+#
+# The pre-#190 form is matched WHOLE -- a shebang and one exec of the
+# machine-wide guard by absolute path, two lines and no more -- because it
+# carries nothing to name itself by. Clones acquired then still hold it.
+# The current form carries the claim gate as well and is ten lines, so it is
+# matched by the marker acquire-repo.sh puts on line 2 and nothing else; the
+# text lives there, in SHIM_MARKER, with a comment pointing back here.
 is_guard_shim() {
-	[ "$(wc -l <"$1" | tr -d ' ')" = 2 ] &&
+	if [ "$(wc -l <"$1" | tr -d ' ')" = 2 ]; then
 		[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
-		sed -n 2p "$1" | grep -qE '^exec "[^"]*/\.claude/git-hooks/no-main-commits" "\$@"$'
+			sed -n 2p "$1" | grep -qE '^exec "[^"]*/\.claude/git-hooks/no-main-commits" "\$@"$'
+		return
+	fi
+	sed -n 2p "$1" | grep -qF '# Written by acquire-repo.sh.'
 }
 
 # Each hook gets the same two refusals, so a second hook cannot arrive with

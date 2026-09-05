@@ -33,6 +33,14 @@ EOF
 log() { printf 'acquire-repo: %s\n' "$*" >&2; }
 die() { printf 'acquire-repo: %s\n' "$*" >&2; exit 1; }
 
+# LINE 2 OF EVERY PRE-COMMIT HOOK THIS SCRIPT WRITES, and the one thing that
+# says the slot is this script's rather than somebody's. Two writers of one hook
+# slot, the second refusing the first's output, is what left every delegate clone
+# with no hook at all (#178), so scripts/install-hooks.sh adopts a slot holding
+# this line -- `is_guard_shim` there is the reader, it holds the only other copy
+# of this text, and changing the text here means changing it there.
+SHIM_MARKER='# Written by acquire-repo.sh. Re-run it after changing this file.'
+
 # ---------------------------------------------------------------- arguments
 
 repo=""
@@ -147,11 +155,21 @@ checkout_branch() {
 # One writer per hook slot. A repository that ships scripts/install-hooks.sh
 # owns its own hooks, and that installer already chains the guard; so it is run
 # here, with --git-only because the harness half is the base checkout's and a
-# clone must not repoint it. The two-line shim below is written only into a
-# checkout with no installer, and the installer adopts that shim on a re-run --
-# which is what lets this function converge over a checkout it already guarded
-# either way. Before #178 the shim was written unconditionally and the installer
-# refused over it, so no delegate clone ever held the repository's hooks.
+# clone must not repoint it. The shim below is written only into a checkout with
+# no installer, and the installer adopts that shim on a re-run -- which is what
+# lets this function converge over a checkout it already guarded either way.
+# Before #178 the shim was written unconditionally and the installer refused
+# over it, so no delegate clone ever held the repository's hooks.
+#
+# THE SHIM CARRIES THE CLAIM GATE, and until #190 it did not. A member
+# repository ships no scripts/install-hooks.sh, so every member clone took the
+# branch below and got the no-main-commits guard and nothing else -- while
+# check-campaign-claim.py went on calling that clone campaign work whose shell
+# writes are "allowed unread; they land at the commit". They landed nowhere.
+# check-commit-claim.py's docstring said a delegate's clone had held this hook
+# since #178, which was true only of a clone that ships an installer, and the
+# only such repository is this base. The model gap is `commitGateInstalled` in
+# spec/campaign/orchestration/scenarios.als.
 # Leave the campaign's principles where a delegate in this clone will read
 # them: `CLAUDE.local.md` in its own cwd, excluded from the clone's index.
 #
@@ -195,7 +213,19 @@ install_principles() {
 install_commit_guard() {
 	local dest=$1
 	local guard="$HOME/.claude/git-hooks/no-main-commits"
-	local hooks hook dest_abs installer rc
+	local hooks hook dest_abs installer rc base gate
+
+	# THE BASE IS RESOLVED FROM THIS FILE, never from $dest. A member clone is
+	# not under the base and holds no copy of check-commit-claim.py, so a walk
+	# up from the destination cannot find either -- install_principles's walk is
+	# the wrong precedent here for exactly that reason: it wants the CAMPAIGN
+	# directory, which is above $dest, where this wants the BASE, which is not.
+	# This file sits at <base>/.claude/skills/opening-campaign/scripts/, so the
+	# base is four directories up. BASH_SOURCE, not $0: $0 is the interpreter
+	# when a caller sources or extracts a function from this file.
+	base=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd -P) ||
+		die "could not resolve the base above ${BASH_SOURCE[0]}"
+	gate="$base/scripts/check-commit-claim.py"
 
 	if [ ! -x "$guard" ]; then
 		log "no executable guard at $guard, so $dest would be left unguarded."
@@ -203,6 +233,16 @@ install_commit_guard() {
 		log "  git -C \"\$HOME/.claude\" checkout -- git-hooks/no-main-commits"
 		log "  chmod +x \"$guard\""
 		die "refusing to leave $dest unguarded"
+	fi
+
+	# Checked here as well as in the hook, and the two are different readings:
+	# this one says the base a caller is acquiring FROM has the gate, the one in
+	# the hook says it is still there when a commit is made months later.
+	if [ ! -x "$gate" ]; then
+		log "no executable claim gate at $gate, resolved from ${BASH_SOURCE[0]}."
+		log "A hook naming a gate that cannot run reads to every session like a"
+		log "rule being enforced, so this refuses rather than installs it."
+		die "refusing to leave $dest with a gate it cannot run"
 	fi
 
 	hooks=$(git -C "$dest" rev-parse --path-format=absolute --git-path hooks)
@@ -239,18 +279,40 @@ install_commit_guard() {
 	mkdir -p "$hooks"
 	hook="$hooks/pre-commit"
 
-	# `>|` in the printed remediation, not `>`: it is pasted into the operator's
-	# shell, where `noclobber` makes a plain `>` refuse over the existing hook.
+	# The remediation is to re-run this script, not a printf to paste: since #190
+	# the hook is ten lines carrying two absolute paths, and a hand-typed copy of
+	# it is the hardcoded second reader this repository refuses everywhere else.
 	if [ -e "$hook" ] && ! grep -q 'no-main-commits' "$hook"; then
-		log "$hook exists and does not call the guard. Replace it with:"
-		log "  printf '%s\\n' '#!/usr/bin/env sh' 'exec \"\$HOME/.claude/git-hooks/no-main-commits\" \"\$@\"' >| $hook"
-		log "  chmod +x $hook"
+		log "$hook exists and does not call the guard. Read it, then either"
+		log "chain the two lines below from it by hand, or move it aside and"
+		log "re-run this script, which writes both:"
+		log "  \"$guard\" \"\$@\""
+		log "  \"$gate\" --staged"
+		log "  mv '$hook' '$hook.bak' && <re-run acquire-repo.sh>"
 		die "refusing to overwrite an existing pre-commit hook"
 	fi
 
-	printf '%s\n' '#!/usr/bin/env sh' "exec \"$guard\" \"\$@\"" > "$hook"
+	# BOTH halves, and the claim gate by ABSOLUTE PATH: a member clone has no
+	# scripts/ of its own to reach it through, so `git rev-parse --show-toplevel`
+	# -- which is how this repository's own hook finds its guards -- resolves to
+	# the clone and finds nothing. The path is baked in at acquire time, and the
+	# hook re-reads it at every commit rather than trusting it: a base checkout
+	# that moved or was deleted turns a silent pass into a named refusal.
+	printf '%s\n' \
+		'#!/usr/bin/env sh' \
+		"$SHIM_MARKER" \
+		'set -e' \
+		"\"$guard\" \"\$@\"" \
+		"if [ ! -x \"$gate\" ]; then" \
+		"	echo \"pre-commit: REFUSING -- $gate is missing or not executable.\" >&2" \
+		'	echo "  acquire-repo.sh installed this hook, so the claim gate is" >&2' \
+		'	echo "  expected to run. Re-run acquire-repo.sh from a base checkout" >&2' \
+		'	echo "  that has it, or restore the one this hook names." >&2' \
+		'	exit 1' \
+		'fi' \
+		"exec \"$gate\" --staged" > "$hook"
 	chmod +x "$hook"
-	log "installed the no-main-commits guard"
+	log "installed the no-main-commits guard and the claim gate at $gate"
 }
 
 # ------------------------------------------------------------------- acquire
