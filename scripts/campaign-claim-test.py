@@ -1086,7 +1086,6 @@ def verdict_cases(m, capsys=None):
 
 def root_cases(m):
     """`base_root` from a clone, which is the base as a member of itself."""
-    import types
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
         here = root / "demo-260904" / "repos" / "campaign-base" / "scripts"

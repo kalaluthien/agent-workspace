@@ -116,18 +116,46 @@ pred claimOnTheIssuesRepo {
    `Work` is what the gate is on, and what makes a call `Work` is its TARGET,
    not where the session sits: a change landing outside every base tree
    and every campaign directory is not work on a sub-issue and is no step of
-   this relation. The guard reads that target where it can -- a file tool's
-   path, and a shell's write targets, which are the operands of the changing
-   forms that matched and never the words that merely look like paths -- and
-   falls back to this rule where it cannot, an unread target not being a target
-   read as elsewhere -- per PART of the command, since a part whose target it
-   cannot read is not answered for by a part it can. A write to the campaign
-   plane through `gh` has no filesystem target at all and is always `Work`. No
+   this relation. The guard reads the target over two bounded languages and
+   no other: a file tool's path, and a `gh` command, which is one program with
+   a stable grammar -- a write to the campaign plane through it has no
+   filesystem target at all and is always `Work`, and a `gh` call the guard
+   READS AS A CALL and cannot parse is refused, never guessed. The narrower
+   verb is deliberate and was bought twice: a `gh` write can always be hidden
+   from a bounded reader by a shell that is not read -- a here-string, a pipe
+   into a shell, a script file, an interpreter that is not a shell -- so a
+   sentence promising that no `gh` write escapes is one the code cannot make
+   true, and it produced a CONTRADICTS on every audit that checked it. What
+   the guard does promise: a `gh` TOKEN it can see and cannot resolve to a
+   call is refused rather than guessed at. On the other side of that line the
+   guard reads the `-c` string of the shells it NAMES, spelled alone or last in
+   a cluster -- a named list, not the category, because there is no test for
+   "is a shell" and a shell it does not name (`csh`, `tcsh`) is unread like any
+   other interpreter. The line is drawn at a list rather than at a category on
+   purpose: a category is a promise about programs this has never seen, and the
+   two previous attempts at this sentence were false in opposite directions --
+   one calling a shell's `-c` unreadable, the next calling every shell's read.
+
+   A shell command is NOT read for a target: an arbitrary shell string is an
+   unbounded language, and every reader of it was one more alternation for the
+   next bypass. Such a call is
+   allowed at the moment it is made, printing that it was unread, and its
+   write is `Work` at the moment it LANDS -- `claimBeforeCommit` below, the
+   pre-commit gate. R4k states the gap that leaves open until the commit. No
    atom here carries a path, so the reading itself is the script's and is
    stated in its docstring; the model says only that a write on nothing this
    campaign owns is outside `Work`. */
 pred claimBeforeWork {
   always (Now.event = Work and some Target.agent.peer
+            implies Now.issue in Target.agent.peer.claimedIssues)
+}
+
+/* The commit half of the same gate: scripts/check-commit-claim.py, a
+   pre-commit hook refusing a commit on a base tree or under a campaign
+   directory whose branch is not a claim. Keyed on `a.peer` for the same
+   reason as `claimBeforeWork`: a delegate's launch was gated already. */
+pred claimBeforeCommit {
+  always (Now.event = CommitLocal and some Target.agent.peer
             implies Now.issue in Target.agent.peer.claimedIssues)
 }
 
@@ -506,6 +534,37 @@ pred R4j_GuardAdmitsClaimedWork {
     a.peer = s
     eventually (Now.event = Claim and Who.session = s and Now.issue = a.task
                 and eventually (Now.event = Work and Target.agent = a))
+  }
+}
+
+/* R4k. THE HOLE THE PRE-TOOL-USE HALF LEAVES OPEN, stated rather than hidden:
+   under `claimBeforeWork` alone a session with no claim still reaches a
+   commit, because a shell write is not read as `Work` at the moment it is
+   made. Reachable on purpose -- this is the accepted cost of reading only
+   bounded languages. */
+pred R4k_UnclaimedShellWriteThenCommit {
+  claimBeforeWork
+  some s: Session, a: Agent {
+    a.peer = s
+    eventually (Now.event = CommitLocal and Target.agent = a)
+    always a.task not in s.claimedIssues
+  }
+}
+
+/* R4l. The commit gate closes it. */
+pred R4l_CommitGateClosesIt {
+  claimBeforeCommit
+  R4k_UnclaimedShellWriteThenCommit
+}
+
+/* R4m. CONTROL for R4l: UNSAT there would mean the gate forbids committing at
+   all rather than committing unclaimed. */
+pred R4m_GateAdmitsClaimedCommit {
+  claimBeforeCommit
+  some s: Session, a: Agent {
+    a.peer = s
+    eventually (Now.event = Claim and Who.session = s and Now.issue = a.task
+                and eventually (Now.event = CommitLocal and Target.agent = a))
   }
 }
 
@@ -997,6 +1056,10 @@ run R12d_AcquireIsWhatPrinciplesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R4j_GuardAdmitsClaimedWork   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- the shell hole the pre-tool-use half leaves, the commit gate that closes it, and the control
+run R4k_UnclaimedShellWriteThenCommit for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R4l_CommitGateClosesIt           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R4m_GateAdmitsClaimedCommit      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 
 -- the gap TwoStepShutdownSuffices rests on
 run R5b_PushedButStillLocalOnly         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1

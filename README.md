@@ -58,8 +58,8 @@ scripts/install-hooks.sh
 ```
 
 It installs the `pre-commit` that chains the machine-wide no-commits-on-`main`
-guard with this repository's three (`check-rule-readers`, `check-tree-shape`,
-`check-cross-references`), the `post-commit` that pushes a campaign branch on
+guard with this repository's own guards (the `# runs:` line the installer
+writes is the one list), the `post-commit` that pushes a campaign branch on
 its first commit, and the harness claim guard in `~/.claude/settings.json`. It
 refuses rather than overwrites a hook it did not write, with one exception it
 announces: the two-line `no-main-commits` shim `acquire-repo.sh` leaves in a
