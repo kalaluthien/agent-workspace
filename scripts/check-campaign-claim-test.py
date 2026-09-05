@@ -26,6 +26,7 @@ named for its row.
 Usage: scripts/check-campaign-claim-test.py
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -129,10 +130,51 @@ class Fixture:
         return dest.resolve()
 
 
+def herdr_stub(d, sessions):
+    """A directory to put first on PATH holding a `herdr` that prints the
+    listing `sessions` describes: {session_id: name}. A stub on PATH rather
+    than an environment variable the guard reads, because the guard's subject
+    is what the CALLING session may do, and a seam that session can set is a
+    bypass wearing a test's clothes."""
+    listing = {"result": {"agents": [
+        {"agent_session": {"value": sid}, "name": name, "pane_id": f"p{i}"}
+        for i, (sid, name) in enumerate(sessions.items())]}}
+    # One directory PER STUB: they used to share `d/stub`, so the last call
+    # silently rewrote every earlier one and five cases were answered by a
+    # listing they never asked for.
+    tag = "-".join(sorted(sessions.values())) or "unnamed"
+    bindir = Path(d) / f"stub-{abs(hash(tag)) % 10**8}"
+    bindir.mkdir(exist_ok=True)
+    body = json.dumps(listing).replace("'", "'\\''")
+    (bindir / "herdr").write_text(f"#!/bin/sh\nprintf '%s' '{body}'\n")
+    (bindir / "herdr").chmod(0o755)
+    return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}"}
+
+
+def herdr_stub_raw(d, text):
+    """A `herdr` printing exactly `text`, for the shapes a listing should not
+    have and the guard must survive rather than traceback through."""
+    bindir = Path(d) / f"stub-raw-{abs(hash(text)) % 10**8}"
+    bindir.mkdir(exist_ok=True)
+    body = text.replace("'", "'\\''")
+    (bindir / "herdr").write_text(f"#!/bin/sh\nprintf '%s' '{body}'\n")
+    (bindir / "herdr").chmod(0o755)
+    return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}"}
+
+
+def no_herdr(d):
+    """A PATH on which `herdr` exits non-zero: the COULD NOT LOOK case."""
+    bindir = Path(d) / "nostub"
+    bindir.mkdir(exist_ok=True)
+    (bindir / "herdr").write_text("#!/bin/sh\necho 'herdr: gone' >&2\nexit 127\n")
+    (bindir / "herdr").chmod(0o755)
+    return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}"}
+
+
 def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
-        tool_input=None):
+        tool_input=None, env=None, session="sid-1"):
     payload = {
-        "session_id": "sid-1",
+        "session_id": session,
         "cwd": str(cwd),
         "tool_name": tool,
         "tool_input": tool_input if tool_input is not None else (
@@ -140,9 +182,11 @@ def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
             else {"file_path": path or str(Path(cwd) / "a.txt")}),
         "hook_event_name": event or "PreToolUse",
     }
-    return subprocess.run([sys.executable, str(GUARD)],
-                          input=stdin if stdin is not None else json.dumps(payload),
-                          capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, str(GUARD)],
+        input=stdin if stdin is not None else json.dumps(payload),
+        capture_output=True, text=True,
+        env=dict(os.environ, **(env or {})))
 
 
 UNREAD = "was not read for a target"
@@ -583,6 +627,304 @@ def main():
         r = ask(f.base, tool="Read", tool_input={"file_path": str(f.base / "x")})
         check("a tool this guard has no opinion about exits 0",
               r.returncode == 0, out(r)[:200])
+
+
+    # 9. #185's permission table, one case per cell. The role is read from the
+    # session's name through `herdr agent list`, so each case stubs the listing
+    # it needs; `campaign-name-session.py` owns the name pattern and the guard
+    # imports it rather than restating it.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        planner = herdr_stub(d, {"sid-1": "campaign-1-planner-3"})
+        executor = herdr_stub(d, {"sid-1": "campaign-1-executor-4"})
+        stranger = herdr_stub(d, {"sid-1": "campaign-9-executor-1"})
+        unnamed = herdr_stub(d, {"sid-1": ""})
+        gone = no_herdr(d)
+
+        # THE CASE THAT PROMPTED #185, from a planner session that really was
+        # refused this write on 2026-09-05: a comment on the campaign issue,
+        # which no claim can ever cover because #1 is nobody's sub-issue.
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+                env=planner)
+        check("a planner comments on the campaign issue, which no claim covers",
+              r.returncode == 0 and "planner writes the campaign plane" in r.stdout,
+              out(r)[:400])
+        # #207 decided the executor side of this row: an executor of THAT
+        # campaign may comment on its campaign issue, which no claim can cover.
+        # The contrast the planner row is here for is the CAMPAIGN, not the
+        # claim -- so the refusal case is an executor of another one.
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+                env=stranger)
+        check("...and the same write from an executor of another campaign is "
+              "refused", r.returncode == 2, out(r)[:400])
+
+        # planner, campaign plane, ANOTHER campaign's issue
+        r = ask(f.base, tool="Bash", command="gh issue close 116", env=planner)
+        check("a planner closes an issue of a campaign it does not work",
+              r.returncode == 0 and "any campaign" in r.stdout, out(r)[:300])
+
+        # THE LICENCE IS THE CAMPAIGN PLANE, NOT EVERY gh WRITE. `gh pr create`
+        # is OpenPullRequest and `gh pr merge` is MergePullRequest -- the code
+        # plane and the three merge conditions respectively, neither a
+        # planner's by role. Allowing every row of WRITES let a planner open
+        # and merge pull requests and delete another executor's claim ref.
+        for cmd in ("gh pr create --title t --body b",
+                    "gh pr merge 9 --merge",
+                    "gh pr edit 9 --title x",
+                    "gh api -X DELETE repos/o/r/git/refs/heads/campaign-2/8-y"):
+            r = ask(f.base, tool="Bash", command=cmd, env=planner)
+            check(f"the planner licence does not cover `{cmd[:34]}`",
+                  r.returncode == 2 and "not the campaign plane" in r.stderr,
+                  out(r)[:400])
+        # ALLOW beside it: the campaign-plane verbs the licence is FOR.
+        for cmd in ("gh issue edit 9 --body x", "gh issue comment 9 --body x",
+                    "gh label create x"):
+            r = ask(f.base, tool="Bash", command=cmd, env=planner)
+            check(f"ALLOW beside it: `{cmd[:30]}` is the campaign plane",
+                  r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
+        # ...and a read stays a read for a planner too.
+        r = ask(f.base, tool="Bash", command="gh pr view 9", env=planner)
+        check("ALLOW beside it: a gh read is not a write for a planner either",
+              r.returncode == 0, out(r)[:300])
+
+        # planner, code plane: refused, and told which shape to use
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=planner)
+        check("a planner may not change code in a checkout",
+              r.returncode == 2 and "may not change code" in r.stderr
+              and "Hand it to an executor" in r.stderr, out(r)[:400])
+        # ...but its own campaign-directory scratch is campaign-plane
+        r = ask(f.base, path=str(f.camp / "notes.md"), env=planner)
+        check("...and a planner writes its campaign directory, which is no "
+              "checkout",
+              r.returncode == 0 and "campaign-plane scratch" in r.stdout,
+              out(r)[:400])
+
+        # the last row: a name the pattern does not admit, on BOTH planes
+        r = ask(f.base, tool="Bash", command="gh issue close 9", env=unnamed)
+        check("a session with no campaign name is refused on the campaign plane",
+              r.returncode == 2 and "no role" in r.stderr, out(r)[:300])
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=unnamed)
+        check("...and on the code plane too", r.returncode == 2
+              and "no role" in r.stderr, out(r)[:300])
+
+        # A CHECKOUT UNDER A CAMPAIGN DIRECTORY IS STILL CODE. A clone at
+        # <campaign>/repos/<repo>/ reports the campaign directory as where it
+        # is, so keying the planner refusal on that alone let a planner edit
+        # every member clone and every worktree under a campaign directory.
+        # A MEMBER repository's clone, not the base's: a clone of the base
+        # carries the marker and answers as a base in its own right, so it
+        # never reaches the scratch reading and the case could not see the
+        # bug it was written for. Probed: with `f.clone()` here, reverting
+        # `scratch` left the suite fully green.
+        member = f.member(branch="campaign-1/7-x")
+        r = ask(member, path=str(member / "code.txt"), env=planner)
+        check("a planner may not edit a checkout under the campaign directory",
+              r.returncode == 2 and "may not change code" in r.stderr,
+              out(r)[:400])
+        # ALLOW beside it: the campaign directory itself is still scratch.
+        r = ask(f.camp, path=str(f.camp / "plan.md"), env=planner)
+        check("ALLOW beside it: the campaign directory itself stays scratch",
+              r.returncode == 0 and "campaign-plane scratch" in r.stdout,
+              out(r)[:400])
+
+        # COULD NOT LOOK is not the same as looked-and-found-nothing: with no
+        # herdr the guard falls back to the claim reading and says so, which is
+        # the pre-#185 behaviour and neither a wall nor a bypass.
+        r = ask(f.base, tool="Bash", command="gh issue close 9", env=gone)
+        check("herdr unreadable falls back to the claim reading, and SAYS both "
+              "that it could not read the role and what it fell back to",
+              r.returncode == 2 and "no claim covering" in r.stderr
+              and "the role could not be read" in r.stderr
+              and "falling back to the claim reading" in r.stderr, out(r)[:600])
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=gone)
+        check("...and the file half says the same",
+              r.returncode == 2
+              and "falling back to the claim reading" in r.stderr, out(r)[:600])
+
+    # AN ALLOW AFTER A FAILED READ MUST SAY SO TOO. They were silent, so an
+    # allow that fell back looked exactly like one that read the role and found
+    # it permitted -- the whole distinction this gate keeps, dropped on the one
+    # path nobody asserts.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("campaign-1/7-x",))
+        gone = no_herdr(d)
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=gone)
+        check("an ALLOW that fell back says it fell back",
+              r.returncode == 0
+              and "falling back to the claim reading" in r.stdout, out(r)[:600])
+        # ALLOW beside it: with herdr readable, the allow does NOT say it.
+        fine = herdr_stub(d, {"sid-1": "campaign-1-executor-4"})
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=fine)
+        check("...and one that read the role does not claim to have fallen back",
+              r.returncode == 0
+              and "falling back" not in r.stdout, out(r)[:600])
+        # A NAME THAT IS NOT A CAMPAIGN NAME IS NOT CAMPAIGN WORK'S PROBLEM
+        # OUTSIDE A CAMPAIGN. Asked before "is this a base", it refused every
+        # gh write anywhere on this machine from any session herdr lists.
+        plain2 = Path(d) / "plain2"
+        plain2.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(plain2)],
+                       check=True)
+        r = ask(plain2, tool="Bash", command="gh issue close 9", env=unnamed)
+        check("a session with no campaign name still writes outside every base",
+              r.returncode == 0, out(r)[:400])
+        # A herdr row this cannot read is a reading, not a traceback: a hook
+        # that exits 1 is its OWN error, and the call then proceeds.
+        broken = herdr_stub_raw(
+            d, '{"result": {"agents": [{"agent_session": "not-an-object", '
+               '"name": "x"}]}}')
+        r = ask(f.base, tool="Bash", command="gh issue close 9", env=broken)
+        check("a malformed herdr row refuses rather than crashing",
+              r.returncode == 2 and "not an object" in r.stderr, out(r)[:400])
+
+        # ---- one ALLOW per refusal branch above, for the ordinary shape it
+        # could catch by mistake. Five fix rounds stayed green while each
+        # opened a false positive, because every case was named for a refusal.
+        # A refusal branch with no allow beside it is half a test.
+        r = ask(d, path=str(Path(d) / "elsewhere.md"), env=unnamed)
+        check("ALLOW beside the nameless refusal: a file outside every base",
+              r.returncode == 0 and "not campaign work" in r.stdout, out(r)[:300])
+        r = ask(d, path=str(Path(d) / "elsewhere.md"), env=planner)
+        check("ALLOW beside the planner code refusal: a file outside every base",
+              r.returncode == 0 and "not campaign work" in r.stdout, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue list", env=unnamed)
+        check("ALLOW beside the nameless refusal: a gh READ needs no role",
+              r.returncode == 0, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="grep -rn 'gh issue close 9' .",
+                env=unnamed)
+        check("ALLOW beside the nameless refusal: a quoted string is data",
+              r.returncode == 0, out(r)[:300])
+        # A listing carrying other sessions and fields this does not read still
+        # resolves the row it wants: the malformed-row refusal must not fire on
+        # a shape that is merely unfamiliar.
+        crowded = herdr_stub_raw(d, json.dumps({"result": {"agents": [
+            {"agent_session": {"value": "sid-other"}, "name": "campaign-2-executor-1",
+             "cwd": "/x", "unknown_field": 7},
+            {"agent_session": {"value": "sid-1"}, "name": "campaign-1-planner-3",
+             "revision": 12, "tab_id": "t1"},
+        ]}}))
+        r = ask(f.base, tool="Bash", command="gh issue close 116", env=crowded)
+        check("ALLOW beside the malformed-row refusal: other rows and unknown "
+              "fields are not malformed",
+              r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
+        r = ask(d, tool="Bash", command="gh issue close 9", env=gone)
+        check("...and outside every base it still allows, as it always did",
+              r.returncode == 0, out(r)[:300])
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("campaign-1/7-x",))
+        executor = herdr_stub(d, {"sid-1": "campaign-1-executor-4"})
+        stranger = herdr_stub(d, {"sid-1": "campaign-9-executor-1"})
+        # executor, its own campaign and the sub-issue it holds
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=executor)
+        check("an executor of campaign 1 closes the sub-issue it claimed",
+              r.returncode == 0, out(r)[:300])
+        # executor of ANOTHER campaign, standing at the same root
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=stranger)
+        check("an executor of another campaign may not stand on this "
+              "campaign's claim",
+              r.returncode == 2 and "another campaign" in r.stderr, out(r)[:400])
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=stranger)
+        check("...and the file half says the same",
+              r.returncode == 2 and "another campaign" in r.stderr, out(r)[:400])
+        # #207: THE CAMPAIGN ISSUE IS NOBODY'S SUB-ISSUE, so no claim can ever
+        # cover it and every executor was refused a comment on the campaign it
+        # works. Its own campaign's number comes from its name.
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+                env=executor)
+        check("an executor comments on its OWN campaign's issue",
+              r.returncode == 0 and "campaign issue of the campaign this "
+              "session is of" in r.stdout, out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+                env=stranger)
+        check("...and an executor of another campaign may not",
+              r.returncode == 2, out(r)[:400])
+        # THE CARVE-OUT IS A VERB, NOT AN ISSUE NUMBER. Keyed on the number
+        # alone it admitted every `gh issue` verb against the campaign issue --
+        # `edit` is the charter body, `close` closes the campaign, `delete` and
+        # `transfer` are irreversible, and a claim on some other sub-issue
+        # makes none of them safer.
+        for verb in ("close", "edit", "reopen", "delete", "transfer", "lock",
+                     "pin", "develop"):
+            cmd = f"gh issue {verb} 1" + (" --body x" if verb == "edit" else "")
+            r = ask(f.base, tool="Bash", command=cmd, env=executor)
+            check(f"the campaign-issue carve-out does not cover `{verb}`",
+                  r.returncode == 2, out(r)[:400])
+        # ...and it covers its own write and nothing standing beside it.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 1 --body x && gh pr merge 12 --merge",
+                env=executor)
+        check("the carve-out carries no other write in the same command",
+              r.returncode == 2 and "covers no other write" in r.stderr,
+              out(r)[:400])
+        # ALLOW beside all of it: the one verb the carve-out is for, and a read.
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+                env=executor)
+        check("ALLOW beside it: the comment the carve-out is for",
+              r.returncode == 0, out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue view 1", env=executor)
+        check("ALLOW beside it: a read of the campaign issue",
+              r.returncode == 0, out(r)[:400])
+        # ALLOW beside it: a sub-issue of its own campaign still needs a claim,
+        # so the carve-out did not become a general licence.
+        r = ask(f.base, tool="Bash", command="gh issue close 99", env=executor)
+        check("ALLOW beside it is a REFUSAL: a sub-issue it holds no claim on "
+              "is still refused",
+              r.returncode == 2 and "no claim covering a write to #99"
+              in r.stderr, out(r)[:400])
+
+        # CLAUSE 1 IS BOUND BY THE CAMPAIGN TOO. It asks only whether the
+        # target's checkout is on SOME claim, so an executor of another
+        # campaign -- role read correctly -- edited this campaign's worktree,
+        # while the docstring said an executor writes its own campaign.
+        wt = f.trees["campaign-1/7-x"]
+        r = ask(wt, path=str(wt / "a.md"), env=stranger)
+        check("clause 1 does not admit an executor of another campaign",
+              r.returncode == 2 and "another campaign" in r.stderr, out(r)[:400])
+        r = ask(wt, tool="Bash", command="gh pr merge 7 --merge", env=stranger)
+        check("...nor does the session's own checkout, for the same session",
+              r.returncode == 2, out(r)[:400])
+        # ALLOW beside both: this campaign's own executor, same checkout.
+        r = ask(wt, path=str(wt / "a.md"), env=executor)
+        check("ALLOW beside it: clause 1 admits its own campaign's executor",
+              r.returncode == 0 and "Clause 1" in r.stdout, out(r)[:400])
+        r = ask(wt, tool="Bash", command="gh pr merge 7 --merge", env=executor)
+        check("ALLOW beside it: and so does its own checkout",
+              r.returncode == 0, out(r)[:400])
+        # ALLOW beside the foreign-campaign refusal: this campaign's own
+        # executor, standing at the same root, with the same claims present.
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=executor)
+        check("ALLOW beside the foreign-campaign refusal: its own campaign's "
+              "executor is admitted at the same root",
+              r.returncode == 0, out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh pr view 7", env=stranger)
+        check("ALLOW beside the foreign-campaign refusal: a read is not a write",
+              r.returncode == 0, out(r)[:400])
+
+    # A ROOT HOLDING BOTH CAMPAIGNS' CLAIMS. The case above has only a foreign
+    # claim under the root, and the gh half filtered once for the whole root --
+    # so it refused only when EVERY claim was foreign, and an executor with any
+    # claim of its own was admitted to write another campaign's sub-issue with
+    # the foreign claim named as the cover. The filter is per issue now, and
+    # this is the fixture that can tell the two apart.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("campaign-1/7-x", "campaign-2/8-y"))
+        executor = herdr_stub(d, {"sid-1": "campaign-1-executor-1"})
+        r = ask(f.base, tool="Bash", command="gh issue close 8", env=executor)
+        check("an executor may not write another campaign's sub-issue, even "
+              "with a claim of its own under the same root",
+              r.returncode == 2 and "no claim covering a write to #8" in r.stderr,
+              out(r)[:500])
+        check("...and the refusal names the foreign claim it declined to use",
+              "a claim of another campaign" in r.stderr, out(r)[:500])
+        # ALLOW beside it, on the same fixture: its own campaign's sub-issue.
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=executor)
+        check("ALLOW beside it: its own campaign's sub-issue on the same root",
+              r.returncode == 0 and "It covers #7" in r.stdout, out(r)[:500])
+        # ...and the file half, which filtered from the start, still agrees.
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=executor)
+        check("ALLOW beside it: the file half admits the same session",
+              r.returncode == 0, out(r)[:400])
 
     if not ran:
         print("FAIL  the suite ran no case at all")

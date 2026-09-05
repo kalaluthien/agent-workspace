@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Refuse a commit on campaign work whose branch is not a claim.
 
-    check-commit-claim.py [--staged]    pre-commit, run by the hook
-                                        scripts/install-hooks.sh writes; the
-                                        flag is accepted and ignored, since
-                                        a branch is not a staged thing
+    check-commit-claim.py [--staged]    pre-commit, run by whichever hook
+                                        installed it -- the one
+                                        scripts/install-hooks.sh writes in a
+                                        repository that ships that script, and
+                                        the shim acquire-repo.sh writes in a
+                                        clone that does not, which is every
+                                        member repository. The flag is accepted
+                                        and ignored, since a branch is not a
+                                        staged thing.
 
 The commit half of the claim gate; scripts/check-campaign-claim.py is the
 pre-tool-use half and holds the reading both share. The model is
@@ -21,8 +26,18 @@ write is allowed unread. It lands here. This hook runs in the checkout making
 the commit, so it reads that checkout's branch and nothing about where a
 session sits, which is the one reading the model asks for. A linked worktree
 runs the main checkout's hooks (git resolves `--git-path hooks` to the common
-directory), so a commit in a worktree anywhere on disk is judged too. A
-delegate's clone holds this hook since #178.
+directory), so a commit in a worktree anywhere on disk is judged too.
+
+A DELEGATE'S CLONE HOLDS THIS GATE SINCE #190, and did not before. This line
+said #178 and was true only of a clone that ships scripts/install-hooks.sh,
+which is this base and no member repository: acquire-repo.sh ran a clone's own
+installer when it had one and otherwise wrote a shim carrying the no-main-commits
+guard alone. So every member clone -- where delegates do most of their
+committing -- ran nothing that reads a claim, and "a shell write lands here" was
+true of the base and false of them. Such a clone now gets a hook calling this
+file BY ABSOLUTE PATH in the base, because it has no scripts/ of its own to
+reach it through; the model gap is `commitGateInstalled` in
+spec/campaign/orchestration/scenarios.als.
 
 TWO READINGS, PRINTED APART
 
@@ -86,7 +101,12 @@ def main() -> int:
                        f"{why}", "A hook that cannot find its checkout has "
                        "read nothing."])
     top = Path(out.strip()).resolve()
-    inside, where, _ = guard.classify(top)
+    # `classify` gained a fourth member in #185: whether the target is
+    # campaign-plane SCRATCH -- in a campaign directory and in no checkout of
+    # its own. A bool, not a path. This half does not read it: a commit is
+    # judged by the branch of the checkout it lands in, and a commit always
+    # has one.
+    inside, where, _, _ = guard.classify(top)
     if not inside:
         print(f"check-commit-claim: {top} is {where}; not campaign work, "
               f"no claim needed. {who}.")

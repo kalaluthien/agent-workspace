@@ -151,11 +151,18 @@ is the ordinary shape for a member repository and the mode of last resort for th
 base, and a repo-less campaign has the first form and not the second; the launch
 itself is `.claude/skills/opening-campaign/references/launching.md`). A
 separate executor is never the planner's subagent — a subagent shares the
-planner's pane and dies with it. The planner's own hands, and an in-process
-subagent it starts *on a sub-issue*, are the planner executing that sub-issue
-itself. **A planner holds no claim of its own**: the branch it cuts at a
-delegate launch is the delegate's workspace, and it holds one in its own name
-only when it executes a sub-issue itself. The model is `Planner` in
+planner's pane and dies with it, and carries the planner's session id, so the
+guard reads the PLANNER's role for everything it does. **A planner changes no
+code**, by its own hands or through a subagent — its code modes are a herdr
+delegate or a separate executor session. **#185 enforces that over a FILE
+TOOL's writes and no further**: a shell command is read only for the `gh`
+writes in it, never for what it does to a file, and `check-commit-claim.py`
+reads no role — so `sed -i` and `git commit` from a planner are refused by
+nothing today. What it does keep is
+the campaign plane of *any* campaign — a comment, a sub-issue, a close, a claim
+cut for a delegate — which is the row the claim reading had no passing form for.
+**A planner holds no claim of its own**: the branch it cuts at a delegate launch
+is the delegate's workspace. The model is `Planner` in
 `spec/campaign/orchestration/system.als`, and it requires a planner only of a
 delegate launch.
 
@@ -170,22 +177,34 @@ branch the delegate's.
 **`campaign-<campaign issue>-<role>-<n>`**, the role being `planner` or
 `executor`, for every session on this machine; `<n>` is one counter across both
 roles, assigned in the order sessions appear, so two do not both pick `-1` —
-this sentence is that counting rule's one home. **The role word is a label for
-a person reading `herdr agent list`**: it says what the session is for, and the
-machine reads only `<campaign issue>` from a name. It is per-session, where the
-`role` on the model's Agent atom is per launch and records the shape one
-sub-issue was worked in; a planner working a sub-issue by its own hands or an
-in-process subagent is the planner executing it. Choose the role by what the
+this sentence is that counting rule's one home. **The role word is not a
+label**: since #185 `check-campaign-claim.py` resolves it from `herdr agent
+list` and decides both planes by it, so a name of the wrong shape is refused
+every campaign write and a session named `planner` may change no code. It is
+also what a person reads in `herdr agent list`, which is how the two used to be
+confused. It is per-session, where the `role` on the model's Agent
+atom is per launch and records the shape one sub-issue was worked in.
+
+**The name is not a security boundary, and is not meant to be.** A session can
+rename itself, and every session here shares one `gh` account — so one that
+renames itself a planner already holds the power the name would grant. What the
+role buys is that it is explicit and that the mistake is loud; #194 is the
+sub-issue for tying the name to something the named session did not choose.
+
+Choose the role by what the
 session will do when it names itself; one that turns out to be the other role
 renames itself with the same script, and nothing durable carries the old name —
 a rename touches no claim, because a claim is a ref and a checkout. **Set it at
 the start of every session of a campaign, whichever path started it** — the
 `here` reading above, `opening-campaign` step 3, or a delegate launch — because a
 session that arrived from another campaign keeps that campaign's name until
-something sets it. The one pattern lives in `scripts/campaign-name-session.py`.
-**Nothing now refuses a stale name at the claim**, which the record used to do
-by carrying the name into a place later readers trusted; with no record there is
-no such place, and this rule has this sentence for its only reader.
+something sets it. The one pattern lives in `scripts/campaign-name-session.py`, and
+`check-campaign-claim.py` imports it rather than restating it.
+**Nothing refuses a stale name at the CLAIM**, which the record used to do by
+carrying the name into a place later readers trusted; with no record there is no
+such place. What reads the name instead is the guard, on every write: a name of
+another campaign gets an executor refused that campaign's issues, and a name of
+no shape gets both planes refused.
 
 **The sub-issue is deliberately not in the name**, because a session works
 several; which one a session is in is asked, not derived. **Never test a name
@@ -240,8 +259,15 @@ mention does not, and the short `#<issue>` closes the member repository's own
 issue of that number instead. Which repository the work lands in is the
 template's `Repository:` line, since the issue's own location no longer says.
 
-**A discovery becomes a sub-issue at the moment it is found**, by whoever can file
-it: one held in a session's memory dies with its pane.
+**A discovery is recorded the moment it is found**, by whoever can file it: one
+held in a session's memory dies with its pane. **Look for the sub-issue it
+belongs to before filing a new one**: read the campaign's sub-issue list, open
+and closed (`campaign-tracker index <N>`), and where one covers the same
+mechanism, append the observation as a comment and reopen it (`gh issue reopen
+<issue> -R kalaluthien/campaign-base --comment`), so its history stays under one
+number; the reopened work cuts a fresh topic ref under that number. File a new
+sub-issue only when none fits. A parent holds at most 100 sub-issues, closed
+ones included, which is a cost every new number pays and a reopen does not.
 
 **A sub-issue whose work lives only under `<campaign>/scripts/` has no commit to
 land**: it closes as completed with no pull request, its closing comment saying
@@ -254,8 +280,9 @@ what was built. Quote `campaign-tracker settlement`'s note for that row, not its
 a repo-less campaign. **Work that lands no commit is claimed all the same**,
 with `campaign-claim take`: one ref, cut on the base. **Two readers make that
 true rather than remembered, one rule read at two moments.**
-`scripts/check-campaign-claim.py` is a `PreToolUse` guard answering "is this a
-change to campaign work that no claim covers" for what has an unambiguous
+`scripts/check-campaign-claim.py` is a `PreToolUse` guard answering "may this
+session make this change" — the claim for an executor, and since #185 the
+session's ROLE for both — for what has an unambiguous
 target — a file tool's path and a `gh` write — and allowing every other shell
 command unread, saying so. `scripts/check-commit-claim.py` is the `pre-commit`
 gate where a shell write lands: a commit on a base tree or under a campaign
@@ -265,15 +292,20 @@ it; how each reads its target, and what it does when it cannot, is its
 docstring's. `install-hooks.sh` installs both — the commit gate as a git hook,
 the guard in
 `~/.claude/settings.json`, because a delegate's clone is a different repository
-and reads none of this one's settings.
+and reads none of this one's settings. **A member repository ships no installer,
+so its clone gets the commit gate from `acquire-repo.sh`** instead, by absolute
+path into this base; before that it got the no-main-commits guard alone and
+every shell write there landed unjudged.
 
 ## Execution mode
 
 **Do it here, hand it to a subagent, or hand it to a delegate.** The session
 the request arrived at chooses the mode before the work starts, **first by the
 repository and only then by cost**. It is the planner only in the second shape
-(§ The binding), where the first two modes are the planner executing the
-sub-issue itself and the third is a separate executor.
+(§ The binding). **The three modes are an EXECUTOR's**: since #185 a planner
+changes no code by its own hands and none through a subagent, which carries its
+session id and so its role, so a planner's only shape here is the third —
+a delegate, or a separate executor session that takes the sub-issue.
 
 An executor that *changes* a repository runs in a process started in that
 repository's checkout: a herdr delegate in `<campaign>/repos/<repo>/` for a member
@@ -286,7 +318,9 @@ skills of the session or directory they were *started in*, and a skill marked
 
 Then, within what the repository allows, choose by cost:
 
-- **your own hands** for one small edit needing nothing from the build loop;
+- **your own hands** for one small edit needing nothing from the build loop
+  (an executor's hands: a planner's FILE-TOOL writes are refused and the
+  refusal says so, while a shell write is caught by nothing — § The binding);
 - **a subagent on a worktree** when several sub-issues can run at once, or the work
   would eat the session's turns;
 - **a herdr delegate in a clone** when the work needs the repository's own

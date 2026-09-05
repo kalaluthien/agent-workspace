@@ -8,9 +8,10 @@
  *              sub-issue, which machine, which session launched it, which
  *              branch, and -- when the agent IS a campaign session working its
  *              own claim -- which session that is.
- *   Role       what an agent is for: an Executor works the sub-issue on its
- *              branch; a Planner filed it and distributes it, holding no
- *              claim of its own.
+ *   Plane      which half of the work an event writes: the campaign plane (the
+ *              issues, the index, the claims, the directories) or the code
+ *              plane (the commits and what carries them). `Role` itself is
+ *              session/system.als's, because it is a property of a session.
  *   Launched   agents that have been launched, and Live those still running.
  *   LocalOnly  agents holding work that exists only on their host.
  *   PushedToRemote  agents whose branch is on the remote, a different fact.
@@ -64,21 +65,68 @@ sig Agent {
   peer:     lone Session
 }
 
-/* What an agent is FOR. An Executor works a sub-issue on its branch. A Planner
-   is a session's own atom (`some peer`, pinned by PlannerIsASession) on a
-   sub-issue it filed and distributes: it never takes `work` or `report`, so of
-   the state below it does not share LocalOnly, PushedToRemote and Reported
-   (PlannerNeverLocalOnly, PlannerNeverReports), and it shares the rest --
-   Asked, Answered and Waiting, three of the four messages with REPORT's own bit
-   the one it does not take; Confirmed; the shutdown bits, StandDownTaken among
-   them, so the fourth message is counted there and not twice; and
-   `branch`. What it executes itself is an Executor atom of the same session. A
-   delegate launch is the planner's act, and `launch` says so. A third kind is
-   added here the same way, and takes whatever of the state below it turns out
-   not to share. */
-abstract sig Role {}
-one sig Executor extends Role {}
-one sig Planner  extends Role {}
+/* `Role` is session/system.als's now: it is what a SESSION is for, read from
+   its name, and an agent inherits it. An Executor works a sub-issue on its
+   branch. A Planner is a session's own atom (`some peer`, pinned by
+   PlannerIsASession) on a sub-issue it filed and distributes: it never takes
+   `work` or `report`, so of the state below it does not share LocalOnly,
+   PushedToRemote and Reported (PlannerNeverLocalOnly, PlannerNeverReports), and
+   it shares the rest -- Asked, Answered and Waiting, three of the four messages
+   with REPORT's own bit the one it does not take; Confirmed; the shutdown bits,
+   StandDownTaken among them, so the fourth message is counted there and not
+   twice; and `branch`. A delegate launch is the planner's act, and
+   `launch` says so. A third kind is added in session/system.als the same way,
+   and takes whatever of the state below it turns out not to share.
+
+   WHAT #185 RETIRED: a planner working a sub-issue by its own hands used to be
+   "an Executor atom of the same session". AgentInheritsSessionRole below forbids
+   that, so a planner session reaches `work` along no edge at all, and its code
+   modes are a delegate or a separate executor session. */
+
+/* Which half of the work an event writes. The two are disjoint and do not
+   cover: an event on NEITHER plane is one no role rule speaks to.
+
+   THIS entity, not session/system.als where `Role` lives, because the code
+   plane names `Work` and `Push`, which are declared here and which an entity
+   below may not reach up to.
+
+   `MergePullRequest` is on neither plane deliberately: AGENTS.md's three merge
+   conditions hold it and none of them names a role, so putting it on the code
+   plane would make a planner unable to land a reviewed pull request and putting
+   it on the campaign plane would let one land any. `Review`, `Launch`, the four
+   messages, `Retire` and the survey events are on neither because they are not
+   writes to either half. */
+abstract sig Plane {}
+one sig CampaignPlane, CodePlane extends Plane {}
+
+fun campaignPlaneEvents: set Event {
+  FileCampaignIssue + AddMember + RemoveMember + CloseIssue + WriteBody
+  + Claim + Release + CreateDir + DeleteDir
+}
+
+/* WHAT THIS SET CANNOT SAY, and where the guard says it instead. A file
+   written INSIDE a campaign directory has no event here: no atom carries a
+   path, so the model reaches the directory's existence (CreateDir, DeleteDir)
+   and not its contents. The guard therefore decides that one itself, and
+   `check-campaign-claim.py`'s planner branch is where it is stated: a target
+   in a CHECKOUT is the code plane, a target in a campaign directory and no
+   checkout is campaign-plane scratch, which is why a planner may keep the
+   notes it plans from. Recorded here so the split is not discovered only in
+   the code -- the same shape `claimBeforeWork` uses for the target reading. */
+fun codePlaneEvents: set Event { Work + Push + CommitLocal + OpenPullRequest }
+
+/* `lone` holds because the two sets above are disjoint; DisjointPlanes in
+   checks.als is what says so rather than this comment. */
+fun planeOf[e: Event]: lone Plane {
+  { p: Plane | (p = CampaignPlane and e in campaignPlaneEvents)
+            or (p = CodePlane      and e in codePlaneEvents) }
+}
+
+/* `Session` also has a `role` field now, so the RELATIONAL spelling `role.Planner`
+   no longer says which entity's -- it resolves to Agent + Session and every
+   reader of it wants agents. This names that set once; the dotted `a.role` form
+   is unambiguous and is left alone. */
+fun plannerAgents: set Agent { (Agent <: role).Planner }
 
 var sig Launched in Agent {}
 var sig Live     in Agent {}
@@ -137,6 +185,13 @@ fact AgentWellFormed {
   all c: Campaign | c.campaignIssue not in Agent.task
   all a: Agent | some a.peer implies (a.launcher = a.peer and a.host = a.peer.machine)
   all a: Agent | a.role = Planner implies some a.peer   -- a planner is a session, never a delegate
+  /* AgentInheritsSessionRole. An agent that IS a session has that session's
+     role; a delegate has no session and its role is free. This is what makes
+     "a planner never touches code" a fact of the model rather than a
+     discipline: `work` and `report` require `a.role = Executor`, so a session
+     whose role is Planner has no atom that can take either. Q2c measures which
+     of the two forbids it. */
+  all a: Agent | some a.peer implies a.role = a.peer.role
   always Live in Launched
   always Retired in Launched
   always no Live & Retired
@@ -302,7 +357,7 @@ pred launch[a: Agent] {
   /* A delegate is the planner's act: the launching session holds a live
      Planner atom on this sub-issue, the one that filed and distributes it. A
      session working its own claim needs none -- the one-executor shape. */
-  no a.peer implies (some p: role.Planner | p.peer = Who.session and p.task = a.task and p in Live)
+  no a.peer implies (some p: plannerAgents | p.peer = Who.session and p.task = a.task and p in Live)
   campaignDirAt[Who.session.worksOn, a.host].checkedOut[a.task.repo] = a.branch
   Launched' = Launched + a
   Live'     = Live + a
@@ -336,8 +391,9 @@ pred launch[a: Agent] {
 }
 
 /* Clears an earlier confirmation here rather than at the point it is read.
-   The executor's edge: a planner that executes a sub-issue itself is an
-   Executor atom of the same session, so no Planner atom is ever LocalOnly. */
+   The executor's edge: no Planner atom is ever LocalOnly, and after #185 no
+   Planner SESSION reaches this edge either -- AgentInheritsSessionRole leaves it
+   no Executor atom to take it with. */
 pred work[a: Agent] {
   a in Live and a not in Waiting and a.role = Executor
   LocalOnly' = LocalOnly + a

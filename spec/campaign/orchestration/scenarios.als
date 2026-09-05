@@ -189,6 +189,121 @@ pred claimBeforeWork {
             implies Now.issue in Target.agent.peer.claimedIssues)
 }
 
+/* ---------------- discipline: permission by role (#185) ---------------- */
+
+/* The events an executor may not reach on the campaign plane whatever it holds.
+   `WriteBody` because the campaign issue body changes only at a scope change or
+   at the close, both a person's decision carried by a planner; and
+   `FileCampaignIssue` because filing one is opening a campaign. Filing a
+   SUB-ISSUE is not here: `addMember` in github/system.als has no actor
+   precondition on purpose, and any session may file one. */
+fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
+
+/* Whether a session may perform this event on this issue. The table in #185:
+
+     planner    campaign plane, any campaign            code plane: never
+     executor   campaign plane, its own campaign and
+                only a sub-issue it holds a claim on    code plane: only a
+                                                        sub-issue it has claimed
+     no role    refused on both planes
+
+   The issue argument is `lone` and the `in` tests are vacuously true when there
+   is none, which is the right reading and not an accident: `writeBody` and the
+   directory events name no issue, and for those the rule is the plane and the
+   event, not the issue. `plannerOnlyEvents` is what carries the body and the
+   filing, since the issue test alone would let `writeBody` through.
+
+   `Claim` is carved out of the executor's claim test because taking a claim
+   cannot itself require one -- `claimedIssues` grows in the NEXT state. What
+   still bounds it is `sessionClaim`, which requires the issue to be in the
+   session's own campaign.
+
+   `Release` by a planner requires the claim to be VACANT: a planner may drop a
+   dangling claim, and may not take one out from under an executor holding it.
+
+   `mayAct` for a planner drops the `worksOn` conjunct, so this discipline
+   permits a planner to claim for a delegate on any campaign. `sessionClaim` in
+   session/system.als agrees, and did not always: it pinned every claim to
+   `s.worksOn`, which made AGENTS.md's cross-campaign delegate claim
+   unreachable here for a reason that was NOT this rule. It now splits by role
+   and bounds the planner's by the BINDING instead -- any campaign bound to the
+   session's own machine -- and Q10/Q10b/Q10c are the three that say which of
+   the two rules refuses an executor the same claim. */
+/* WHAT THIS IS NOT. `s.role` is read from the session's own name, and a session
+   can rename itself -- so this table bounds MISTAKES and not adversaries. It is
+   not weaker than what it replaces: every session on a machine shares one `gh`
+   account, so a session that renames itself a planner already holds the power
+   the name would grant, and what the rule buys is that the role is explicit and
+   the mistake is loud. Stated here because a permission table is the thing a
+   reader is most likely to mistake for a security boundary. The sub-issue for
+   tying the name to something the named session did not choose is #194. */
+/* THE CAMPAIGN ISSUE IS NOT A SUB-ISSUE, and #207 is the row that follows from
+   that. `memberIssues` excludes it (github/system.als), so `i in
+   s.worksOn.memberIssues` refuses an executor every write to the issue of the
+   campaign it works -- including a comment, which the model has no
+   precondition on. The executor's campaign-plane row therefore admits the
+   campaign issue of its OWN campaign, and `Q11` is the witness.
+
+   Bounded by the EVENT and not by a claim: the guard admits only a comment
+   there, because `WriteBody` is the charter and belongs to the close, and a
+   claim on some other sub-issue makes an irreversible write no safer. The
+   guard's own `OWN_CAMPAIGN_GH` is the verb list; this is the event.
+
+   WHICH CAMPAIGN'S issue this rule DOES hold -- `i = s.worksOn.campaignIssue`
+   is the session's own and no other -- but NO COMMAND HERE CAN SHOW IT, and
+   that gap is the thing to know before touching the conjunct. Widening it to
+   `i in Campaign.campaignIssue` leaves every command in this file green, so
+   the conjunct is load-bearing and unpinned at once: delete it on the
+   suite's word and nothing goes red. Its two neighbours are not like that --
+   dropping the disjunct reddens `Q11`, dropping `i not in
+   Campaign.memberIssues` reddens `Q4`.
+
+   The reason no command can reach it: `sessionCloseIssue` in
+   session/system.als already pins every campaign-issue close to the acting session's own campaign, for
+   every role and independently of `mayAct` -- so a scenario asserting an
+   executor cannot close ANOTHER campaign's issue comes out UNSAT whatever this
+   predicate says, and one was written and deleted for exactly that reason: it
+   survived widening the carve-out to every campaign issue, with the whole
+   model still green. `Q11` is the honest half, and measures that the carve-out
+   is what makes the write reachable AT ALL. The campaign bound itself is
+   tested where it CAN fail, in check-campaign-claim-test.py: dropping
+   `i == campaign` from the guard's carve-out fails two named cases there.
+
+   `i not in Campaign.memberIssues` is not decoration. Nothing in github/system
+   forbids one campaign's ISSUE from being another campaign's SUB-ISSUE -- an
+   overlap that cannot happen on the tracker, where a campaign issue carries
+   the `campaign` label and a sub-issue is somebody's `--parent` -- and without
+   the conjunct the carve-out reached it, which Q4 caught. Bounded here rather
+   than by a new fact, because the fact is github/system's to add and adding it
+   would redden commands this branch is not about. */
+pred mayAct[s: Session, e: Event, i: lone Issue] {
+  some s.role
+  s.role = Planner implies (planeOf[e] = CampaignPlane
+                            and (e = Release implies no claimedIssues.i))
+  s.role = Executor implies (
+    (planeOf[e] = CampaignPlane implies (e not in plannerOnlyEvents
+                                         and ((i = s.worksOn.campaignIssue
+                                               and i not in Campaign.memberIssues)
+                                              or (i in s.worksOn.memberIssues
+                                                  and (e != Claim implies i in s.claimedIssues)))))
+    and (planeOf[e] = CodePlane implies i in s.claimedIssues))
+}
+
+/* Two readers, because a write reaches the model two ways. `Who.session` is the
+   session that performed the event, which is every campaign-plane write. The
+   code plane has `no Who.session` -- `work` and `push` are the AGENT's edges --
+   so the second conjunct reads the session the agent IS. A delegate has no
+   peer, and is unguarded here on purpose: the guard reads a session's own name,
+   and a delegate has a session and a name of its own. */
+pred permissionByRole {
+  always (some Who.session and some planeOf[Now.event]
+            implies mayAct[Who.session, Now.event, Now.issue])
+  always (some Target.agent.peer and some planeOf[Now.event]
+            implies mayAct[Target.agent.peer, Now.event, Now.issue])
+}
+
+/* The rule as written, the honest local reading, and the reading a session
+   can actually perform. */
 /* The commit half of the same gate: scripts/check-commit-claim.py, a
    pre-commit hook refusing a commit on a base tree or under a campaign
    directory whose branch is not a claim. Keyed on `a.peer` for the same
@@ -638,6 +753,173 @@ pred R12d_AcquireIsWhatPrinciplesAClone {
   }
 }
 
+/* ================= the gate is installed where the commit lands ============= */
+
+/* A COMMIT IS ONLY REFUSABLE WHERE THE GATE IS INSTALLED (#190).
+   `claimBeforeCommit` above says a commit on a sub-issue names a claim the
+   committer holds. It is silent on whether anything in the checkout the commit
+   is made in reads that -- and for a member repository nothing did.
+   `acquire-repo.sh` ran a clone's own `scripts/install-hooks.sh` only
+   `if [ -x "$installer" ]`, a member repository ships none, so a member clone
+   got the machine-wide no-main-commits shim and NO claim gate, while
+   check-campaign-claim.py went on calling that same clone campaign work. The
+   rule held in the model and enforced nothing on the trees delegates do most of
+   their committing in. That is the shape #187 question 5 hit with the
+   principles channel: a mechanism that existed only as prose.
+
+   NARROWED TO A TASK THAT HAS A CAMPAIGN, deliberately, and the reason is
+   about this model and not about the script. Without the conjunct the rule
+   forbids a commit whose task belongs to no campaign -- `campaignOf` is `lone`,
+   `campaignDirAt[none, m]` is empty, and `x in none` is FALSE -- so it would
+   refuse by vacuity rather than by anything it claims. A rule wider than what
+   it can justify is false, not cautious.
+
+   DO NOT justify this by check-commit-claim.py admitting such a commit: that
+   was the first spelling of this comment and it is wrong. The script reads the
+   committing checkout's PATH, and this entity carries none -- `CommitLocal`
+   names an agent and an issue and no location, and `launch` reaches a checkout
+   through `Who.session.worksOn` rather than through `campaignOf[a.task]`, so
+   the two are free of one another here (R13e's witness rests on exactly that
+   freedom). "The issue has no campaign" and "the checkout is outside every base
+   tree" are two different readings, and the model cannot state that they
+   coincide. What the script does with a commit it cannot place is its
+   docstring's. R13f is this narrowing's witness. */
+pred commitGateInstalled {
+  always all a: Agent |
+    (Now.event = CommitLocal and Target.agent = a and some campaignOf[a.task])
+      implies a.task.repo in campaignDirAt[campaignOf[a.task], a.host].gated
+}
+
+/* R13. THE DEFECT, without the rule: a commit on campaign work in a clone that
+   runs nothing. `claimBeforeCommit` is asserted throughout, so a reader can see
+   what this is not -- the claim rule is holding perfectly, over a tree that
+   enforces it on nobody. */
+pred R13_CommitInAnUngatedClone {
+  claimBeforeCommit
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and some campaignOf[a.task]
+                              and a.task.repo not in
+                                  campaignDirAt[campaignOf[a.task], a.host].gated)
+}
+
+/* R13b. CONTROL: the discipline excludes it. */
+pred R13b_RepairExcludesIt {
+  commitGateInstalled and R13_CommitInAnUngatedClone
+}
+
+/* R13c. ...and it still admits the commit in a gated clone, or the rule would
+   be one that forbids committing at all. */
+pred R13c_RepairAdmitsTheGatedCommit {
+  commitGateInstalled
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and some campaignOf[a.task]
+                              and a.task.repo in
+                                  campaignDirAt[campaignOf[a.task], a.host].gated)
+}
+
+/* R13d. ACQUIRE IS WHAT GATES A CLONE, pinned -- R12d's lesson taken up front
+   rather than after a review. R13c is satisfied by a `gated` that was simply
+   true at time zero, so on its own it says nothing about where the gate comes
+   from. Starting from nothing gated, a gated commit is reachable only through
+   an Acquire, so this goes UNSAT the moment `acquire` stops producing. */
+pred R13d_AcquireIsWhatGatesAClone {
+  no gated
+  commitGateInstalled
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and some campaignOf[a.task]
+                              and a.task.repo in
+                                  campaignDirAt[campaignOf[a.task], a.host].gated)
+}
+
+/* R13e. WHOSE directory, pinned. Every command above runs at `1 Campaign` and
+   `1 CampaignDir`, where `campaignDirAt[campaignOf[a.task], a.host].gated` and
+   `CampaignDir.gated` are the same relation -- so together they say nothing
+   about which directory the gate has to be in, and #203 is the round that cost
+   was paid in. R11 pins the campaign filter inside `campaignDirAt`; this pins
+   that THIS rule goes through it.
+
+   Two campaigns on one machine: the agent's own campaign's clone is ungated
+   and a neighbour's clone of the same repository is gated, and the rule must
+   still refuse. Expect 0, and it goes SAT the moment the navigation is replaced
+   by `CampaignDir.gated`.
+
+   EVERY conjunct sits inside the `eventually`, including `some campaignOf` and
+   `c != campaignOf[a.task]`. `memberIssues` is a var relation, so stated
+   outside it they are read at time zero and a trace that moves the sub-issue
+   out of its campaign before the commit satisfies the witness while the rule's
+   antecedent is false -- which is exactly how the first spelling of this went
+   SAT. */
+pred R13e_TheAgentsOwnDirIsTheOneThatCounts {
+  commitGateInstalled
+  some a: Agent, c: Campaign |
+    eventually (Now.event = CommitLocal and Target.agent = a
+                and some campaignOf[a.task]
+                and c != campaignOf[a.task]
+                and a.task.repo not in
+                    campaignDirAt[campaignOf[a.task], a.host].gated
+                and a.task.repo in campaignDirAt[c, a.host].gated)
+}
+
+/* R13f. THE CASE THE RULE DOES NOT COVER, stated rather than left to the
+   reader of the conjunct: an agent committing on a task that belongs to no
+   campaign is admitted with nothing gated anywhere, because that is what
+   check-commit-claim.py does with a checkout outside every base tree and every
+   campaign directory. Without this the narrowing above reads as a silent loss.
+   Expect 1, and it goes UNSAT if `some campaignOf[a.task]` is dropped from the
+   rule. */
+pred R13f_ACommitOnNoCampaignsWorkIsNotGated {
+  commitGateInstalled
+  no gated
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and no campaignOf[a.task])
+}
+
+/* R13g. WHICH HOST, pinned -- #203's lesson one axis over, and the axis R13e
+   did not reach. `campaignDirAt[c, m]` filters on two columns, and R11 and R13e
+   between them pin only the campaign. Every command above runs at `1 Machine`,
+   where `campaignDirAt[campaignOf[a.task], a.host]` and
+   `campaignDirsOf[campaignOf[a.task]]` are the same relation, so nothing said
+   the gate has to be installed on the machine the commit is MADE on -- and one
+   campaign directory per machine is exactly the shape that has two of them.
+
+   Two machines, one campaign: the directory on the agent's own host has the
+   repository ungated and the one on the other machine has it gated, and the
+   rule must still refuse. Expect 0, and it goes SAT the moment `a.host` stops
+   filtering.
+
+   `principled` has the same gap at `delegateLaunchIsPrincipled`, measured and
+   not fixed here: kalaluthien/campaign-base#212. */
+pred R13g_TheAgentsOwnHostIsTheOneThatCounts {
+  commitGateInstalled
+  some a: Agent, m: Machine |
+    eventually (Now.event = CommitLocal and Target.agent = a
+                and some campaignOf[a.task]
+                and m != a.host
+                and a.task.repo not in
+                    campaignDirAt[campaignOf[a.task], a.host].gated
+                and a.task.repo in campaignDirAt[campaignOf[a.task], m].gated)
+}
+
+/* R13h. AND NOTHING BUT AN ACQUIRE GATES A CLONE. R13d says a gated commit is
+   REACHABLE from `no gated`, which is satisfied by any producer at all -- so it
+   rests on `gated' = gated` holding in `directoryFrame`, and deleting that line
+   left R13 through R13g green while `gated` became free on every event outside
+   this entity. This is the other half: from nothing gated, with no Acquire ever
+   firing, a gated commit is IMPOSSIBLE. Expect 0, and it goes SAT the moment
+   the frame stops carrying `gated`.
+
+   `principled` is unframed in the same way and by the same measurement;
+   kalaluthien/campaign-base#212 carries it, because widening R12 is that
+   command's business and not this one's. */
+pred R13h_NothingButAnAcquireGatesAClone {
+  no gated
+  always Now.event != Acquire
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and some campaignOf[a.task]
+                              and a.task.repo in
+                                  campaignDirAt[campaignOf[a.task], a.host].gated)
+}
+
 /* R9d. THE ORDINARY LANDING, and the case whose absence let the first spelling
    of `settledLeavesNoClaim` through: claim, merge, and the sub-issue closes
    with its ref still standing, because GitHub auto-closes on merge and
@@ -692,6 +974,200 @@ pred R4j_GuardAdmitsClaimedWork {
     eventually (Now.event = Claim and Who.session = s and Now.issue = a.task
                 and eventually (Now.event = Work and Target.agent = a))
   }
+}
+
+/* ============== permission by role, one witness per table cell ============== */
+
+/* Q11. #207: an executor writes its OWN campaign's issue, which is no
+   sub-issue and which no claim can cover. SAT -- and it is the campaign issue
+   that makes it so and not a claim: removing the disjunct from `mayAct` makes
+   this command UNSAT against its `expect 1`, which is the whole of what it
+   measures. WHICH campaign's issue is held elsewhere -- see `mayAct`. */
+pred Q11_ExecutorWritesItsOwnCampaignIssue {
+  permissionByRole
+  some s: Session | s.role = Executor and
+    eventually (Now.event = CloseIssue and Who.session = s
+                and Now.issue = s.worksOn.campaignIssue)
+}
+
+/* Q10. A planner cuts a claim for a delegate on a sub-issue of ANOTHER campaign
+   bound to the same machine. SAT: the relaxation in `sessionClaim`.
+
+   `c != s.worksOn` sits INSIDE the `eventually` in all three: `worksOn` is var,
+   so a session that differs from `c` at time zero can adopt `c` before it
+   claims, and the three would measure nothing. */
+pred Q10_PlannerClaimsOnAnotherBoundCampaign {
+  permissionByRole
+  some s: Session, c: Campaign |
+    s.role = Planner
+    and eventually (Now.event = Claim and Who.session = s
+                    and c != s.worksOn and Now.issue in c.memberIssues)
+}
+
+/* Q10b. The same claim by an executor. UNSAT, and TWO rules refuse it --
+   `sessionClaim`'s pin and `mayAct`'s campaign-plane row. Q10c separates
+   them. */
+pred Q10b_ExecutorClaimsOnAnotherBoundCampaign {
+  permissionByRole
+  some s: Session, c: Campaign |
+    s.role = Executor
+    and eventually (Now.event = Claim and Who.session = s
+                    and c != s.worksOn and Now.issue in c.memberIssues)
+}
+
+/* Q10c. Q10b with the discipline dropped, and still UNSAT: `sessionClaim`
+   alone holds the executor to its own campaign, so the relaxation was made for
+   planners only and nothing else moved. */
+pred Q10c_ExecutorClaimsOnAnotherBoundCampaignUnguarded {
+  some s: Session, c: Campaign |
+    s.role = Executor
+    and eventually (Now.event = Claim and Who.session = s
+                    and c != s.worksOn and Now.issue in c.memberIssues)
+}
+
+
+/* Q1. THE CASE THAT PROMPTED #185: a planner of campaign #1 closes an issue no
+   campaign of its own covers -- #116 and #160, closed by hand outside the
+   harness on 2026-09-04 because the claim rule had no passing form for them. */
+pred Q1_PlannerClosesOtherCampaignsIssue {
+  permissionByRole
+  some s: Session | s.role = Planner and
+    eventually (Now.event = CloseIssue and Who.session = s
+                and some Now.issue and Now.issue not in s.worksOn.memberIssues)
+}
+
+/* Q2. A planner never commits. UNSAT. */
+pred Q2_PlannerCommits {
+  permissionByRole
+  some s: Session | s.role = Planner and
+    eventually (Now.event = Work and Target.agent.peer = s)
+}
+
+/* Q2c. CONTROL, and the point of running it: this is Q2 with the discipline
+   DROPPED, and it is UNSAT too. So it is AgentInheritsSessionRole, not
+   `permissionByRole`, that forbids a planner from working -- the discipline
+   would forbid it as well, and the fact gets there first. Deleting that fact
+   from AgentWellFormed is the mutation that reddens this one. */
+pred Q2c_PlannerCommitsUnguarded {
+  some s: Session | s.role = Planner and
+    eventually (Now.event = Work and Target.agent.peer = s)
+}
+
+/* Q3. An executor closes the sub-issue it holds. */
+pred Q3_ExecutorClosesOwnClaim {
+  permissionByRole
+  some s: Session | s.role = Executor and
+    eventually (Now.event = Claim and Who.session = s
+                and eventually (Now.event = CloseIssue and Who.session = s
+                                and Now.issue in s.claimedIssues))
+}
+
+/* Q4. An executor of one campaign closes ANOTHER campaign's issue. UNSAT.
+
+   Says "belongs to campaign c, and c is not the session's" rather than "not in
+   my memberIssues", which is what it said until #207: the campaign issue of
+   the session's OWN campaign is also outside `memberIssues`, so the old
+   spelling started matching the one write the rule now permits and this
+   command went SAT while measuring nothing it was named for.
+
+   `c != s.worksOn` sits INSIDE the `eventually`, as in Q10's trio: `worksOn`
+   is var, so a session that differs from `c` at time zero can adopt `c` and
+   then close its issue legitimately, and the command measures nothing. Several
+   commands in this file need that placement; this comment is the one home for
+   why, rather than a sentence repeated at each. */
+pred Q4_ExecutorClosesOtherCampaign {
+  permissionByRole
+  some s: Session, c: Campaign |
+    s.role = Executor
+    and eventually (Now.event = CloseIssue and Who.session = s
+                    and c != s.worksOn
+                    and Now.issue in c.memberIssues + c.campaignIssue)
+}
+
+/* Q4b. Its own campaign, a sibling sub-issue it never claimed. UNSAT, and the
+   one that separates the two halves of the executor's campaign-plane row. */
+pred Q4b_ExecutorClosesUnclaimedSibling {
+  permissionByRole
+  some s: Session | s.role = Executor and
+    eventually (Now.event = CloseIssue and Who.session = s
+                and Now.issue in s.worksOn.memberIssues
+                and Now.issue not in s.claimedIssues)
+}
+
+/* Q5. R4j under the discipline: claimed work still runs. */
+pred Q5_ExecutorWorksClaimedCheckout {
+  permissionByRole
+  some s: Session, a: Agent {
+    s.role = Executor and a.peer = s
+    eventually (Now.event = Claim and Who.session = s and Now.issue = a.task
+                and eventually (Now.event = Work and Target.agent = a))
+  }
+}
+
+/* Q6. R4h under the discipline. UNSAT: the same hole `claimBeforeWork` closes,
+   closed again by the rule that subsumes it. */
+pred Q6_ExecutorWorksUnclaimed {
+  permissionByRole
+  some s: Session, a: Agent {
+    s.role = Executor and a.peer = s
+    eventually (Now.event = Work and Target.agent = a)
+    always a.task not in s.claimedIssues
+  }
+}
+
+/* Q7. The table's last row: a session with no name, or a name of another shape,
+   is refused on the campaign plane. UNSAT. */
+pred Q7_UnnamedSessionRefused {
+  permissionByRole
+  some s: Session | no s.role and
+    eventually (Now.event = CloseIssue and Who.session = s)
+}
+
+/* Q7c. CONTROL for Q7, and unlike Q2c it is SAT: without the discipline an
+   unnamed session reaches the same close, so the refusal is the rule's and not
+   the trace space's. */
+pred Q7c_UnnamedSessionReachesTheEventUnguarded {
+  some s: Session | no s.role and
+    eventually (Now.event = CloseIssue and Who.session = s)
+}
+
+/* Q8. An executor writing the campaign issue body. UNSAT, and it is
+   `plannerOnlyEvents` that refuses it: `writeBody` names no issue, so the
+   executor's issue test is vacuous here and would let it through. Dropping
+   `WriteBody` from `plannerOnlyEvents` reddens this one. */
+pred Q8_ExecutorWritesCampaignBody {
+  permissionByRole
+  some s: Session | s.role = Executor and
+    eventually (Now.event = WriteBody and Who.session = s)
+}
+
+/* Q8c. CONTROL for Q8: SAT without the discipline. */
+pred Q8c_ExecutorWritesCampaignBodyUnguarded {
+  some s: Session | s.role = Executor and eventually (Now.event = WriteBody and Who.session = s)
+}
+
+/* Q8b. The positive side of the same cell: a planner writes it. */
+pred Q8b_PlannerWritesCampaignBody {
+  permissionByRole
+  some s: Session | s.role = Planner and
+    eventually (Now.event = WriteBody and Who.session = s)
+}
+
+/* Q9. An executor filing a campaign issue -- opening a campaign. UNSAT.
+   `FileCampaignIssue` names the campaign issue, which is in no campaign's
+   `memberIssues`, so the issue test refuses it as well; both readings are
+   wanted, and dropping `FileCampaignIssue` from `plannerOnlyEvents` leaves this
+   one green, which is why Q8 and not this one is that fun's witness. */
+pred Q9_ExecutorFilesCampaignIssue {
+  permissionByRole
+  some s: Session | s.role = Executor and
+    eventually (Now.event = FileCampaignIssue and Who.session = s)
+}
+
+/* Q9c. CONTROL for Q9. */
+pred Q9c_ExecutorFilesCampaignIssueUnguarded {
+  some s: Session | s.role = Executor and
+    eventually (Now.event = FileCampaignIssue and Who.session = s)
 }
 
 /* R4k. THE HOLE THE PRE-TOOL-USE HALF LEAVES OPEN, stated rather than hidden:
@@ -1119,7 +1595,7 @@ pred A17_LiveButNoLongerTheHolder {
    one session, and settles with no Planner atom anywhere. Requiring a planner
    of every launch, not only a delegate's, turns this UNSAT. */
 pred P1_SimpleRequestSettlesWithoutPlanner {
-  no role.Planner
+  no plannerAgents
   some s: Session, a: Agent {
     a.peer = s
     eventually (Now.event = Work and Target.agent = a)
@@ -1219,6 +1695,14 @@ run R12_DelegateLaunchedWithoutPrinciples for 3 Issue, 1 PullRequest, 1 Campaign
 run R12b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 run R12c_RepairAdmitsThePrincipledLaunch for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run R12d_AcquireIsWhatPrinciplesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R13_CommitInAnUngatedClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R13b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R13c_RepairAdmitsTheGatedCommit for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R13d_AcquireIsWhatGatesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R13e_TheAgentsOwnDirIsTheOneThatCounts for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run R13f_ACommitOnNoCampaignsWorkIsNotGated for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R13g_TheAgentsOwnHostIsTheOneThatCounts for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run R13h_NothingButAnAcquireGatesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
@@ -1227,6 +1711,41 @@ run R4j_GuardAdmitsClaimedWork   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Sessi
 run R4k_UnclaimedShellWriteThenCommit for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4l_CommitGateClosesIt           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R4m_GateAdmitsClaimedCommit      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+
+/* Q1-Q9: permission by role. Q1, Q4 and Q4b need a SECOND campaign or a second
+   sub-issue to be about an issue the session does not cover, so they run at the
+   wider scope; the rest run at R4h's line. Every UNSAT here has a control run
+   beside it, and Q2c is the control that is UNSAT ON PURPOSE. */
+-- the case that prompted #185: a planner closes another campaign's issue
+run Q1_PlannerClosesOtherCampaignsIssue   for 4 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+-- a planner never commits, and the CONTROL says which rule forbids it
+run Q2_PlannerCommits                     for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run Q2c_PlannerCommitsUnguarded           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+-- an executor on its own claim
+run Q3_ExecutorClosesOwnClaim             for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- and not on another campaign's, nor on an unclaimed sibling
+run Q4_ExecutorClosesOtherCampaign        for 4 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run Q4b_ExecutorClosesUnclaimedSibling    for 4 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+-- R4j and R4h again, under the rule that subsumes claimBeforeWork
+run Q5_ExecutorWorksClaimedCheckout       for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run Q6_ExecutorWorksUnclaimed             for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+-- the unnamed session, refused, with its control
+run Q7_UnnamedSessionRefused              for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run Q7c_UnnamedSessionReachesTheEventUnguarded for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- the campaign issue body: an executor may not, a planner may
+run Q8_ExecutorWritesCampaignBody         for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run Q8c_ExecutorWritesCampaignBodyUnguarded for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run Q8b_PlannerWritesCampaignBody         for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- opening a campaign is planner work
+run Q9_ExecutorFilesCampaignIssue         for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run Q9c_ExecutorFilesCampaignIssueUnguarded for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- a claim is a campaign-plane write: a planner may cut one on any campaign
+-- bound HERE, an executor only on its own, and Q10c says which rule refuses
+-- #207: the carve-out is what makes this write reachable at all
+run Q11_ExecutorWritesItsOwnCampaignIssue    for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+run Q10_PlannerClaimsOnAnotherBoundCampaign  for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+run Q10b_ExecutorClaimsOnAnotherBoundCampaign for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run Q10c_ExecutorClaimsOnAnotherBoundCampaignUnguarded for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 
 -- the gap TwoStepShutdownSuffices rests on
 run R5b_PushedButStillLocalOnly         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1

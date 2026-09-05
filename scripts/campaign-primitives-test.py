@@ -209,9 +209,11 @@ def main():
               "NO git hook is installed" in r.stdout)
 
     # A hook with no marker and no declaration, in a real hooks directory: the
-    # two-line shim acquire-repo writes. The note is a true reading -- what the
-    # hook runs is unknown to this reader -- and #178 fixed the clone, not the
-    # note, so it must survive as written.
+    # two-line shim acquire-repo wrote before #190, still on disk wherever a
+    # clone was acquired then. The note is a true reading -- what the hook runs
+    # is unknown to this reader -- and #178 fixed the clone, not the note, so it
+    # must survive as written. The shim acquire-repo writes NOW carries a marker
+    # comment, and this reader has no opinion about that either.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
