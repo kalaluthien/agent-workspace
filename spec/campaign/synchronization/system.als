@@ -56,10 +56,14 @@ pred pullClone[m: Machine] {
   Now.event = PullClone and no Now.issue and Where.machine = m and no Where.repo
 }
 
+/* `Now.issue` is left free here: a commit by an agent names its task, and
+   orchestration/system.als's `agentCommitLocal` pins it, which is what lets a
+   discipline over a commit be stated at all; a commit by nobody's agent -- a
+   person at a terminal -- names none. */
 pred commitLocal[m: Machine] {
   m not in BaseUnpushed
   BaseUnpushed' = BaseUnpushed + m and BaseBehind' = BaseBehind
-  Now.event = CommitLocal and no Now.issue and Where.machine = m and no Where.repo
+  Now.event = CommitLocal and Where.machine = m and no Where.repo
 }
 
 /* Here a launch is only a freshness question: WHEN the clone's distance from

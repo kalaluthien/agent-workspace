@@ -212,8 +212,11 @@ fun orchestrationOwn: set Event {
    lifetime once attribution is derived, so a delete falls through and frames
    everything. `MergePullRequest` is not here either: session/system.als gives it
    a session and this entity only guards which session that may be, which is a
-   discipline over the event rather than a disjunct on it. */
-fun orchestrationActed: set Event { orchestrationOwn + Launch + Release }
+   discipline over the event rather than a disjunct on it. `CommitLocal` IS
+   here, added by #177: `agentCommitLocal` and `unattendedCommitLocal` are
+   disjuncts on it, and joining this set is what removes it from the
+   fall-through. */
+fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + CommitLocal }
 
 /* The bits divide by how long they live: a pull request's, and a process's.
    None has a directory's any more. */
@@ -262,6 +265,24 @@ pred work[a: Agent] {
   Live' = Live and PushedToRemote' = PushedToRemote
   keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = Work and Now.issue = a.task and Target.agent = a and no Who.session
+}
+
+/* The commit, refined from synchronization/system.als's `CommitLocal`: that
+   entity says only that a machine now holds an unpushed commit, and carried
+   neither an issue nor an agent, so no discipline over a commit was expressible
+   -- which is the hole `claimBeforeCommit` (scenarios.als) closes, and the one
+   the pre-commit claim gate, scripts/check-commit-claim.py, enforces. An
+   agent's commit names its task and the agent; it moves nothing of this
+   entity's own. The unattended form below is a person's commit, which names
+   no agent and no issue. */
+pred agentCommitLocal[a: Agent] {
+  a in Live
+  agentFrame
+  Now.event = CommitLocal and Now.issue = a.task and Target.agent = a
+  and Where.machine = a.host and no Who.session
+}
+pred unattendedCommitLocal {
+  Now.event = CommitLocal and no Now.issue and no Target.agent and agentFrame
 }
 
 /* Two different facts move, and only the first is readable from another
@@ -429,6 +450,8 @@ pred orchestrationStep {
         or blocked[a] or decide[a] or confirm[a] or confirmElsewhere[a]
         or standDown[a] or retire[a] or agentDie[a])
   or (some i: Issue | review[i])
+  or (some a: Agent | agentCommitLocal[a])
+  or unattendedCommitLocal
   or agentRelease
   or (Now.event not in Stutter + orchestrationActed and agentFrame and no Target.agent)
 }
