@@ -310,11 +310,11 @@ def main():
         check("a row holding an unsettled turn says so in its own settled column",
               r301 and r301["settled"] == "1/2", str(r301))
         check("sub_output carries its own settled count, not the row's",
-              r303 and r303["sub_settled"] == "2/2"
+              r303 and r301 and r303["sub_settled"] == "2/2"
               and r301["sub_settled"] == "0/1", str(r301) + str(r303))
         check("...while a row of settled turns says that",
-              r300 and r300["settled"] == "1/1" and r303["settled"] == "2/2",
-              str(r300) + str(r303))
+              r300 and r303 and r300["settled"] == "1/1"
+              and r303["settled"] == "2/2", str(r300) + str(r303))
         check("the floor line splits session turns from subagent turns",
               "session: 0 of" in issues and "subagent: 1 of" in issues,
               issues[:900])

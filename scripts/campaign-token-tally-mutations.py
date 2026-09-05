@@ -85,22 +85,34 @@ MUT = [
 ]
 
 fails = 0
-for name, old, new in MUT:
-    if old not in orig:
-        print(f"MUTATION NOT APPLIED  {name}")
-        fails += 1
-        continue
-    S.write_text(orig.replace(old, new, 1))
-    out = subprocess.run([sys.executable, str(T)], capture_output=True, text=True)
+try:
+    for name, old, new in MUT:
+        if old not in orig:
+            print(f"MUTATION NOT APPLIED  {name}")
+            fails += 1
+            continue
+        S.write_text(orig.replace(old, new, 1))
+        out = subprocess.run([sys.executable, str(T)],
+                             capture_output=True, text=True)
+        S.write_text(orig)
+        # A NAMED CASE, never the exit status. A suite that crashes on the
+        # mutant -- an attribution rule removed leaves a row absent and a case
+        # subscripts None -- exits 1 exactly like a suite whose case went red,
+        # and scoring on the status alone reports a branch as pinned by a
+        # traceback. One mutation here did exactly that.
+        named = [l for l in out.stdout.splitlines() if l.startswith("FAIL")]
+        if not named:
+            why = ("suite still green" if out.returncode == 0
+                   else f"suite exited {out.returncode} with no failing case")
+            print(f"SURVIVED ({why})  {name}")
+            if out.returncode != 0:
+                print("    " + (out.stderr.strip().splitlines() or ["(no stderr)"])[-1])
+            fails += 1
+        else:
+            print(f"caught by {len(named)} case(s)  {name}")
+            for l in named[:2]:
+                print("    " + l)
+finally:
     S.write_text(orig)
-    named = [l for l in out.stdout.splitlines() if l.startswith("FAIL")]
-    if out.returncode == 0:
-        print(f"SURVIVED (suite still green)  {name}")
-        fails += 1
-    else:
-        print(f"caught by {len(named)} case(s)  {name}")
-        for l in named[:2]:
-            print("    " + l)
-S.write_text(orig)
 print("all mutations caught" if not fails else f"{fails} mutation(s) uncaught")
 sys.exit(1 if fails else 0)

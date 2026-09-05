@@ -105,10 +105,16 @@ SCRIPT_NAME = re.compile(r"^((?:campaign|check|install)-[a-z0-9-]+)\.(?:py|sh)$"
 # set names its shells: adding a name reads one more shape and promises nothing
 # about the next.
 #
-# NO SHELL BELONGS HERE. The guard already re-reads a shell's `-c` string as
-# segments of its own, so `bash -c "scripts/campaign-claim.py"` would be read
-# twice -- once as that re-read segment, once as bash's file operand -- and the
-# double count hides behind the printed note that a repeat is legitimate.
+# NO SHELL BELONGS HERE, and the shape that costs is named rather than implied.
+# The guard already re-reads a shell's `-c` string as segments of its own, so
+# `bash -c "scripts/campaign-claim.py"` would be read twice -- once as that
+# segment, once as bash's file operand -- and the double count hides behind the
+# printed note that says a repeat is legitimate. The price is `sh
+# scripts/install-hooks.sh`, a shell running a script *file*, which is no longer
+# counted: measured over 17,840 unique Bash commands in this machine's
+# transcripts, 4 commands hold that shape and 2 are genuine runs. Two missed
+# runs against a double count on every argument-less `-c`, and the missed ones
+# land in the `charged` floor this subcommand already prints.
 INTERPRETERS = {"python", "python3"}
 
 
