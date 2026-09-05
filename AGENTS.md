@@ -264,7 +264,8 @@ held in a session's memory dies with its pane. **Look for the sub-issue it
 belongs to before filing a new one**: read the campaign's sub-issue list, open
 and closed (`campaign-tracker index <N>`), and where one covers the same
 mechanism, append the observation as a comment and reopen it (`gh issue reopen
-<issue> --comment`), so its history and its claim stay in one place. File a new
+<issue> -R kalaluthien/campaign-base --comment`), so its history stays under one
+number; the reopened work cuts a fresh topic ref under that number. File a new
 sub-issue only when none fits. A parent holds at most 100 sub-issues, closed
 ones included, which is a cost every new number pays and a reopen does not.
 
