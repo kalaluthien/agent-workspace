@@ -130,7 +130,17 @@ pred coLocated[s: Session, a: Agent] { s.machine = a.host }
    agent whose campaign-directory checkout is on its branch. herdr's row is
    still read for two things -- liveness, and its `cwd` as one more root to
    sweep and as the tie between an unnamed session and this campaign -- but
-   never for which branch anyone holds. */
+   never for which branch anyone holds.
+
+   AND THE MODEL STOPS ABOVE `checkedOut`, deliberately -- #187's N2 rider asked
+   for the derivation or the reason. `Claimed` is a fact about GitHub and
+   `checkedOut` is a fact about a workspace, and deriving one from the other
+   would assert a join this machine cannot make: measured 2026-09-04, herdr
+   reports where a session STARTED, a base executor works in a worktree, and the
+   repository owning that worktree is not even the clone the session sits in.
+   So `holder` names a workspace and not a session, and the two facts stay
+   separate because nothing observable connects them. #181 putting the campaign
+   number in the directory name is what would change that. */
 fun holder[i: Issue]: set Agent {
   { a: Agent | a.task = i
                and campaignDirAt[campaignOf[i], a.host].checkedOut[i.repo] = a.branch }
@@ -160,25 +170,37 @@ pred namedForAnother[a: Agent, c: Campaign] {
    close gate read the identical set, so closing one campaign asked another's
    sessions to stand down; and a session named for another campaign is the one
    case where the machine says "here" and the evidence says "not this one".
-   A name that says NOTHING is not evidence and does not exempt: that agent
-   still blocks, which is the direction that costs a question rather than
-   somebody's work.
+   A name that says NOTHING is not evidence either way, so the cwd decides: that
+   agent blocks while it sits under the base tree, which is the direction that
+   costs a question rather than somebody's work.
 
-   THE MODEL IS WIDER THAN THE READING, deliberately and by one case. This
-   predicate blocks on an unnamed agent anywhere on the machine; `classify`
-   counts an unnamed session only when its cwd is under the base root, so an
-   unnamed session at `/tmp` does not block a close. The narrowing is what
-   keeps the gate from reading the same set for every campaign: with no name
-   and no tree, nothing on the machine ties that session to THIS campaign, and
-   blocking on it would block on it for all of them at once. The gap that
-   leaves -- a session of this campaign that both renamed to nothing and left
-   the tree is invisible to the close, and is asked by nobody -- is #187's
-   question 6, which decides which side moves: a narrower model, or a third
-   piece of evidence for when neither the name nor the cwd says. */
+   #187 QUESTION 6 SETTLED IT BY MOVING THE MODEL, not the reader. This used to
+   block on an unnamed agent anywhere on the machine while `classify` counted an
+   unnamed session only when its cwd was under the base root -- a spec wider
+   than its one reader, which is a false statement about the code however
+   cautious it sounds. The reader's narrowing is the load-bearing half: with no
+   name and no tree, nothing on the machine ties a session to THIS campaign, so
+   blocking on it would block on it for every campaign here at once, and closing
+   one would ask another's sessions to stand down.
+
+   There was no third piece of evidence to add, which is what decided the
+   direction. So the residual case is now IN the model rather than named beside
+   it: a session that both renamed to nothing and left the tree does not block,
+   and N7 is the witness that says so out loud. A hole the model states is one
+   a reader can find. */
+/* A live agent whose SESSION is named for THIS campaign. The name is the only
+   thing that attributes a session to a campaign: the cwd cannot, since a
+   session under the tree is under every campaign's tree at once. */
+pred namedForThis[a: Agent, c: Campaign] {
+  some a.peer and a.peer.campaignNamed = c
+}
+
 pred liveUnderLocally[c: Campaign, m: Machine] {
   some a: Agent | a in Live and a.host = m
     and (a.task in c.memberIssues
-         or (m in machinesHolding[c] and not namedForAnother[a, c]))
+         or (m in machinesHolding[c]
+             and (namedForThis[a, c]
+                  or (no a.peer.campaignNamed and a.peer in UnderBase))))
 }
 
 /* github's `closable` is the GitHub half. These two add the half that needs
