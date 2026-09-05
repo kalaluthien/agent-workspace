@@ -304,18 +304,32 @@ pred launch[a: Agent] {
      session working its own claim needs none -- the one-executor shape. */
   no a.peer implies (some p: role.Planner | p.peer = Who.session and p.task = a.task and p in Live)
   campaignDirAt[Who.session.worksOn, a.host].checkedOut[a.task.repo] = a.branch
-  /* THE ASSIGNMENT GUARD. A session takes a sub-issue only with a small
-     context: fresh, or compacted by its last release. It is stated on the
-     launching session and not on `a.peer`, because a planner launching a
-     delegate spends its own context on the brief and the delegate has none
-     yet. `scripts/campaign-assign.py` is its one reader, and it reads the
-     pane rather than this bit -- idle, and compacted since the last release. */
-  Who.session in Compacted
   Launched' = Launched + a
   Live'     = Live + a
-  /* Taking a sub-issue is what grows a context, so the bit goes now and only
-     a release returns it. */
-  Compacted' = Compacted - Who.session
+  /* THE ASSIGNMENT GUARD, and it binds only when the agent IS a session --
+     `some a.peer`, a session taking a sub-issue onto its own claim. That
+     session is `Who.session` (`AgentWellFormed`: `a.launcher = a.peer`; here:
+     `a.launcher = Who.session`), so the two spellings name one atom and this
+     reads on either.
+
+     A DELEGATE LAUNCH IS NOT GUARDED, and that is the code's shape rather than
+     an omission: `scripts/campaign-assign.py` reads the PANE of the session
+     being assigned, and a delegate has no pane until the launch makes one.
+     Stated unconditionally -- which is how this read at 2468517 -- the model
+     required the PLANNER to be compacted before every delegate launch, a
+     precondition no reader checks and no session was ever told about. A
+     precondition nothing enforces is worse than none, because a later reader
+     believes it.
+
+     The planner's own context does grow with each brief it writes. That is
+     true and is NOT modelled: nothing here reads it, and the bit would then
+     mean two different things at once.
+
+     Taking a sub-issue is what grows the taking session's context, so the bit
+     goes now and only a release returns it. */
+  (some a.peer) implies (Who.session in Compacted
+                         and Compacted' = Compacted - Who.session)
+                   else Compacted' = Compacted
   LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
   keepReview and keepMessages and keepShutdown
   Target.agent = a

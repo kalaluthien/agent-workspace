@@ -150,6 +150,33 @@ pred Cov_GuardedRelease   { eventually Now.event = Release }
    unreachable and the assert stays green on a vacuity nobody would read. This
    says two launches by one session do happen, so a green assert is a rule and
    not an empty set. */
+/* THE CONTROL FOR THE GUARD'S SCOPE, and P8 cannot be it. P8's two launches
+   both have `some peer`, so it is satisfied whether the guard binds on every
+   launch or only on a session taking its own claim -- measured, the
+   unconditional form leaves P8 SAT.
+
+   This one separates them: a session works a sub-issue itself and LATER
+   launches a delegate. Unconditional, the delegate launch would need the
+   planner compacted, which only a release gives back, so a planner could
+   launch at most one delegate between releases -- and that is a precondition
+   nothing on the machine reads, since `campaign-assign.py` reads the pane of
+   the session being ASSIGNED and a delegate has no pane until its launch makes
+   one. So this run going UNSAT is the signal that the model has drifted back
+   to demanding what no reader checks. */
+pred P9_DelegateAfterOwnSubIssue {
+  some s: Session | some disj own, deleg: Agent |
+    own.peer = s and no deleg.peer and deleg.launcher = s
+    /* WITH NO RELEASE IN BETWEEN, and that clause is the whole discriminator:
+       without it the session simply releases between the two launches and the
+       run is satisfiable either way -- measured, and it is why the first cut
+       of this control caught nothing. Unconditional, the delegate launch needs
+       the bit a release alone returns, so forbidding the release makes the
+       trace impossible. */
+    and eventually (Now.event = Launch and Target.agent = own
+                    and after ((not (Now.event = Release and Who.session = s))
+                               until (Now.event = Launch
+                                      and Target.agent = deleg)))
+}
 pred P8_TwoSubIssuesOneSession {
   some s: Session | some disj a1, a2: Agent |
     a1.peer = s and a2.peer = s
@@ -210,3 +237,5 @@ run Cov_GuardedRelease   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Ag
 check SessionCompactsBetweenSubIssues for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 12 steps expect 0
 -- and two sub-issues on one session do happen, so the check above is not vacuous
 run P8_TwoSubIssuesOneSession        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 12 steps expect 1
+-- and a delegate launch is NOT guarded, so one session can work a sub-issue and then launch one
+run P9_DelegateAfterOwnSubIssue      for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 3 Repo, 3 Branch, 2 CampaignDir, 12 steps expect 1

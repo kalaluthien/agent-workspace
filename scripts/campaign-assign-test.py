@@ -186,6 +186,28 @@ def pure_cases(m):
     check("a release that could NOT compact reads stale, not unknown",
           v == "stale", f"{v} {why[:140]}")
 
+    # THE FORGERY. `compacted` used to need only a line CONTAINING the marker,
+    # and the marker's own definition is a line of campaign-assign.py -- so a
+    # session that `cat`s or `grep`s this repository in its pane, which is what
+    # working on this sub-issue looks like, read as compacted while holding the
+    # whole previous sub-issue. Found by review at 2468517.
+    forged = (f"{RELEASED}\n"
+              f'MARKER = "Compacted (ctrl+o to see full summary)"\n')
+    v, why = verdict(forged)
+    check("this repository's own source does not forge a compaction",
+          v == "stale", f"{v} {why[:140]}")
+    # ...and the allow beside it: the marker as the transcript actually draws
+    # it, behind a gutter, still counts.
+    for gutter in ("  \u23bf  ", "\u2502 ", "   "):
+        v, why = verdict(f"{RELEASED}\n{gutter}{MARKER}   \n")
+        check(f"a marker behind the gutter {gutter!r} still counts",
+              v == "compacted", f"{v} {why[:120]}")
+    # The anchor is matched the same way, so campaign-claim.py's own source
+    # line does not manufacture a release.
+    v, why = verdict('RELEASED = "campaign-claim: released"\nnoise\n')
+    check("...and campaign-claim's source line does not forge a release",
+          v == "unknown", f"{v} {why[:140]}")
+
     sentence = m.prompt_for("kalaluthien/campaign-base", "42")
     check("the prompt names the sub-issue and defers to its body",
           "kalaluthien/campaign-base#42" in sentence
@@ -258,17 +280,34 @@ def end_to_end_cases():
               r.returncode == 1 and "unknown" in out
               and prompts(full) == [], f"exit {r.returncode}: {out[:300]}")
         check("...and the refusal offers --lines and names the cap",
-              "raise --lines to at most 1000" in out, out[:500])
+              "Raise --lines (at most 1000)" in out, out[:500])
+        check("...and offers --assume-fresh, not --force, for this verdict",
+              "--assume-fresh" in out and "pass --force" not in out, out[:500])
         # ...and --force is the door, naming the verdict it overrode rather
         # than one sentence for three different states.
         forced_unknown = shims(Path(d) / "fu", rows,
                                screen="\n".join(["noise"] * 400))
-        r = assign(["w1:p2", "198", "--force"], forced_unknown)
+        r = assign(["w1:p2", "198", "--assume-fresh"], forced_unknown)
         out = r.stdout + r.stderr
-        check("...and --force assigns it, naming the verdict it overrode",
+        check("...and --assume-fresh assigns it, naming the verdict",
               r.returncode == 0 and "verdict was unknown" in out
               and len(prompts(forced_unknown)) == 1,
               f"exit {r.returncode}: {out[:300]}")
+        # THE SPLIT. `--assume-fresh` reaches what a reading cannot; it must
+        # NOT reach the one case the guard exists for.
+        af_stale = shims(Path(d) / "afstale", rows,
+                         screen=f"{RELEASED}\nworking\n")
+        r = assign(["w1:p2", "198", "--assume-fresh"], af_stale)
+        out = r.stdout + r.stderr
+        check("--assume-fresh does NOT waive a pane read as stale",
+              r.returncode == 1 and prompts(af_stale) == [],
+              f"exit {r.returncode}: {out[:300]}")
+        af_forced = shims(Path(d) / "afforced", rows,
+                          screen=f"{RELEASED}\nworking\n")
+        r = assign(["w1:p2", "198", "--force"], af_forced)
+        check("...and --force does, which is the whole difference",
+              r.returncode == 0 and len(prompts(af_forced)) == 1,
+              f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
 
         # A WINDOW ABOVE THE TOOL'S CAP reads no further, so asking for one is
         # refused rather than answered with less than it promises.
@@ -316,12 +355,15 @@ def end_to_end_cases():
               and "agent read" in out and prompts(unread) == [],
               f"exit {r.returncode}: {out[:300]}")
         forced_unread = shims(Path(d) / "forcedunread", rows, read_exit=1)
-        r = assign(["w1:p2", "198", "--force"], forced_unread)
+        r = assign(["w1:p2", "198", "--assume-fresh"], forced_unread)
         out = r.stdout + r.stderr
-        check("...and --force gets past that one too, saying what it did not read",
-              r.returncode == 0 and "assigning without reading the pane" in out
+        check("...and --assume-fresh gets past it, saying what it did not read",
+              r.returncode == 0 and "verdict was unread" in out
               and len(prompts(forced_unread)) == 1,
               f"exit {r.returncode}: {out[:300]}")
+        check("...printing ONE --force line, not two about the same verdict",
+              out.count("assigning anyway") == 1
+              and "assigning without reading the pane" not in out, out[:400])
 
         # THE SEND ITSELF FAILING is not an assignment.
         broke = shims(Path(d) / "broke", rows, screen=f"{RELEASED}\n{MARKER}\n",
@@ -331,6 +373,22 @@ def end_to_end_cases():
         check("a prompt that would not send reports it and is not an assignment",
               r.returncode == 1 and "exited 4" in out
               and "is not assigned" in out, f"exit {r.returncode}: {out[:300]}")
+
+        # `#207` IS HOW AGENTS.md SPELLS A SUB-ISSUE, so it is what a caller
+        # copying from an issue types; unstripped it prompts `<repo>##207`.
+        hashed = shims(Path(d) / "hashed", rows,
+                       screen=f"{RELEASED}\n{MARKER}\n")
+        r = assign(["w1:p2", "#207"], hashed)
+        check("a sub-issue typed as #N reaches the prompt as #N, not ##N",
+              r.returncode == 0 and len(prompts(hashed)) == 1
+              and "campaign-base#207" in prompts(hashed)[0]
+              and "##207" not in prompts(hashed)[0], repr(prompts(hashed)))
+        notnum = shims(Path(d) / "notnum", rows,
+                       screen=f"{RELEASED}\n{MARKER}\n")
+        r = assign(["w1:p2", "not-a-number"], notnum)
+        check("...and something that is not an issue number is refused",
+              r.returncode == 1 and prompts(notnum) == [],
+              f"exit {r.returncode}: {(r.stdout + r.stderr)[:200]}")
 
         # herdr absent: a listing that did not happen is not an empty machine.
         nowhere = Path(d) / "nowhere" / "bin"

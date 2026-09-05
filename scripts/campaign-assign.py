@@ -93,6 +93,27 @@ DEFAULT_REPO = "kalaluthien/campaign-base"
 # what a reader hits in the meantime.
 MARKER = "Compacted (ctrl+o to see full summary)"
 
+# What the transcript draws to the left of a rendered line. Stripped before a
+# line is compared, so that the comparison can be an EQUALITY rather than a
+# containment -- see `rendered`.
+GUTTER = " \t|" + "\u23bf\u2502\u251c\u2514\u2570\u256d\u2022\u23ba"
+
+
+def rendered(line):
+    """A pane line with the transcript's gutter taken off, so a marker or an
+    anchor can be matched against what the line IS rather than what it holds.
+
+    CONTAINMENT WAS FORGEABLE, and by the most ordinary thing an executor does.
+    `compacted` needed only some line CONTAINING MARKER after the last release;
+    MARKER's own definition is a line of this file, so a session that `cat`s or
+    `grep`s `campaign-assign.py` in its pane -- which is what working on this
+    sub-issue looks like -- was read as compacted while holding the whole
+    previous sub-issue. Found by review at 2468517, reproduced.
+
+    Equality after stripping the gutter is what closes it: the rendered line is
+    the marker and nothing else, where `MARKER = "Compacted (...)"` is not."""
+    return line.strip(GUTTER).rstrip()
+
 # THE ANCHOR IS THE RELEASE, NOT THE COMPACTION'S SUCCESS, and it is
 # `campaign_claim.RELEASED` -- taken from the script that prints it, never
 # copied. Keyed on the compaction's own success line, which is how this shipped
@@ -108,13 +129,10 @@ MARKER = "Compacted (ctrl+o to see full summary)"
 # are a few dozen lines; this is wide enough for several and small enough that
 # an unreadable pane fails fast.
 #
-# WHAT HAPPENS AT THE EDGE, because a window is an absence that looks like an
-# answer. A pane whose history is longer than this returns exactly LINES lines
-# and the release may sit above them -- so "no release line in what I read" is
-# `truncated`, not `fresh`, and refuses. Only a read that came back SHORTER
-# than the window is evidence the whole history was seen. Both directions now
-# fail closed; before this the open one was exactly the case a long transcript
-# produces, which is the whole premise of this change.
+# IT IS A BUDGET, NOT A PROOF. Nothing about how many lines came back says
+# whether the whole history was seen -- see the measurements in the docstring.
+# So no verdict here is derived from the count; an absent anchor is `unknown`
+# whatever the length, and raising this only ever adds earlier lines.
 LINES = 400
 
 # What `herdr agent read` will return however large `--lines` is, measured
@@ -196,16 +214,20 @@ def compaction_verdict(text, anchor):
     nothing about now. Both are searched by LAST occurrence for that reason --
     `min` here instead of `max` would call that pane `compacted` and assign it
     with its second release uncompacted."""
-    lines = (text or "").splitlines()
+    lines = [rendered(ln) for ln in (text or "").splitlines()]
+    # STARTSWITH for the anchor, because the release line carries the branch
+    # after it; EQUALITY for the marker, which stands alone. Both against the
+    # rendered line, so this file's own source does not answer either.
     last_release = max((i for i, ln in enumerate(lines)
-                        if anchor in ln), default=None)
+                        if ln.startswith(anchor)), default=None)
     if last_release is None:
         return "unknown", (f"no release line in the {len(lines)} line(s) read. "
                            f"That is not evidence this pane never released: "
                            f"the read is capped and returns fewer lines than "
                            f"asked, so an absent anchor and a pane that never "
                            f"released look identical.")
-    after = [i for i, ln in enumerate(lines) if MARKER in ln and i > last_release]
+    after = [i for i, ln in enumerate(lines)
+             if ln == MARKER and i > last_release]
     if after:
         return "compacted", (f"released at line {last_release + 1}, compacted "
                              f"at line {after[-1] + 1}")
@@ -242,12 +264,30 @@ def main():
     ap.add_argument("--lines", type=int, default=LINES,
                     help=f"how much scrollback to read (default {LINES}, "
                          f"capped by herdr at {READ_CAP})")
+    # TWO DOORS, NOT ONE, because the states behind them are not alike.
+    # `--assume-fresh` covers what an honest reading CANNOT REACH: no anchor in
+    # the window, or a pane that would not read. `--force` covers what it read
+    # and found wanting. One flag for both made the bypass of the single case
+    # this guard exists for the same keystroke as the routine first assignment
+    # -- and with no pane yet carrying an anchor, that keystroke is routine.
+    ap.add_argument("--assume-fresh", action="store_true",
+                    help="assign a pane whose release this did not see, or "
+                         "could not read for. Does NOT waive a pane that was "
+                         "read and has not compacted.")
     ap.add_argument("--force", action="store_true",
-                    help="assign despite any verdict but `compacted` -- a "
-                         "stale pane, a pane whose release this did not see, "
-                         "or a pane it could not read. Prints which.")
+                    help="assign a pane that was READ and has not compacted "
+                         "since its last release. Implies --assume-fresh.")
     args = ap.parse_args()
+    # AGENTS.md types a sub-issue as `#N`, so the hash is what a caller
+    # copying from an issue or a listing will type. Stripped here, or the
+    # prompt names `<repo>##207` and nothing downstream notices.
     issue = args.issue.lstrip("#")
+    if not issue.isdigit():
+        print(f"refusing: {args.issue!r} is not a sub-issue number. This "
+              f"prompts a session to work one,\n  and a prompt naming "
+              f"something that is not an issue reads as an instruction all "
+              f"the same.", file=sys.stderr)
+        return 1
     if args.lines > READ_CAP:
         print(f"refusing: --lines {args.lines} is above herdr's {READ_CAP}-line "
               f"cap, which would read\n  no further while reporting a wider "
@@ -281,37 +321,42 @@ def main():
         # than assigning, and `--force` is the way past -- the same door the
         # stale verdict has, because a caller overriding one has the same
         # standing to override the other.
-        if not args.force:
+        if not (args.assume_fresh or args.force):
             print(f"refusing: {why_unread}\n  Whether {args.pane} compacted "
                   f"since its last release is unknown, and an unknown is not"
-                  f"\n  a compaction. Pass --force to assign anyway.",
+                  f"\n  a compaction. Pass --assume-fresh to assign anyway.",
                   file=sys.stderr)
             return 1
-        print(f"--force: {why_unread}; assigning without reading the pane")
+        # ONE `--force:` LINE PER RUN. This used to print here and again below,
+        # twice about the same verdict with the same reason.
         verdict, why = "unread", why_unread
     else:
         verdict, why = compaction_verdict(screen, m.RELEASED)
         print(f"{verdict}: {why}")
-    if verdict in ("stale", "unknown") and not args.force:
-        headline = ("has not compacted since its last release"
-                    if verdict == "stale"
-                    else "shows no release in what this read, which is not "
-                         "evidence it never released")
-        print(f"refusing: {args.pane} {headline}.\n  {why}\n"
-              f"  Every turn of {args.repo}#{issue} would "
-              f"re-read the sub-issue before it. `campaign-claim.py release`"
-              f"\n  sends that compaction; if it could not, prompt the pane "
-              f"with /compact and retry; if the\n  release is further back "
-              f"than the window, raise --lines to at most {READ_CAP}; "
-              f"otherwise pass --force.",
-              file=sys.stderr)
+    # ONE REMEDY LIST PER VERDICT. Shared, it offered `/compact and retry` to
+    # `unknown`, which changes nothing when no anchor is in the window, and
+    # `raise --lines` to `stale`, where the release was already found and a
+    # wider window can only add earlier lines. Neither could work for the
+    # verdict it was printed under.
+    waived = args.force or (verdict != "stale" and args.assume_fresh)
+    if verdict != "compacted" and not waived:
+        if verdict == "stale":
+            print(f"refusing: {args.pane} has not compacted since its last "
+                  f"release.\n  {why}\n  Every turn of {args.repo}#{issue} "
+                  f"would re-read the sub-issue before it. Prompt the pane "
+                  f"with\n  /compact and retry, or pass --force.",
+                  file=sys.stderr)
+        else:
+            print(f"refusing: {args.pane} shows no release in what this read, "
+                  f"which is not evidence\n  it never released. {why}\n"
+                  f"  Raise --lines (at most {READ_CAP}) if the release is "
+                  f"further back, or pass\n  --assume-fresh if this session "
+                  f"genuinely has not worked a sub-issue yet.",
+                  file=sys.stderr)
         return 1
     if verdict != "compacted":
-        # NAMES THE VERDICT IT IS OVERRIDING. One sentence for three different
-        # states read as "has not compacted since its last release" even when
-        # no release had been read at all, which is a finding the code did not
-        # make.
-        print(f"--force: assigning anyway, verdict was {verdict} -- {why}")
+        flag = "--force" if verdict == "stale" or args.force else "--assume-fresh"
+        print(f"{flag}: assigning anyway, verdict was {verdict} -- {why}")
 
     sentence = prompt_for(args.repo, issue)
     # The one call here that DRIVES a pane, so it carries the guard and names
