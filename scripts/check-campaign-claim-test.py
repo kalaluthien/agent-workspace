@@ -748,8 +748,39 @@ def main():
             check(f"the planner licence does not cover `{cmd[:34]}`",
                   r.returncode == 2 and "not the campaign plane" in r.stderr,
                   out(r)[:400])
+        # #213: `gh issue develop` IS the campaign plane -- `Claim` is in
+        # `campaignPlaneEvents` -- and is still out of the licence, because it
+        # is a SECOND ROUTE to the object `campaign-claim take` cuts and it
+        # reads neither the binding nor the campaign's `## Repos`. Asserted on
+        # the sentence and not on the exit status: a planner holds no claim, so
+        # the claim reading below refuses it with rc=2 either way, and a case
+        # keyed on rc=2 alone passes with the exception deleted.
+        r = ask(f.base, tool="Bash", command="gh issue develop 9", env=planner)
+        check("the planner licence does not cover `gh issue develop`",
+              r.returncode == 2 and "cuts a claim without reading" in r.stderr
+              and "not the campaign plane" not in r.stderr, out(r)[:400])
+        # ...and one develop hidden among covered verbs sinks the whole call,
+        # which is the shape a set-membership test on the SUBCOMMAND missed.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 9 --body x && gh issue develop 9",
+                env=planner)
+        check("...and a develop beside a covered verb is not carried by it",
+              r.returncode == 2 and "cuts a claim without reading" in r.stderr,
+              out(r)[:400])
+        # THE COST, PINNED RATHER THAN LEFT TO BE FOUND. `-l` is `--list` for
+        # `gh issue develop`, so this is a READ, and `WRITES` holds the verb
+        # unconditionally -- so a planner is now over-refused on it. The
+        # direction this guard fails in on purpose (see VALUED), and the price
+        # of not putting a per-verb flag grammar in a PreToolUse hook.
+        r = ask(f.base, tool="Bash", command="gh issue develop -l 11",
+                env=planner)
+        check("...and a planner's `gh issue develop --list` is over-refused "
+              "with it, which is the cost", r.returncode == 2
+              and "cuts a claim without reading" in r.stderr, out(r)[:400])
+
         # ALLOW beside it: the campaign-plane verbs the licence is FOR.
         for cmd in ("gh issue edit 9 --body x", "gh issue comment 9 --body x",
+                    "gh issue close 9", "gh issue reopen 9",
                     "gh label create x"):
             r = ask(f.base, tool="Bash", command=cmd, env=planner)
             check(f"ALLOW beside it: `{cmd[:30]}` is the campaign plane",
