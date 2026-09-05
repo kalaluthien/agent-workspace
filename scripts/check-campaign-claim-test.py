@@ -712,6 +712,24 @@ def main():
         check("...and the file half says the same",
               r.returncode == 2
               and "falling back to the claim reading" in r.stderr, out(r)[:600])
+
+    # AN ALLOW AFTER A FAILED READ MUST SAY SO TOO. They were silent, so an
+    # allow that fell back looked exactly like one that read the role and found
+    # it permitted -- the whole distinction this gate keeps, dropped on the one
+    # path nobody asserts.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("campaign-1/7-x",))
+        gone = no_herdr(d)
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=gone)
+        check("an ALLOW that fell back says it fell back",
+              r.returncode == 0
+              and "falling back to the claim reading" in r.stdout, out(r)[:600])
+        # ALLOW beside it: with herdr readable, the allow does NOT say it.
+        fine = herdr_stub(d, {"sid-1": "campaign-1-executor-4"})
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=fine)
+        check("...and one that read the role does not claim to have fallen back",
+              r.returncode == 0
+              and "falling back" not in r.stdout, out(r)[:600])
         # A NAME THAT IS NOT A CAMPAIGN NAME IS NOT CAMPAIGN WORK'S PROBLEM
         # OUTSIDE A CAMPAIGN. Asked before "is this a base", it refused every
         # gh write anywhere on this machine from any session herdr lists.
@@ -789,6 +807,31 @@ def main():
               r.returncode == 0, out(r)[:400])
         r = ask(f.base, tool="Bash", command="gh pr view 7", env=stranger)
         check("ALLOW beside the foreign-campaign refusal: a read is not a write",
+              r.returncode == 0, out(r)[:400])
+
+    # A ROOT HOLDING BOTH CAMPAIGNS' CLAIMS. The case above has only a foreign
+    # claim under the root, and the gh half filtered once for the whole root --
+    # so it refused only when EVERY claim was foreign, and an executor with any
+    # claim of its own was admitted to write another campaign's sub-issue with
+    # the foreign claim named as the cover. The filter is per issue now, and
+    # this is the fixture that can tell the two apart.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("campaign-1/7-x", "campaign-2/8-y"))
+        executor = herdr_stub(d, {"sid-1": "campaign-1-executor-1"})
+        r = ask(f.base, tool="Bash", command="gh issue close 8", env=executor)
+        check("an executor may not write another campaign's sub-issue, even "
+              "with a claim of its own under the same root",
+              r.returncode == 2 and "no claim covering a write to #8" in r.stderr,
+              out(r)[:500])
+        check("...and the refusal names the foreign claim it declined to use",
+              "a claim of another campaign" in r.stderr, out(r)[:500])
+        # ALLOW beside it, on the same fixture: its own campaign's sub-issue.
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=executor)
+        check("ALLOW beside it: its own campaign's sub-issue on the same root",
+              r.returncode == 0 and "It covers #7" in r.stdout, out(r)[:500])
+        # ...and the file half, which filtered from the start, still agrees.
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=executor)
+        check("ALLOW beside it: the file half admits the same session",
               r.returncode == 0, out(r)[:400])
 
     if not ran:

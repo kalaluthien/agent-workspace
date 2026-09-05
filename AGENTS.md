@@ -173,12 +173,12 @@ branch the delegate's.
 **`campaign-<campaign issue>-<role>-<n>`**, the role being `planner` or
 `executor`, for every session on this machine; `<n>` is one counter across both
 roles, assigned in the order sessions appear, so two do not both pick `-1` —
-this sentence is that counting rule's one home. **The role word is a label for
-a person reading `herdr agent list`**: it says what the session is for, and the
-machine reads it. **The role word is not a label**: `check-campaign-claim.py`
-resolves it from `herdr agent list` and decides both planes by it, so a name of
-the wrong shape is refused every campaign write and a session named `planner`
-may change no code. It is per-session, where the `role` on the model's Agent
+this sentence is that counting rule's one home. **The role word is not a
+label**: since #185 `check-campaign-claim.py` resolves it from `herdr agent
+list` and decides both planes by it, so a name of the wrong shape is refused
+every campaign write and a session named `planner` may change no code. It is
+also what a person reads in `herdr agent list`, which is how the two used to be
+confused. It is per-session, where the `role` on the model's Agent
 atom is per launch and records the shape one sub-issue was worked in.
 
 **The name is not a security boundary, and is not meant to be.** A session can
@@ -194,10 +194,13 @@ a rename touches no claim, because a claim is a ref and a checkout. **Set it at
 the start of every session of a campaign, whichever path started it** — the
 `here` reading above, `opening-campaign` step 3, or a delegate launch — because a
 session that arrived from another campaign keeps that campaign's name until
-something sets it. The one pattern lives in `scripts/campaign-name-session.py`.
-**Nothing now refuses a stale name at the claim**, which the record used to do
-by carrying the name into a place later readers trusted; with no record there is
-no such place, and this rule has this sentence for its only reader.
+something sets it. The one pattern lives in `scripts/campaign-name-session.py`, and
+`check-campaign-claim.py` imports it rather than restating it.
+**Nothing refuses a stale name at the CLAIM**, which the record used to do by
+carrying the name into a place later readers trusted; with no record there is no
+such place. What reads the name instead is the guard, on every write: a name of
+another campaign gets an executor refused that campaign's issues, and a name of
+no shape gets both planes refused.
 
 **The sub-issue is deliberately not in the name**, because a session works
 several; which one a session is in is asked, not derived. **Never test a name

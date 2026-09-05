@@ -184,8 +184,7 @@ def role_of(session_id):
                                    f"name pattern does not admit")
         role = "planner" if "-planner-" in name else "executor"
         return m.group(1), role, f"session {session_id} is {name}"
-    return None, None, (f"no herdr row names session {session_id}, so its "
-                        f"role could not be read")
+    return None, None, (f"no herdr row names session {session_id}, has no role here")
 
 
 def git(args, cwd):
@@ -623,6 +622,13 @@ def bash_call(command, cwd: Path, session_id=""):
         why = how if root is None else f"{how}, which is a repository and not a base"
         return allow([f"{what}: {why}, so this session is in no campaign."])
     campaign, role, how_role = role_of(session_id)
+    # Computed before the first exit that can use it: every exit of this
+    # half that fell back says so, allows included. The allows used to be
+    # silent, so an allow after a failed read looked like an allow after a
+    # successful one.
+    fell_back = [] if role else [
+        f"{how_role}, so the role could not be read; falling back to the "
+        f"claim reading alone, which is what this gate was before #185."]
     if role == NO_ROLE:
         return refuse([f"{what}: a campaign-plane write.", how_role, NAMELESS])
     if role == "planner":
@@ -639,18 +645,6 @@ def bash_call(command, cwd: Path, session_id=""):
     # claimed issue was the shape a review turned into a bypass. A write whose
     # issue this could not read still falls back to the unnarrowed question,
     # which is the weaker gate and is printed as such.
-    fell_back = [] if role else [
-        f"{how_role}, so the role could not be read; falling back to the claim "
-        f"reading alone, which is what this gate was before #185."]
-    if role == "executor" and campaign is not None:
-        mine, foreign = [], []
-        for h in held(root)[0]:
-            (mine if CLAIM_BRANCH.match(h[1]).group(1) == campaign
-             else foreign).append(h)
-        if foreign and not mine:
-            return refuse([f"{what}: a campaign-plane write, and every claim "
-                           f"under {root} is of another campaign.", how_role,
-                           *[f"{h[0]} is on {h[1]}" for h in foreign], TAKE])
     issues = sorted({issue_target(x) for x in writes} - {None})
     unreadable = stray or any(issue_target(x) is None for x in writes)
     own = own_claim(cwd)
@@ -659,6 +653,20 @@ def bash_call(command, cwd: Path, session_id=""):
         holders, d = held(root, i)
         if not holders and own is not None and CLAIM_BRANCH.match(own[1]).group(2) == i:
             holders = [own]
+        # AN EXECUTOR STANDS ONLY ON ITS OWN CAMPAIGN'S CLAIMS, and the filter
+        # belongs HERE, per issue. Applied once to the whole root instead, it
+        # refused only when EVERY claim was foreign -- so an executor of #1
+        # with any claim of its own under the root was admitted to write
+        # another campaign's sub-issue, the foreign claim named as the cover.
+        # `file_call` filtered per call from the start; this half did not, and
+        # the two disagreed on exactly that shape.
+        if role == "executor" and campaign is not None:
+            foreign = [h for h in holders
+                       if CLAIM_BRANCH.match(h[1]).group(1) != campaign]
+            holders = [h for h in holders if h not in foreign]
+            detail += [f"{h[0]} is on {h[1]}, a claim of another campaign; "
+                       f"this session is of campaign #{campaign}"
+                       for h in foreign]
         detail += d
         (covering if holders else uncovered).append((i, holders))
     if uncovered:
@@ -668,6 +676,9 @@ def bash_call(command, cwd: Path, session_id=""):
                        *detail, TAKE])
     if unreadable:
         holders, d = held(root)
+        if role == "executor" and campaign is not None:
+            holders = [h for h in holders
+                       if CLAIM_BRANCH.match(h[1]).group(1) == campaign]
         if not holders and own is not None:
             holders = [own]
         if not holders:
@@ -676,17 +687,17 @@ def bash_call(command, cwd: Path, session_id=""):
                            *detail, *d, TAKE])
         path, branch, source = holders[0]
         return allow([f"{what}: {how}; {path} is on {branch}, a claim "
-                      f"({source})."])
+                      f"({source}).", *fell_back])
     if not covering:
         if own is not None:
             return allow([f"{what}: the session's own checkout {own[0]} is on "
-                          f"{own[1]}, a claim ({own[2]})."])
+                          f"{own[1]}, a claim ({own[2]}).", *fell_back])
         return refuse([f"{what}: a campaign-plane write, and this session holds "
                        f"no claim covering it.", how, *detail, TAKE])
     path, branch, source = covering[0][1][0]
     named = ", ".join(f"#{i}" for i, _ in covering)
     return allow([f"{what}: {how}; {path} is on {branch}, a claim "
-                  f"({source}). It covers {named}."])
+                  f"({source}). It covers {named}.", *fell_back])
 
 
 def pre(payload):

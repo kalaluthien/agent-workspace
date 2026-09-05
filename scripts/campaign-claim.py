@@ -163,10 +163,13 @@ WHAT WENT WITH THE RECORD, AND IS GONE
 `take --name` checked a session's name against
 `scripts/campaign-name-session.py`'s rule and refused one belonging to another
 campaign, because a stale name written into a record sent every later reader to
-the wrong session. There is no record to write a name into, so there is no
-longer a reader that catches a session working under another campaign's name.
-The rule in AGENTS.md 'The session name' stands; nothing enforces it at the
-claim any more, and this paragraph is the only record of that.
+the wrong session. There is no record to write a name into, so this
+script no longer reads a name at all. The rule in AGENTS.md 'The session name'
+is enforced elsewhere since #185: check-campaign-claim.py resolves the role
+from the name on every write, and an executor named for another campaign is
+refused that campaign's issues. What is gone is the check AT THE CLAIM, which
+is why a claim can still be cut under a stale name and the write that follows
+is where it is caught.
 
 EXIT
 
