@@ -29,7 +29,7 @@ as exit strings in the code below.
                               second checkout. Prose said so in three files and
                               no reader enforced it (#205).
 
-`slug`, `key` and `BASE_REPO` are exported for `scripts/campaign-claim.py`, which
+`slug`, `key`, `WRAPPERS` and `BASE_REPO` are exported for `scripts/campaign-claim.py`, which
 compares a sub-issue's `Repository:` line to this list: one reader of what makes
 two spellings the same repository, rather than two that agree by both being exact.
 

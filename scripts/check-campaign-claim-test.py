@@ -1112,6 +1112,13 @@ def main():
         check("...and a `${var#prefix}` expansion is not a comment either",
               UNREAD in r.stdout and "cannot read as a call" not in out(r),
               out(r)[:400])
+        # ...and `)` is NOT a boundary. `echo $(echo x)#c` prints `x#c`, so a
+        # `#` after `)` is data; admitting `()` to the class made this refused
+        # where it had been allowed.
+        r = ask(wt7, tool="Bash",
+                command="echo $(echo x)#c && cat <<EOF\ngh issue close 11\nEOF")
+        check("a `#` after a closing paren is not a comment",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:400])
 
         # THE REFUSAL NAMES ONLY WHAT IT READ (#193 defect 2). Two branches,
         # one case each, asserted on the sentence: the exit status is the same.

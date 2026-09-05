@@ -520,11 +520,24 @@ def openers(line, quote):
     `echo a#b && gh issue close 11` reads the same either way -- but that is
     true only DOWNSTREAM. This scanner runs first and decides which lines
     `strip_heredocs` removes as data, so breaking at a mid-word `#` makes it
-    miss a `<<` LATER ON THE SAME LINE and the body is tokenised as commands:
-    `test $# -eq 0 && cat <<EOF` / `gh issue close 11` / `EOF` went from
-    allowed to refused. `$#` and `${f#./}` are ordinary shell. Measured over
-    the corpus at 1b6d3b3: 156 commands unsplittable without this condition
-    and clean with it, 0 the other way."""
+    miss a `<<` LATER ON THE SAME LINE and the body is tokenised as commands.
+    `test $# -eq 0 && cat <<EOF` / `gh issue close 11` / `EOF` reads as one
+    segment holding a stray `gh` without this condition, and as `cat` with a
+    data body with it. `$#` and `${f#./}` are ordinary shell.
+
+    THE CORPUS SAYS NOTHING ABOUT THIS ONE. Over its 547 commands, 137 of them
+    holding a `#`, the segments are IDENTICAL with and without the condition --
+    0 differ, 0 unsplittable either way. The evidence is the constructed shapes
+    above and the cases that pin them, and saying so is the point: an earlier
+    draft of this paragraph carried a corpus number that came from a review
+    report rather than from a run, and it did not reproduce.
+
+    THE BOUNDARY SET IS ` \t;|&` AND DELIBERATELY NOT `()`. A `)` mostly ends a
+    substitution rather than a word -- `echo $(echo x)#c` prints `x#c`, and
+    `+(#|x)` is a pattern -- so admitting them turned `echo $(echo x)#c && cat
+    <<EOF ...` from allowed into refused. Missing a comment that opens straight
+    after `(` costs nothing this reads, since a comment there needs no `<<`
+    after it on the same line to be a comment."""
     found, i, n, stack = [], 0, len(line), []
     while i < n:
         c = line[i]
@@ -548,7 +561,7 @@ def openers(line, quote):
             quote = None if c == '"' else quote
             i += 1
             continue
-        if c == "#" and (i == 0 or line[i - 1] in " \t;|&()"):
+        if c == "#" and (i == 0 or line[i - 1] in " \t;|&"):
             break
         if c in "'\"":
             quote = c

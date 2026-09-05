@@ -9,7 +9,7 @@ else. That is the shape a contract takes just before it drifts -- so each
 refusal here is asserted on the SENTENCE it prints, never on the exit status,
 which every other refusal shares.
 
-`slug` and `key` are the second half. They are what makes two spellings one
+`slug`, `key` and `WRAPPERS` are the second half. They are what makes two spellings one
 repository for `campaign-claim.py` as well as for this file
 (kalaluthien/campaign-base#205), so a change to either that leaves them agreeing
 by accident is what these pin. `is_base` is this file's own and is exported to
@@ -106,7 +106,7 @@ def main():
     check("`- none` prints no repository at all", rc == 0 and out.strip() == "",
           f"exit {rc}: {out!r}")
 
-    # ---- slug / key / is_base: the one reader of what makes two spellings the
+    # ---- slug / key: the one reader of what makes two spellings the
     # same repository. campaign-claim.py's `Repository:` line goes through
     # these, so each spelling that reaches it in prose has a row.
     sys.path.insert(0, str(HERE))
