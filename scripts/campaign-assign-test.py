@@ -202,6 +202,31 @@ def pure_cases(m):
         v, why = verdict(f"{RELEASED}\n{gutter}{MARKER}   \n")
         check(f"a marker behind the gutter {gutter!r} still counts",
               v == "compacted", f"{v} {why[:120]}")
+    # A GUTTER GLYPH NOBODY MEASURED ONLY WIDENS THE ACCEPT SET. `|` and the
+    # bullet sat in the set on plausibility, and the bullet made a quoted
+    # marker in an issue body -- `gh issue view` output in a pane -- render to
+    # the marker exactly.
+    for forged in ("\u2022 ", "| ", "> ", "# "):
+        v, why = verdict(f"{RELEASED}\n{forged}{MARKER}\n")
+        check(f"a marker behind the unmeasured prefix {forged!r} does not count",
+              v == "stale", f"{v} {why[:120]}")
+    # ...and the harness appending to its own line must not cost a --force on
+    # every honest compaction, which strict equality did.
+    v, why = verdict(f"{RELEASED}\n  \u23bf  {MARKER}  (esc to interrupt)\n")
+    check("a marker the harness appended to still counts",
+          v == "compacted", f"{v} {why[:120]}")
+    # MATCHING THE LINE'S START IS ONLY SAFE WHILE THE MARKER IS THE WHOLE
+    # SENTENCE. Shortened to its first word it admits any line opening with it,
+    # and nothing caught that until this case: strict equality had been holding
+    # the marker's length by accident.
+    v, why = verdict(f"{RELEASED}\n  \u23bf  Compacted 3 files into 1\n")
+    check("a line merely opening with the marker's first word does not count",
+          v == "stale", f"{v} {why[:120]}")
+    # THE LAST MARKER NAMES ITSELF in the reason, which is what a reader
+    # chases; `after[0]` reports the first and was held by nothing.
+    v, why = verdict(f"{RELEASED}\n{MARKER}\nnoise\n{MARKER}\n")
+    check("the reason names the LAST marker line, not the first",
+          v == "compacted" and "compacted at line 4" in why, f"{v} {why}")
     # The anchor is matched the same way, so campaign-claim.py's own source
     # line does not manufacture a release.
     v, why = verdict('RELEASED = "campaign-claim: released"\nnoise\n')
@@ -305,9 +330,23 @@ def end_to_end_cases():
         af_forced = shims(Path(d) / "afforced", rows,
                           screen=f"{RELEASED}\nworking\n")
         r = assign(["w1:p2", "198", "--force"], af_forced)
+        out = r.stdout + r.stderr
         check("...and --force does, which is the whole difference",
               r.returncode == 0 and len(prompts(af_forced)) == 1,
-              f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
+              f"exit {r.returncode}: {out[:250]}")
+        check("...naming --force, not the flag that would have refused",
+              "--force: assigning anyway" in out
+              and "--assume-fresh: assigning" not in out, out[:400])
+        # AND --force ON A VERDICT --assume-fresh COULD ALSO HAVE WAIVED must
+        # still name --force: it is what the caller typed, and a message naming
+        # the narrower flag sends the next reader to the wrong scope.
+        f_unknown = shims(Path(d) / "funknown", rows,
+                          screen="\n".join(["noise"] * 20))
+        r = assign(["w1:p2", "198", "--force"], f_unknown)
+        out = r.stdout + r.stderr
+        check("--force on an unknown pane is named --force, not --assume-fresh",
+              r.returncode == 0 and "--force: assigning anyway" in out
+              and "--assume-fresh:" not in out, out[:400])
 
         # A WINDOW ABOVE THE TOOL'S CAP reads no further, so asking for one is
         # refused rather than answered with less than it promises.

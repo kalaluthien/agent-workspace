@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Assign a sub-issue to a session already running, by prompting its pane.
 
-    campaign-assign.py <pane> <sub-issue> [--repo owner/repo] [--force]
+    campaign-assign.py <pane> <sub-issue> [--repo owner/repo]
+                       [--lines N] [--assume-fresh] [--force]
 
 THE CHANNEL RULE, AND WHY IT NEEDS A SCRIPT
 
@@ -26,7 +27,7 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
   release unseen    nothing in what was read says this pane ever released.
                     That is NOT evidence it never did -- see the window note
                     below -- so it refuses. --lines reads further back,
-                    --force assigns anyway and says what it overrode.
+                    --assume-fresh assigns anyway and says what it overrode.
   not compacted     the pane released a sub-issue and has not compacted since,
                     so the next sub-issue would re-read the last one's whole
                     transcript on every turn. `campaign-claim.py release`
@@ -53,9 +54,12 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
       read its own pane to find out.
 
   Any of the three turns an absent anchor into a false "never released", which
-  ALLOWS. So the absence refuses, and `--force` is the door for the case the
-  reading cannot reach -- a first assignment included. That door prints what it
-  overrode, where the old allow printed a sentence that was sometimes false.
+  ALLOWS. So the absence refuses, and `--assume-fresh` is the door for the case
+  the reading cannot reach -- a first assignment included. `--force` is a
+  DIFFERENT door, for a pane that WAS read and has not compacted; one flag for
+  both made bypassing the single case this guard exists for the same keystroke
+  as the routine first assignment. Either prints what it overrode, where the
+  old allow printed a sentence that was sometimes false.
 
 WHAT IT CANNOT DO IS SAID, NEVER SKIPPED
 
@@ -96,7 +100,15 @@ MARKER = "Compacted (ctrl+o to see full summary)"
 # What the transcript draws to the left of a rendered line. Stripped before a
 # line is compared, so that the comparison can be an EQUALITY rather than a
 # containment -- see `rendered`.
-GUTTER = " \t|" + "\u23bf\u2502\u251c\u2514\u2570\u256d\u2022\u23ba"
+# MEASURED ONLY. Every character here has been seen drawn to the left of a
+# transcript line on this machine; `|`, `\u2022` and four box-drawing glyphs
+# were here on plausibility alone, and each of them only ever WIDENS what is
+# accepted -- `\u2022` in particular made a bulleted quote of the marker in an
+# issue body render to the marker. A gutter this does not know makes an honest
+# compaction read `stale`, which refuses; a gutter it wrongly knows makes a
+# quotation read as a compaction, which assigns. Add one only with a pane read
+# beside it.
+GUTTER = " \t" + "\u23bf\u2502"
 
 
 def rendered(line):
@@ -110,9 +122,15 @@ def rendered(line):
     sub-issue looks like -- was read as compacted while holding the whole
     previous sub-issue. Found by review at 2468517, reproduced.
 
-    Equality after stripping the gutter is what closes it: the rendered line is
-    the marker and nothing else, where `MARKER = "Compacted (...)"` is not."""
-    return line.strip(GUTTER).rstrip()
+    Matching the rendered line's START is what closes it, and it is not the
+    laxer choice it looks: `MARKER = "Compacted (...)"` does not begin with the
+    marker, and neither does a `> ` quotation, because `>` is not a gutter this
+    knows. Equality was the first cut and was too strict in the one direction
+    that costs a `--force` on every honest compaction -- a pane that appends to
+    the line, or one narrow enough to wrap it, read `stale` for ever."""
+    # No `.rstrip()`: GUTTER holds space and tab, so both ends are already
+    # stripped of whitespace by the call above.
+    return line.strip(GUTTER)
 
 # THE ANCHOR IS THE RELEASE, NOT THE COMPACTION'S SUCCESS, and it is
 # `campaign_claim.RELEASED` -- taken from the script that prints it, never
@@ -227,7 +245,7 @@ def compaction_verdict(text, anchor):
                            f"asked, so an absent anchor and a pane that never "
                            f"released look identical.")
     after = [i for i, ln in enumerate(lines)
-             if ln == MARKER and i > last_release]
+             if ln.startswith(MARKER) and i > last_release]
     if after:
         return "compacted", (f"released at line {last_release + 1}, compacted "
                              f"at line {after[-1] + 1}")
@@ -292,7 +310,9 @@ def main():
         print(f"refusing: --lines {args.lines} is above herdr's {READ_CAP}-line "
               f"cap, which would read\n  no further while reporting a wider "
               f"window than it had. Pass --lines {READ_CAP} or less, and "
-              f"--force\n  if the release is further back than that.",
+              f"--assume-fresh\n  if the release is further back than that -- "
+              f"a release past the cap is exactly what a reading\n  cannot "
+              f"reach, which is that flag's whole scope.",
               file=sys.stderr)
         return 1
 
