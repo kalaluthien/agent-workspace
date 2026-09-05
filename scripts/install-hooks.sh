@@ -118,11 +118,11 @@ fi
 # to a line and applied to the whole file, so the same text inside a heredoc, or
 # after an unconditional `exit 0`, matches. Nor does it establish that the hook
 # is UNMODIFIED acquire output: a shim somebody extended by hand carries all
-# three and its extension is dropped. Accepted rather than closed, because closing it needs either a
-# line count -- the thing that just went stale three times -- or a copy of the
-# template here, which is the second reader this repository refuses. And the
-# path is narrow: this script runs only in a repository that ships it, while
-# shims live in member clones, which ship none.
+# three and its extension is dropped. Accepted rather than closed, because
+# closing it needs either a line count -- the thing that just went stale three
+# times -- or a copy of the template here, which is the second reader this
+# repository refuses. And the path is narrow: this script runs only in a
+# repository that ships it, while shims live in member clones, which ship none.
 #
 # The marker text lives in acquire-repo.sh's SHIM_MARKER, with a comment
 # pointing back here.
