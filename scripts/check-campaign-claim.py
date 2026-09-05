@@ -515,11 +515,16 @@ def openers(line, quote):
     other direction too: `# don't do this` before a `git commit -F - <<'M'`
     made the whole call unsplittable, which is #193 reopened.
 
-    A `#` ANYWHERE UNQUOTED ENDS IT, not only at word start. The shell means
-    word start, but `shlex` -- which splits every line this hands on -- takes a
-    mid-word `#` as a comment too, so `echo a#b && gh issue close 11` is
-    already unread downstream and no case here can tell the two rules apart. A
-    word-start test would be a branch nothing could fail."""
+    WORD START IS LOAD-BEARING, and the argument that it is not took a review
+    to kill. `shlex` treats a mid-word `#` as a comment too, so
+    `echo a#b && gh issue close 11` reads the same either way -- but that is
+    true only DOWNSTREAM. This scanner runs first and decides which lines
+    `strip_heredocs` removes as data, so breaking at a mid-word `#` makes it
+    miss a `<<` LATER ON THE SAME LINE and the body is tokenised as commands:
+    `test $# -eq 0 && cat <<EOF` / `gh issue close 11` / `EOF` went from
+    allowed to refused. `$#` and `${f#./}` are ordinary shell. Measured over
+    the corpus at 1b6d3b3: 156 commands unsplittable without this condition
+    and clean with it, 0 the other way."""
     found, i, n, stack = [], 0, len(line), []
     while i < n:
         c = line[i]
@@ -543,7 +548,7 @@ def openers(line, quote):
             quote = None if c == '"' else quote
             i += 1
             continue
-        if c == "#":
+        if c == "#" and (i == 0 or line[i - 1] in " \t;|&()"):
             break
         if c in "'\"":
             quote = c

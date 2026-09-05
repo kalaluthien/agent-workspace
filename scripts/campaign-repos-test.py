@@ -9,10 +9,11 @@ else. That is the shape a contract takes just before it drifts -- so each
 refusal here is asserted on the SENTENCE it prints, never on the exit status,
 which every other refusal shares.
 
-`slug`, `key` and `is_base` are the second half. They are what makes two
-spellings one repository for `campaign-claim.py` as well as for this file
+`slug` and `key` are the second half. They are what makes two spellings one
+repository for `campaign-claim.py` as well as for this file
 (kalaluthien/campaign-base#205), so a change to either that leaves them agreeing
-by accident is what these pin.
+by accident is what these pin. `is_base` is this file's own and is exported to
+nobody.
 
 Usage: scripts/campaign-repos-test.py
 """

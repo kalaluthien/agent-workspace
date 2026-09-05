@@ -1093,6 +1093,25 @@ def main():
                         "it's fine\nM")
         check("...and does not make the whole call unsplittable either (#193)",
               r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        # ...AT WORD START, and that half is load-bearing for a reason a
+        # first reading misses: this scanner runs BEFORE shlex, so breaking at
+        # a mid-word `#` makes it miss a `<<` LATER ON THE SAME LINE and the
+        # body is read as commands. `$#` is ordinary shell.
+        r = ask(wt7, tool="Bash",
+                command="test $# -eq 0 && cat <<EOF\ngh issue close 11\nEOF")
+        # ASSERTED ON THE SENTENCE, not the exit status: this session holds a
+        # claim, so a stray `gh` is covered and BOTH readings exit 0. What the
+        # mid-word `#` changes is whether the body was stripped at all -- with
+        # it, `cat`'s body is data and nothing is read; without it, the body's
+        # lines join the segment and the `gh` shows up as a token.
+        check("a `#` mid-word does not hide a heredoc opener later on its line",
+              UNREAD in r.stdout and "cannot read as a call" not in out(r),
+              out(r)[:400])
+        r = ask(wt7, tool="Bash",
+                command="cat > ${f#./} <<EOF\ngh issue close 11\nEOF")
+        check("...and a `${var#prefix}` expansion is not a comment either",
+              UNREAD in r.stdout and "cannot read as a call" not in out(r),
+              out(r)[:400])
 
         # THE REFUSAL NAMES ONLY WHAT IT READ (#193 defect 2). Two branches,
         # one case each, asserted on the sentence: the exit status is the same.
