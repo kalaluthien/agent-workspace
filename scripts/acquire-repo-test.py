@@ -469,10 +469,10 @@ def main():
              "#!/usr/bin/env sh\n# our team's pre-commit\n" + GUARD_CALL),
             # Two lines is the legacy branch, matched WHOLE; three is not it,
             # and without the marker it is not the current shape either.
-            ("a legacy shim with one line added",
+            ("that is a legacy shim with one line added",
              '#!/usr/bin/env sh\nexec "/x/.claude/git-hooks/no-main-commits" "$@"\n'
              "echo also this\n"),
-            ("a legacy shim whose shebang is not the one written",
+            ("that is a legacy shim whose shebang is not the one written",
              '#!/bin/sh\nexec "/x/.claude/git-hooks/no-main-commits" "$@"\n')):
         with tempfile.TemporaryDirectory() as d:
             base, camp = a_base_with_campaign(d)
