@@ -37,8 +37,9 @@ die() { printf 'acquire-repo: %s\n' "$*" >&2; exit 1; }
 # says the slot is this script's rather than somebody's. Two writers of one hook
 # slot, the second refusing the first's output, is what left every delegate clone
 # with no hook at all (#178), so scripts/install-hooks.sh adopts a slot holding
-# this line -- `is_guard_shim` there is the reader, it holds the only other copy
-# of this text, and changing the text here means changing it there.
+# this line -- `is_guard_shim` there is that reader, it holds the only other
+# copy of this text, and changing the text here means changing it there. The
+# reader below, in this file, uses this variable instead of a copy.
 SHIM_MARKER='# Written by acquire-repo.sh. Re-run it after changing this file.'
 
 # ---------------------------------------------------------------- arguments
@@ -145,6 +146,56 @@ checkout_branch() {
 		git -C "$dest" switch --quiet -c "$branch"
 		log "created branch $branch"
 	fi
+}
+
+# IS THIS PRE-COMMIT ONE THIS SCRIPT WROTE? The one reader of that question on
+# this side, and true of both shapes: the pre-#190 two-liner, matched whole
+# because it carries nothing to name itself by, and the current one, matched on
+# three things -- the shebang, the marker on line 2, and the guard CALL as a
+# whole line. The marker is read from SHIM_MARKER rather than spelled again, so
+# this file holds one copy of that text and not two.
+#
+# UNTIL #214 THIS WAS `grep -q 'no-main-commits' "$hook"`, a substring test over
+# the whole file, so a foreign hook naming the guard in a COMMENT read as ours
+# and was silently OVERWRITTEN. That is the same defect #190 round two fixed one
+# file over, in scripts/install-hooks.sh's `is_guard_shim`; the two were fixed
+# apart because only one was in that round's diff, and this is the direction
+# that destroys rather than merely mislabels.
+#
+# TWO READERS, AND THE HONEST REASON. Not that a shared one is unreachable: a
+# review of #214 showed it is. This function could source a
+# `$base/scripts/is-guard-shim.sh` the same way `$gate` is resolved, and
+# scripts/install-hooks.sh in practice only ever runs from a tree that ships
+# one. The reason is one-sided: THAT script is written to work inside whatever
+# repository ships it, depending on no sibling of its own, and a sourced reader
+# would spend exactly that. This one can reach the base; that one is the half
+# that cannot be made to depend on anything. A judgement, not a constraint.
+#
+# What keeps them from drifting is not this comment: both are pinned against
+# the bytes the printf below actually writes -- the convergence case in
+# scripts/acquire-repo-test.py here, case 5d in scripts/install-hooks-test.py
+# there. That covers the guard CALL, which both read out of the shim. It does
+# not cover the marker: this file reads SHIM_MARKER, so the marker cannot drift
+# on this side by construction, and the copy in install-hooks.sh is pinned by
+# its own fixtures alone.
+#
+# CALL IT IN A CONDITION. Under `set -e` a function whose last command is false
+# returns non-zero, so calling this outside an `if`/`&&` would exit the script
+# rather than take the false branch. One call site, and it is guarded.
+#
+# It establishes exactly what the reader there establishes and no more: that the
+# slot opens with the shebang, carries the marker on line 2, and holds SOMEWHERE
+# a whole line shaped like the guard call. Not that the line runs, and not that
+# the hook is unmodified acquire output.
+is_guard_shim() {
+	if [ "$(wc -l <"$1" | tr -d ' ')" = 2 ]; then
+		[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
+			sed -n 2p "$1" | grep -qE '^exec "[^"]*/\.claude/git-hooks/no-main-commits" "\$@"$'
+		return
+	fi
+	[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
+		sed -n 2p "$1" | grep -qF "$SHIM_MARKER" &&
+		grep -qE '^"[^"]*/\.claude/git-hooks/no-main-commits" "\$@" \|\| exit 1$' "$1"
 }
 
 # Git hooks do not clone, so the guard that blocks direct commits to main has to
@@ -270,7 +321,28 @@ install_commit_guard() {
 		# The invariant is verified, not trusted: the installer belongs to the
 		# repository, and its hook has to chain the guard for success here to
 		# mean the same thing it means on the shim path.
-		grep -q 'no-main-commits' "$hooks/pre-commit" 2>/dev/null ||
+		#
+		# A LINE THAT IS NOT WHOLLY A COMMENT, which is the whole of the change
+		# #214 makes here. This was `grep -q 'no-main-commits'` over the file,
+		# so a hook merely MENTIONING the guard in a comment passed as one
+		# chaining it -- the same defect as the overwrite test above, read in
+		# the milder direction.
+		#
+		# NOT a whole-line call pattern, which is what the first spelling of
+		# this used and which refused three shapes the substring test accepted:
+		# `guard="$HOME/.claude/git-hooks/no-main-commits"` with the call made
+		# through the variable, and the `if [ -x ... ]` guard this repository's
+		# OWN hook writes on the line above its call. The hook belongs to
+		# another repository and its shell is arbitrary; no pattern can decide
+		# that a line RUNS. So the discrimination is exactly the one the issue
+		# asks for -- a mention in a comment is not evidence -- and nothing
+		# tighter, because a false refusal here is fatal.
+		#
+		# Its ceiling, said rather than implied: a line of code with the path in
+		# a TRAILING comment matches, and so does the path inside a string. What
+		# it will not match is a line whose first non-blank character is `#`.
+		grep -qE '^[[:space:]]*[^#[:space:]].*/\.claude/git-hooks/no-main-commits' \
+			"$hooks/pre-commit" 2>/dev/null ||
 			die "the installer left $hooks/pre-commit without the no-main-commits guard; refusing to call $dest guarded"
 		log "installed the repository's git hooks, which chain the no-main-commits guard"
 		return 0
@@ -284,8 +356,8 @@ install_commit_guard() {
 	# copy of it is the hardcoded second reader this repository refuses
 	# everywhere else. No line count is written down here or in install-hooks.sh:
 	# three comments said "ten" while the hook was eleven.
-	if [ -e "$hook" ] && ! grep -q 'no-main-commits' "$hook"; then
-		log "$hook exists and does not call the guard. Read it, then either"
+	if [ -e "$hook" ] && ! is_guard_shim "$hook"; then
+		log "$hook exists and is not one this script wrote. Read it, then either"
 		log "chain the two lines below from it by hand, or move it aside and"
 		log "re-run this script, which writes both:"
 		log "  \"$guard\" \"\$@\" || exit 1"

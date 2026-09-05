@@ -783,6 +783,65 @@ pred R12d_AcquireIsWhatPrinciplesAClone {
   }
 }
 
+/* R12e. WHICH HOST, pinned. `campaignDirAt[c, m]` filters on two columns and
+   R11 pins only the campaign, so at `1 Machine` -- which is every command
+   above -- `campaignDirAt[campaignOf[a.task], a.host]` and
+   `campaignDirsOf[campaignOf[a.task]]` are the same relation. Nothing said the
+   principles have to be in the directory on the machine the delegate RUNS on,
+   and one campaign directory per machine is exactly the shape that has two.
+   Measured on the #190 branch at 1836881, by a reviewer and by the author:
+   replacing the navigation with `campaignDirsOf[campaignOf[a.task]]` left all
+   78 commands in this module green.
+
+   Two machines, one campaign: the directory on the agent's own host does not
+   carry the principles and the one on the other machine does, and the rule must
+   still refuse. Expect 0, and it goes SAT the moment `a.host` stops filtering.
+   R13g is this command one field over, for `gated`.
+
+   `some campaignOf[a.task]` is deliberately NOT a conjunct: the last one
+   implies it, since `campaignDirAt[none, m]` is empty and `x in none` is false.
+   An expect-0 witness pays for every redundant conjunct, which can make it
+   UNSAT for a reason that is not the one under test. */
+pred R12e_TheAgentsOwnHostIsTheOneThatCounts {
+  delegateLaunchIsPrincipled
+  some a: Agent, m: Machine {
+    no a.peer
+    eventually (a not in Launched and a in Launched'
+                and m != a.host
+                and a.task.repo not in
+                    campaignDirAt[campaignOf[a.task], a.host].principled'
+                and a.task.repo in
+                    campaignDirAt[campaignOf[a.task], m].principled')
+  }
+}
+
+/* R12f. AND NOTHING BUT AN ACQUIRE PRINCIPLES A CLONE. R12d says a principled
+   launch is REACHABLE from `no principled`, and reachability is satisfied by
+   ANY producer -- so what R12d reads as "acquire is where principles come
+   from" actually rests on `principled' = principled` holding in
+   `directoryFrame`, which no command asked for. Measured the same way:
+   deleting that line freed `principled` on every event outside the directory
+   entity and left all 78 commands green.
+
+   The other half, and the pair is what pins the field: from nothing
+   principled, with no Acquire ever firing, a principled launch is IMPOSSIBLE.
+   Expect 0, and it goes SAT the moment the frame stops carrying `principled`.
+   R13h is this command one field over.
+
+   The rule is NOT asserted here, as in R12d and R13h: what is under test is
+   what the transition system can produce, and adding the rule would make the
+   command UNSAT for the rule's reason as well as the frame's. */
+pred R12f_NothingButAnAcquirePrinciplesAClone {
+  no principled
+  always Now.event != Acquire
+  some a: Agent {
+    no a.peer
+    eventually (a not in Launched and a in Launched'
+                and a.task.repo in
+                    campaignDirAt[campaignOf[a.task], a.host].principled')
+  }
+}
+
 /* ================= the gate is installed where the commit lands ============= */
 
 /* A COMMIT IS ONLY REFUSABLE WHERE THE GATE IS INSTALLED (#190).
@@ -917,8 +976,8 @@ pred R13f_ACommitOnNoCampaignsWorkIsNotGated {
    rule must still refuse. Expect 0, and it goes SAT the moment `a.host` stops
    filtering.
 
-   `principled` has the same gap at `delegateLaunchIsPrincipled`, measured and
-   not fixed here: kalaluthien/campaign-base#212. */
+   `principled` had the same gap at `delegateLaunchIsPrincipled`, measured on
+   the #190 branch and closed by R12e above (#212). */
 pred R13g_TheAgentsOwnHostIsTheOneThatCounts {
   commitGateInstalled
   some a: Agent, m: Machine |
@@ -938,9 +997,9 @@ pred R13g_TheAgentsOwnHostIsTheOneThatCounts {
    firing, a gated commit is IMPOSSIBLE. Expect 0, and it goes SAT the moment
    the frame stops carrying `gated`.
 
-   `principled` is unframed in the same way and by the same measurement;
-   kalaluthien/campaign-base#212 carries it, because widening R12 is that
-   command's business and not this one's. */
+   `principled` was unframed in the same way and by the same measurement;
+   R12f above is that half, added by #212 rather than by #190, because
+   widening R12 was that command's business and not this one's. */
 pred R13h_NothingButAnAcquireGatesAClone {
   no gated
   always Now.event != Acquire
@@ -1748,6 +1807,8 @@ run R12_DelegateLaunchedWithoutPrinciples for 3 Issue, 1 PullRequest, 1 Campaign
 run R12b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 run R12c_RepairAdmitsThePrincipledLaunch for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run R12d_AcquireIsWhatPrinciplesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R12e_TheAgentsOwnHostIsTheOneThatCounts for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run R12f_NothingButAnAcquirePrinciplesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R13_CommitInAnUngatedClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R13b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R13c_RepairAdmitsTheGatedCommit for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1

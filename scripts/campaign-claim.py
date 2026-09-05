@@ -871,6 +871,120 @@ def herdr_sessions():
     return parse_agents(r.stdout)
 
 
+COMPACT = "/compact"
+SESSION_ID_VAR = "CLAUDE_CODE_SESSION_ID"
+
+# THE ONE LINE A LATER READER ANCHORS ON. Printed at both of `release`'s
+# success exits and nowhere else, and printed whether or not the compaction
+# succeeded. The compaction is SENT FIRST -- `release_line` takes the pane that
+# `compact_own_pane` returns, so Python evaluates the inner call first -- and
+# the anchor still precedes the marker in the pane, because the marker is only
+# written at the end of the turn.
+#
+# IT NAMES THE PANE, and that is not decoration. A pane's text holds whatever
+# it has DISPLAYED as well as whatever it printed -- `herdr agent read` puts
+# another session's output into the reader's own scrollback, which AGENTS.md
+# makes the ordinary planner move. Without the pane, a planner that released
+# and then read a delegate's pane found its own anchor and the delegate's
+# compaction marker, in order, and read itself as compacted. With it, an anchor
+# copied from elsewhere names the pane it came from and is not this one's.
+# Found by review at e680ef8. The marker cannot be qualified this way, so the
+# residue is kalaluthien/campaign-base#220.
+#
+# `campaign-assign.py` reads it to answer "has this pane compacted since its
+# last release". Keyed on the compaction's own success line instead -- which is
+# how this shipped at 114e71a -- the one case the assignment guard exists for,
+# a release that could NOT compact, left no release line at all and read as a
+# pane that never released, which allows. Found by review and reproduced end to
+# end before this was written.
+RELEASED = "campaign-claim: released"
+
+
+def own_pane(sessions, session_id):
+    """(pane, what_was_read) -- which pane THIS process's session sits in, by
+    joining `CLAUDE_CODE_SESSION_ID` to `herdr agent list`'s `agent_session
+    .value`. Pure, so the join is testable against a recorded listing.
+
+    A pane of None is always accompanied by a note saying which of the two
+    absences it is -- no session id in the environment, or an id no row names.
+    Neither is a failure to release: see `compact_own_pane`.
+
+    NOT `HERDR_PANE_ID`, which is also in the environment and which measured
+    equal to this on 2026-09-05. It is inherited shell state with no liveness
+    behind it, where this join is a live reading; and a listing that does not
+    name this session is exactly the state the caller has to say out loud."""
+    if not session_id:
+        return None, (f"no {SESSION_ID_VAR} in the environment, so this "
+                      f"process cannot name its own session")
+    if session_id not in sessions:
+        return None, (f"{SESSION_ID_VAR}={session_id}, and no herdr row names "
+                      f"it ({len(sessions)} row(s) listed)")
+    row = sessions[session_id]
+    return row["pane"], (f"{SESSION_ID_VAR}={session_id} -> pane {row['pane']} "
+                         f"({row['name']})")
+
+
+def compact_own_pane(sessions, session_id):
+    """Enqueue `/compact` into the releasing session's own pane, and print what
+    was read either way. Returns the pane it prompted, or None.
+
+    WHY HERE. An executor's release is the last thing it does on a sub-issue,
+    and the context it is holding at that instant is the finished sub-issue's
+    whole transcript, carried into the next one turn after turn. herdr queues a
+    prompt against a working pane, so a prompt sent from inside the release
+    turn fires the moment that turn ends -- while the context is still in the
+    prompt cache. Probed 2026-09-05: `herdr agent prompt <own pane> "/compact"`
+    sent as a turn's last call runs as the command, not as text
+    (`Compacting conversation... (41s)`), and the session comes back idle
+    holding no plan it had named, which is why the next sub-issue arrives as a
+    fresh prompt (`scripts/campaign-assign.py`).
+
+    NOT A GATE, and this is the whole reason it lives after the delete rather
+    than before it. Compaction is a cost rule: a release that could not find
+    its own pane has still released. So every branch here prints and none
+    returns a refusal -- but a missing row is SAID, because the failure mode a
+    silent skip creates is a rule everyone believes is held while nothing
+    sends anything.
+
+    It never prompts a pane that is not its own: the only pane it can name is
+    the one the join returned.
+
+    NO `sessions is None` BRANCH, because `cmd_release` refuses on an unread
+    listing long before either call site -- an occupant it could not read is
+    not an absent one, and the suite asserts that ordering. A branch for it
+    here would read as a live could-not-look while nothing could reach it,
+    which is the shape that gets trusted for months while handling nothing."""
+    pane, note = own_pane(sessions, session_id)
+    if pane is None:
+        print(f"not compacting: {note}. The claim is released; only the "
+              f"compaction did not happen.")
+        return None
+    print(f"compacting: {note}")
+    # The one herdr call here that DRIVES a pane rather than reading one, so it
+    # carries the HERDR_ENV guard and names its target explicitly -- and the
+    # target is this session's own pane, which is the guard's whole subject.
+    r = run("herdr", "agent", "prompt", pane, COMPACT,
+            env=dict(os.environ, HERDR_ENV="1"))
+    if r.returncode != 0:
+        print(f"not compacting: `herdr agent prompt {pane} {COMPACT}` exited "
+              f"{r.returncode}: {r.stderr.strip()[:160]}. The claim is "
+              f"released; only the compaction did not happen.")
+        return None
+    print(f"sent {COMPACT} to {pane}; it runs when this turn ends")
+    return pane
+
+
+def release_line(pane, branch):
+    """The anchor, naming the pane it was printed in.
+
+    A pane this could not name is said so, and reads as no anchor at all to
+    `campaign-assign.py` -- which refuses. That is the right direction: a
+    release whose pane is unknown is one whose compaction was not sent
+    either, since both come from the same join."""
+    where = pane or "<pane unknown>"
+    print(f"{RELEASED} {branch} in {where}")
+
+
 def parse_worktrees(text):
     """{branch: [path, ...]} from `git worktree list --porcelain`. Pure.
 
@@ -1517,6 +1631,8 @@ def cmd_release(args):
             return 1
         print(f"{repo} has no ref {branch}, and it was {text}: nothing "
               f"beyond main, and no ref to delete")
+        release_line(compact_own_pane(sessions,
+                                      os.environ.get(SESSION_ID_VAR)), branch)
         return 0
     n = ahead_count(r.returncode, r.stdout)
     ok, refusal = ahead_verdict(n, r.stdout, r.stderr, repo, branch)
@@ -1608,6 +1724,12 @@ def cmd_release(args):
               file=sys.stderr)
         return 1
     print(f"deleted {branch}")
+    # LAST, and after the delete rather than before it: the release is what
+    # this command is for, and compaction is a cost rule that must not be able
+    # to stop one. Last also because the prompt fires when the turn ends, so
+    # anything printed after it is printed by a session about to be compacted.
+    release_line(compact_own_pane(sessions, os.environ.get(SESSION_ID_VAR)),
+                 branch)
     return 0
 
 

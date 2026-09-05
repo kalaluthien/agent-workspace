@@ -79,6 +79,27 @@ other way.
 
 ## The shape of a round
 
+**One full review, at the final sha, and narrowed reviews after it.** The full
+review is commissioned once, on the pull request as a whole, when the work is
+what the author means to land. Every fix round after it is reviewed on that
+round's diff only — `/code-review <level> <PR#>` with the brief naming the diff
+range, launched by the executor that made the fixes. A narrowed review does not
+re-run a measurement the full review already made and reported, **unless the fix
+touched what was measured**: a round that edits the script a number came from
+retires that number, and the brief says to re-derive it.
+
+A reconciliation with `main` is a push, so condition 1 wants a review at the
+combined sha either way; the reconciliation decides its breadth. Clean auto-merge,
+narrowed on the merge diff. Hand-resolved, full, reading the combination
+(`AGENTS.md` § Concurrency).
+
+**What a round costs, so that "one more round" is a priced decision.** Measured
+over 2026-09-04T00:45Z–2026-09-05T01:00Z (#200, `campaign-token-tally.py reviews`,
+method on #195): one round runs **57,374 to 134,222 input tokens** at `medium` or
+`high` on Opus. The shape this replaces is what the range hides — PR #184 ran
+seven rounds at 800,567 input tokens, 38% of #177's *new input*, because each
+round re-read the entire pull request to check a handful of fixes.
+
 One reviewer per pull request, one verifier per fix round. Every angle the review
 should take is a section of the one reviewer's brief. Fan out into parallel
 reviewers only when the angles are genuinely independent *and* the budget is

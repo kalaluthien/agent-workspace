@@ -17,6 +17,9 @@
  *   PushedToRemote  agents whose branch is on the remote, a different fact.
  *   Reported, Asked, Answered, Waiting   the four messages.
  *   Confirmed  agents a session has itself observed to hold nothing local-only.
+ *   Compacted  sessions whose context is small: fresh, or compacted by their
+ *              last release. The one bit this entity has about a session's
+ *              own cost.
  *   StandDownTaken  agents that have been told to stand down.
  *   Retired    agents whose workspace has been destroyed.
  *   Reviewed   a bit on the PULL REQUEST, not on the agent: a review outlives
@@ -142,6 +145,34 @@ var sig Waiting  in Agent {}
 var sig Confirmed in Agent {}
 var sig StandDownTaken in Agent {}
 var sig Retired  in Agent {}
+
+/* THE SESSION'S CONTEXT IS SMALL. A bit on the SESSION and not on the agent,
+   because a session outlives the sub-issue it is working and the whole point
+   is what it carries into the next one; a delegate has no session here and so
+   never has this bit.
+
+   Three clauses carry the rule and each is pinned separately. It starts true
+   (`orchestrationInit`), because a fresh process carries nothing. `launch`
+   takes it away from the launching session -- taking a sub-issue is what grows
+   a context -- and requires it first. `scripts/campaign-assign.py` enforces
+   that on a session ALREADY RUNNING, by reading its pane; a delegate's launch
+   satisfies it by construction, since the process does not exist yet and so
+   carries nothing. Two ways of meeting one precondition, which is why this
+   names neither as its reader. `agentRelease` gives it
+   back, which is `campaign-claim.py release` enqueueing `/compact` into its own
+   pane as its last act.
+
+   WHY RELEASE AND NOT SOME LATER MOMENT: measured 2026-09-05, a compaction run
+   while the release turn's context is still in the prompt cache is cheap, and
+   one run later re-reads the whole transcript uncached and costs more than it
+   saves. The model cannot express a cache, so that reason lives here and the
+   moment is what is modelled.
+
+   NOT MODELLED: how much context, that compaction is lossy, and that a
+   compacted session forgets a plan it was holding -- the last is why an
+   assignment is a fresh prompt (probed 2026-09-05: a session that compacted
+   came back idle and did not act on the next step it had named). */
+var sig Compacted in Session {}
 
 /* A bit on the PULL REQUEST, not on the agent: the review outlives the
    agent exactly as the pull request does, and a fresh agent briefed from
@@ -320,9 +351,12 @@ fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + Commit
 pred keepMessages     { Reported' = Reported and Asked' = Asked and Answered' = Answered and Waiting' = Waiting }
 pred keepReview   { Reviewed' = Reviewed }
 pred keepLife     { Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed }
+/* Split out because two events move it and every other keeps it, and the six
+   preds that spell the life bits one by one need it named. */
+pred keepContext  { Compacted' = Compacted }
 pred keepShutdown { StandDownTaken' = StandDownTaken and Retired' = Retired }
 pred keepLaunched     { Launched' = Launched }
-pred agentFrame   { keepLife and keepReview and keepMessages and keepShutdown and keepLaunched }
+pred agentFrame   { keepLife and keepContext and keepReview and keepMessages and keepShutdown and keepLaunched }
 
 pred launch[a: Agent] {
   Now.event = Launch
@@ -347,6 +381,30 @@ pred launch[a: Agent] {
   campaignDirAt[Who.session.worksOn, a.host].checkedOut[a.task.repo] = a.branch
   Launched' = Launched + a
   Live'     = Live + a
+  /* THE ASSIGNMENT GUARD, and it binds only when the agent IS a session --
+     `some a.peer`, a session taking a sub-issue onto its own claim. That
+     session is `Who.session` (`AgentWellFormed`: `a.launcher = a.peer`; here:
+     `a.launcher = Who.session`), so the two spellings name one atom and this
+     reads on either.
+
+     A DELEGATE LAUNCH IS NOT GUARDED, and that is the code's shape rather than
+     an omission: `scripts/campaign-assign.py` reads the PANE of the session
+     being assigned, and a delegate has no pane until the launch makes one.
+     Stated unconditionally -- which is how this read at 2468517 -- the model
+     required the PLANNER to be compacted before every delegate launch, a
+     precondition no reader checks and no session was ever told about. A
+     precondition nothing enforces is worse than none, because a later reader
+     believes it.
+
+     The planner's own context does grow with each brief it writes. That is
+     true and is NOT modelled: nothing here reads it, and the bit would then
+     mean two different things at once.
+
+     Taking a sub-issue is what grows the taking session's context, so the bit
+     goes now and only a release returns it. */
+  (some a.peer) implies (Who.session in Compacted
+                         and Compacted' = Compacted - Who.session)
+                   else Compacted' = Compacted
   LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
   keepReview and keepMessages and keepShutdown
   Target.agent = a
@@ -360,7 +418,7 @@ pred work[a: Agent] {
   a in Live and a not in Waiting and a.role = Executor
   LocalOnly' = LocalOnly + a
   Confirmed' = Confirmed - a
-  Live' = Live and PushedToRemote' = PushedToRemote
+  Live' = Live and PushedToRemote' = PushedToRemote and keepContext
   keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = Work and Now.issue = a.task and Target.agent = a and no Who.session
 }
@@ -391,7 +449,7 @@ pred push[a: Agent] {
   LocalOnly'    = LocalOnly - a
   PushedToRemote'  = PushedToRemote + a
   Reviewed' = Reviewed - a.task.pullRequest
-  Live' = Live and Confirmed' = Confirmed
+  Live' = Live and Confirmed' = Confirmed and keepContext
   keepMessages and keepShutdown and keepLaunched
   Now.event = Push and Now.issue = a.task and Target.agent = a and no Who.session
 }
@@ -404,7 +462,7 @@ pred status[a: Agent] {
   Asked' = Asked + a
   Answered' = Answered - a
   Reported' = Reported and Waiting' = Waiting
-  keepLife and keepReview and keepShutdown and keepLaunched
+  keepLife and keepReview and keepShutdown and keepLaunched and keepContext
   Now.event = Status and Now.issue = a.task and Target.agent = a
 }
 
@@ -413,7 +471,7 @@ pred answer[a: Agent] {
   a in Live and a in Asked
   Answered' = Answered + a
   Asked' = Asked and Reported' = Reported and Waiting' = Waiting
-  keepLife and keepReview and keepShutdown and keepLaunched
+  keepLife and keepReview and keepShutdown and keepLaunched and keepContext
   Now.event = Answer and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
@@ -424,7 +482,7 @@ pred report[a: Agent] {
   a in Live and a.role = Executor
   Reported' = Reported + a
   Asked' = Asked and Answered' = Answered and Waiting' = Waiting
-  keepLife and keepReview and keepShutdown and keepLaunched
+  keepLife and keepReview and keepShutdown and keepLaunched and keepContext
   Now.event = Report and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
@@ -434,7 +492,7 @@ pred blocked[a: Agent] {
   a in Live and a not in Waiting
   Waiting' = Waiting + a
   Reported' = Reported and Asked' = Asked and Answered' = Answered
-  keepLife and keepReview and keepShutdown and keepLaunched
+  keepLife and keepReview and keepShutdown and keepLaunched and keepContext
   Now.event = Blocked and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
@@ -444,7 +502,7 @@ pred decide[a: Agent] {
   a.task in Who.session.worksOn.memberIssues
   Waiting' = Waiting - a
   Reported' = Reported and Asked' = Asked and Answered' = Answered
-  keepLife and keepReview and keepShutdown and keepLaunched
+  keepLife and keepReview and keepShutdown and keepLaunched and keepContext
   Now.event = Decide and Now.issue = a.task and Target.agent = a
 }
 
@@ -457,7 +515,7 @@ pred confirm[a: Agent] {
   a.task in Who.session.worksOn.memberIssues
   a not in LocalOnly
   Confirmed' = Confirmed + a
-  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote
+  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and keepContext
   keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = Confirm and Now.issue = a.task and Target.agent = a
 }
@@ -468,7 +526,7 @@ pred confirmElsewhere[a: Agent] {
   not coLocated[Who.session, a]
   a.task in Who.session.worksOn.memberIssues
   Confirmed' = Confirmed + a
-  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote
+  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and keepContext
   keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = ConfirmElsewhere and Now.issue = a.task and Target.agent = a
 }
@@ -484,7 +542,7 @@ pred review[i: Issue] {
   some i.pullRequest and i.pullRequest not in Reviewed
   i in Who.session.worksOn.memberIssues
   Reviewed' = Reviewed + i.pullRequest
-  keepLife and keepMessages and keepShutdown and keepLaunched
+  keepLife and keepMessages and keepShutdown and keepLaunched and keepContext
   no Target.agent
 }
 
@@ -495,7 +553,7 @@ pred standDown[a: Agent] {
   a.task in Who.session.worksOn.memberIssues
   StandDownTaken' = StandDownTaken + a
   Retired' = Retired
-  keepLife and keepReview and keepMessages and keepLaunched
+  keepLife and keepReview and keepMessages and keepLaunched and keepContext
   Now.event = StandDown and Now.issue = a.task and Target.agent = a
 }
 
@@ -508,7 +566,7 @@ pred retire[a: Agent] {
   a.task in Who.session.worksOn.memberIssues
   Retired' = Retired + a
   Live'    = Live - a
-  LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
+  LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed and keepContext
   StandDownTaken' = StandDownTaken
   keepReview and keepMessages and keepLaunched
   Now.event = Retire and Now.issue = a.task and Target.agent = a
@@ -519,7 +577,7 @@ pred retire[a: Agent] {
 pred agentDie[a: Agent] {
   a in Live
   Live' = Live - a
-  LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
+  LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed and keepContext
   keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = AgentDie and Now.issue = a.task and Target.agent = a and no Who.session
 }
@@ -530,7 +588,18 @@ pred agentRelease {
   Now.event = Release
   no a: Agent | a.task = Now.issue and a in PushedToRemote
   no a: Agent | a.task = Now.issue and a.host = Who.session.machine and a in Live
-  agentFrame
+  /* A RELEASE ENDS THE RELEASING SESSION'S CONTEXT. `campaign-claim.py release`
+     enqueues `/compact` into its own pane as its last act, so the compaction
+     fires the moment the release turn ends -- while that context is still
+     cached. Everything else here keeps the bit; this is the only event that
+     gives it back, which is what makes `SessionCompactsBetweenSubIssues`
+     derived rather than assumed.
+
+     NOT A GATE. The script releases even when it cannot find its own pane, and
+     says so; compaction is a cost rule. The model has no could-not-look, so
+     the suite is that branch's only pin. */
+  Compacted' = Compacted + Who.session
+  keepLife and keepReview and keepMessages and keepShutdown and keepLaunched
   no Target.agent
 }
 
@@ -538,6 +607,11 @@ pred orchestrationInit {
   no Launched and no Live and no LocalOnly and no PushedToRemote
   no Reported and no Asked and no Answered
   no Waiting and no Confirmed and no Reviewed and no StandDownTaken and no Retired
+  /* NOT `no Compacted`: a fresh process carries nothing, so every session
+     starts with a small context. The bit is spent by a launch and returned by
+     a release, and initialising it empty would make the first assignment on
+     this machine unreachable rather than free. */
+  Compacted = Session
 }
 
 pred orchestrationStep {

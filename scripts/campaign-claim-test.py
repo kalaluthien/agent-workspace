@@ -143,14 +143,45 @@ exit 1
 
 GH_ELSEWHERE = GH.replace('"$(hostname -s)"', '"not-this-machine"')
 
+# TWO SUBCOMMANDS, because #198 made `release` DRIVE a pane as well as read
+# one, and a shim that answers everything with the listing would let a
+# `/compact` that never went anywhere pass as sent. `agent prompt` writes one
+# line per call to `<shims>/../herdr-calls.log`, so a case can assert the
+# count, the pane and that HERDR_ENV was set -- and anything else refuses, so a
+# call this suite did not anticipate shows up as its own failure.
 HERDR = """#!/bin/sh
-cat <<'JSON'
+# THE LOG PATH IS BAKED IN, not derived from $0: PATH lookup makes $0 the
+# bare word `herdr`, so `dirname $0` is `.` and the log lands in whatever
+# directory the case happened to run from. The case that asserts one prompt
+# was sent is what caught that; a case asserting only the exit status would
+# not have.
+log="%s"
+case "$1 $2" in
+  "agent list")
+    cat <<'JSON'
 %s
 JSON
+    exit 0 ;;
+  "agent prompt")
+    printf 'HERDR_ENV=%%s pane=%%s prompt=%%s\n' "${HERDR_ENV:-unset}" "$3" "$4" >> "$log"
+    exit %s ;;
+esac
+echo "herdr shim: refusing $*" >&2
+exit 1
 """
 
 
-def shims(d, gh=GH, herdr=None):
+def prompts(path_dir):
+    """Every `herdr agent prompt` the shim on this PATH was asked to make, in
+    order. An absent log is NO calls, which is a different answer from one call
+    that went to the wrong pane -- and both are asserted."""
+    log = Path(path_dir).parent / "herdr-calls.log"   # <shims dir>/../
+    if not log.exists():
+        return []
+    return [ln for ln in log.read_text().splitlines() if ln.strip()]
+
+
+def shims(d, gh=GH, herdr=None, prompt_exit=0):
     """A PATH directory holding the shims. `gh` is ALWAYS shimmed: the real one
     reaches the network, and a case that did so has written to production behind
     a green line of output."""
@@ -159,7 +190,8 @@ def shims(d, gh=GH, herdr=None):
     (b / "gh").write_text(gh)
     (b / "gh").chmod(0o755)
     if herdr is not None:
-        (b / "herdr").write_text(HERDR % herdr)
+        (b / "herdr").write_text(
+            HERDR % (str(Path(d) / "herdr-calls.log"), herdr, prompt_exit))
         (b / "herdr").chmod(0o755)
     # Everything else a case legitimately runs, linked in, because PATH is this
     # directory ALONE: with the real PATH behind it, "herdr is not installed"
@@ -172,7 +204,14 @@ def shims(d, gh=GH, herdr=None):
 
 
 def claim(args, path_dir, extra_env=None):
-    env = dict(os.environ, PATH=str(path_dir), **(extra_env or {}))
+    # HERDR_ENV IS SCRUBBED unless a case names it. This suite is itself run
+    # from inside a herdr pane, where HERDR_ENV=1 is already in the
+    # environment -- so a case asserting the script set it passed while the
+    # script set nothing, and deleting the guard from `campaign-claim.py` left
+    # the suite green. Measured 2026-09-05 by that deletion.
+    env = dict(os.environ, PATH=str(path_dir))
+    env.pop("HERDR_ENV", None)
+    env.update(extra_env or {})
     return subprocess.run([sys.executable, str(CLAIM), *args],
                           capture_output=True, text=True, env=env)
 
@@ -1447,6 +1486,184 @@ def robustness_cases(m):
           rows is None and why)
 
 
+def looked(fn, *args):
+    """`fn(*args)`, with an exception turned into a (None, text) answer. A case
+    that crashes stops every case after it, so a branch whose removal raises
+    would be pinned by nothing at all."""
+    try:
+        return fn(*args)
+    except Exception as e:                                    # noqa: BLE001
+        return None, f"raised {e.__class__.__name__}: {e}"
+
+
+def compact_cases(m):
+    """#198: the release enqueues `/compact` into its OWN pane, and every way
+    that can fail is said out loud rather than skipped.
+
+    The pure half first, then five end-to-end cases over a stubbed `herdr` that
+    records what it was asked to send. An allow case sits beside every refusal,
+    because a compaction the code declined to make and one it made to the wrong
+    pane are the two failures, and only one of them is visible in the exit
+    status -- neither, in fact, which is why release's exit is asserted to be
+    0 in all five."""
+    rows = {"S1": {"name": "campaign-9999-executor-1", "status": "idle",
+                   "cwd": "/tmp", "pane": "w1:p1"},
+            "S2": {"name": "campaign-9999-executor-2", "status": "idle",
+                   "cwd": "/tmp", "pane": "w1:p2"}}
+    pane, note = m.own_pane(rows, "S2")
+    check("own_pane joins the session id to its own row, not the first row",
+          pane == "w1:p2" and "w1:p2" in note and "executor-2" in note,
+          f"{pane!r} {note!r}")
+    pane, note = m.own_pane(rows, None)
+    check("no session id in the environment is a could-not-look, not a pane",
+          pane is None and "CLAUDE_CODE_SESSION_ID" in note
+          and "cannot name its own session" in note, note)
+    # CALLED THROUGH `looked`, because deleting the branch this pins makes
+    # `own_pane` raise KeyError, and an exception out of a case kills the suite
+    # before any later case runs -- which reads as "no failing case" to a
+    # mutation harness and pins the branch with nothing. Measured 2026-09-05.
+    pane, note = looked(m.own_pane, rows, "S9")
+    check("a session id no row names is said, with how many rows were read",
+          pane is None and "no herdr row names it" in note
+          and "2 row(s)" in note, note)
+
+    # --- end to end: a release that actually deletes a ref ---
+    # The DELETE has to succeed, or the run stops before the compaction and
+    # every case below would pass by never reaching the code under test.
+    rel_gh = """#!/bin/sh
+case "$*" in
+  *"--json state"*) echo 'CLOSED completed'; exit 0 ;;
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *compare/main*) echo 0; exit 0 ;;
+  *"pr list"*) echo '[]'; exit 0 ;;
+  *"-X DELETE"*) exit 0 ;;
+esac
+exit 1
+"""
+    with tempfile.TemporaryDirectory() as d:
+        # TWO ROWS, and the releasing session is the SECOND. A shim that
+        # prompted the first pane would pass a one-row fixture, which is the
+        # bug "never prompts a pane that is not its own" names.
+        two = listing(agent("S1", "campaign-9999-executor-1", d, pane="w1:p1"),
+                      agent("S2", "campaign-9999-executor-2", d, pane="w1:p2"))
+
+        ok = shims(Path(d) / "ok", gh=rel_gh, herdr=two)
+        r = claim(["release", "9999", "4"], ok,
+                  {"CLAUDE_CODE_SESSION_ID": "S2"})
+        out = r.stdout + r.stderr
+        sent = prompts(ok)
+        check("release deletes the ref and then compacts its own pane",
+              r.returncode == 0 and "deleted campaign-9999/4-done" in out
+              and "sent /compact to w1:p2" in out,
+              f"exit {r.returncode}: {out[:300]}")
+        # THE ANCHOR A LATER READER KEYS ON, printed BEFORE the compaction is
+        # attempted so that it is there whether or not the compaction happened.
+        # `campaign-assign.py` reads exactly this; keyed on the compaction's own
+        # success line instead, a release that could not compact read as a pane
+        # that never released and was assigned.
+        check("...and prints the release anchor, naming branch AND pane",
+              f"{m.RELEASED} campaign-9999/4-done in w1:p2" in out, out[:300])
+        check("...sending exactly one /compact, to its own pane, guarded",
+              len(sent) == 1 and "pane=w1:p2" in sent[0]
+              and "prompt=/compact" in sent[0] and "HERDR_ENV=1" in sent[0],
+              repr(sent))
+        check("...and never to the other session's pane",
+              not any("pane=w1:p1" in ln for ln in sent), repr(sent))
+
+        # NO ROW NAMES THIS SESSION. Released all the same -- compaction is a
+        # cost rule, not a gate -- and the miss is printed, because a silent
+        # skip is a rule everyone believes is held while nothing is sent.
+        miss = shims(Path(d) / "miss", gh=rel_gh, herdr=two)
+        r = claim(["release", "9999", "4"], miss,
+                  {"CLAUDE_CODE_SESSION_ID": "S404"})
+        out = r.stdout + r.stderr
+        check("a session no row names still releases, and says it did not compact",
+              r.returncode == 0 and "deleted campaign-9999/4-done" in out
+              and "not compacting" in out and "no herdr row names it" in out,
+              f"exit {r.returncode}: {out[:300]}")
+        # THE CASE THE ANCHOR EXISTS FOR. A release that could not compact must
+        # still leave the release line, or the next `campaign-assign` reads the
+        # pane as one that never released and assigns it -- which is the single
+        # case its guard is for.
+        # A PANE THIS COULD NOT NAME IS SAID SO, and reads as no anchor at all
+        # to `campaign-assign.py`, which refuses -- the right direction, since
+        # the compaction was not sent either.
+        check("...and the anchor is there, saying the pane is unknown",
+              f"{m.RELEASED} campaign-9999/4-done in <pane unknown>" in out,
+              out[:400])
+        check("...and sends nothing at all",
+              prompts(miss) == [], repr(prompts(miss)))
+
+        # NO SESSION ID. The other could-not-look, and a different sentence:
+        # a reader who cannot tell the two apart cannot fix either.
+        blind = shims(Path(d) / "blind", gh=rel_gh, herdr=two)
+        r = claim(["release", "9999", "4"], blind,
+                  {"CLAUDE_CODE_SESSION_ID": ""})
+        out = r.stdout + r.stderr
+        check("no session id releases too, naming the variable it looked for",
+              r.returncode == 0 and "deleted campaign-9999/4-done" in out
+              and "no CLAUDE_CODE_SESSION_ID in the environment" in out,
+              f"exit {r.returncode}: {out[:300]}")
+        check("...and sends nothing",
+              prompts(blind) == [], repr(prompts(blind)))
+
+        # THE PROMPT ITSELF FAILING is a third could-not-look, and the one a
+        # reader is most likely to hit -- a pane that went away between the
+        # listing and the send.
+        broke = shims(Path(d) / "broke", gh=rel_gh, herdr=two, prompt_exit=3)
+        r = claim(["release", "9999", "4"], broke,
+                  {"CLAUDE_CODE_SESSION_ID": "S2"})
+        out = r.stdout + r.stderr
+        check("a prompt that exited non-zero is reported, and still releases",
+              r.returncode == 0 and "deleted campaign-9999/4-done" in out
+              and "exited 3" in out and "only the compaction did not happen" in out,
+              f"exit {r.returncode}: {out[:300]}")
+
+        # THE OTHER SUCCESS EXIT, pinned by nothing until now: the ref is
+        # already gone and a merged pull request had it as its head, so there
+        # is nothing to delete. It is the ordinary shape for a re-run release,
+        # and deleting its `compact_own_pane` call left the whole suite green.
+        # Found by review at 114e71a; the mutation string had been indented for
+        # the other exit and could never match this one.
+        gone_gh = """#!/bin/sh
+case "$*" in
+  *"--json state"*) echo 'CLOSED completed'; exit 0 ;;
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *compare/main*) echo 'HTTP 404: Not Found' >&2; exit 1 ;;
+  *"git/ref/heads"*) echo 'HTTP 404: Not Found' >&2; exit 1 ;;
+  *"pr list"*) echo '[{"number": 208}]'; exit 0 ;;
+esac
+exit 1
+"""
+        noref = shims(Path(d) / "noref", gh=gone_gh, herdr=two)
+        r = claim(["release", "9999", "4"], noref,
+                  {"CLAUDE_CODE_SESSION_ID": "S2"})
+        out = r.stdout + r.stderr
+        check("the no-ref-and-merged exit releases and compacts too",
+              r.returncode == 0 and "no ref to delete" in out
+              and "sent /compact to w1:p2" in out,
+              f"exit {r.returncode}: {out[:400]}")
+        check("...sending exactly one /compact from that exit as well",
+              len(prompts(noref)) == 1 and "pane=w1:p2" in prompts(noref)[0],
+              repr(prompts(noref)))
+        check("...and printing the release anchor, with the pane, there too",
+              f"{m.RELEASED} campaign-9999/4-done in w1:p2" in out, out[:400])
+
+        # HERDR ABSENT: `release` refuses long before this on the occupancy
+        # sweep, so the compaction is not what is being read here -- and that
+        # ordering is itself the assertion, since a compaction attempted on an
+        # unreadable listing would be a prompt aimed at a pane nobody read.
+        none_at_all = shims(Path(d) / "noherdr", gh=rel_gh)
+        r = claim(["release", "9999", "4"], none_at_all,
+                  {"CLAUDE_CODE_SESSION_ID": "S2"})
+        check("herdr absent refuses the release before any compaction",
+              r.returncode == 1 and prompts(none_at_all) == [],
+              f"exit {r.returncode}")
+
 def main():
     import importlib.machinery
     import importlib.util
@@ -1457,6 +1674,7 @@ def main():
     spec.loader.exec_module(m)
 
     for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
+               compact_cases,
                scope_cases, sweep_scope_cases, listed_repo_cases, sweep_cases, verdict_cases, peer_cases,
                robustness_cases,
                root_cases, repos_cases):
