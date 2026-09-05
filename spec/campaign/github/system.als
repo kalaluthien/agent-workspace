@@ -228,7 +228,11 @@ pred fileCampaignIssue[c: Campaign] {
   Now.event = FileCampaignIssue and Now.issue = c.campaignIssue
 }
 
-/* The issue and its index entry are one write. Deliberately no session, machine
+/* The issue and its index entry are one write. A member already in the index
+   is never added again (`i not in Campaign.memberIssues`). This model has NO
+   reopen event: a later discovery of the same mechanism reopens the existing
+   issue by AGENTS.md § Sub-issues alone, and no command here checks the close
+   gate against a member that returns to Open. Deliberately no session, machine
    or binding precondition: filing a sub-issue is a record, not a claim, so any
    session on any machine may do it (AGENTS.md § The binding). The binding
    gates writeBody, the `bound:` label, the claim and the launch, which live in

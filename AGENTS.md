@@ -259,8 +259,15 @@ mention does not, and the short `#<issue>` closes the member repository's own
 issue of that number instead. Which repository the work lands in is the
 template's `Repository:` line, since the issue's own location no longer says.
 
-**A discovery becomes a sub-issue at the moment it is found**, by whoever can file
-it: one held in a session's memory dies with its pane.
+**A discovery is recorded the moment it is found**, by whoever can file it: one
+held in a session's memory dies with its pane. **Look for the sub-issue it
+belongs to before filing a new one**: read the campaign's sub-issue list, open
+and closed (`campaign-tracker index <N>`), and where one covers the same
+mechanism, append the observation as a comment and reopen it (`gh issue reopen
+<issue> -R kalaluthien/campaign-base --comment`), so its history stays under one
+number; the reopened work cuts a fresh topic ref under that number. File a new
+sub-issue only when none fits. A parent holds at most 100 sub-issues, closed
+ones included, which is a cost every new number pays and a reopen does not.
 
 **A sub-issue whose work lives only under `<campaign>/scripts/` has no commit to
 land**: it closes as completed with no pull request, its closing comment saying
@@ -291,7 +298,10 @@ it; how each reads its target, and what it does when it cannot, is its
 docstring's. `install-hooks.sh` installs both — the commit gate as a git hook,
 the guard in
 `~/.claude/settings.json`, because a delegate's clone is a different repository
-and reads none of this one's settings.
+and reads none of this one's settings. **A member repository ships no installer,
+so its clone gets the commit gate from `acquire-repo.sh`** instead, by absolute
+path into this base; before that it got the no-main-commits guard alone and
+every shell write there landed unjudged.
 
 ## Execution mode
 

@@ -62,13 +62,19 @@ guard with this repository's own guards (the `# runs:` line the installer
 writes is the one list), the `post-commit` that pushes a campaign branch on
 its first commit, and the harness claim guard in `~/.claude/settings.json`. It
 refuses rather than overwrites a hook it did not write, with one exception it
-announces: the two-line `no-main-commits` shim `acquire-repo.sh` leaves in a
-clone, which it adopts because the hook it writes chains that same guard.
+announces: the shim `acquire-repo.sh` leaves in a clone, in either of its two
+shapes, which it adopts because the hook it writes runs the same guard and the
+same claim gate.
 
-A delegate clone gets its hooks from `acquire-repo.sh`, which runs this
-installer with `--git-only`. The harness claim guard is registered from one
-checkout for every session on the machine, so a clone must not repoint it at
-itself; `--git-only` is how a second checkout installs the git hooks alone.
+A delegate clone gets its hooks from `acquire-repo.sh`. Where the repository
+ships this installer, that means running it with `--git-only`; where it ships
+none -- which is every member repository -- `acquire-repo.sh` writes the shim
+itself, and since #190 that shim carries the claim gate by its absolute path in
+the base, because the clone has no `scripts/` of its own to reach it through.
+
+The harness claim guard is registered from one checkout for every session on
+the machine, so a clone must not repoint it at itself; `--git-only` is how a
+second checkout installs the git hooks alone.
 
 Requires `git`, `gh` (authenticated), `herdr`, `uv`, and Python 3.
 

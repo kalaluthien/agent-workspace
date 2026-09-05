@@ -112,8 +112,13 @@ def installer(root):
                           env=dict(os.environ, HOME=str(home)))
 
 
-def guard_shim(guard):
-    """The two lines acquire-repo writes, spelled from its printf."""
+def legacy_guard_shim(guard):
+    """The two lines acquire-repo wrote BEFORE #190, spelled from its printf.
+
+    Kept because clones acquired then still hold it on disk, and `is_guard_shim`
+    still has to adopt it. What acquire-repo writes now carries the claim gate
+    too and is not spelled here, nor is its length: the cases for it run the
+    shipped script and read the bytes back."""
     return f'#!/usr/bin/env sh\nexec "{guard}" "$@"\n'
 
 
@@ -250,13 +255,15 @@ def main():
               out.returncode != 0 and "refusing" in out.stderr,
               (out.stdout + out.stderr)[:160])
 
-    # 5b. The one hook it adopts: the two-line shim acquire-repo writes into a
-    # clone. Before #178 this refused, so no delegate clone held either hook.
+    # 5b. The one hook it adopts: a shim acquire-repo wrote into a clone.
+    # Before #178 this refused, so no delegate clone held either hook. This case
+    # is the PRE-#190 two-line form, which is still on disk wherever a clone was
+    # acquired then; the current form is adopted in 5d, against the real bytes.
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
         home = r.root.parent / "home"
         guard = fake_guard(home)
-        r.hook("pre-commit").write_text(guard_shim(guard))
+        r.hook("pre-commit").write_text(legacy_guard_shim(guard))
         r.hook("pre-commit").chmod(0o755)
         out = installer(r.root)
         check("the installer adopts the no-main-commits shim and says so",
@@ -277,17 +284,56 @@ def main():
               c.returncode != 0 and "FAKE GUARD RAN" in c.stdout + c.stderr
               and "# runs:" in r.hook("pre-commit").read_text(),
               f"exit {c.returncode}; {(c.stdout + c.stderr)[:160]}")
-    # A near miss is not the shim. One line more than the shim is somebody's
-    # decision, and matching on "mentions no-main-commits" would adopt it.
+    # A near miss is not the legacy shim. One line more than it is somebody's
+    # decision, and matching on "mentions no-main-commits" would adopt it. Nor
+    # does it become the CURRENT shim by being three lines: that one is
+    # recognised by the marker on line 2 and by nothing else.
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
         guard = fake_guard(r.root.parent / "home")
-        r.hook("pre-commit").write_text(guard_shim(guard) + "echo also this\n")
+        r.hook("pre-commit").write_text(legacy_guard_shim(guard) + "echo also this\n")
         out = installer(r.root)
         check("a shim with one line added is still refused",
               out.returncode != 0 and "refusing" in out.stderr
               and "adopting" not in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:160]}")
+
+    # THE MARKER IS NOT ENOUGH ON ITS OWN, and each of the other two conjuncts
+    # gets a case of its own -- three near misses, one per conjunct, or the
+    # branch is pinned by whichever of them happens to be tested. What licenses
+    # replacing a hook here is that the one written below carries everything
+    # read out of this one, and a comment somebody pasted proves nothing.
+    GUARD_CALL = ('"/x/.claude/git-hooks/no-main-commits" "$@" || exit 1\n')
+    MARKER = "# Written by acquire-repo.sh. Re-run it after changing this file.\n"
+    for name, body in (
+            ("but not the guard at all",
+             "#!/usr/bin/env sh\n" + MARKER + "exec /usr/bin/true\n"),
+            # The one that was actually broken: `grep -q no-main-commits` over
+            # the whole file cannot tell a CALL from a mention, so a foreign
+            # hook naming the guard in a comment was adopted and announced as
+            # chaining it.
+            ("but naming the guard only in a comment",
+             "#!/usr/bin/env sh\n" + MARKER
+             + "# nothing here calls no-main-commits\nexec /usr/bin/true\n"),
+            # And the shebang, which nothing pinned until this line: deleting
+            # that conjunct left the suite fully green.
+            ("but not opening with the shebang",
+             "#!/bin/sh\n" + MARKER + GUARD_CALL),
+            # And the marker itself, which the other three cases cannot pin:
+            # deleting that conjunct left the suite green, because every hook
+            # they build carries the marker. Somebody else's hook that happens
+            # to chain the guard is still somebody else's decision.
+            ("replaced by somebody else's comment",
+             "#!/usr/bin/env sh\n# our team's pre-commit\n" + GUARD_CALL)):
+        with tempfile.TemporaryDirectory() as d:
+            r = Repo(d)
+            r.hook("pre-commit").write_text(body)
+            r.hook("pre-commit").chmod(0o755)
+            out = installer(r.root)
+            check(f"a hook carrying the marker {name} is refused, not adopted",
+                  out.returncode != 0 and "refusing" in out.stderr
+                  and "adopting" not in out.stderr,
+                  f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
 
     # 5c. --git-only. The harness half is machine-wide and points at one
     # checkout; a clone running it would repoint every session's guard.
@@ -391,14 +437,47 @@ def main():
               out.returncode != 0 and "not executable" in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
 
+        # A repository with no installer of its own gets the shim, and since
+        # #190 that shim carries the claim gate as well as the guard. Asserted
+        # on the two things it must name rather than on the whole text: a copy
+        # of the body here would be the second reader this repository refuses,
+        # and scripts/acquire-repo-test.py is where the installed hook is RUN.
         dest = checkout("bare", False)
         out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
                              capture_output=True, text=True)
         pre = dest / ".git" / "hooks" / "pre-commit"
-        check("a repository with no installer gets the shim and nothing else",
-              out.returncode == 0 and pre.read_text() == guard_shim(guard)
+        gate = SCRIPTS / "check-commit-claim.py"
+        body = pre.read_text() if pre.exists() else ""
+        check("a repository with no installer gets the shim, and no post-commit",
+              out.returncode == 0 and str(guard) in body
               and not (dest / ".git" / "hooks" / "post-commit").exists(),
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+        check("...carrying the claim gate by its absolute path in the base",
+              f'"{gate}" --staged' in body, repr(body[-160:]))
+        # "Only the shim" used to be pinned by comparing the whole text, which
+        # went with #190. This is what that comparison was actually for: acquire
+        # must not install THIS repository's hook into a member clone, whose
+        # `# runs:` guards it does not have and whose post-commit would push its
+        # branches.
+        check("...and not this repository's own hook, which the clone could not "
+              "run",
+              "# runs:" not in body, repr(body[:160]))
+
+        # 5e. AND THIS INSTALLER ADOPTS THAT SHIM. #178's fix, which #190 would
+        # have undone in silence: the shim stopped being the two lines
+        # `is_guard_shim` knew, so a clone that later gained this repository's
+        # hooks would have been refused as holding somebody else's.
+        for n in NEEDED:
+            shutil.copy(SCRIPTS / n, dest / "scripts" / n)
+        out = installer(dest)
+        check("the installer adopts the shim acquire-repo writes NOW, not only "
+              "the one it used to",
+              out.returncode == 0 and "adopting" in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
+        check("...replacing it with its own hook, which runs the same gate",
+              "# runs:" in pre.read_text()
+              and "check-commit-claim.py" in pre.read_text(),
+              repr(pre.read_text()[:160]))
 
     # 6. post-commit, on the real thing.
     with tempfile.TemporaryDirectory() as d:
