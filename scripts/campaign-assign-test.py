@@ -138,12 +138,19 @@ def pure_cases(m):
     check("the anchor this suite fixtures is the line campaign-claim prints",
           RELEASED.startswith(cm.RELEASED), f"{cm.RELEASED!r} vs {RELEASED!r}")
 
-    def verdict(text, limit=400):
-        return m.compaction_verdict(text, cm.RELEASED, limit)
+    def verdict(text):
+        return m.compaction_verdict(text, cm.RELEASED)
 
+    # NO RELEASE LINE IS `unknown`, NOT `fresh`. It used to be `fresh`, which
+    # ALLOWED, on the reasoning that a read shorter than its window is the
+    # whole history. Measured 2026-09-05, that reasoning is false of the tool:
+    # `herdr agent read` caps at 1000 lines and returns fewer than asked even
+    # when more history exists (one 48-line pane answered `--lines 60` with 46
+    # and `--lines 10` with nothing). So the absence refuses.
     v, why = verdict("nothing about a release here\nor here\n")
-    check("a pane that never released is fresh, not stale",
-          v == "fresh" and "2 line(s)" in why, f"{v} {why}")
+    check("no release line is unknown, not a pane that never released",
+          v == "unknown" and "2 line(s)" in why
+          and "not evidence" in why, f"{v} {why}")
     v, why = verdict(f"work\n{RELEASED}\n{MARKER}\n")
     check("a marker after the release line is compacted", v == "compacted", why)
     v, why = verdict(f"work\n{RELEASED}\nstill going\n")
@@ -154,18 +161,20 @@ def pure_cases(m):
     check("a marker BEFORE the release line does not count as compacted",
           v == "stale", f"{v} {why}")
     v, why = verdict("")
-    check("an empty read is fresh with the count said, not a crash",
-          v == "fresh" and "0 line(s)" in why, f"{v} {why}")
-    # THE WINDOW IS AN ABSENCE THAT LOOKS LIKE AN ANSWER. A read that filled it
-    # is not evidence the pane never released; before this it returned `fresh`,
-    # which ALLOWS, and that is the case a long transcript produces.
-    v, why = verdict("\n".join(["noise"] * 400) + "\n", 400)
-    check("a read that filled the window is truncated, not fresh",
-          v == "truncated" and "filled the window" in why, f"{v} {why[:120]}")
-    v, why = verdict("\n".join(["noise"] * 399) + "\n", 400)
-    check("...and one line short of the window is the whole history, so fresh",
-          v == "fresh" and "shorter than the 400-line window" in why,
-          f"{v} {why[:120]}")
+    check("an empty read is unknown with the count said, not a crash",
+          v == "unknown" and "0 line(s)" in why, f"{v} {why}")
+    # LAST RELEASE, NOT FIRST. A pane that released, compacted, worked and
+    # released again holds a marker between the two releases. `min` here reads
+    # that marker as coming after "the" release and admits the pane with its
+    # SECOND release uncompacted. No fixture with two release lines existed, so
+    # `max` -> `min` passed 33/33; found by review.
+    v, why = verdict(f"{RELEASED}\n{MARKER}\nmore work\n{RELEASED}\nnow what\n")
+    check("two releases: the LAST one decides, so this is stale",
+          v == "stale" and "released at line 4" in why, f"{v} {why}")
+    # ...and the allow beside it: a marker after the second release.
+    v, why = verdict(f"{RELEASED}\n{MARKER}\nwork\n{RELEASED}\n{MARKER}\n")
+    check("...and a marker after the last release is compacted",
+          v == "compacted" and "line 4" in why, f"{v} {why}")
     # THE RELEASE THAT COULD NOT COMPACT is the single case this guard exists
     # for, and at 114e71a it read `fresh` and was assigned: the anchor was the
     # compaction's success line, which that release never printed.
@@ -174,7 +183,7 @@ def pure_cases(m):
                  f"The claim is released; only the compaction did not "
                  f"happen.\n")
     v, why = verdict(could_not)
-    check("a release that could NOT compact reads stale, not fresh",
+    check("a release that could NOT compact reads stale, not unknown",
           v == "stale", f"{v} {why[:140]}")
 
     sentence = m.prompt_for("kalaluthien/campaign-base", "42")
@@ -202,11 +211,21 @@ def end_to_end_cases():
         check("...and never to the other pane",
               not any("pane=w1:p1" in ln for ln in sent), repr(sent))
 
-        # ALLOW: a pane that has never released at all.
+        # THE REVERSAL. A pane with no release line USED to be assigned, on
+        # the reasoning that a fresh session's context is small. Nothing here
+        # can tell a fresh session from one whose release scrolled out of a
+        # window that is capped and under-fills, so the two want opposite
+        # answers from the same bytes and the absence now refuses. A first
+        # assignment takes --force, which says what it overrode.
         fresh = shims(Path(d) / "fresh", rows, screen="a fresh session\n")
         r = assign(["w1:p2", "198"], fresh)
-        check("a pane that never released is assigned too",
-              r.returncode == 0 and len(prompts(fresh)) == 1,
+        check("a pane with no release line is NOT assigned on that alone",
+              r.returncode == 1 and prompts(fresh) == [],
+              f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
+        fresh_f = shims(Path(d) / "freshf", rows, screen="a fresh session\n")
+        r = assign(["w1:p2", "198", "--force"], fresh_f)
+        check("...and --force is how a genuinely fresh pane is assigned",
+              r.returncode == 0 and len(prompts(fresh_f)) == 1,
               f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
 
         # REFUSE: released and not compacted since.
@@ -224,28 +243,46 @@ def end_to_end_cases():
         r = assign(["w1:p2", "198", "--force"], forced)
         out = r.stdout + r.stderr
         check("--force assigns it and says what it is overriding",
-              r.returncode == 0 and "--force: assigning a pane that has not"
-              in out and len(prompts(forced)) == 1,
+              r.returncode == 0 and "verdict was stale" in out
+              and len(prompts(forced)) == 1,
               f"exit {r.returncode}: {out[:300]}")
 
-        # REFUSE: the window filled and held no release line. Fails CLOSED
-        # now; at 114e71a this was `fresh` and was assigned.
+        # REFUSE: no release line anywhere in the read. Fails CLOSED now; at
+        # 114e71a and at 1eb0d9b under a wide `--lines` this was `fresh` and
+        # was assigned.
         full = shims(Path(d) / "full", rows,
                      screen="\n".join(["noise"] * 400))
-        r = assign(["w1:p2", "198", "--lines", "400"], full)
+        r = assign(["w1:p2", "198"], full)
         out = r.stdout + r.stderr
-        check("a pane whose window filled with no release line is refused",
-              r.returncode == 1 and "truncated" in out
+        check("a pane with no release line in the read is refused",
+              r.returncode == 1 and "unknown" in out
               and prompts(full) == [], f"exit {r.returncode}: {out[:300]}")
-        check("...and the refusal offers --lines as the honest repair",
-              "raise --lines" in out, out[:400])
-        # ...and raising the window past the history admits it, which is the
-        # allow case that keeps the refusal from being a refusal of everything.
-        wide = shims(Path(d) / "wide", rows,
-                     screen="\n".join(["noise"] * 400))
-        r = assign(["w1:p2", "198", "--lines", "401"], wide)
-        check("...and a window wider than the history admits the same pane",
-              r.returncode == 0 and len(prompts(wide)) == 1,
+        check("...and the refusal offers --lines and names the cap",
+              "raise --lines to at most 1000" in out, out[:500])
+        # ...and --force is the door, naming the verdict it overrode rather
+        # than one sentence for three different states.
+        forced_unknown = shims(Path(d) / "fu", rows,
+                               screen="\n".join(["noise"] * 400))
+        r = assign(["w1:p2", "198", "--force"], forced_unknown)
+        out = r.stdout + r.stderr
+        check("...and --force assigns it, naming the verdict it overrode",
+              r.returncode == 0 and "verdict was unknown" in out
+              and len(prompts(forced_unknown)) == 1,
+              f"exit {r.returncode}: {out[:300]}")
+
+        # A WINDOW ABOVE THE TOOL'S CAP reads no further, so asking for one is
+        # refused rather than answered with less than it promises.
+        over = shims(Path(d) / "over", rows, screen=f"{RELEASED}\n{MARKER}\n")
+        r = assign(["w1:p2", "198", "--lines", "1500"], over)
+        out = r.stdout + r.stderr
+        check("a --lines above herdr's cap is refused, naming the cap",
+              r.returncode == 1 and "above herdr's 1000-line cap" in out
+              and prompts(over) == [], f"exit {r.returncode}: {out[:300]}")
+        atcap = shims(Path(d) / "atcap", rows,
+                      screen=f"{RELEASED}\n{MARKER}\n")
+        r = assign(["w1:p2", "198", "--lines", "1000"], atcap)
+        check("...and exactly the cap is admitted",
+              r.returncode == 0 and len(prompts(atcap)) == 1,
               f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
 
         # REFUSE: not idle. Asserted on the pane's own status, and the read arm
