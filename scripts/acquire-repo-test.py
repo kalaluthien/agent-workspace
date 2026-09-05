@@ -8,6 +8,11 @@ a clone's own `scripts/install-hooks.sh` only when the clone shipped one, and a
 member repository ships none, so every member clone got the machine-wide
 no-main-commits guard and NO claim gate -- while check-campaign-claim.py went on
 calling that clone campaign work whose shell writes "land at the commit".
+#214: the two decisions about an existing pre-commit -- may this one be
+overwritten, and did the repository's own installer leave one chaining the
+guard -- were both `grep -q 'no-main-commits'` over the whole file, so a hook
+naming the guard in a COMMENT read as one calling it, and the first of those
+two decisions is the destructive one.
 
 A case made of strings would have caught neither, because both defects were the
 absence of a command. So every case here runs SHIPPED code against a real git
@@ -48,6 +53,13 @@ SCRIPT = (BASE / ".claude" / "skills" / "opening-campaign" / "scripts"
 # asserting on it fails when the two stop agreeing, rather than when a copy kept
 # here goes stale.
 GATE = BASE / "scripts" / "check-commit-claim.py"
+
+# READ OUT OF THE SCRIPT, not spelled here. A fixture carrying a marker that is
+# no longer the one `is_guard_shim` looks for would still be "refused", for the
+# wrong reason, and every near-miss case below would pass while pinning nothing.
+_M = [l for l in SCRIPT.read_text().splitlines() if l.startswith("SHIM_MARKER=")]
+SHIM_MARKER = _M[0].split("=", 1)[1].strip("'") if len(_M) == 1 else None
+
 RAN, FAILED = [], []
 
 
@@ -391,6 +403,113 @@ def main():
               f"exit {c.returncode}; {both[:240]}")
         check("...naming the path it looked for",
               str(other / "scripts" / GATE.name) in both, both[:240])
+
+    # ---- #214. WHICH PRE-COMMIT MAY BE OVERWRITTEN. `install_commit_guard`
+    # decided that with `grep -q 'no-main-commits'` over the whole file, so a
+    # foreign hook naming the guard in a COMMENT was silently overwritten --
+    # #190 round two fixed the same substring test one file over, in
+    # install-hooks.sh, and the two were fixed apart because only one was in
+    # that round's diff. This is the direction that destroys.
+    #
+    # The fixtures below carry the marker read out of the script rather than a
+    # copy, and every case asserts on WHAT ACQUIRE SAID plus the hook's bytes:
+    # "refused" and "overwrote and then failed later" share an exit status.
+    check("the shim marker was found in acquire-repo.sh, so the fixtures below "
+          "carry the real one", SHIM_MARKER is not None)
+    # ...and if it was not, the loop below still RUNS. A failed check that then
+    # raises aborts the suite, and every case after it goes unreported -- the
+    # thing `text_of` above exists to prevent, met again one screen down.
+    marker = SHIM_MARKER or "# SHIM_MARKER WAS NOT FOUND IN acquire-repo.sh"
+
+    # The two shapes that MUST still be overwritten, or a re-run stops
+    # converging and clones acquired before #190 never gain the claim gate.
+    with tempfile.TemporaryDirectory() as d:
+        base, camp = a_base_with_campaign(d)
+        home = a_home(d)
+        slug, clone = a_member_repo(d, camp)
+        guard = home / ".claude" / "git-hooks" / "no-main-commits"
+
+        r = run_acquire(slug, clone, home)
+        first = text_of(clone / ".git" / "hooks" / "pre-commit") or ""
+        r2 = run_acquire(slug, clone, home)
+        second = text_of(clone / ".git" / "hooks" / "pre-commit") or ""
+        check("a second acquire over the shim it just wrote converges rather "
+              "than refusing",
+              r.returncode == 0 and r2.returncode == 0 and second == first
+              and str(GATE) in second,
+              f"exit {r.returncode}/{r2.returncode}; "
+              f"{(r2.stdout + r2.stderr)[-240:]}")
+
+        # The pre-#190 two-liner, still on disk in clones acquired then. It has
+        # no marker to name itself by, so it is matched whole -- and it has to
+        # keep being overwritten, because it is exactly the hook that carries
+        # the guard and NOT the claim gate.
+        hook = clone / ".git" / "hooks" / "pre-commit"
+        hook.write_text(f'#!/usr/bin/env sh\nexec "{guard}" "$@"\n')
+        r = run_acquire(slug, clone, home)
+        body = text_of(hook) or ""
+        check("the pre-#190 two-line shim is upgraded, not refused",
+              r.returncode == 0 and str(GATE) in body,
+              f"exit {r.returncode}; {(r.stdout + r.stderr)[-240:]}")
+
+    # ...and the near misses, one per conjunct of `is_guard_shim`. A row of
+    # refusals needs one case per branch or it is pinned by whichever conjunct
+    # happens to be exercised: deleting any one conjunct must redden the case
+    # named for it and no other. NO COUNT IS WRITTEN HERE -- the first spelling
+    # said "these five" over six entries, which is the staleness three comments
+    # in install-hooks.sh hit with "ten lines".
+    GUARD_CALL = '"/x/.claude/git-hooks/no-main-commits" "$@" || exit 1\n'
+    for name, body in (
+            # THE ONE #214 IS ABOUT: the guard named in a comment and called
+            # nowhere. Under the substring test this was overwritten.
+            ("naming the guard only in a comment",
+             "#!/usr/bin/env sh\n" + marker + "\n"
+             + "# nothing here calls no-main-commits\nexec /usr/bin/true\n"),
+            # ...and the case the substring test got RIGHT, which must not
+            # regress: a hook that never mentions the guard at all.
+            ("not naming the guard at all",
+             "#!/usr/bin/env sh\n# our team's pre-commit\nexec /usr/bin/true\n"),
+            ("carrying the marker and the call but not the shebang",
+             "#!/bin/sh\n" + marker + "\n" + GUARD_CALL),
+            ("carrying the shebang and the call but somebody else's line 2",
+             "#!/usr/bin/env sh\n# our team's pre-commit\n" + GUARD_CALL),
+            # Two lines is the legacy branch, matched WHOLE; three is not it,
+            # and without the marker it is not the current shape either.
+            ("that is a legacy shim with one line added",
+             '#!/usr/bin/env sh\nexec "/x/.claude/git-hooks/no-main-commits" "$@"\n'
+             "echo also this\n"),
+            ("that is a legacy shim whose shebang is not the one written",
+             '#!/bin/sh\nexec "/x/.claude/git-hooks/no-main-commits" "$@"\n'),
+            # THE LEGACY BRANCH'S OTHER CONJUNCT, and nothing pinned it until a
+            # review of #214 deleted the pattern and watched the suite stay
+            # green: two lines, the right shebang, and a line 2 that is not the
+            # exec. Somebody's own two-line hook, overwritten.
+            ("two lines and the right shebang but no guard call on line 2",
+             "#!/usr/bin/env sh\nexec /usr/bin/true\n")):
+        with tempfile.TemporaryDirectory() as d:
+            base, camp = a_base_with_campaign(d)
+            home = a_home(d)
+            slug, clone = a_member_repo(d, camp)
+            hook = clone / ".git" / "hooks" / "pre-commit"
+            hook.parent.mkdir(parents=True, exist_ok=True)
+            hook.write_text(body)
+            hook.chmod(0o755)
+            r = run_acquire(slug, clone, home)
+            out = r.stdout + r.stderr
+            check(f"a pre-commit {name} is refused, not overwritten",
+                  r.returncode != 0 and "refusing to overwrite" in out,
+                  f"exit {r.returncode}; {out[-240:]}")
+            # The assertion that separates a refusal from a crash after the
+            # write: the bytes are still somebody else's.
+            check(f"...and the hook {name} is left byte for byte alone",
+                  text_of(hook) == body, repr((text_of(hook) or "")[:120]))
+
+    # The MILDER direction of the same defect -- `install_commit_guard`
+    # verifying that a repository's OWN installer left a hook chaining the
+    # guard, which was the same substring test three lines away -- is covered
+    # in scripts/install-hooks-test.py, beside the case for an installer that
+    # omits the guard entirely and beside the allow control that runs the real
+    # install-hooks.sh. One home per branch, and that one already had it.
 
     # THE ORDER OF THE CALL, and this one is TEXTUAL rather than executed --
     # said plainly because a reader is owed the difference. The cases above run
