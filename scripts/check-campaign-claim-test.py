@@ -649,15 +649,43 @@ def main():
         check("a planner comments on the campaign issue, which no claim covers",
               r.returncode == 0 and "planner writes the campaign plane" in r.stdout,
               out(r)[:400])
+        # #207 decided the executor side of this row: an executor of THAT
+        # campaign may comment on its campaign issue, which no claim can cover.
+        # The contrast the planner row is here for is the CAMPAIGN, not the
+        # claim -- so the refusal case is an executor of another one.
         r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
-                env=executor)
-        check("...and the same write from an executor with no claim is refused",
-              r.returncode == 2, out(r)[:400])
+                env=stranger)
+        check("...and the same write from an executor of another campaign is "
+              "refused", r.returncode == 2, out(r)[:400])
 
         # planner, campaign plane, ANOTHER campaign's issue
         r = ask(f.base, tool="Bash", command="gh issue close 116", env=planner)
         check("a planner closes an issue of a campaign it does not work",
               r.returncode == 0 and "any campaign" in r.stdout, out(r)[:300])
+
+        # THE LICENCE IS THE CAMPAIGN PLANE, NOT EVERY gh WRITE. `gh pr create`
+        # is OpenPullRequest and `gh pr merge` is MergePullRequest -- the code
+        # plane and the three merge conditions respectively, neither a
+        # planner's by role. Allowing every row of WRITES let a planner open
+        # and merge pull requests and delete another executor's claim ref.
+        for cmd in ("gh pr create --title t --body b",
+                    "gh pr merge 9 --merge",
+                    "gh pr edit 9 --title x",
+                    "gh api -X DELETE repos/o/r/git/refs/heads/campaign-2/8-y"):
+            r = ask(f.base, tool="Bash", command=cmd, env=planner)
+            check(f"the planner licence does not cover `{cmd[:34]}`",
+                  r.returncode == 2 and "not the campaign plane" in r.stderr,
+                  out(r)[:400])
+        # ALLOW beside it: the campaign-plane verbs the licence is FOR.
+        for cmd in ("gh issue edit 9 --body x", "gh issue comment 9 --body x",
+                    "gh label create x"):
+            r = ask(f.base, tool="Bash", command=cmd, env=planner)
+            check(f"ALLOW beside it: `{cmd[:30]}` is the campaign plane",
+                  r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
+        # ...and a read stays a read for a planner too.
+        r = ask(f.base, tool="Bash", command="gh pr view 9", env=planner)
+        check("ALLOW beside it: a gh read is not a write for a planner either",
+              r.returncode == 0, out(r)[:300])
 
         # planner, code plane: refused, and told which shape to use
         r = ask(f.base, path=str(f.base / "AGENTS.md"), env=planner)
@@ -799,6 +827,44 @@ def main():
         r = ask(f.base, path=str(f.base / "AGENTS.md"), env=stranger)
         check("...and the file half says the same",
               r.returncode == 2 and "another campaign" in r.stderr, out(r)[:400])
+        # #207: THE CAMPAIGN ISSUE IS NOBODY'S SUB-ISSUE, so no claim can ever
+        # cover it and every executor was refused a comment on the campaign it
+        # works. Its own campaign's number comes from its name.
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+                env=executor)
+        check("an executor comments on its OWN campaign's issue",
+              r.returncode == 0 and "campaign issue of the campaign this "
+              "session is of" in r.stdout, out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+                env=stranger)
+        check("...and an executor of another campaign may not",
+              r.returncode == 2, out(r)[:400])
+        # ALLOW beside it: a sub-issue of its own campaign still needs a claim,
+        # so the carve-out did not become a general licence.
+        r = ask(f.base, tool="Bash", command="gh issue close 99", env=executor)
+        check("ALLOW beside it is a REFUSAL: a sub-issue it holds no claim on "
+              "is still refused",
+              r.returncode == 2 and "no claim covering a write to #99"
+              in r.stderr, out(r)[:400])
+
+        # CLAUSE 1 IS BOUND BY THE CAMPAIGN TOO. It asks only whether the
+        # target's checkout is on SOME claim, so an executor of another
+        # campaign -- role read correctly -- edited this campaign's worktree,
+        # while the docstring said an executor writes its own campaign.
+        wt = f.trees["campaign-1/7-x"]
+        r = ask(wt, path=str(wt / "a.md"), env=stranger)
+        check("clause 1 does not admit an executor of another campaign",
+              r.returncode == 2 and "another campaign" in r.stderr, out(r)[:400])
+        r = ask(wt, tool="Bash", command="gh pr merge 7 --merge", env=stranger)
+        check("...nor does the session's own checkout, for the same session",
+              r.returncode == 2, out(r)[:400])
+        # ALLOW beside both: this campaign's own executor, same checkout.
+        r = ask(wt, path=str(wt / "a.md"), env=executor)
+        check("ALLOW beside it: clause 1 admits its own campaign's executor",
+              r.returncode == 0 and "Clause 1" in r.stdout, out(r)[:400])
+        r = ask(wt, tool="Bash", command="gh pr merge 7 --merge", env=executor)
+        check("ALLOW beside it: and so does its own checkout",
+              r.returncode == 0, out(r)[:400])
         # ALLOW beside the foreign-campaign refusal: this campaign's own
         # executor, standing at the same root, with the same claims present.
         r = ask(f.base, path=str(f.base / "AGENTS.md"), env=executor)

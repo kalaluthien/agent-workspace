@@ -97,6 +97,19 @@ WRITES = {("issue", v) for v in "close edit comment reopen develop transfer "
 VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
           "-f", "--raw-field", "-b", "--body", "-t", "--title", "-m",
           "--body-file", "-l", "--label", "-a", "--assignee", "--milestone"}
+# WHICH gh WRITES ARE THE CAMPAIGN PLANE. The planner licence is bounded by
+# this and not by WRITES, which holds both planes: `gh pr create` is
+# OpenPullRequest and `gh pr merge` is MergePullRequest, and
+# `codePlaneEvents` in spec/campaign/orchestration/system.als puts the first on
+# the code plane while the three merge conditions -- not a role -- hold the
+# second. A planner allowed every WRITES row could open and merge pull
+# requests and delete another executor's claim ref through `gh api`, which is
+# the opposite of "a planner changes no code".
+#
+# Read as the SUBCOMMAND alone, because that is what the plane is a property
+# of. Anything not here is not a planner's by this rule and falls through to
+# the claim reading, which refuses it without a claim exactly as before.
+PLANNER_GH = {"issue", "label"}
 API_WRITE_FLAGS = {"-F", "--field", "-f", "--raw-field", "--input"}
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}", "`"}
 # Words before a command that are not it, and shells that run a string.
@@ -228,7 +241,7 @@ def campaign_dir_of(path: Path, base: Path):
 
 
 def classify(target: Path):
-    """(inside?, where, checkout toplevel or None, campaign directory or None).
+    """(inside?, where, checkout toplevel or None, scratch?).
 
     Inside means campaign work: a base tree read through git, or a campaign
     directory read by shape. The last two are different questions and #185 needs
@@ -563,6 +576,18 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
                              "campaign-plane scratch."])
     if top is not None:
         branch, is_claim, source = claim_on(top)
+        # ITS OWN CAMPAIGN, HERE TOO. Clause 1 asks only whether the target's
+        # checkout is on SOME claim, and #185's bound was added to clause 2 and
+        # to the gh loop but not here -- so an executor of another campaign,
+        # with its role read correctly, edited this campaign's worktree. The
+        # docstring said otherwise, which is what makes it a finding rather
+        # than a gap.
+        if is_claim and role == "executor" and campaign is not None \
+                and CLAIM_BRANCH.match(branch).group(1) != campaign:
+            return refuse(read + [
+                f"Clause 1 would hold -- {top} is on {branch} -- but that is a "
+                f"claim of another campaign, and this session is of campaign "
+                f"#{campaign}.", TAKE])
         if is_claim:
             return allow(read + [f"Clause 1: the target's checkout {top} is on "
                                  f"{branch}, a claim ({source})."])
@@ -626,6 +651,7 @@ def bash_call(command, cwd: Path, session_id=""):
     # half that fell back says so, allows included. The allows used to be
     # silent, so an allow after a failed read looked like an allow after a
     # successful one.
+    read_on = []
     fell_back = [] if role else [
         f"{how_role}, so the role could not be read; falling back to the "
         f"claim reading alone, which is what this gate was before #185."]
@@ -637,8 +663,19 @@ def bash_call(command, cwd: Path, session_id=""):
         # sub-issue body, a close, a claim cut for a delegate. There is no
         # claim to hold for any of those, which is why the claim reading alone
         # had no passing form for them and the closes were run by hand.
-        return allow([f"{what}: {how_role}, and a planner writes the campaign "
-                      f"plane of any campaign."])
+        #
+        # THE CAMPAIGN PLANE ONLY. Every write in this command must be one, or
+        # the licence does not apply and the claim reading decides as it would
+        # for anyone: a `gh pr merge` is not a planner's by role, whatever its
+        # name says.
+        verbs = {(gh_words(rest) or [""])[0] for rest, is_write, _ in gh
+                 if is_write}
+        if verbs and verbs <= PLANNER_GH and not stray:
+            return allow([f"{what}: {how_role}, and a planner writes the "
+                          f"campaign plane of any campaign."])
+        outside = sorted(verbs - PLANNER_GH) or ["a gh call this cannot read"]
+        read_on = [f"{how_role}, but `gh {v}` is not the campaign plane, so "
+                   f"the planner licence does not cover it" for v in outside]
     # EVERY issue named must be covered, not one of them. Collapsing two to
     # `None` and asking for any claim at all is a WIDENING: it let a claim on
     # #7 admit `gh issue close 9; gh issue close 7`, and a decoy naming a
@@ -651,8 +688,22 @@ def bash_call(command, cwd: Path, session_id=""):
     detail, uncovered, covering = [], [], []
     for i in issues:
         holders, d = held(root, i)
-        if not holders and own is not None and CLAIM_BRANCH.match(own[1]).group(2) == i:
+        if (not holders and own is not None
+                and CLAIM_BRANCH.match(own[1]).group(2) == i
+                and (role != "executor" or campaign is None
+                     or CLAIM_BRANCH.match(own[1]).group(1) == campaign)):
             holders = [own]
+        # ITS OWN CAMPAIGN'S ISSUE NEEDS NO CLAIM, because no claim can ever
+        # cover it: the campaign issue is nobody's sub-issue, so `held` finds
+        # nothing there for anyone and every executor was refused a comment on
+        # the campaign it works. What licenses it is the session's NAME, which
+        # carries that campaign's number -- the same fact the rest of this
+        # branch reads. A planner reaches the same write through its own row,
+        # on any campaign; this is the executor's, on one (#207).
+        if role == "executor" and campaign is not None and i == campaign:
+            covering.append((i, [("its own campaign", f"campaign-{campaign}",
+                                  "the session name")]))
+            continue
         # AN EXECUTOR STANDS ONLY ON ITS OWN CAMPAIGN'S CLAIMS, and the filter
         # belongs HERE, per issue. Applied once to the whole root instead, it
         # refused only when EVERY claim was foreign -- so an executor of #1
@@ -672,30 +723,37 @@ def bash_call(command, cwd: Path, session_id=""):
     if uncovered:
         i = uncovered[0][0]
         return refuse([f"{what}: a campaign-plane write, and this session holds "
-                       f"no claim covering a write to #{i}.", how, *fell_back,
-                       *detail, TAKE])
+                       f"no claim covering a write to #{i}.", how, *read_on,
+                       *fell_back, *detail, TAKE])
     if unreadable:
         holders, d = held(root)
         if role == "executor" and campaign is not None:
             holders = [h for h in holders
                        if CLAIM_BRANCH.match(h[1]).group(1) == campaign]
-        if not holders and own is not None:
+        if (not holders and own is not None
+                and (role != "executor" or campaign is None
+                     or CLAIM_BRANCH.match(own[1]).group(1) == campaign)):
             holders = [own]
         if not holders:
             return refuse([f"{what}: a campaign-plane write, and this session "
-                           f"holds no claim covering it.", how, *fell_back,
-                           *detail, *d, TAKE])
+                           f"holds no claim covering it.", how, *read_on,
+                           *fell_back, *detail, *d, TAKE])
         path, branch, source = holders[0]
         return allow([f"{what}: {how}; {path} is on {branch}, a claim "
                       f"({source}).", *fell_back])
     if not covering:
-        if own is not None:
+        if own is not None and (role != "executor" or campaign is None
+                                or CLAIM_BRANCH.match(own[1]).group(1) == campaign):
             return allow([f"{what}: the session's own checkout {own[0]} is on "
                           f"{own[1]}, a claim ({own[2]}).", *fell_back])
         return refuse([f"{what}: a campaign-plane write, and this session holds "
                        f"no claim covering it.", how, *detail, TAKE])
     path, branch, source = covering[0][1][0]
     named = ", ".join(f"#{i}" for i, _ in covering)
+    if path == "its own campaign":
+        return allow([f"{what}: {how_role}, and #{covering[0][0]} is the "
+                      f"campaign issue of the campaign this session is of.",
+                      *read_on, *fell_back])
     return allow([f"{what}: {how}; {path} is on {branch}, a claim "
                   f"({source}). It covers {named}.", *fell_back])
 
