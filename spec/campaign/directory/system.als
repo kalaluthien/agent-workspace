@@ -34,7 +34,16 @@ sig Branch {}
 sig CampaignDir {
   campaign:         one Campaign,
   machine:         one Machine,
-  var checkedOut: Repo -> Branch
+  var checkedOut: Repo -> Branch,
+  /* THE CLONES HERE THAT CARRY THE CAMPAIGN'S PRINCIPLES. #176 replaced
+     `--append-system-prompt-file` and its canary with a `CLAUDE.local.md` in
+     the delegate's own clone -- a file on disk in its cwd, so there is nothing
+     to prove arrived. #187 question 5 is that no command anywhere wrote one, so
+     the mechanism existed only as prose and a delegate launched by the book got
+     nothing. Modelled as a set of repositories rather than a file, because what
+     a launch needs is that the clone it launches into carries them; WHICH bytes
+     is `acquire-repo.sh`'s. */
+  var principled:  set Repo
 }
 var sig OnDisk in CampaignDir {}
 
@@ -69,12 +78,13 @@ one sig CreateDir, DeleteDir, Acquire extends Event {}
 
 fun directoryEvents: set Event { CreateDir + DeleteDir + Acquire }
 
-pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut }
+pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled }
 
 pred createDir[t: CampaignDir] {
   t not in OnDisk
   OnDisk' = OnDisk + t
   checkedOut' = checkedOut
+  principled' = principled     -- a fresh directory has no clone yet to principle
   Now.event = CreateDir and no Now.issue and Where.machine = t.machine and no Where.repo
 }
 
@@ -85,6 +95,7 @@ pred deleteDir[t: CampaignDir] {
   t in OnDisk
   OnDisk'  = OnDisk - t
   checkedOut' = checkedOut - t->Repo->Branch
+  principled' = principled - t->Repo    -- the clones go with the directory
   Now.event = DeleteDir and no Now.issue and Where.machine = t.machine and no Where.repo
 }
 
@@ -100,6 +111,14 @@ pred acquire[t: CampaignDir, r: Repo, b: Branch] {
   t in OnDisk
   t.checkedOut[r] != b
   checkedOut' = checkedOut - t->r->Branch + t->r->b
+  /* ACQUIRE IS WHAT PRINCIPLES A CLONE, and saying so is the whole of the
+     mechanism: `acquire-repo.sh` writes the campaign's `AGENTS.md` into the
+     checkout as `CLAUDE.local.md` on every checkout it leaves. Written into
+     the event because there is no other moment -- the clone comes into
+     existence here -- where `checkedOut` is a fact a later event may change.
+     Without this `principled` had no producer at all: every directory event
+     left it free, so R12c's witness rested on a set nothing wrote. */
+  principled' = principled + t->r
   OnDisk' = OnDisk
   Now.event = Acquire and no Now.issue and Where.machine = t.machine and Where.repo = r
 }

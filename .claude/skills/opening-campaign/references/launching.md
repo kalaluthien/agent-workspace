@@ -64,9 +64,16 @@ interactive shell prompt and creates no layout.
 
 ## The campaign's principles
 
-**Write them to `<campaign>/repos/<repo>/CLAUDE.local.md` and exclude that path
-in the clone's `.git/info/exclude`.** A file on disk in the delegate's own cwd,
-loaded because it is there — so there is nothing to prove arrived, and no canary.
+**`acquire-repo.sh` writes them**, into `<campaign>/repos/<repo>/CLAUDE.local.md`
+and the clone's `.git/info/exclude`, on every checkout it leaves. A file on disk
+in the delegate's own cwd, loaded because it is there — so there is nothing to
+prove arrived, and no canary.
+
+Written by the script and not by hand since #187: this section said "write them"
+and **no command anywhere did**, so a delegate launched by this procedure got no
+principles and nothing recorded that — the unobservability the flag below was
+abandoned for, back in a new shape. A campaign with no `AGENTS.md` of its own is
+a real answer and the script says so rather than skipping silently.
 
 This replaced `--append-system-prompt-file`, whose whole problem was
 unobservability: the flag is absent from `claude --help`, the appended text never
@@ -74,12 +81,20 @@ reaches the transcript, and a delegate that received nothing looked exactly like
 one that received everything and ignored it. The old repair was a token appended
 to the injected file, the file deleted, and the delegate asked to recite it.
 
-Probed 2026-09-04 on this machine, both halves: a fresh `claude -p` in a
-temporary git repository holding a `CLAUDE.local.md` with a token in it answered
-with that token, and `git status --porcelain` in the same repository printed
-nothing, so the exclude keeps it out of the delegate's own commits. `.gitignore`
-would not do: it is tracked, so excluding a per-launch file there is a commit on
-the member repository for the campaign's convenience.
+Probed 2026-09-04 on this machine: a fresh `claude -p` in a temporary git
+repository holding a `CLAUDE.local.md` with a token in it answered with that
+token. `.gitignore` would not do for the second half: it is tracked, so
+excluding a per-launch file there is a commit on the member repository for the
+campaign's convenience.
+
+**The second half of that probe was wrong about its own mechanism**, and #187
+found it while writing the command. It read `git status --porcelain` as empty
+and concluded the `info/exclude` line was doing the work; this machine's global
+gitignore holds `*.local.md`, so the file was ignored either way and the probe
+could not have told the two apart. Re-measured with the global and system config
+emptied (`GIT_CONFIG_GLOBAL=/dev/null`), the exclude does do it — and
+`scripts/acquire-repo-test.py` is that measurement, run on every push: delete
+the exclude line and its named case reports `?? CLAUDE.local.md`.
 
 The old external-import dialog goes with the flag: `CLAUDE.local.md` in the cwd
 is not an ancestor import and raises no question. The row for it stays in the

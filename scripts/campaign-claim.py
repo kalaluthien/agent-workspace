@@ -60,9 +60,10 @@ record this replaced was keyed on the sub-issue and gave that for free. So
 sub-issue, whatever its topic -- and then lists AGAIN after its own create-ref.
 The first read is a narrowing and is not atomic on its own: two takers on two
 topics both see no sibling and both create. The second read is what settles it,
-because by then both refs exist, both takers see the same set, and the
-lexicographically smallest ref wins a race neither of them has to talk about.
-The loser deletes the ref it just cut, which held nothing.
+because by then both refs exist and both takers see the same set. EVERYONE WHO
+SEES A RIVAL YIELDS and deletes the ref it just cut, which held nothing; a
+smallest-name tiebreak was the first shape of this and left both racers holding
+in two interleavings, because they do not read the same set at the same moment.
 
 That matters because the record this replaced was keyed on the sub-issue and
 `O_EXCL` was COMPLETE on one machine -- and one machine is the only place a
@@ -163,13 +164,18 @@ WHAT WENT WITH THE RECORD, AND IS GONE
 `take --name` checked a session's name against
 `scripts/campaign-name-session.py`'s rule and refused one belonging to another
 campaign, because a stale name written into a record sent every later reader to
-the wrong session. There is no record to write a name into, so this
-script no longer reads a name at all. The rule in AGENTS.md 'The session name'
-is enforced elsewhere since #185: check-campaign-claim.py resolves the role
-from the name on every write, and an executor named for another campaign is
-refused that campaign's issues. What is gone is the check AT THE CLAIM, which
-is why a claim can still be cut under a stale name and the write that follows
-is where it is caught.
+the wrong session. There is no record to write a name into, so nothing
+here refuses a name AT THE CLAIM any more: a claim can be cut under a stale
+name, and the write that follows is where it is caught.
+
+Two readers took the name up, and they ask different questions. #185's
+check-campaign-claim.py resolves the ROLE from it on every write, so an
+executor named for another campaign is refused that campaign's issues and a
+name of no shape is refused both planes -- that is the enforcement of AGENTS.md
+'The session name'. `OTHER_CAMPAIGN` below is #187's, and is only a shape: it
+answers "does this name say whose it is at all", which `classify` needs to
+leave another campaign's sessions out of a close, and it decides nothing about
+permission.
 
 EXIT
 
@@ -183,9 +189,18 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 DEFAULT_REPO = "kalaluthien/campaign-base"
+
+# THE SAME STRING, TWO QUESTIONS, so it is named twice on purpose. `DEFAULT_REPO`
+# is where a ref is cut when nothing says otherwise; `TRACKER` is where every
+# sub-issue is FILED whatever repository its code lives in (AGENTS.md, "filed on
+# this base's tracker whatever repository its code lives in"). A reader that
+# collapses them cannot express "read #N's body from the tracker, then cut its
+# ref on the member repository the body names", which is exactly what #187 does.
+TRACKER = DEFAULT_REPO
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
 # A session name that names SOME campaign. Only the shape matters here -- which
@@ -294,6 +309,109 @@ def matching_refs(repo, campaign_issue):
     return parse_refs(r.stdout)
 
 
+REPOSITORY_LINE = re.compile(r"^Repository:\s*(\S+)\s*$", re.MULTILINE)
+
+
+def issue_repo(issue, default_repo):
+    """(repo, named, note) -- the repository a sub-issue's work lands in, read
+    from the sub-issue's own body. `None` for repo means the reading did not
+    happen; `named` is that repository when the body named a member one and
+    None when it said `none`, which is what the `## Repos` scope check reads.
+
+    THE DESTINATION IS A FACT ABOUT THE SUB-ISSUE, NOT AN ARGUMENT. `--repo`
+    used to decide it, so two takers naming different repositories both cut a
+    ref and both believed they held sub-issue #N: the one-claim-per-issue rule
+    is keyed on the issue and cannot see a disagreement about where the issue
+    lives (spec/campaign/orchestration/scenarios.als, `claimOnTheIssuesRepo`,
+    with `R8_ClaimCutOnAnotherRepo` for the cost of dropping it). The template
+    has carried a `Repository:` line since the sub-issue template existed and
+    NOTHING read it, which is the shape a declared contract takes just before it
+    drifts.
+
+    `none` is the answer for a repo-less sub-issue and means the base: with no
+    member repository the only place a ref can be cut is the base, which is what
+    `R4_RepolessCampaign` says. Three outcomes, not two -- a body that could not
+    be fetched is not a body with no line in it."""
+    r = run("gh", "issue", "view", str(issue), "-R", TRACKER, "--json", "body",
+            "--jq", ".body")
+    if r.returncode != 0:
+        return None, None, (f"could not read #{issue}'s body from {TRACKER} "
+                            f"({r.stderr.strip()[:120]})")
+    m = REPOSITORY_LINE.search(r.stdout)
+    if not m:
+        return None, None, (
+            f"#{issue}'s body has no `Repository:` line, so where its work "
+            f"lands is unstated. Fill it from "
+            f".claude/skills/opening-campaign/assets/sub-issue.md")
+    named = m.group(1)
+    if named.lower() == "none":
+        return default_repo, None, (
+            f"#{issue} names no member repository, so its ref is cut on the "
+            f"base ({default_repo})")
+    if "/" not in named:
+        return None, None, (
+            f"#{issue}'s `Repository:` line reads {named!r}, which is not an "
+            f"owner/repo and not `none`")
+    return named, named, f"#{issue} says its work lands in {named}"
+
+
+def issue_settled(issue):
+    """(settled, note) -- is this sub-issue closed? None means the reading did
+    not happen.
+
+    BOTH CLOSED READINGS COUNT. AGENTS.md: a sub-issue is settled when it is
+    closed as completed with its pull request merged, or as NOT PLANNED, which
+    is how a sub-issue gets dropped. `take` needs only "is it closed", because
+    either way the work is over and a fresh claim on it is a claim on work
+    nobody is doing."""
+    r = run("gh", "issue", "view", str(issue), "-R", TRACKER,
+            "--json", "state,stateReason", "--jq", '.state + " " + (.stateReason // "")')
+    if r.returncode != 0:
+        return None, (f"could not read #{issue}'s state from {TRACKER} "
+                      f"({r.stderr.strip()[:120]})")
+    words = r.stdout.split()
+    if not words:
+        return None, f"{TRACKER} returned no state for #{issue}"
+    state = words[0].upper()
+    if state == "CLOSED":
+        why = words[1] if len(words) > 1 else ""
+        return True, f"#{issue} is CLOSED{(' as ' + why) if why else ''}"
+    return False, f"#{issue} is {state}"
+
+
+def campaign_repos(campaign_issue):
+    """(repos, note) -- the campaign issue's `## Repos` list. None means the
+    reading did not happen, which is a refusal and never an empty list.
+
+    THROUGH ITS ONE READER. `scripts/campaign-repos.py` owns what that list
+    admits -- the missing heading, the malformed line, the surviving
+    `<owner/repo>` placeholder, `- none` mixed with entries -- and AGENTS.md
+    forbids a second reader of a rule a script owns, so this hands it the body
+    and reads its verdict rather than parsing the section again. It takes a
+    path and calls `main()` at import time, so it is run and not imported."""
+    r = run("gh", "issue", "view", str(campaign_issue), "-R", TRACKER,
+            "--json", "body", "--jq", ".body")
+    if r.returncode != 0:
+        return None, (f"could not read campaign #{campaign_issue}'s body from "
+                      f"{TRACKER} ({r.stderr.strip()[:120]})")
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
+        fh.write(r.stdout)
+        tmp = fh.name
+    try:
+        v = run(sys.executable, str(HERE / "campaign-repos.py"), tmp)
+    finally:
+        os.unlink(tmp)
+    if v.returncode != 0:
+        return None, (f"campaign #{campaign_issue}'s `## Repos` list did not "
+                      f"read: {v.stderr.strip()[:160]}")
+    listed = [x for x in v.stdout.split() if x]
+    if not listed:
+        return [], (f"campaign #{campaign_issue} lists no member repository "
+                    f"(`- none`)")
+    return listed, (f"campaign #{campaign_issue} lists "
+                    f"{', '.join(listed)}")
+
+
 def refs_for_issue(branches, campaign_issue, issue):
     """The claim branches of one sub-issue. Pure, so none, one and two each
     have a case; two is what `release` refuses on rather than picking."""
@@ -302,6 +420,81 @@ def refs_for_issue(branches, campaign_issue, issue):
 
 
 # ------------------------------------------------------------------------ take
+
+
+def scope_for(campaign_issue):
+    """(campaign_dir_or_None, note) -- the directory to sweep for THIS campaign.
+
+    `own_campaign_dir` answers "which campaign directory is this script running
+    under", which is the INVOKER's and not the subject's. Scoping on that alone
+    was a regression the machine-wide sweep did not have: `live 5` run from
+    campaign #1's worktree swept campaign #1's clones and printed that all three
+    readings were made, so a dead delegate's clone under campaign #5 went
+    unread. R11 says a holder is reached through `campaignDirAt[campaignOf[i],
+    host]` -- the SUB-ISSUE's campaign.
+
+    Nothing in a directory's name says which campaign it is until #181 puts the
+    number there, so this confirms by the one artifact that does: the campaign
+    README was derived from the campaign issue body, and `runtime/
+    campaign-issue-body-derived.md` is the copy it was derived from. First lines
+    equal means this directory is that campaign's.
+
+    UNCONFIRMED FALLS BACK TO THE WIDE SWEEP AND SAYS SO. A scope that might be
+    the wrong campaign's is worse than no scope: the wide sweep is noisy, the
+    wrong scope is silently blind."""
+    mine = own_campaign_dir()
+    if mine is None:
+        return None, ("not under a campaign directory, so every campaign "
+                      "directory here was swept")
+    derived = Path(mine) / "runtime" / "campaign-issue-body-derived.md"
+    try:
+        first = derived.read_text().strip().splitlines()[0].strip()
+    except (OSError, IndexError):
+        return None, (f"{mine.name} carries no readable "
+                      f"campaign-issue-body-derived.md, so which campaign it "
+                      f"is could not be confirmed and every campaign directory "
+                      f"here was swept")
+    r = run("gh", "issue", "view", str(campaign_issue), "-R", TRACKER,
+            "--json", "body", "--jq", ".body")
+    if r.returncode != 0:
+        return None, (f"could not read campaign #{campaign_issue}'s body, so "
+                      f"{mine.name} could not be confirmed as its directory; "
+                      f"every campaign directory here was swept")
+    body = r.stdout.strip().splitlines()
+    if body and body[0].strip() == first:
+        return mine, f"scoped to {mine.name}, this campaign's directory"
+    return None, (f"{mine.name} is not campaign #{campaign_issue}'s directory, "
+                  f"so every campaign directory here was swept")
+
+
+def repo_named(args):
+    """Did the caller pass `--repo` at all? The flag defaults to None so an
+    explicit value equal to the base is still an assertion, not a silence."""
+    return getattr(args, "repo", None) is not None
+
+
+def partition_refs(repo, branches):
+    """(held, residue, unread) -- which of these refs are live claims.
+
+    A ref whose pull request merged is residue of settled work, not a claim
+    (#187 question 3, `settledLeavesNoClaim`). ONE FUNCTION BECAUSE THERE ARE
+    TWO READERS: the survey before the create and the re-check after it. The
+    first shape of this filtered only the survey, so a `take` on a REOPENED
+    sub-issue walked past its own residue, cut the ref, then counted that same
+    residue as a rival in the re-check and deleted what it had just cut --
+    reporting a race against a branch that merged weeks ago. Reopen-then-take
+    is the only path by which a settled sub-issue is ever re-worked, so that
+    left question 3 delivering nothing."""
+    held, residue, unread = [], [], []
+    for b in branches:
+        pr = merged_pr_of(repo, b)
+        if pr == "?":
+            unread.append(b)
+        elif pr:
+            residue.append(f"{b} (merged as #{pr})")
+        else:
+            held.append(b)
+    return held, residue, unread
 
 
 def cmd_take(args):
@@ -314,6 +507,47 @@ def cmd_take(args):
         return 1
     print("bound here, so the claim may be cut")
 
+    # WHERE, read from the sub-issue and not from the caller. Before #187 this
+    # was `repo`, so two takers naming different repositories both cut a
+    # ref and both held #N. `--repo` survives only as a confirmation, and a
+    # disagreement is refused rather than resolved: whichever way it were
+    # resolved silently, one of the two readers would be wrong for good.
+    repo, named, note = issue_repo(args.issue, DEFAULT_REPO)
+    if repo is None:
+        print(f"refusing: {note}\n  Where a claim is cut is a fact about the "
+              f"sub-issue, so a body this could not read is not a\n  "
+              f"sub-issue whose ref may be cut anywhere.", file=sys.stderr)
+        return 1
+    print(note)
+    if repo_named(args) and args.repo != repo:
+        print(f"refusing: --repo says {args.repo}, #{args.issue} says {repo}.\n"
+              f"  The sub-issue decides. Fix its `Repository:` line, or drop "
+              f"--repo.", file=sys.stderr)
+        return 1
+
+    # ...AND IT MUST BE A REPOSITORY THE CAMPAIGN IS FOR. `Repository:` is
+    # prose on one sub-issue; `## Repos` is the campaign's scope and the thing a
+    # person signed up for. A sub-issue naming a repository outside it is a
+    # scope change filed as a typo, and cutting the ref would make the campaign
+    # silently wider than its charter. Only a named member repository is
+    # checked: `none` resolves to the base, which is never in the list.
+    if named is not None:
+        listed, repos_note = campaign_repos(args.campaign_issue)
+        if listed is None:
+            print(f"refusing: {repos_note}\n  #{args.issue} names {named}, and "
+                  f"whether this campaign is for it could not be read.\n  "
+                  f"A scope that could not be read is not a scope that admits "
+                  f"it.", file=sys.stderr)
+            return 1
+        if named not in listed:
+            print(f"refusing: #{args.issue} says its work lands in {named}, but "
+                  f"{repos_note}.\n  Adding a repository is a scope change and "
+                  f"belongs in the campaign issue's `## Repos`,\n  not in one "
+                  f"sub-issue's body.", file=sys.stderr)
+            return 1
+        print(f"{repos_note}, which includes {named}")
+
+
     # THE SUB-ISSUE IS WHAT IS CLAIMED, AND THE REF NAME CARRIES THE TOPIC TOO,
     # so create-ref alone serialises topics rather than sub-issues: `7-parser`
     # and `7-parse-fix` are two names and the server refuses neither. The record
@@ -323,37 +557,75 @@ def cmd_take(args):
     # that is the honest ceiling, not a bug hidden here: the binding already
     # limits a campaign to one machine, and this window is narrower than the
     # one `O_EXCL` on a record closed only for this machine anyway.
-    existing, why = matching_refs(args.repo, args.campaign_issue)
+    existing, why = matching_refs(repo, args.campaign_issue)
     if why:
         print(f"refusing: {why}\n  A ref listing that did not happen is not "
               f"proof the sub-issue is free.", file=sys.stderr)
         return 1
     siblings = refs_for_issue(existing, args.campaign_issue, args.issue)
     if siblings:
-        print(f"already claimed: sub-issue #{args.issue} is held by "
-              f"{', '.join(siblings)} on {args.repo}.")
-        print("  A sub-issue has one claim whatever the topic, so a second "
-              "topic is not a second claim.")
-        print("  Read who is standing in it before doing anything else:")
-        print(f"    {sys.argv[0]} live {args.campaign_issue}")
-        return 3
+        # A SETTLED SUB-ISSUE'S REF IS RESIDUE, NOT A CLAIM (#187 question 3,
+        # spec/campaign/orchestration/scenarios.als `settledLeavesNoClaim`).
+        # `delete_branch_on_merge` is off on this tracker, so a merged branch's
+        # ref stands until somebody deletes it by hand -- and this sweep read it
+        # as a live claim, so a sub-issue that had ever been settled could never
+        # be re-worked. Probed 2026-09-04: `take 1 154 <topic>` exited 3
+        # `already claimed` though #154 closed as completed via #162.
+        #
+        # The test is the ref's own pull request, which is the same reading
+        # `release` makes on its merged path: a branch whose pull request merged
+        # is finished work. Stated in `settledLeavesNoClaim` once so the two
+        # cannot drift about when a ref stops meaning "somebody holds this".
+        held, residue, unread = partition_refs(repo, siblings)
+        if unread:
+            print(f"refusing: could not ask {repo} whether "
+                  f"{', '.join(unread)} was ever merged, so whether it is a "
+                  f"live claim or\n  residue of a settled sub-issue is "
+                  f"unknown.", file=sys.stderr)
+            return 1
+        if held:
+            print(f"already claimed: sub-issue #{args.issue} is held by "
+                  f"{', '.join(held)} on {repo}.")
+            print("  A sub-issue has one claim whatever the topic, so a second "
+                  "topic is not a second claim.")
+            print("  Read who is standing in it before doing anything else:")
+            print(f"    {sys.argv[0]} live {args.campaign_issue}")
+            return 3
+        print(f"{', '.join(residue)} is residue of settled work, not a claim")
+
+    # ...AND A SETTLED SUB-ISSUE IS NOT RE-CLAIMED WHILE IT IS STILL CLOSED.
+    # The model admits `claim[i]` only for `i in Open`, so re-working one means
+    # reopening it first -- which is a person's decision and a GitHub fact, not
+    # something a claim should make silently on their behalf.
+    settled, state_note = issue_settled(args.issue)
+    if settled is None:
+        print(f"refusing: {state_note}\n  A sub-issue whose state could not be "
+              f"read is not a sub-issue known to be open.", file=sys.stderr)
+        return 1
+    if settled:
+        print(f"refusing: {state_note}, so it is settled and its work is over.\n"
+              f"  Re-working it means reopening it first, which is a person's "
+              f"call:\n    gh issue reopen {args.issue} -R {TRACKER}\n"
+              f"  Or file a new sub-issue for what is left.", file=sys.stderr)
+        return 1
+    print(state_note)
 
     # Resolved and checked before the create, never written inline: a read that
     # fails and still prints goes up as the sha and comes back as the 422 that
     # means "already claimed", so the sub-issue reads as taken and is abandoned.
-    r = run("gh", "api", f"repos/{args.repo}/commits/main", "--jq", ".sha")
+    r = run("gh", "api", f"repos/{repo}/commits/main", "--jq", ".sha")
     sha = r.stdout.strip()
     if r.returncode != 0 or not SHA.match(sha):
-        print(f"refusing: could not resolve {args.repo}'s main sha.\n"
+        print(f"refusing: could not resolve {repo}'s main sha.\n"
               f"  got {sha!r}; {r.stderr.strip()}", file=sys.stderr)
         return 1
-    print(f"cut from {args.repo}@main {sha}")
+    print(f"cut from {repo}@main {sha}")
 
-    r = run("gh", "api", f"repos/{args.repo}/git/refs",
+    r = run("gh", "api", f"repos/{repo}/git/refs",
             "-f", f"ref=refs/heads/{branch}", "-f", f"sha={sha}")
     if r.returncode != 0:
         if "already exists" in r.stderr.lower():
-            print(f"already claimed: {branch} exists on {args.repo}.")
+            print(f"already claimed: {branch} exists on {repo}.")
             print("  create-ref refuses an existing ref server-side, so this "
                   "is the claim working.")
             print("  Read who is standing in it before doing anything else:")
@@ -368,11 +640,11 @@ def cmd_take(args):
     # create-ref refuses neither because the names differ. Reading AGAIN after
     # the create closes it, because by then both refs exist and both takers see
     # the same set -- so a rule they can both apply without talking settles it.
-    # The rule is the lexicographically smallest ref, which is a total order on
-    # a set they agree about; the loser deletes what it just cut and reports the
-    # winner. Do not replace this with a longer survey before the create: no
+    # The rule is that EVERYONE WHO SEES A RIVAL YIELDS, spelled out at the
+    # block below; a smallest-name tiebreak is what this replaced and must not
+    # come back. Do not replace this with a longer survey before the create: no
     # amount of looking first makes a read-then-write atomic.
-    after, why = matching_refs(args.repo, args.campaign_issue)
+    after, why = matching_refs(repo, args.campaign_issue)
     if why:
         print(f"refusing: {branch} WAS cut, but the re-check that makes the "
               f"claim atomic did not\n  happen ({why}). Read "
@@ -380,7 +652,21 @@ def cmd_take(args):
               f"a second\n  topic on this sub-issue would be invisible.",
               file=sys.stderr)
         return 1
-    rivals = refs_for_issue(after, args.campaign_issue, args.issue)
+    # THE SAME PARTITION AS THE SURVEY, and this is the whole of finding 1.
+    # Counting residue here made a reopened sub-issue's `take` delete the ref it
+    # had just cut and report a race against a branch merged weeks ago.
+    all_after = refs_for_issue(after, args.campaign_issue, args.issue)
+    rivals, after_residue, after_unread = partition_refs(repo, all_after)
+    if after_unread:
+        print(f"refusing: {branch} WAS cut, but whether "
+              f"{', '.join(after_unread)} is a live claim or residue of "
+              f"settled work\n  could not be read, so this claim cannot be "
+              f"confirmed sole. Read `{sys.argv[0]} live "
+              f"{args.campaign_issue}` before working it.", file=sys.stderr)
+        return 1
+    if after_residue:
+        print(f"{', '.join(after_residue)} is residue of settled work, not a "
+              f"rival")
     if len(rivals) > 1:
         # EVERYONE WHO SEES A RIVAL YIELDS. The smallest-name rule looked like a
         # tiebreak both racers could apply, and it is not: they do not read the
@@ -395,7 +681,7 @@ def cmd_take(args):
         # fact. Do not "improve" this back into a tiebreak: the property is
         # never two holders, not always one.
         others = ", ".join(r for r in rivals if r != branch)
-        d = run("gh", "api", "-X", "DELETE", delete_path(args.repo, branch))
+        d = run("gh", "api", "-X", "DELETE", delete_path(repo, branch))
         print(f"already claimed: sub-issue #{args.issue} was taken in the same "
               f"moment by {others}.")
         if d.returncode == 0:
@@ -406,7 +692,7 @@ def cmd_take(args):
                   f"({' '.join(d.stderr.split())[:120]}), so it is a ref "
                   f"holding no work that\n     will refuse the next `take` on "
                   f"this sub-issue. Delete it by hand:")
-            print(f"       gh api -X DELETE {delete_path(args.repo, branch)}")
+            print(f"       gh api -X DELETE {delete_path(repo, branch)}")
         print(f"  Re-read `{sys.argv[0]} live {args.campaign_issue}`: whoever "
               f"else saw this race yielded too,\n  so the sub-issue may now be "
               f"free.")
@@ -522,11 +808,47 @@ def repo_root(cwd):
     return str(Path(r.stdout.strip()).parent), None
 
 
-def campaign_clones(root):
-    """(paths, unread) -- every member checkout under every campaign directory
-    at the base root.
+def own_campaign_dir(start=None):
+    """This session's own campaign directory, or None when it is not under one.
 
-    UNCONDITIONAL, and that is the fix: deriving the roots from live herdr rows
+    THE SAME WALK `base_root` MAKES, kept rather than thrown away. `base_root`
+    already looks for a `<slug>-<YYMMDD>` ancestor of this file and returns its
+    PARENT; the directory it walked past is the one campaign this invocation is
+    actually about, and #187 question 4 is what it cost to discard it.
+
+    None is a real answer, not a failure: run from the base's own `scripts/`
+    there is no campaign ancestor, and nothing on disk says which campaign a
+    directory belongs to until #181 puts the number in the name.
+
+    `start` is a parameter so the walk is a calculation a case can drive. Read
+    from `HERE` alone it could only be tested by where this file happens to
+    sit, which is a different answer in a worktree, in a clone, and on CI."""
+    for parent in (start or HERE).parents:
+        if CAMPAIGN_DIR.search(parent.name):
+            return parent
+    return None
+
+
+def campaign_clones(root, only=None):
+    """(paths, unread) -- the member checkouts under campaign directories at the
+    base root; under `only` alone when a campaign directory is given.
+
+    ONE CAMPAIGN'S READING DOES NOT DEPEND ON ANOTHER'S DIRECTORY (#187
+    question 4). This walked EVERY campaign directory, so one with an
+    unreadable `repos/` denied `live` and `release` for every other campaign on
+    the machine, and a neighbour's clone counted toward this campaign's sweep.
+    directory/system.als has said all along that `campaignDirAt` is the one way
+    to reach a campaign's directory and that every reading about a campaign
+    goes through it; this is the reader catching up, as in question 1.
+
+    The residual, named because it does not go away here: run from the base's
+    own `scripts/` there is no campaign ancestor, `only` is None, and the sweep
+    is machine-wide again. Nothing on disk attributes a directory to a campaign
+    until #181 puts the number in the name, so the wide sweep says so rather
+    than pretending to be scoped.
+
+    UNCONDITIONAL WITHIN WHAT IT SWEEPS, and that is the older fix: deriving
+    the roots from live herdr rows
     made the sweep go blind exactly when a session died, which is the case it
     exists for. A delegate that exits leaves its clone on disk holding the
     branch, and a sweep that only followed living sessions reported that branch
@@ -534,12 +856,15 @@ def campaign_clones(root):
 
     A campaign directory that will not enumerate is named, never skipped."""
     out, unread = [], []
-    try:
-        dirs = [d for d in sorted(Path(root).iterdir())
-                if d.is_dir() and CAMPAIGN_DIR.search(d.name)]
-    except OSError as e:
-        return [], [f"{root}: could not list campaign directories "
-                    f"({e.__class__.__name__})"]
+    if only is not None:
+        dirs = [Path(only)]
+    else:
+        try:
+            dirs = [d for d in sorted(Path(root).iterdir())
+                    if d.is_dir() and CAMPAIGN_DIR.search(d.name)]
+        except OSError as e:
+            return [], [f"{root}: could not list campaign directories "
+                        f"({e.__class__.__name__})"]
     for d in dirs:
         repos = d / "repos"
         if not repos.is_dir():
@@ -566,26 +891,51 @@ def remote_of(clone):
     return m.group(1) if m else None
 
 
-def claim_repos(default_repo, root):
+def claim_repos(default_repo, root, only=None, campaign_issue=None):
     """Every repository this campaign's claims can be on. Returns (repos, note).
 
     A CLAIM IS CUT ON THE REPOSITORY THE WORK LANDS IN, so `--repo` alone
     answers for the base and for nothing else: a member-repo sub-issue's branch
     is on that member's remote, and reading only the base returned `0 occupied,
     0 vacant` over a delegate standing in one -- a close passing over a held
-    claim. The list is derived from the clones on disk rather than from the
-    campaign issue's `## Repos`, because a clone is what a branch can actually
-    be checked out in, and `campaign-repos.py` reads the other."""
+    claim.
+
+    TWO SOURCES, AND THE CLONES ALONE ARE NOT ENOUGH. A clone is what a branch
+    can be checked out in, so it answers "where might somebody be standing";
+    `## Repos` is what the campaign is FOR, so it answers "where might a claim
+    be". They differ exactly when a member repository was never cloned here or
+    its clone was removed -- and then the claim on it is real, on the remote,
+    and invisible: `live` printed "all three readings were made, 0 occupied, 0
+    vacant" and a close passed over a held claim. That is the false-clean this
+    reading exists to prevent, so `## Repos` is read too, through
+    `campaign-repos.py`, which owns what that list admits.
+
+    A `## Repos` that will not read is NAMED in the note and does not silently
+    narrow the sweep: the caller prints the note beside its counts."""
     repos, seen = [default_repo], {default_repo}
     if not root:
         return repos, "no base root, so only the named repository was read"
-    clones, _ = campaign_clones(root)
+    clones, _ = campaign_clones(root, only)
     for c in clones:
         name = remote_of(c)
         if name and name not in seen:
             seen.add(name)
             repos.append(name)
-    return repos, f"{len(repos)} repositor(y/ies) hold this campaign's claims"
+    listed_note = ""
+    if campaign_issue is not None:
+        listed, why = campaign_repos(campaign_issue)
+        if listed is None:
+            listed_note = f"; {why}, so a repository it names may be unread"
+        else:
+            extra = [r for r in listed if r not in seen]
+            for r in extra:
+                seen.add(r)
+                repos.append(r)
+            if extra:
+                listed_note = (f"; {', '.join(extra)} from `## Repos` with no "
+                               f"clone here")
+    return repos, (f"{len(repos)} repositor(y/ies) hold this campaign's claims"
+                   f"{listed_note}")
 
 
 def all_refs(repos, campaign_issue):
@@ -607,14 +957,15 @@ def all_refs(repos, campaign_issue):
     return out, unread
 
 
-def sweep_roots(sessions):
+def sweep_roots(sessions, only=None):
     """(roots, unread, why_unreadable) -- every repository to enumerate
     worktrees in.
 
     Three sources, and only the third depends on anything running: the base
     root, because a campaign's worktrees hang off it; every member clone under
-    every campaign directory here, because a dead delegate's clone still holds
-    its branch; and each live session's own repository, which catches a session
+    THIS campaign's directory (#187 question 4 -- it used to be every campaign
+    directory here, so a neighbour's unreadable `repos/` denied this campaign's
+    reading), because a dead delegate's clone still holds its branch; and each live session's own repository, which catches a session
     working somewhere none of the above covers. Failing to resolve the base root
     is a refusal -- not knowing where to look is not the same as looking and
     finding nothing."""
@@ -622,7 +973,7 @@ def sweep_roots(sessions):
     if why:
         return None, [], why
     roots = {root}
-    clones, unread = campaign_clones(root)
+    clones, unread = campaign_clones(root, only)
     roots.update(clones)
     for row in sessions.values():
         r, _ = repo_root(row.get("cwd", ""))
@@ -730,7 +1081,14 @@ def merged_pr_of(repo, branch):
 
 def cmd_live(args):
     root, _ = base_root()
-    repos, repo_note = claim_repos(args.repo, root)
+    mine, scope_note = scope_for(args.campaign_issue)
+    print(scope_note)
+    # `live` reads a whole campaign rather than one sub-issue, so it has no
+    # `Repository:` line to consult; the base is where it starts and the clones
+    # on disk widen it. `--repo` here is a starting point, not an assertion
+    # about one sub-issue's home.
+    repos, repo_note = claim_repos(args.repo or DEFAULT_REPO, root, mine,
+                                   args.campaign_issue)
     found, unread1 = all_refs(repos, args.campaign_issue)
     branches = sorted(found)
     why1 = "; ".join(unread1) if unread1 else None
@@ -741,7 +1099,7 @@ def cmd_live(args):
     sessions, why2 = herdr_sessions()
     print(f"reading 2  herdr agent list -- "
           f"{'FAILED: ' + why2 if why2 else str(len(sessions)) + ' session(s) on this machine'}")
-    roots, unread, why3 = sweep_roots(sessions or {})
+    roots, unread, why3 = sweep_roots(sessions or {}, mine)
     if why3:
         where = {}
     else:
@@ -938,7 +1296,25 @@ def merged_head_verdict(returncode, out, repo, branch):
 
 def cmd_release(args):
     root, _ = base_root()
-    repos, repo_note = claim_repos(args.repo, root)
+    mine, scope_note = scope_for(args.campaign_issue)
+    print(scope_note)
+    # WHERE, from the sub-issue and not the caller -- the same reading `take`
+    # makes. The spec says "`take` and `release` read the sub-issue's own
+    # `Repository:` line"; before this, only `take` did, and `release` still
+    # picked a repository out of the clones on disk. A delete aimed by the
+    # wrong reader takes a ref that is not this sub-issue's.
+    subject, _named, note = issue_repo(args.issue, DEFAULT_REPO)
+    if subject is None:
+        print(f"refusing: {note}\n  Where a claim lives is a fact about the "
+              f"sub-issue, and this deletes a ref.", file=sys.stderr)
+        return 1
+    print(note)
+    if repo_named(args) and args.repo != subject:
+        print(f"refusing: --repo says {args.repo}, #{args.issue} says "
+              f"{subject}.\n  The sub-issue decides.", file=sys.stderr)
+        return 1
+    repos, repo_note = claim_repos(subject, root, mine,
+                                   args.campaign_issue)
     found, unread1 = all_refs(repos, args.campaign_issue)
     if unread1 and not args.branch:
         print(f"refusing: {'; '.join(unread1)}\n  A ref listing that did not "
@@ -975,7 +1351,7 @@ def cmd_release(args):
               f"the live sessions, so an unread\n  listing leaves an occupant "
               f"unread too.", file=sys.stderr)
         return 1
-    roots, unread, why3 = sweep_roots(sessions)
+    roots, unread, why3 = sweep_roots(sessions, mine)
     if why3:
         print(f"refusing: {why3}", file=sys.stderr)
         return 1
@@ -1067,18 +1443,42 @@ def cmd_release(args):
               f"merged, so whether this is finished work or an unstarted claim "
               f"is unknown.", file=sys.stderr)
         return 1
-    elif not args.confirmed_absent:
-        print(f"refusing: {branch} holds nothing beyond main and was never "
-              f"merged, so it is\n  indistinguishable from a claim cut for a "
-              f"holder that has not checked it out yet.\n  Ask whose it is "
-              f"(`{sys.argv[0]} live {args.campaign_issue}`, then the peers), "
-              f"then pass\n  --confirmed-absent WHO. Deleting it lets a second "
-              f"`take` succeed on the same sub-issue.",
-              file=sys.stderr)
-        return 1
     else:
-        print(f"never merged and empty, but absence confirmed by: "
-              f"{args.confirmed_absent}")
+        # THE SUB-ISSUE'S OWN STATE ANSWERS THIS, and it used to take a person
+        # (#187 question 2). 0 ahead and never merged cannot tell finished work
+        # from a claim cut for a holder who has not started -- but GitHub
+        # already carries the missing bit: a CLOSED sub-issue says the work is
+        # over, as completed or as not planned, and neither is a claim anybody
+        # is standing in. That is `settled[Now.issue]` in
+        # spec/campaign/orchestration/scenarios.als's `releaseNeedsAWorker`,
+        # widened from `complete` by this question, with R7e as its control.
+        #
+        # This is what makes `R4_RepolessCampaign` true of the code: a sub-issue
+        # whose work lands no commit closes with no pull request, so its ref is
+        # 0 ahead for ever and only its `stateReason` can say the work is done.
+        # `--confirmed-absent` survives for the sub-issue that is still OPEN,
+        # which is the one case where nothing on GitHub says the holder is gone.
+        settled, state_note = issue_settled(args.issue)
+        if settled is None:
+            print(f"refusing: {branch} holds nothing beyond main and was never "
+                  f"merged, and {state_note}.\n  Whether its work is over is "
+                  f"unknown, and an unknown is not a release.", file=sys.stderr)
+            return 1
+        if settled:
+            print(f"{state_note}, so its work is over and the ref is residue")
+        elif not args.confirmed_absent:
+            print(f"refusing: {branch} holds nothing beyond main, was never "
+                  f"merged, and {state_note},\n  so it is indistinguishable "
+                  f"from a claim cut for a holder that has not checked it out "
+                  f"yet.\n  Close the sub-issue if its work is done, or ask "
+                  f"whose the claim is\n  (`{sys.argv[0]} live "
+                  f"{args.campaign_issue}`, then the peers) and pass\n  "
+                  f"--confirmed-absent WHO. Deleting it lets a second `take` "
+                  f"succeed on the same sub-issue.", file=sys.stderr)
+            return 1
+        else:
+            print(f"never merged and empty, but absence confirmed by: "
+                  f"{args.confirmed_absent}")
 
     r = run("gh", "api", "-X", "DELETE", delete_path(repo, branch))
     if r.returncode != 0:
@@ -1096,7 +1496,11 @@ def main():
     ap = argparse.ArgumentParser(add_help=True,
                                  description=__doc__.splitlines()[0])
     against = argparse.ArgumentParser(add_help=False)
-    against.add_argument("--repo", default=DEFAULT_REPO)
+    # SENTINEL, not the default value. Comparing `args.repo != DEFAULT_REPO`
+    # cannot tell `--repo kalaluthien/campaign-base` typed by hand from no flag
+    # at all, so an explicit base `--repo` on a member-repository sub-issue was
+    # the one case "`--repo` may only confirm" silently did not cover.
+    against.add_argument("--repo", default=None)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     # One shape for the campaign issue everywhere: `#1` and `1` are the same

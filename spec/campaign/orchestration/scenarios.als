@@ -80,7 +80,7 @@ pred localCheckedShutdown { always (Now.event = StandDown implies Target.agent n
    which is what #187 is deciding. */
 pred releaseNeedsAWorker {
   always (Now.event = Release implies
-            (complete[Now.issue]
+            (settled[Now.issue]
              or some a: Agent | a.task = Now.issue and a in Launched))
 }
 
@@ -91,6 +91,19 @@ pred releaseNeedsAWorker {
    difference. */
 pred claimBeforeLaunch { always (Now.event = Launch implies Now.issue in Who.session.claimedIssues) }
 pred claimAtomic       { always (Now.event = Claim  implies Now.issue not in Claimed) }
+
+/* THE REPOSITORY IS THE SUB-ISSUE'S, NOT THE TAKER'S. `claimAtomic` above is
+   keyed on the issue and already forbids two claims on one sub-issue -- but it
+   forbids them only among takers who agree about where the ref goes. Let each
+   taker name its own repository and the two cut different refs, neither sees
+   the other's listing, and the model's one-claim-per-issue reading is satisfied
+   by a world in which two executors are working the same sub-issue. The repair
+   is not a wider sweep, which would still be a survey of a set the takers do
+   not agree about; it is that the destination is a FACT ABOUT THE SUB-ISSUE
+   (`Issue.repo`, read from its `Repository:` line) that no taker supplies. */
+pred claimOnTheIssuesRepo {
+  always (Now.event = Claim implies Now.repo = Now.issue.repo)
+}
 
 /* The gate on LAUNCH covers the agent a session starts and says nothing
    about the agent a session IS: `work` carries no `Who.session`, so a session
@@ -400,6 +413,227 @@ pred R4g_ClaimWithoutAtomicityStillShared {
   R4e_NumberedBranchStillShared
 }
 
+/* A SETTLED SUB-ISSUE'S REF IS RESIDUE, NOT A CLAIM. `closeIssue` leaves
+   `Claimed` alone, so a sub-issue stays claimed for ever after it is settled --
+   and on GitHub the same thing is literally true, because
+   `delete_branch_on_merge` is off on this tracker and a merged branch's ref
+   stands until someone deletes it by hand. Probed 2026-09-04: `take 1 154
+   <topic>` exits 3 `already claimed` though #154 closed as completed via #162.
+   A sub-issue that has been settled can therefore never be re-worked, which is
+   not a policy anyone chose.
+
+   The claim ends where the work does. This is the same reading `release`
+   already makes on the merged path -- a branch whose pull request merged is
+   finished work and not a fresh claim -- stated once, here, so `take` and
+   `release` cannot drift about when a ref stops meaning "somebody holds this".
+
+   SPELLED ON `Claim` AND NOT ON `CloseIssue`, and the first draft got that
+   wrong in a way worth keeping written down. Written as "a close leaves the
+   issue unclaimed", and with `closeIssue` framing `Claimed' = Claimed`, it
+   reduced to "no sub-issue may close while it is claimed" -- which FORBIDS THE
+   ORDINARY LANDING the code makes every time: the pull request merges, GitHub
+   auto-closes the sub-issue with its ref still standing, and `release` deletes
+   the ref afterwards. The spec said the code's happy path was illegal, and two
+   comments in `campaign-claim.py` cited it as the statement they follow.
+
+   What the code actually reads is on the TAKE side: a second claim on an
+   already-claimed sub-issue is admitted exactly when the first is residue of a
+   merged pull request. That is `partition_refs`, and it is what makes
+   reopen-then-take work.
+
+   `some ... .pullRequest` IS LOAD-BEARING and was missing. `none in Merged`
+   holds vacuously in Alloy, so without it the rule also admitted a second claim
+   on a sub-issue with NO pull request at all -- which `partition_refs` refuses,
+   since a ref with no merged pull request is a live claim. The comment said
+   "exactly when", and it was not exactly. R9e is the control for that branch;
+   without the conjunct it goes SAT. */
+pred settledLeavesNoClaim {
+  always (Now.event = Claim and Now.issue in Claimed
+            implies (some Now.issue.pullRequest
+                     and Now.issue.pullRequest in Merged))
+}
+
+/* R8. THE DEFECT #187 FIXES, in the smallest world that holds it: one
+   sub-issue, and a claim cut on a repository that is not the one its work
+   lands in. `claimAtomic` is asserted here, so this is NOT the same defect as
+   R4g -- the one-claim-per-issue rule holds throughout and the wrong ref is cut
+   anyway, which is the whole point: a discipline keyed on the issue cannot see
+   a disagreement about where the issue lives. */
+pred R8_ClaimCutOnAnotherRepo {
+  claimAtomic
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i
+                              and Now.repo != i.repo)
+}
+
+/* R8b. CONTROL: the same trace with the repair, which must be empty. If this
+   ever comes back SAT, `claimOnTheIssuesRepo` has stopped constraining
+   anything -- which is what happened the first time it was written, as a
+   conjunct of `claim` itself, where no scenario could violate it. */
+pred R8b_RepairExcludesIt {
+  claimOnTheIssuesRepo
+  R8_ClaimCutOnAnotherRepo
+}
+
+/* R8c. ...and the repair still admits the ordinary claim, or it would be a
+   rule that forbids everything. */
+pred R8c_RepairAdmitsTheOrdinaryClaim {
+  claimOnTheIssuesRepo and claimAtomic
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i)
+}
+
+/* R9. A settled sub-issue whose claim outlives it. `claimAtomic` is asserted,
+   so this is not the atomicity hole either: the sub-issue is closed, nobody is
+   working it, and its claim stands anyway. */
+pred R9_SettledSubIssueStaysClaimed {
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i
+                              and i in Claimed
+                              and i.pullRequest not in Merged)
+}
+
+/* R9b. CONTROL: the repair excludes it. */
+pred R9b_RepairExcludesIt {
+  settledLeavesNoClaim
+  R9_SettledSubIssueStaysClaimed
+}
+
+/* R9c. ...and the repair still admits a sub-issue being claimed and then
+   settled, which is the ordinary life of every one of them. A rule that made
+   the close unreachable would satisfy R9b just as well. */
+pred R9c_RepairAdmitsClaimThenSettle {
+  settledLeavesNoClaim
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i
+                              and i in Claimed
+                              and i.pullRequest in Merged)
+}
+
+/* R7e. CONTROL FOR THE `settled` DISJUNCT #187 Q2 added: a sub-issue DROPPED
+   as not planned, whose claim nobody was ever launched on, must be releasable.
+   This is the case `--confirmed-absent WHO` used to be the only door for, and
+   it is the door GitHub already answers: an issue closed as not planned says
+   the work is over as plainly as a merged pull request does. Deleting
+   `settled` from the rule -- or narrowing it back to `complete` -- turns this
+   UNSAT, which is what makes the widening tested rather than merely made. */
+pred R7e_WorkerRuleAdmitsTheDroppedSubIssue {
+  releaseNeedsAWorker
+  some i: Issue {
+    always no a: Agent | a.task = i and a in Launched
+    always not complete[i]                 -- dropped, never landed
+    eventually (dropped[i] and Now.event = Release and Now.issue = i)
+  }
+}
+
+/* R11. A HOLDER ATTRIBUTED THROUGH ANOTHER CAMPAIGN'S DIRECTORY (#187
+   question 4). `holder` reaches a checkout through `campaignDirAt[campaignOf[i],
+   host]`, and directory/system.als says that is the one way to reach a
+   campaign's directory -- so a sub-issue's holder must stand in ITS OWN
+   campaign's directory, never in a neighbour's on the same machine.
+
+   That statement was in the model and pinned by nothing: dropping the campaign
+   filter from `campaignDirAt` left all 162 commands green. The script had
+   drifted the same way for the same reason -- `campaign_clones` walked EVERY
+   campaign directory at the base root, so one with an unreadable `repos/`
+   denied `live` and `release` for every other campaign on the machine, and a
+   clone belonging to a neighbour counted toward this campaign's sweep.
+
+   Expect 0, and it goes SAT the moment `campaignDirAt` stops filtering by
+   campaign. */
+pred R11_HolderThroughAnotherCampaignsDir {
+  some a: Agent, c: Campaign {
+    c != campaignOf[a.task]
+    eventually (a in holder[a.task]
+                and no campaignDirAt[campaignOf[a.task], a.host].checkedOut
+                and some campaignDirAt[c, a.host].checkedOut)
+  }
+}
+
+/* A DELEGATE IS LAUNCHED INTO A CLONE THAT CARRIES THE PRINCIPLES (#187
+   question 5). A delegate has no session of its own to be named and reads no
+   ancestor instruction file behind a dialog that defaults to declining, so the
+   `CLAUDE.local.md` in its cwd is the whole channel. #176 wrote that channel
+   down as prose and no command wrote the file, which is the shape of a rule
+   that is remembered rather than enforced -- and one nothing observes, since a
+   delegate that received nothing looks exactly like one that received
+   everything and ignored it.
+
+   Delegates only. A session launching an in-process subagent, or working by its
+   own hands, already has the campaign's instructions loaded by its own harness. */
+pred delegateLaunchIsPrincipled {
+  always all a: Agent |
+    (a not in Launched and a in Launched' and no a.peer)
+      implies a.task.repo in campaignDirAt[campaignOf[a.task], a.host].principled'
+}
+
+/* R12. The defect: a delegate launched into a clone carrying nothing. */
+pred R12_DelegateLaunchedWithoutPrinciples {
+  some a: Agent {
+    no a.peer
+    eventually (a not in Launched and a in Launched'
+                and a.task.repo not in
+                    campaignDirAt[campaignOf[a.task], a.host].principled')
+  }
+}
+
+/* R12b. CONTROL: the discipline excludes it. */
+pred R12b_RepairExcludesIt {
+  delegateLaunchIsPrincipled and R12_DelegateLaunchedWithoutPrinciples
+}
+
+/* R12c. ...and it still admits the launch that DID carry them, or the rule
+   would be one that forbids every delegate. */
+pred R12c_RepairAdmitsThePrincipledLaunch {
+  delegateLaunchIsPrincipled
+  some a: Agent {
+    no a.peer
+    eventually (a not in Launched and a in Launched'
+                and a.task.repo in
+                    campaignDirAt[campaignOf[a.task], a.host].principled')
+  }
+}
+
+/* R12d. ACQUIRE IS WHAT PRINCIPLES A CLONE, pinned. R12c is satisfied by a
+   `principled` that was simply true at time zero, so it says nothing about
+   WHERE principles come from -- and while `acquire` did not write the field,
+   nothing in the model did. Starting from nothing principled, a principled
+   launch is reachable only through an Acquire. Goes UNSAT when `acquire` stops
+   producing. */
+pred R12d_AcquireIsWhatPrinciplesAClone {
+  no principled
+  some a: Agent {
+    no a.peer
+    eventually (a not in Launched and a in Launched'
+                and a.task.repo in
+                    campaignDirAt[campaignOf[a.task], a.host].principled')
+  }
+}
+
+/* R9d. THE ORDINARY LANDING, and the case whose absence let the first spelling
+   of `settledLeavesNoClaim` through: claim, merge, and the sub-issue closes
+   with its ref still standing, because GitHub auto-closes on merge and
+   `release` runs afterwards. Spelled on CloseIssue, the rule made this UNSAT --
+   the spec forbidding what the code does every time, with two comments in
+   `campaign-claim.py` citing it as what they follow. A discipline needs a
+   witness for the path it must NOT block, not only for the one it must. */
+pred R9d_OrdinaryLandingStillAllowed {
+  settledLeavesNoClaim
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i
+                              and eventually (Now.event = CloseIssue
+                                              and Now.issue = i
+                                              and i in Claimed))
+}
+
+/* R9e. THE BRANCH THE FIRST SPELLING LEFT OPEN: a second claim on a sub-issue
+   that is claimed and has NO pull request at all. `none in Merged` is vacuously
+   true, so the rule admitted it and no case said otherwise -- R9's witness asks
+   for `pullRequest not in Merged`, which is FALSE of an empty pullRequest, so
+   R9 and R9b never reached this shape. The code refuses it: a ref with no
+   merged pull request is a live claim, and `partition_refs` puts it in `held`.
+   Expect 0, and it goes SAT the moment the `some` conjunct is dropped. */
+pred R9e_SecondClaimOnAPullRequestLessSubIssue {
+  settledLeavesNoClaim
+  some i: Issue | eventually (Now.event = Claim and Now.issue = i
+                              and i in Claimed and no i.pullRequest)
+}
+
 /* R4h. THE HOLE, and the one this campaign actually fell into: a session works
    its own sub-issue and no claim of it ever exists, so every peer reading the
    records sees an open sub-issue indistinguishable from one nobody started. */
@@ -672,12 +906,19 @@ pred R7a_FreshClaimReleasedWithNoAgent {
        the one that pins the rule's `in Launched`: written as "no atom", the
        weakened rule still forbade the trace and the disjunct went untested. */
     always no a: Agent | a.task = i and a in Launched
-    /* NOT complete, and this conjunct is what makes the witness the fresh
+    /* NOT SETTLED, and this conjunct is what makes the witness the fresh
        claim rather than hands-on work. Without it the trace closes the
        sub-issue and merges its pull request first, which is a landing nobody
        needed an Agent atom for and is releasable on purpose -- so R7b came
-       back SAT over a legitimate trace and pinned nothing. */
-    always not complete[i]
+       back SAT over a legitimate trace and pinned nothing.
+
+       WIDENED FROM `complete` TO `settled` BY #187 Q2, in step with the rule.
+       The moment `releaseNeedsAWorker` admitted a settled sub-issue, the
+       solver satisfied this witness by DROPPING the issue instead of merging
+       it -- the same escape through a different door, and R7b went SAT again.
+       An exclusion has to name the whole disjunct it is excluding, not the
+       half that existed when it was written. */
+    always not settled[i]
     eventually (Now.event = Claim and Now.issue = i
                 and after eventually (Now.event = Release and Now.issue = i))
   }
@@ -696,7 +937,7 @@ pred R7b_WorkerRuleClosesTheFreshClaim {
 pred R7c_WorkerRuleAdmitsTheOrdinaryRelease {
   releaseNeedsAWorker
   some a: Agent {
-    always not complete[a.task]
+    always not settled[a.task]     -- widened with the rule; see R7a
     eventually (a in Launched and a not in Live and a not in PushedToRemote
                 and Now.event = Release and Now.issue = a.task)
   }
@@ -742,6 +983,10 @@ pred N2_UnnamedSessionStillBlocks {
   some c: Campaign, s: Session, a: Agent, m: Machine {
     a.peer = s and a.host = m and s.machine = m
     always no s.campaignNamed
+    /* ...AND UNDER THE BASE TREE, since #187 question 6. An absent name is not
+       evidence either way, so the cwd is what ties the session to this machine's
+       campaigns; N7 is the same session outside the tree, which does NOT block. */
+    always s in UnderBase
     /* `a.task not in c.memberIssues` is load-bearing: without it the witness
        blocks through the FIRST disjunct -- an agent on a sub-issue of this
        campaign blocks whatever it is called -- and says nothing about whether
@@ -774,6 +1019,26 @@ pred N3_ForeignNameDoesNotExemptOwnSubIssue {
    retired, which the next `take` on that sub-issue then refuses forever. */
 pred noStrayClaims[c: Campaign] {
   all i: c.memberIssues | i in Claimed implies complete[i]
+}
+
+/* N7. THE RESIDUAL #187 QUESTION 6 LEAVES, stated rather than left as a gap in
+   a comment. A live session of this campaign that renamed to nothing AND left
+   the base tree does not block a close: nothing observable ties it here, and
+   blocking on it would block on it for every campaign on the machine at once.
+   It is a real hole -- that session is asked by nobody -- and this is the
+   witness that makes it findable instead of surprising.
+
+   Expect 1, and it is the pair of N2: the same unnamed session, in the tree and
+   out of it, blocking and not. */
+pred N7_UnnamedSessionOutsideTheTreeDoesNotBlock {
+  some c: Campaign, s: Session, a: Agent, m: Machine {
+    a.peer = s and a.host = m and s.machine = m
+    always no s.campaignNamed
+    always s not in UnderBase
+    eventually (a in Live and m in machinesHolding[c]
+                and a.task not in c.memberIssues
+                and not liveUnderLocally[c, m])
+  }
 }
 
 /* N4. THE STRAY: every sub-issue settled, one of them dropped rather than
@@ -1045,6 +1310,7 @@ run R4e_NumberedBranchStillShared for 4 Issue, 1 PullRequest, 1 Campaign, 2 Sess
 run N1_ForeignNamedSessionDoesNotBlock       for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 -- control: a session whose name says nothing still blocks
 run N2_UnnamedSessionStillBlocks             for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run N7_UnnamedSessionOutsideTheTreeDoesNotBlock for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 -- control: the name exempts the machine-wide disjunct and nothing else
 run N3_ForeignNameDoesNotExemptOwnSubIssue   for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 
@@ -1067,6 +1333,20 @@ run R7d_WorkerRuleAdmitsTheAgentLessLanding for 3 Issue, 1 PullRequest, 1 Campai
 run R4f_ClaimClosesSameSubIssue    for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- control: the 422 is load-bearing
 run R4g_ClaimWithoutAtomicityStillShared for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R8_ClaimCutOnAnotherRepo for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R8b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R8c_RepairAdmitsTheOrdinaryClaim for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R9_SettledSubIssueStaysClaimed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R9b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R9c_RepairAdmitsClaimThenSettle for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R9d_OrdinaryLandingStillAllowed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R9e_SecondClaimOnAPullRequestLessSubIssue for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R7e_WorkerRuleAdmitsTheDroppedSubIssue for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R11_HolderThroughAnotherCampaignsDir for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 10 steps expect 0
+run R12_DelegateLaunchedWithoutPrinciples for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run R12b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+run R12c_RepairAdmitsThePrincipledLaunch for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run R12d_AcquireIsWhatPrinciplesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0

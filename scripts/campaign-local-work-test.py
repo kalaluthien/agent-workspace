@@ -11,6 +11,7 @@ Usage: scripts/campaign-local-work-test.py
 """
 import importlib.machinery
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,14 @@ import pathlib
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "campaign-local-work.py"
+
+# THIS MACHINE'S GLOBAL GITIGNORE HOLDS `*.local.md` (#187, 2026-09-05), so
+# `CLAUDE.local.md` is ignored here whether or not the fixture excludes it --
+# and a case about what `.git/info/exclude` does could not tell the two apart.
+# Every git command below runs with the global and system config emptied, so
+# what is measured is the fixture and not the machine.
+GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,
+               GIT_CONFIG_SYSTEM=os.devnull)
 RAN, FAILED = [], []
 
 
@@ -52,7 +61,7 @@ def a_clone(root, *files):
     clone.mkdir(parents=True)
     def g(*a):
         subprocess.run(["git", "-C", str(clone), *a], check=True,
-                       capture_output=True)
+                       capture_output=True, env=GIT_ENV)
     g("init", "-q", "-b", "main")
     g("config", "user.email", "t@example.invalid")
     g("config", "user.name", "t")
