@@ -31,6 +31,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -542,8 +543,11 @@ def main():
             check(f"`{cmd!r}` is read as the gh write it is",
                   r.returncode == 2 and "a write to #5" in r.stderr,
                   f"exit {r.returncode}: {out(r)[:200]}")
+        # `cat <<EOF ... see gh ... EOF` used to be in this list and is not any
+        # more: since #193 a heredoc body is data, and the cases for that are
+        # the block at the end of this section.
         for cmd in ("xargs gh issue close", "echo gh issue close 5",
-                    "echo hi\ngh issue close 5", "cat <<EOF\nsee gh\nEOF",
+                    "echo hi\ngh issue close 5",
                     # The fourth: an assignment's VALUE names gh and the call
                     # itself is an expansion this cannot resolve.
                     "G=gh; $G issue close 5"):
@@ -989,6 +993,224 @@ def main():
         r = ask(f.base, path=str(f.base / "AGENTS.md"), env=executor)
         check("ALLOW beside it: the file half admits the same session",
               r.returncode == 0, out(r)[:400])
+
+    # ---------------------------------------------------------------- #193
+    # A HEREDOC BODY IS DATA. Reproduced 2026-09-05 on
+    # campaign-1/187-claim-identity: `git commit -F - <<'MSG'` whose message
+    # said `machine's` was refused, and the refusal named a `gh` call that was
+    # not in the command at all.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("campaign-1/7-x", "campaign-1/9-y"))
+        wt7 = f.trees["campaign-1/7-x"]
+        r = ask(wt7, tool="Bash",
+                command="git commit -q -F - <<'MSG'\nRead the machine's "
+                        "branch's name\nMSG")
+        check("a commit message with an apostrophe in it is data, not a "
+              "command that will not split",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        # ...and the body is not scanned for a `gh` either, because scanning
+        # prose is what refused `git commit -m 'fix gh issue close parsing'`.
+        r = ask(wt7, tool="Bash",
+                command="git commit -F - <<'MSG'\nwhy gh issue close 9 was "
+                        "wrong\nMSG")
+        check("a heredoc body naming a gh call is prose, and is not read",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        # WHAT MAKES IT A COMMAND IS ITS CONSUMER. A shell reading a heredoc is
+        # reading a script, and that IS read -- the same rule `-c` gets.
+        r = ask(wt7, tool="Bash", command="bash <<EOF\ngh issue close 11\nEOF")
+        check("a heredoc a SHELL reads is a script, and its gh write is read",
+              r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:300])
+        # ...and the pairing is per SEGMENT, not per line: a line holding both
+        # a shell and a prose heredoc must read only the shell's.
+        r = ask(wt7, tool="Bash",
+                command="bash deploy.sh && git commit -F - <<'M'\nit's fine\nM")
+        check("a shell beside a prose heredoc does not make the prose a script",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        # ...and stripping the body does not blind the guard to the rest.
+        r = ask(wt7, tool="Bash",
+                command="gh issue close 11 && git commit -F - <<'M'\nit's "
+                        "done\nM")
+        check("a gh write beside a heredoc is still read",
+              r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:300])
+        # THE REFUSAL NAMES ONLY WHAT IT READ (#193 defect 2). Two branches,
+        # one case each, asserted on the sentence: the exit status is the same.
+        r = ask(wt7, tool="Bash", command='echo "unterminated')
+        check("a command that will not split says so and names the text",
+              r.returncode == 2 and "the text it could not split" in r.stderr,
+              out(r)[:300])
+        check("...and does not name a gh call nobody made",
+              "no `gh` was seen in it" in r.stderr
+              and "A gh call this cannot split" not in r.stderr, out(r)[:400])
+        r = ask(wt7, tool="Bash", command='gh issue close 9 "unterminated')
+        check("...and when a gh IS among its words, it says that instead",
+              r.returncode == 2 and "a `gh` is among its words" in r.stderr
+              and "no `gh` was seen" not in r.stderr, out(r)[:400])
+
+        # ------------------------------------------------------------- #191
+        # ITEM 1: a mixed command reaches two refusing branches, and the one
+        # naming a NUMBER wins because it tells the reader which claim to take.
+        no_claim = ask(f.base, tool="Bash",
+                       command="gh issue close 11 && gh pr merge 5")
+        check("a mixed command is refused by the issue it names, not by the "
+              "unnarrowed fallback",
+              no_claim.returncode == 2
+              and "no claim covering a write to #11" in no_claim.stderr,
+              out(no_claim)[:300])
+        # ...and the fallback still decides once every named issue IS covered,
+        # or the rule above would have swallowed it.
+        r = ask(f.base, tool="Bash", command="gh issue close 9 && gh pr merge 5")
+        check("...and the unnarrowed fallback decides when the named issue is "
+              "covered",
+              r.returncode == 0 and "gh pr merge" in r.stdout
+              and "a claim (" in r.stdout, out(r)[:400])
+
+        # ------------------------------------------------------------- #192
+        # ITEM 3: `-l` is `--list` for `gh issue develop`, so treating it as
+        # valued swallowed the issue number and dropped the call to the
+        # unnarrowed gate, where a claim on any issue carried it.
+        r = ask(f.base, tool="Bash", command="gh issue develop -l 11")
+        check("`gh issue develop -l 11` is narrowed to #11, not swallowed",
+              r.returncode == 2 and "no claim covering a write to #11"
+              in r.stderr, out(r)[:300])
+        # ALLOW beside it, twice: the label spellings that must go on working.
+        r = ask(f.base, tool="Bash", command="gh issue edit 9 -l bug")
+        check("ALLOW beside it: `-l bug` on a claimed issue is allowed",
+              r.returncode == 0 and "It covers #9" in r.stdout, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue edit 9 --label 11")
+        check("ALLOW beside it: `--label` is still a valued flag, so its "
+              "value is not the issue",
+              r.returncode == 0 and "It covers #9" in r.stdout, out(r)[:300])
+
+    # #191 ITEM 2: `base_above` answers the NEAREST base, not the topmost.
+    # Reached only where git resolves no marker-bearing repository, so the
+    # fixture is deliberately not a git repository at all.
+    with tempfile.TemporaryDirectory() as d:
+        outer = (Path(d) / "outer").resolve()
+        inner = outer / "demo-260904" / "inner"
+        for root in (outer, inner):
+            (root / "scripts").mkdir(parents=True)
+            (root / "scripts" / "campaign-claim.py").write_text("x\n")
+        target = inner / "demo-260905" / "note.md"
+        target.parent.mkdir(parents=True)
+        inner = inner.resolve()
+        target.write_text("x\n")
+        r = ask(d, path=str(target), env=no_herdr(d))
+        check("base_above answers the nearest base, so the campaign directory "
+              "is the inner one",
+              f"campaign directory {inner / 'demo-260905'}" in out(r),
+              out(r)[:400])
+        # ASSERTED ON THE WHOLE PATH IT PRINTED, not on the outer path being
+        # absent: the outer campaign directory is a PREFIX of the inner one, so
+        # `not in` is true of nothing and the case would pass either way.
+        named = re.search(r"campaign directory (\S+?)[.,]", out(r))
+        check("...and not the outer base's, which the topmost reading gave",
+              named is not None
+              and named.group(1) == str(inner / "demo-260905"),
+              f"{named and named.group(1)!r}")
+
+    # #192 ITEM 1: `own_claim`'s reach, kept and named. An unrelated
+    # repository on a claim-shaped branch with a local bare origin is
+    # ADMITTED, which is #176's own property -- a claim is a branch name plus
+    # a ref on whatever remote the checkout has. The two things it does ask
+    # each have a case that fails when dropped.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d)
+        sandbox = f.camp / "sandbox"
+        sandbox.mkdir(parents=True)
+        remote = Path(d) / "s.git"
+        subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main",
+                        str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(sandbox)],
+                       check=True)
+        git(sandbox, "remote", "add", "origin", str(remote))
+        (sandbox / "f").write_text("x\n")
+        git(sandbox, "add", "-A")
+        git(sandbox, "commit", "-qm", "c")
+        git(sandbox, "push", "-q", "origin", "HEAD")
+        for branch, pushed in (("campaign-1/888-x", True),
+                               ("campaign-1/889-x", False),
+                               ("feature-888", True)):
+            git(sandbox, "switch", "-qc", branch)
+            if pushed:
+                git(sandbox, "push", "-q", "origin", branch)
+            git(sandbox, "fetch", "-q", "origin")
+        git(sandbox, "switch", "-q", "campaign-1/888-x")
+        r = ask(sandbox, tool="Bash", command="gh issue close 888")
+        check("own_claim admits any checkout on a claim-shaped branch whose "
+              "ref exists on ITS OWN remote -- the reach #192 names and keeps",
+              r.returncode == 0 and "campaign-1/888-x" in r.stdout,
+              out(r)[:400])
+        git(sandbox, "switch", "-q", "campaign-1/889-x")
+        r = ask(sandbox, tool="Bash", command="gh issue close 889")
+        check("...but the ref must EXIST, so an unpushed branch is no claim",
+              r.returncode == 2, out(r)[:400])
+        git(sandbox, "switch", "-q", "feature-888")
+        r = ask(sandbox, tool="Bash", command="gh issue close 888")
+        check("...and the branch must be claim-SHAPED",
+              r.returncode == 2, out(r)[:400])
+
+    # ---------------------------------------------------------------- #196
+    # EVERY VERDICT IS DURABLE. Asserted on the FILE, not on the sentence the
+    # guard prints about it: a guard that says "logged to ..." and writes
+    # nothing is the exact failure this closes.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d)
+        # RESOLVED, because the guard prints the resolved path and a macOS
+        # temporary directory is a symlink: `/var/...` and `/private/var/...`
+        # are the same file and two different strings.
+        camp_log = (f.camp / "runtime" / "guard.log").resolve()
+        base_log = (f.base / "runtime" / "guard.log").resolve()
+        r = ask(f.base, tool="Bash", command="gh issue close 7")
+        check("an allowed verdict is written to the base's log",
+              base_log.is_file(), out(r)[:300])
+        check("...and the guard says where it wrote it",
+              f"logged to {base_log}" in r.stdout, out(r)[:300])
+        # READ DEFENSIVELY, so a mutation that stops the log being written
+        # fails these cases instead of killing the suite in a traceback: a
+        # crash is not a case failing, and it is not evidence either.
+        def last(path):
+            lines = path.read_text().splitlines() if path.is_file() else []
+            return json.loads(lines[-1]) if lines else {}
+
+        row = last(base_log)
+        check("...and the line carries what guard-precision.py reads",
+              row.get("verdict") == "allowed" and row.get("tool") == "Bash"
+              and row.get("command") == "gh issue close 7"
+              and row.get("session") and row.get("at") and "reason" in row,
+              row)
+        r = ask(f.base, tool="Bash", command="gh issue close 8")
+        row = last(base_log)
+        check("a refusal is written too, carrying the sentence it printed",
+              row.get("verdict") == "REFUSED"
+              and "no claim covering a write to #8" in row.get("reason", ""),
+              row)
+        check("...and the refusal says where the verdict went, on stderr",
+              f"logged to {base_log}" in r.stderr, out(r)[:400])
+        # THE CAMPAIGN IT WAS CLASSIFIED INTO, so one campaign's precision can
+        # be read without separating it from every other session here.
+        r = ask(f.base, path=str(f.camp / "notes.md"))
+        check("a call inside a campaign directory is logged under THAT "
+              "campaign, not under the base",
+              camp_log.is_file()
+              and last(camp_log).get("target")
+              == str((f.camp / "notes.md").resolve()), out(r)[:300])
+    with tempfile.TemporaryDirectory() as d:
+        # A call under no base is not campaign work, and saying "logged" about
+        # it would put every session on this machine in the measurement.
+        r = ask(d, tool="Bash", command="rm -rf x")
+        check("a call under no base is not logged, and the guard says why",
+              r.returncode == 0 and "not logged: under no base" in r.stdout,
+              out(r)[:300])
+    with tempfile.TemporaryDirectory() as d:
+        # A LOG THAT COULD NOT BE WRITTEN CHANGES NO VERDICT AND IS NOT
+        # SILENT. `runtime` is a FILE here, so the mkdir fails.
+        f = Fixture(d)
+        (f.base / "runtime").write_text("not a directory\n")
+        r = ask(f.base, tool="Bash", command="gh issue close 7")
+        check("a log that could not be written leaves the verdict alone",
+              r.returncode == 0, out(r)[:300])
+        check("...and says it was not written, rather than nothing",
+              "verdict not logged" in r.stdout, out(r)[:300])
 
     # THE ALLOW CORPUS (#196 step 4, #209 step 1). Every case above is a shape
     # somebody thought of; these are the shapes the campaign actually typed,

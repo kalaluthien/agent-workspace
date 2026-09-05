@@ -200,6 +200,25 @@ pred claimBeforeWork {
             implies Now.issue in Target.agent.peer.claimedIssues)
 }
 
+/* THE VERDICT IS DURABLE (kalaluthien/campaign-base#196). `claimBeforeWork`
+   above is the gate; this is the rule that the gate leaves a record of what it
+   decided. Without it a guard that judged every call and wrote nothing
+   satisfied the whole model, which is the state `check-campaign-claim.py` was
+   in until #209: its precision could only be reconstructed from the memory of
+   whoever it refused.
+
+   ON `Work` AND NOT ON EVERY EVENT, and the bound is the reader's: the guard
+   is a PreToolUse hook, so what it can log is the calls it is handed. A rule
+   over every event would be a claim about writes no hook sees -- a `sed -i`,
+   a shell redirect -- and a model stricter than its reader is a false claim
+   that reads as cautious.
+
+   R15 is the world without it, R15b the repair, R15c the control that the
+   repair does not forbid the work itself. */
+pred verdictIsDurable {
+  always (Now.event = Work implies Now.issue in Judged')
+}
+
 /* ---------------- discipline: permission by role (#185) ---------------- */
 
 /* The events an executor may not reach on the campaign plane whatever it holds.
@@ -811,6 +830,29 @@ pred R4i_GuardClosesOwnHandsGap {
 
 /* R4j. CONTROL for R4i: UNSAT there would mean the guard forbids the session
    from working at all rather than from working unclaimed. */
+/* R15. THE GUARD THAT JUDGED AND WROTE NOTHING. Work happens and no verdict
+   about it is on disk afterwards -- the state every one of this guard's false
+   positives was found in. */
+pred R15_WorkLeavesNoVerdict {
+  some i: Issue | eventually (Now.event = Work and Now.issue = i
+                              and i not in Judged')
+}
+
+/* R15b. CONTROL: the rule excludes it. */
+pred R15b_DurableExcludesIt {
+  verdictIsDurable
+  R15_WorkLeavesNoVerdict
+}
+
+/* R15c. ...and it still admits the work, or "log every verdict" would be
+   satisfied by never working. The pairing R15b alone cannot make: an UNSAT
+   there is the same shape whether the rule bounded the trace or emptied it. */
+pred R15c_DurableStillAdmitsTheWork {
+  verdictIsDurable
+  some i: Issue | eventually (Now.event = Work and Now.issue = i
+                              and i in Judged')
+}
+
 pred R4j_GuardAdmitsClaimedWork {
   claimBeforeWork
   some s: Session, a: Agent {
@@ -1543,6 +1585,10 @@ run R12d_AcquireIsWhatPrinciplesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R4j_GuardAdmitsClaimedWork   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- #196: the gate leaves a record, and the record does not forbid the work
+run R15_WorkLeavesNoVerdict      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R15b_DurableExcludesIt       for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R15c_DurableStillAdmitsTheWork for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the shell hole the pre-tool-use half leaves, the commit gate that closes it, and the control
 run R4k_UnclaimedShellWriteThenCommit for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4l_CommitGateClosesIt           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0

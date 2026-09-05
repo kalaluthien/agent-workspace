@@ -277,7 +277,13 @@ true rather than remembered, one rule read at two moments.**
 session make this change" — the claim for an executor, and since #185 the
 session's ROLE for both — for what has an unambiguous
 target — a file tool's path and a `gh` write — and allowing every other shell
-command unread, saying so. `scripts/check-commit-claim.py` is the `pre-commit`
+command unread, saying so. Since #196 it writes **one line per verdict** to
+`<campaign>/runtime/guard.log`, git-ignored scratch, and says beside every
+verdict whether that line was written; `scripts/guard-precision.py` reads the
+log and pairs each refusal with the same session's next allowed call on the
+same target, so a false positive is found by measurement rather than by
+whoever it hit. The model rule is `verdictIsDurable`.
+`scripts/check-commit-claim.py` is the `pre-commit`
 gate where a shell write lands: a commit on a base tree or under a campaign
 directory whose branch is not a claim is refused. A change landing outside every
 base tree and every campaign directory is not campaign work and neither refuses

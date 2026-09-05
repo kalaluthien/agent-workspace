@@ -17,12 +17,30 @@ absent from it is unread like any other interpreter, as is a string a shell is
 merely handed) whose command word is
 `gh` -- after `env`, `VAR=x`, `time`, a path -- is looked up in WRITES, and a
 segment that will not split refuses. A `gh` TOKEN this cannot read as the call
-(`xargs`, a heredoc, or an assignment whose value is `gh`) is read as a write
-of unknown kind, since nothing downstream reads a `gh` write. NOT a loop body:
-`do` and `then` are prefixes, so `for i in 1 2; do gh issue close 9; done` is
-read as the call it is and narrowed to #9. Every other Bash command is ALLOWED UNREAD,
-printing so: a shell string is an unbounded language, and a shell write on
-campaign work lands at the commit, where the other half reads it.
+(`xargs`, or an assignment whose value is `gh`) is read as a write
+of unknown kind, since nothing downstream reads a `gh` write.
+
+A HEREDOC BODY IS DATA. It is removed before the command is split, so a commit
+message carrying an apostrophe no longer makes the whole call unsplittable
+(#193), and it is put back only for a SHELL reading it -- `bash <<EOF` is a
+script, `git commit -F - <<MSG` is prose. Which segment a body belongs to is
+counted from the `<<` tokens shlex leaves behind, not guessed from the line, so
+`bash x.sh && git commit -F - <<M` reads the script and not the message.
+
+NOT a loop body: `do` and `then` are prefixes, so
+`for i in 1 2; do gh issue close 9; done` is read as the call it is and
+narrowed to #9. Every other Bash command is ALLOWED UNREAD, printing so: a
+shell string is an unbounded language, and a shell write on campaign work
+lands at the commit, where the other half reads it.
+
+EVERY VERDICT IS LOGGED, one JSON line to `<campaign>/runtime/guard.log` for
+the campaign the call was classified into, or `<base>/runtime/guard.log`
+outside one; a call under no base is not campaign work and is not logged.
+`scripts/guard-precision.py` reads it, and the model rule is
+`verdictIsDurable`. The log is written after the verdict is decided, so it can
+change nothing, and whether it was written is PRINTED beside the verdict --
+a log that quietly stopped being written reads exactly like a log with nothing
+to say. Both directories are git-ignored: this is machine-local scratch.
 
 WHERE A FILE TARGET IS. A base tree -- main checkout, linked worktree anywhere,
 delegate clone, all by `git rev-parse --git-common-dir` from the TARGET, never
@@ -60,6 +78,7 @@ read: path, branch, and whether the ref came from `origin/` or the remote.
 EXIT. 0 allows; 2 refuses with the reading on stderr, where the model reads
 it. A `gh` write from a cwd under no base is allowed as not in a campaign.
 """
+import datetime
 import importlib.machinery
 import importlib.util
 import json
@@ -94,9 +113,22 @@ WRITES = {("issue", v) for v in "close edit comment reopen develop transfer "
        "lock unlock".split()} \
     | {("label", v) for v in "create edit delete".split()}
 # Flags whose value is a separate word, skipped when the subcommand is sought.
+#
+# `-l` IS NOT HERE, and the long spelling is (kalaluthien/campaign-base#192
+# item 3). `-l` is `--label` for `gh issue create` and `gh issue edit` and
+# `--list` for `gh issue develop`, so one table cannot be right for both, and
+# the two mistakes are not symmetric. Treating a boolean as valued SWALLOWS
+# the word after it: `gh issue develop -l 9` lost the 9 and fell to the
+# unnarrowed gate, where any claim at all carries the write -- a weakening.
+# Treating a valued flag as boolean reads its value as one more word, so
+# `gh issue edit 9 -l 123` still narrows to 9, the first number, and only a
+# label typed BEFORE the issue number narrows to the wrong one -- an
+# over-refusal, which is the direction to fail in. The remedy is the table and
+# not the parser: a subcommand-keyed table would be a second grammar for `gh`
+# inside a guard whose whole design is to read one bounded slice of it.
 VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
           "-f", "--raw-field", "-b", "--body", "-t", "--title", "-m",
-          "--body-file", "-l", "--label", "-a", "--assignee", "--milestone"}
+          "--body-file", "--label", "-a", "--assignee", "--milestone"}
 # WHICH gh WRITES ARE THE CAMPAIGN PLANE. The planner licence is bounded by
 # this and not by WRITES, which holds both planes: `gh pr create` is
 # OpenPullRequest and `gh pr merge` is MergePullRequest, and
@@ -130,6 +162,10 @@ PREFIXES = {"env", "command", "time", "nohup", "sudo", "exec", "do", "then",
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
 # Words whose OPERAND is itself a command string, re-read as one.
 EVALS = {"eval"}
+# A heredoc opener and its delimiter: `<<EOF`, `<<'MSG'`, `<<-"X"`. The body
+# that follows is data (#193) and is removed before the command is split.
+HEREDOC_OPEN = re.compile(
+    r"<<-?\s*(?:(['\"])([^'\"]+)\1|([A-Za-z_][A-Za-z0-9_]*))")
 
 
 def name_pattern():
@@ -238,9 +274,25 @@ def checkout_of(path: Path):
 
 
 def base_above(path: Path):
-    """The topmost ancestor holding the marker: a path inside a campaign
-    directory rather than a checkout."""
-    return next((d for d in reversed([path, *path.parents])
+    """The NEAREST ancestor holding the marker: a path inside a campaign
+    directory rather than a checkout.
+
+    NEAREST, NOT TOPMOST, and the choice is stated because #184 left it an
+    accident (kalaluthien/campaign-base#191 item 2). With bases nested -- and
+    `<campaign>/repos/campaign-base/` is exactly that -- the topmost reading
+    answered the OUTER base for a path owned by the inner one, so
+    `campaign_dir_of` then found the outer campaign directory and `session_root`
+    swept the outer base's worktrees for the inner base's claims. Nearest
+    agrees with the two readers beside it, `campaign_dir_of` here and
+    `own_campaign_dir` in campaign-claim.py, both of which already take the
+    nearest ancestor; three readers of "which one owns this path" that do not
+    agree is worse than any one of the answers.
+
+    It is reached only when git resolves no marker-bearing repository for the
+    path -- a target under a base root but in no checkout -- so the two
+    readings differ rarely. That is a reason to pin the choice, not to leave it
+    to the order of a `reversed`."""
+    return next((d for d in [path, *path.parents]
                  if (d / BASE_MARKER).is_file()), None)
 
 
@@ -339,7 +391,34 @@ def own_claim(cwd: Path):
     repository. A delegate on its own pushed `campaign-<N>/...` branch there
     therefore read as holding no claim at all. This is the same branch reading
     `held` does, asked of the checkout at hand rather than of the base's
-    worktree list."""
+    worktree list.
+
+    ITS BOUNDARY, STATED RATHER THAN NARROWED (kalaluthien/campaign-base#192
+    item 1). What this asks is exactly #176's property and no more: the branch
+    name is claim-shaped and its ref exists on WHATEVER remote this checkout
+    has. It does not ask that the checkout sit under a campaign directory, nor
+    that its origin be the campaign's remote, nor that it be GitHub. So an
+    unrelated `git init` repository parked at `<base>/<campaign>/sandbox`, on a
+    branch named `campaign-1/888-x` with a local bare origin, gets
+    `gh issue close 888` allowed here where `origin/main` refuses it.
+
+    THE THREE NARROWINGS THAT WERE WEIGHED, and why none was taken:
+
+      * require the checkout under a campaign directory of the base above it --
+        the probe's sandbox IS under one, so it excludes nothing it should and
+        excludes a delegate whose clone sits elsewhere;
+      * require the origin's owner to match the base's -- a member repository
+        may belong to an owner this account does not, which AGENTS.md says in
+        so many words, so this refuses the ordinary case;
+      * require the origin to be a GitHub URL -- this one does separate the
+        probe from the delegate, and it makes the guard's verdict turn on the
+        SHAPE of a remote URL, which no fixture in this repository can exercise
+        honestly (every one of them uses a local bare remote). A rule its own
+        suite must lie about is worse than the reach.
+
+    So the reach is kept and named. It is bounded by the two things it does
+    ask, and each has a case that fails when it is dropped: the branch is
+    claim-SHAPED, and its ref EXISTS."""
     _main, top, _note = checkout_of(cwd)
     if top is None:
         return None
@@ -394,9 +473,46 @@ def held(repo_root, issue=None):
     return out, detail
 
 
-def segments(command, depth=0):
+def strip_heredocs(command):
+    """(the command with every heredoc BODY removed, the bodies in the order
+    their openers appear).
+
+    A HEREDOC BODY IS DATA, NOT A COMMAND (kalaluthien/campaign-base#193). It
+    was part of the string handed to shlex, so an ordinary commit message with
+    an apostrophe in it -- `machine's` -- made the whole call unsplittable and
+    the guard refused it, machine-wide, naming a `gh` call that was not there.
+    The body is removed before anything is split, and put back only where the
+    line's own command word says it is a command: `strip_heredocs` collects it,
+    `segments` re-reads it for a SHELL and for nothing else.
+
+    The terminator is the delimiter alone on its line, or leading tabs stripped
+    for `<<-`. An unterminated body runs to the end, which is what a shell
+    would fail on and what this must not traceback on."""
+    lines = command.split("\n")
+    out, bodies = [], []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        opens = [(m.group(2) or m.group(3), m.group(0).startswith("<<-"))
+                 for m in HEREDOC_OPEN.finditer(line)]
+        i += 1
+        for delim, dash in opens:
+            body = []
+            while i < len(lines):
+                cur = lines[i]
+                i += 1
+                if (cur.strip() if dash else cur.rstrip()) == delim:
+                    break
+                body.append(cur)
+            bodies.append("\n".join(body))
+    return "\n".join(out), bodies
+
+
+def segments(command):
     """The command's segments as token lists, or (None, why) when shlex will
     not split it. `punctuation_chars` makes `;`, `|`, `&` their own tokens."""
+    command, heredocs = strip_heredocs(command)
     lex = shlex.shlex(command, posix=True, punctuation_chars="();<>|&{}`")
     lex.whitespace_split = True
     try:
@@ -411,8 +527,24 @@ def segments(command, depth=0):
             out.append(cur)
             cur = []
     # A string another command runs is that string's segments too: a shell's
-    # -c, spelled alone or last in a cluster (`bash -lc`), and eval's operands.
+    # -c, spelled alone or last in a cluster (`bash -lc`), eval's operands, and
+    # a heredoc a SHELL is reading -- `bash <<EOF`, where the body is the
+    # script. The bodies were removed above, so they are paired back to the
+    # segment that opened them by counting `<<` tokens, which shlex leaves in
+    # place. Pairing on the LINE instead would re-read the commit message in
+    # `bash x.sh && git commit -F - <<M`, which is the false positive this
+    # whole change is about.
+    #
+    # `depth` used to be carried through this recursion and nothing varied it
+    # (kalaluthien/campaign-base#191 item 3): the handed-string re-read that
+    # needed a bound was withdrawn in #184. Every inner string is a proper
+    # substring of its container, so the recursion is bounded by the command's
+    # own length and the parameter had no reader. Removed rather than given
+    # one.
+    taken = 0
     for seg in list(out):
+        mine = heredocs[taken:taken + seg.count("<<")]
+        taken += seg.count("<<")
         word, rest = head(seg)
         if word is None:
             continue
@@ -421,10 +553,11 @@ def segments(command, depth=0):
             i = next((j for j, t in enumerate(rest[:-1]) if is_dash_c(t)), None)
             if i is not None:
                 inners = [rest[i + 1]]
+            inners += mine
         elif word in EVALS:
             inners = [t for t in rest[1:] if not t.startswith("-")]
         for text in inners:
-            more, why = segments(text, depth + 1)
+            more, why = segments(text)
             if more is None:
                 return None, why
             out += more
@@ -535,14 +668,78 @@ def issue_target(tokens):
     return None
 
 
+# WHAT THE EXIT SAID, kept for the log. Every exit goes through `refuse` or
+# `allow`, so this is the one place a verdict can be caught without threading a
+# return value through thirty call sites -- and `main` writes it after `pre`
+# returns, so a log write can never change a verdict.
+LAST = {}
+
+
 def refuse(lines):
+    LAST.update(verdict="REFUSED", reason=lines[0] if lines else "")
     print("check-campaign-claim: REFUSED.\n  " + "\n  ".join(lines), file=sys.stderr)
     return 2
 
 
 def allow(lines):
+    LAST.update(verdict="allowed", reason=lines[0] if lines else "")
     print("check-campaign-claim: allowed. " + " ".join(lines))
     return 0
+
+
+def log_path(target, cwd: Path):
+    """(the log file, how it was chosen). A verdict is written under the
+    CAMPAIGN it was classified into, so a campaign's precision can be read
+    without separating it from every other session on the machine; a call in a
+    base but no campaign goes to the base's own log; a call under no base at
+    all is not campaign work and is not logged.
+
+    `<campaign>/runtime/` and `<base>/runtime/` are both git-ignored, which is
+    the point: the log is machine-local scratch and is never committed."""
+    for start in ([target] if target is not None else []) + [cwd]:
+        main, _top, _note = checkout_of(start)
+        base = main if main is not None and (main / BASE_MARKER).is_file() \
+            else base_above(start)
+        if base is None:
+            continue
+        camp = campaign_dir_of(start, base)
+        root = camp if camp is not None else base
+        return root / "runtime" / "guard.log", f"{root}/runtime/guard.log"
+    return None, "under no base, so not campaign work and not logged"
+
+
+def log_verdict(payload, status, target, cwd: Path):
+    """Append one line, and return what to say about having done so.
+
+    THE FAILURE MODE OF A MECHANISED RULE IS SILENCE, so this never raises and
+    never swallows: a write that did not happen comes back as a sentence the
+    caller prints beside the verdict. A guard that logs nothing and says
+    nothing reads exactly like a guard that logged."""
+    path, how = log_path(target, cwd)
+    if path is None:
+        return f"verdict not logged: {how}"
+    tool_input = payload.get("tool_input") or {}
+    row = {
+        "at": datetime.datetime.now(datetime.timezone.utc)
+                      .isoformat(timespec="seconds"),
+        "session": payload.get("session_id") or "",
+        "tool": payload.get("tool_name", ""),
+        "status": status,
+        "verdict": LAST.get("verdict", "?"),
+        # The sentence the branch alone prints. `guard-precision.py` groups on
+        # it, which is why it is stored whole rather than as a slug nobody
+        # would keep in step with the sentences.
+        "reason": LAST.get("reason", ""),
+        "target": str(target) if target is not None else "",
+        "command": (tool_input.get("command") or "")[:200],
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+    except OSError as e:
+        return f"verdict not logged to {how} ({e.__class__.__name__})"
+    return f"logged to {how}"
 
 
 TAKE = ("Take the claim first: scripts/campaign-claim.py take <campaign issue> "
@@ -628,7 +825,25 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
 def bash_call(command, cwd: Path, session_id=""):
     segs, why = segments(command)
     if segs is None:
-        return refuse([why, "A gh call this cannot split is not read as harmless."])
+        # NAMES ONLY WHAT IT READ (#193 defect 2). This used to print "A gh
+        # call this cannot split is not read as harmless" for a command with no
+        # `gh` in it at all, sending the next reader to rule out a call nobody
+        # made. What was actually observed is that the text could not be split,
+        # so that is what it says -- and whether a `gh` was among the words is
+        # a separate line, printed only when one was.
+        seen = [t for t in command.split() if gh_token(t)]
+        return refuse([
+            why,
+            f"the text it could not split, from the start: {command[:120]!r}",
+            (f"a `gh` is among its words ({seen[0]}), and which write it makes "
+             f"could not be read"
+             if seen else
+             "no `gh` was seen in it, and none was ruled out either: this "
+             "guard finds a write by reading the command, so one it cannot "
+             "read is refused rather than assumed harmless"),
+            "A heredoc body is not part of this: it is removed before the "
+            "split, so a commit message with an apostrophe in it is data.",
+        ])
     gh, stray = [], []
     for seg in segs:
         word, rest = head(seg)
@@ -740,6 +955,16 @@ def bash_call(command, cwd: Path, session_id=""):
                        for h in foreign]
         detail += d
         (covering if holders else uncovered).append((i, holders))
+    # THE NARROWEST REFUSAL WINS, and that is a rule now rather than the order
+    # these branches happen to be written in (kalaluthien/campaign-base#191
+    # item 1). A mixed command -- `gh issue close 9 && gh pr merge 5`, where
+    # the first names an issue and the second names a pull request -- reaches
+    # both this branch, on #9, and the `unreadable` fallback, on the merge.
+    # The one that names a NUMBER is the better diagnosis: it tells the reader
+    # which claim to take, where the fallback can only say "some claim". So an
+    # uncovered named issue is reported first, and the fallback decides only
+    # when every named issue is covered. It changes no verdict -- both branches
+    # refuse -- and it fixes which sentence the reader gets.
     if uncovered:
         i = uncovered[0][0]
         return refuse([f"{what}: a campaign-plane write, and this session holds "
@@ -770,13 +995,16 @@ def bash_call(command, cwd: Path, session_id=""):
         path, branch, source = holders[0]
         return allow([f"{what}: {how}; {path} is on {branch}, a claim "
                       f"({source}).", *fell_back])
-    if not covering:
-        if own is not None and (role != "executor" or campaign is None
-                                or CLAIM_BRANCH.match(own[1]).group(1) == campaign):
-            return allow([f"{what}: the session's own checkout {own[0]} is on "
-                          f"{own[1]}, a claim ({own[2]}).", *fell_back])
-        return refuse([f"{what}: a campaign-plane write, and this session holds "
-                       f"no claim covering it.", how, *detail, TAKE])
+    # WHAT USED TO BE HERE: a second `own_claim` allow and a second refusal,
+    # for the state where `covering` is empty and `unreadable` is false. That
+    # state cannot be reached (kalaluthien/campaign-base#192 item 2). `issues`
+    # is empty only when no write named a number, which makes `unreadable`
+    # true and returns above; a non-empty `issues` puts every entry in
+    # `covering` or in `uncovered`, and `uncovered` returns above too. A
+    # sentinel-instrumented copy took 0 hits over 16 commands against 5
+    # fixtures. Deleted rather than kept as a comfort: a branch nothing reaches
+    # is a branch nothing tests, and it read as a second, differently-worded
+    # answer to a question already answered.
     path, branch, source = covering[0][1][0]
     named = ", ".join(f"#{i}" for i, _ in covering)
     if path == "its own campaign":
@@ -798,8 +1026,9 @@ def pre(payload):
                        None)
             if not raw:
                 return refuse([f"{tool} names no path this can read."])
-            target = cwd / Path(os.path.expanduser(str(raw)))
-            return file_call(tool, target.resolve(), cwd, session_id)
+            target = (cwd / Path(os.path.expanduser(str(raw)))).resolve()
+            LAST["target"] = target
+            return file_call(tool, target, cwd, session_id)
     except (OSError, RuntimeError) as e:
         return refuse([f"a path would not resolve ({e.__class__.__name__})."])
     if tool == "Bash":
@@ -815,9 +1044,23 @@ def main() -> int:
                        "A guard that was handed nothing has permitted nothing."])
     event = payload.get("hook_event_name", "")
     if event and event != "PreToolUse":
-        return refuse([f"registered on {event}, but this is a PreToolUse guard and "
-                       f"blocks nothing there. Re-run scripts/install-hooks.sh."])
-    return pre(payload)
+        status = refuse([f"registered on {event}, but this is a PreToolUse guard "
+                         f"and blocks nothing there. Re-run "
+                         f"scripts/install-hooks.sh."])
+    else:
+        status = pre(payload)
+    # THE VERDICT IS DURABLE (kalaluthien/campaign-base#196 step 1, spec rule
+    # `verdictIsDurable`). Written AFTER the verdict is decided and printed, so
+    # nothing about the log can change what this guard allows -- and its own
+    # outcome is printed beside the verdict, because a log that quietly stopped
+    # being written reads exactly like a log with nothing to say.
+    try:
+        cwd = Path(payload.get("cwd") or os.getcwd()).resolve()
+    except OSError:
+        cwd = Path(".")
+    note = log_verdict(payload, status, LAST.get("target"), cwd)
+    print(note, file=sys.stderr if status else sys.stdout)
+    return status
 
 
 if __name__ == "__main__":
