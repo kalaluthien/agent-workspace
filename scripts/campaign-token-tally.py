@@ -34,11 +34,16 @@ Then, in order, each turn is either dropped or attributed:
                path that no longer exists is *not* the test -- a finished
                sub-issue's worktree is deleted and its turns are still this
                campaign's -- so containment is read as a string.
+  brief        for a subagent transcript only, its own first prompt: a
+               `/code-review <level> <pr>` operand or an explicit
+               `<owner>/<repo>#<issue>`, mapped through `--pr-map`. It comes
+               first because a subagent inherits the place its parent was
+               standing in -- all seven reviews of PR #184, whose head is
+               `campaign-1/177-`, ran from a session on
+               `campaign-1/178-delegate-clone-hooks` -- so the place says where
+               the parent was and the brief says what the subagent was for.
   worktree     `cwd` ending `/worktrees/<issue>` names the sub-issue outright.
   branch       else `gitBranch` matching `campaign-<N>/<issue>-`.
-  brief        else, for a subagent transcript, its own first prompt: a
-               `/code-review <level> <pr>` operand or an explicit
-               `<owner>/<repo>#<issue>`, mapped through `--pr-map`.
   parent       else, for a subagent transcript, whichever issue its parent
                session was last attributed to when the subagent started.
   carry        else, only for a record carrying no `gitBranch` at all, the last
@@ -328,6 +333,14 @@ class Corpus:
         return None
 
     def attribute(self, record, cwd, branch_field, is_sub, brief_issue, carried, ts):
+        # A subagent's brief outranks its place, and only a subagent's does. It
+        # inherits the place its parent was standing in -- all seven reviews of
+        # PR #184, head campaign-1/177-, ran from a session on
+        # campaign-1/178-delegate-clone-hooks and recorded that branch on every
+        # one of their 164 turns -- so the place says where the parent was and
+        # the brief says what the subagent was asked to do.
+        if is_sub and brief_issue is not None:
+            return brief_issue, "brief"
         m = WORKTREE.search(cwd)
         if m:
             return int(m.group(1)), "worktree"
@@ -335,8 +348,6 @@ class Corpus:
         if m:
             return int(m.group(1)), "branch"
         if is_sub:
-            if brief_issue is not None:
-                return brief_issue, "brief"
             parent = self.parent_issue(record.get("sessionId"), ts)
             if parent is not None:
                 return parent, "parent"

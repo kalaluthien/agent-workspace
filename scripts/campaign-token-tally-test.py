@@ -127,9 +127,12 @@ def build(tmp):
     ])
     # A subagent named by its own brief, and one that has none.
     write(root / "proj" / "s1" / "subagents" / "agent-a1.jsonl", [
-        user(day + "03:00:00Z", str(base), "/code-review high 400\n\nreview it",
+        # Launched from the worktree of *another* sub-issue, which is what a
+        # review of one pull request started from a session working a second
+        # one records on every record it writes.
+        user(day + "03:00:00Z", wt, "/code-review high 400\n\nreview it",
              session="s1", agent="a1"),
-        assistant("m-review", day + "03:01:00Z", str(base), out=30, session="s1",
+        assistant("m-review", day + "03:01:00Z", wt, out=30, session="s1",
                   model="claude-fable-5-1", agent="a1"),
     ])
     write(root / "proj" / "s1" / "subagents" / "agent-a2.jsonl", [
@@ -172,6 +175,8 @@ def main():
         r303 = row(issues, "303")
         check("a review subagent is attributed by the pull request in its brief",
               r303 and r303[3] == "30", str(r303))
+        check("...even though it ran in another sub-issue's worktree",
+              r300 and r300[1] == "1", str(r300))
         check("...and counts as a subagent turn, apart from its parent",
               r303 and r303[2] == "1", str(r303))
 
