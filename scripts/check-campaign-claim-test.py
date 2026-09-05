@@ -25,8 +25,13 @@ named for its row.
 
 Usage: scripts/check-campaign-claim-test.py
 """
+import contextlib
+import importlib.machinery
+import importlib.util
+import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -172,7 +177,11 @@ def no_herdr(d):
 
 
 def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
-        tool_input=None, env=None, session="sid-1"):
+        tool_input=None, env=None, session="sid-1", run_cwd=None):
+    """`cwd` is what the PAYLOAD says; `run_cwd` is where the process runs.
+    They are the same question everywhere except one case: a payload that will
+    not parse carries no cwd, so the guard falls back to its own, and a case
+    that did not set it would write that verdict into the REAL campaign log."""
     payload = {
         "session_id": session,
         "cwd": str(cwd),
@@ -185,12 +194,72 @@ def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
     return subprocess.run(
         [sys.executable, str(GUARD)],
         input=stdin if stdin is not None else json.dumps(payload),
-        capture_output=True, text=True,
+        capture_output=True, text=True, cwd=str(run_cwd) if run_cwd else None,
         env=dict(os.environ, **(env or {})))
 
 
 UNREAD = "was not read for a target"
 GATE = "pre-commit claim gate"
+CORPUS = HERE / "fixtures" / "guard-allow-corpus.jsonl"
+
+
+def guard_module():
+    """The guard, imported. The corpus replay calls it in-process and every
+    other case runs the shipped script: 500 subprocesses at ~50 ms of
+    interpreter start each is half a minute of nothing, and the replay is a
+    sweep rather than a case. `corpus: in-process and subprocess agree` below
+    is what keeps that from being a fixture standing in for the real thing."""
+    src = HERE / "check-campaign-claim.py"
+    spec = importlib.util.spec_from_loader(
+        "ccc", importlib.machinery.SourceFileLoader("ccc", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def ask_inproc(mod, payload, env):
+    """(exit status, stdout, stderr) from the guard called in this process."""
+    old = dict(os.environ)
+    os.environ.update(env or {})
+    o, e = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(o), contextlib.redirect_stderr(e):
+            rc = mod.pre(payload)
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+    return rc, o.getvalue(), e.getvalue()
+
+
+def corpus_rows():
+    """The corpus, or None when it is not there. NOT AN EMPTY LIST: a replay
+    over zero entries passes exactly like a replay over five hundred, and this
+    file's whole reason for existing is that a check reporting nothing reads
+    like a check that found nothing wrong."""
+    if not CORPUS.is_file():
+        return None
+    return [json.loads(l) for l in CORPUS.read_text().splitlines() if l.strip()]
+
+
+def corpus_issues(mod, rows):
+    """Every sub-issue number a corpus command names. The replay fixture holds
+    a claim on each, because the corpus is the calls sessions made WHILE
+    HOLDING one -- a fixture without them would replay the campaign's ordinary
+    work against a session that had claimed nothing and call the refusals
+    findings."""
+    out = set()
+    for r in rows:
+        if r["tool"] != "Bash":
+            continue
+        segs, _why = mod.segments(r["command"])
+        for seg in segs or []:
+            word, rest = mod.head(seg)
+            if word != "gh" or not mod.gh_write(rest)[0]:
+                continue
+            n = mod.issue_target(rest)
+            if n:
+                out.add(int(n))
+    return sorted(out)
 
 
 def main():
@@ -478,8 +547,11 @@ def main():
             check(f"`{cmd!r}` is read as the gh write it is",
                   r.returncode == 2 and "a write to #5" in r.stderr,
                   f"exit {r.returncode}: {out(r)[:200]}")
+        # `cat <<EOF ... see gh ... EOF` used to be in this list and is not any
+        # more: since #193 a heredoc body is data, and the cases for that are
+        # the block at the end of this section.
         for cmd in ("xargs gh issue close", "echo gh issue close 5",
-                    "echo hi\ngh issue close 5", "cat <<EOF\nsee gh\nEOF",
+                    "echo hi\ngh issue close 5",
                     # The fourth: an assignment's VALUE names gh and the call
                     # itself is an expansion this cannot resolve.
                     "G=gh; $G issue close 5"):
@@ -925,6 +997,410 @@ def main():
         r = ask(f.base, path=str(f.base / "AGENTS.md"), env=executor)
         check("ALLOW beside it: the file half admits the same session",
               r.returncode == 0, out(r)[:400])
+
+    # ---------------------------------------------------------------- #193
+    # A HEREDOC BODY IS DATA. Reproduced 2026-09-05 on
+    # campaign-1/187-claim-identity: `git commit -F - <<'MSG'` whose message
+    # said `machine's` was refused, and the refusal named a `gh` call that was
+    # not in the command at all.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("campaign-1/7-x", "campaign-1/9-y"))
+        wt7 = f.trees["campaign-1/7-x"]
+        r = ask(wt7, tool="Bash",
+                command="git commit -q -F - <<'MSG'\nRead the machine's "
+                        "branch's name\nMSG")
+        check("a commit message with an apostrophe in it is data, not a "
+              "command that will not split",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        # ...and the body is not scanned for a `gh` either, because scanning
+        # prose is what refused `git commit -m 'fix gh issue close parsing'`.
+        r = ask(wt7, tool="Bash",
+                command="git commit -F - <<'MSG'\nwhy gh issue close 9 was "
+                        "wrong\nMSG")
+        check("a heredoc body naming a gh call is prose, and is not read",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        # WHAT MAKES IT A COMMAND IS ITS CONSUMER. A shell reading a heredoc is
+        # reading a script, and that IS read -- the same rule `-c` gets.
+        r = ask(wt7, tool="Bash", command="bash <<EOF\ngh issue close 11\nEOF")
+        check("a heredoc a SHELL reads is a script, and its gh write is read",
+              r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:300])
+        # ...and the pairing is per SEGMENT, not per line: a line holding both
+        # a shell and a prose heredoc must read only the shell's.
+        r = ask(wt7, tool="Bash",
+                command="bash deploy.sh && git commit -F - <<'M'\nit's fine\nM")
+        check("a shell beside a prose heredoc does not make the prose a script",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        # ...and stripping the body does not blind the guard to the rest.
+        r = ask(wt7, tool="Bash",
+                command="gh issue close 11 && git commit -F - <<'M'\nit's "
+                        "done\nM")
+        check("a gh write beside a heredoc is still read",
+              r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:300])
+        # A `<<` IS ONLY A HEREDOC WHERE IT IS SYNTAX. Found by the review at
+        # 1a3138e: the opener was matched on the raw line, so a `<<` inside
+        # quotes ate every line after it. One defect, two differentials against
+        # `main`, and a case for each -- a REFUSAL that became an allow, and an
+        # allow that became a refusal.
+        r = ask(wt7, tool="Bash",
+                command="git commit -m 'about the <<EOF form' &&\n"
+                        "gh issue close 11")
+        check("a quoted `<<` does not swallow the write on the next line",
+              r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:400])
+        r = ask(wt7, tool="Bash",
+                command='gh issue comment 7 --body "line one\n'
+                        'mentions <<EOF in passing\nline three"')
+        check("...and a quote a `<<` sits inside is not eaten either, so a "
+              "multi-line body still splits",
+              r.returncode == 0 and "It covers #7" in r.stdout, out(r)[:400])
+        # ...and the quote state is carried ACROSS lines, which is what the
+        # second shape needs: the quote was opened on an earlier line.
+        r = ask(wt7, tool="Bash",
+                command='echo "opened here\nand a <<EOF inside it\nclosed here"'
+                        '\ngh issue close 11')
+        # Refused as a `gh` it cannot read as a call, not as a write to #11: a
+        # NEWLINE is not a separator here (it never was -- `echo hi\ngh issue
+        # close 5` is in the stray list above), so the two lines are one
+        # segment whose command word is `echo`. What this pins is that the
+        # quote CLOSED on line three, leaving the `gh` visible at all; without
+        # the carry it was swallowed and the call exited 0.
+        # ASSERTED ON THE `gh` BEING SEEN, not on the verdict. A NEWLINE is not
+        # a separator here and never was (`echo hi` + `gh issue close 5` on two
+        # lines is in the stray list above), so these two lines are one segment
+        # whose command word is `echo` and whose `gh` is a stray token -- which
+        # this session's claim then covers, exit 0. What the case pins is that
+        # the quote CLOSED on line three and the `gh` survived to be read at
+        # all; before the carry, the `<<EOF` on line two ate lines three and
+        # four and the guard saw no `gh` anywhere.
+        check("...tracked across lines, not restarted at each one",
+              "cannot read as a call" in out(r) and "gh issue" in out(r),
+              out(r)[:400])
+        # ALLOW beside all three: the real heredoc still has its body removed.
+        r = ask(wt7, tool="Bash",
+                command="git commit -F - <<'M'\nthe machine's own\nM")
+        check("ALLOW beside them: a real heredoc body is still data",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+
+        # A `#` AT WORD START ENDS THE LINE. The carry above is what made this
+        # load-bearing: without a comment branch the comment's stray quote was
+        # handed to the next line and ate the real opener there. Both
+        # directions, one case each, and an allow beside them.
+        r = ask(wt7, tool="Bash",
+                command="# it's fine\nbash <<'M'\ngh issue close 11\nM")
+        check("a quote inside a comment does not hide the next line's heredoc",
+              r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:400])
+        r = ask(wt7, tool="Bash",
+                command="# don't do this\ngit commit -F - <<'M'\n"
+                        "it's fine\nM")
+        check("...and does not make the whole call unsplittable either (#193)",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:300])
+        # ...AT WORD START, and that half is load-bearing for a reason a
+        # first reading misses: this scanner runs BEFORE shlex, so breaking at
+        # a mid-word `#` makes it miss a `<<` LATER ON THE SAME LINE and the
+        # body is read as commands. `$#` is ordinary shell.
+        r = ask(wt7, tool="Bash",
+                command="test $# -eq 0 && cat <<EOF\ngh issue close 11\nEOF")
+        # ASSERTED ON THE SENTENCE, not the exit status: this session holds a
+        # claim, so a stray `gh` is covered and BOTH readings exit 0. What the
+        # mid-word `#` changes is whether the body was stripped at all -- with
+        # it, `cat`'s body is data and nothing is read; without it, the body's
+        # lines join the segment and the `gh` shows up as a token.
+        check("a `#` mid-word does not hide a heredoc opener later on its line",
+              UNREAD in r.stdout and "cannot read as a call" not in out(r),
+              out(r)[:400])
+        r = ask(wt7, tool="Bash",
+                command="cat > ${f#./} <<EOF\ngh issue close 11\nEOF")
+        check("...and a `${var#prefix}` expansion is not a comment either",
+              UNREAD in r.stdout and "cannot read as a call" not in out(r),
+              out(r)[:400])
+        # ...and `)` is NOT a boundary. `echo $(echo x)#c` prints `x#c`, so a
+        # `#` after `)` is data; admitting `()` to the class made this refused
+        # where it had been allowed.
+        r = ask(wt7, tool="Bash",
+                command="echo $(echo x)#c && cat <<EOF\ngh issue close 11\nEOF")
+        check("a `#` after a closing paren is not a comment",
+              r.returncode == 0 and UNREAD in r.stdout, out(r)[:400])
+
+        # THE REFUSAL NAMES ONLY WHAT IT READ (#193 defect 2). Two branches,
+        # one case each, asserted on the sentence: the exit status is the same.
+        r = ask(wt7, tool="Bash", command='echo "unterminated')
+        check("a command that will not split says so and names the text",
+              r.returncode == 2 and "the text it could not split" in r.stderr,
+              out(r)[:300])
+        check("...and does not name a gh call nobody made",
+              "no `gh` was seen in it" in r.stderr
+              and "A gh call this cannot split" not in r.stderr, out(r)[:400])
+        r = ask(wt7, tool="Bash", command='gh issue close 9 "unterminated')
+        check("...and when a gh IS among its words, it says that instead",
+              r.returncode == 2 and "a `gh` is among its words" in r.stderr
+              and "no `gh` was seen" not in r.stderr, out(r)[:400])
+
+        # ------------------------------------------------------------- #191
+        # ITEM 1: a mixed command reaches two refusing branches, and the one
+        # naming a NUMBER wins because it tells the reader which claim to take.
+        no_claim = ask(f.base, tool="Bash",
+                       command="gh issue close 11 && gh pr merge 5")
+        check("a mixed command is refused by the issue it names, not by the "
+              "unnarrowed fallback",
+              no_claim.returncode == 2
+              and "no claim covering a write to #11" in no_claim.stderr,
+              out(no_claim)[:300])
+        # ...and the fallback still decides once every named issue IS covered,
+        # or the rule above would have swallowed it.
+        r = ask(f.base, tool="Bash", command="gh issue close 9 && gh pr merge 5")
+        check("...and the unnarrowed fallback decides when the named issue is "
+              "covered",
+              r.returncode == 0 and "gh pr merge" in r.stdout
+              and "a claim (" in r.stdout, out(r)[:400])
+
+        # ------------------------------------------------------------- #192
+        # ITEM 3: `-l` is `--list` for `gh issue develop`, so treating it as
+        # valued swallowed the issue number and dropped the call to the
+        # unnarrowed gate, where a claim on any issue carried it.
+        r = ask(f.base, tool="Bash", command="gh issue develop -l 11")
+        check("`gh issue develop -l 11` is narrowed to #11, not swallowed",
+              r.returncode == 2 and "no claim covering a write to #11"
+              in r.stderr, out(r)[:300])
+        # ALLOW beside it, twice: the label spellings that must go on working.
+        r = ask(f.base, tool="Bash", command="gh issue edit 9 -l bug")
+        check("ALLOW beside it: `-l bug` on a claimed issue is allowed",
+              r.returncode == 0 and "It covers #9" in r.stdout, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue edit 9 --label 11")
+        check("ALLOW beside it: `--label` is still a valued flag, so its "
+              "value is not the issue",
+              r.returncode == 0 and "It covers #9" in r.stdout, out(r)[:300])
+
+    # #191 ITEM 2: `base_above` answers the NEAREST base, not the topmost.
+    # Reached only where git resolves no marker-bearing repository, so the
+    # fixture is deliberately not a git repository at all.
+    with tempfile.TemporaryDirectory() as d:
+        outer = (Path(d) / "outer").resolve()
+        inner = outer / "demo-260904" / "inner"
+        for root in (outer, inner):
+            (root / "scripts").mkdir(parents=True)
+            (root / "scripts" / "campaign-claim.py").write_text("x\n")
+        target = inner / "demo-260905" / "note.md"
+        target.parent.mkdir(parents=True)
+        inner = inner.resolve()
+        target.write_text("x\n")
+        r = ask(d, path=str(target), env=no_herdr(d))
+        check("base_above answers the nearest base, so the campaign directory "
+              "is the inner one",
+              f"campaign directory {inner / 'demo-260905'}" in out(r),
+              out(r)[:400])
+        # ASSERTED ON THE WHOLE PATH IT PRINTED, not on the outer path being
+        # absent: the outer campaign directory is a PREFIX of the inner one, so
+        # `not in` is true of nothing and the case would pass either way.
+        named = re.search(r"campaign directory (\S+?)[.,]", out(r))
+        check("...and not the outer base's, which the topmost reading gave",
+              named is not None
+              and named.group(1) == str(inner / "demo-260905"),
+              f"{named and named.group(1)!r}")
+
+    # #192 ITEM 1: `own_claim`'s reach, kept and named. An unrelated
+    # repository on a claim-shaped branch with a local bare origin is
+    # ADMITTED, which is #176's own property -- a claim is a branch name plus
+    # a ref on whatever remote the checkout has. The two things it does ask
+    # each have a case that fails when dropped.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d)
+        sandbox = f.camp / "sandbox"
+        sandbox.mkdir(parents=True)
+        remote = Path(d) / "s.git"
+        subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main",
+                        str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(sandbox)],
+                       check=True)
+        git(sandbox, "remote", "add", "origin", str(remote))
+        (sandbox / "f").write_text("x\n")
+        git(sandbox, "add", "-A")
+        git(sandbox, "commit", "-qm", "c")
+        git(sandbox, "push", "-q", "origin", "HEAD")
+        for branch, pushed in (("campaign-1/888-x", True),
+                               ("campaign-1/889-x", False),
+                               ("feature-888", True)):
+            git(sandbox, "switch", "-qc", branch)
+            if pushed:
+                git(sandbox, "push", "-q", "origin", branch)
+            git(sandbox, "fetch", "-q", "origin")
+        git(sandbox, "switch", "-q", "campaign-1/888-x")
+        r = ask(sandbox, tool="Bash", command="gh issue close 888")
+        check("own_claim admits any checkout on a claim-shaped branch whose "
+              "ref exists on ITS OWN remote -- the reach #192 names and keeps",
+              r.returncode == 0 and "campaign-1/888-x" in r.stdout,
+              out(r)[:400])
+        git(sandbox, "switch", "-q", "campaign-1/889-x")
+        r = ask(sandbox, tool="Bash", command="gh issue close 889")
+        check("...but the ref must EXIST, so an unpushed branch is no claim",
+              r.returncode == 2, out(r)[:400])
+        git(sandbox, "switch", "-q", "feature-888")
+        r = ask(sandbox, tool="Bash", command="gh issue close 888")
+        check("...and the branch must be claim-SHAPED",
+              r.returncode == 2, out(r)[:400])
+
+    # ---------------------------------------------------------------- #196
+    # EVERY VERDICT IS DURABLE. Asserted on the FILE, not on the sentence the
+    # guard prints about it: a guard that says "logged to ..." and writes
+    # nothing is the exact failure this closes.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d)
+        # RESOLVED, because the guard prints the resolved path and a macOS
+        # temporary directory is a symlink: `/var/...` and `/private/var/...`
+        # are the same file and two different strings.
+        camp_log = (f.camp / "runtime" / "guard.log").resolve()
+        base_log = (f.base / "runtime" / "guard.log").resolve()
+        r = ask(f.base, tool="Bash", command="gh issue close 7")
+        check("an allowed verdict is written to the base's log",
+              base_log.is_file(), out(r)[:300])
+        check("...and the guard says where it wrote it",
+              f"logged to {base_log}" in r.stdout, out(r)[:300])
+        # READ DEFENSIVELY, so a mutation that stops the log being written
+        # fails these cases instead of killing the suite in a traceback: a
+        # crash is not a case failing, and it is not evidence either.
+        def last(path):
+            lines = path.read_text().splitlines() if path.is_file() else []
+            return json.loads(lines[-1]) if lines else {}
+
+        row = last(base_log)
+        check("...and the line carries what guard-precision.py reads",
+              row.get("verdict") == "allowed" and row.get("tool") == "Bash"
+              and row.get("command") == "gh issue close 7"
+              and row.get("session") and row.get("at") and "reason" in row,
+              row)
+        r = ask(f.base, tool="Bash", command="gh issue close 8")
+        row = last(base_log)
+        check("a refusal is written too, carrying the sentence it printed",
+              row.get("verdict") == "REFUSED"
+              and "no claim covering a write to #8" in row.get("reason", ""),
+              row)
+        check("...and the refusal says where the verdict went, on stderr",
+              f"logged to {base_log}" in r.stderr, out(r)[:400])
+        # THE CAMPAIGN IT WAS CLASSIFIED INTO, so one campaign's precision can
+        # be read without separating it from every other session here.
+        r = ask(f.base, path=str(f.camp / "notes.md"))
+        check("a call inside a campaign directory is logged under THAT "
+              "campaign, not under the base",
+              camp_log.is_file()
+              and last(camp_log).get("target")
+              == str((f.camp / "notes.md").resolve()), out(r)[:300])
+        # THE PAYLOAD THAT WOULD NOT READ IS A VERDICT TOO, and it used to
+        # return past the log write -- so the one refusal meaning the guard was
+        # handed something broken was the one nothing recorded and nothing said
+        # was unrecorded. `run_cwd` because that payload carries no cwd.
+        r = ask(f.base, stdin="{not json", run_cwd=f.base)
+        check("a payload that would not read is logged like any other verdict",
+              last(base_log).get("reason", "").startswith("the hook payload "
+                                                          "would not read"),
+              last(base_log))
+        check("...and the guard says where that verdict went",
+              r.returncode == 2 and f"logged to {base_log}" in r.stderr,
+              out(r)[:300])
+
+    with tempfile.TemporaryDirectory() as d:
+        # A call under no base is not campaign work, and saying "logged" about
+        # it would put every session on this machine in the measurement.
+        r = ask(d, tool="Bash", command="rm -rf x")
+        check("a call under no base is not logged, and the guard says why",
+              r.returncode == 0 and "not logged: under no base" in r.stdout,
+              out(r)[:300])
+    with tempfile.TemporaryDirectory() as d:
+        # A LOG THAT COULD NOT BE WRITTEN CHANGES NO VERDICT AND IS NOT
+        # SILENT. `runtime` is a FILE here, so the mkdir fails.
+        f = Fixture(d)
+        (f.base / "runtime").write_text("not a directory\n")
+        r = ask(f.base, tool="Bash", command="gh issue close 7")
+        check("a log that could not be written leaves the verdict alone",
+              r.returncode == 0, out(r)[:300])
+        check("...and says it was not written, rather than nothing",
+              "verdict not logged" in r.stdout, out(r)[:300])
+
+    # THE ALLOW CORPUS (#196 step 4, #209 step 1). Every case above is a shape
+    # somebody thought of; these are the shapes the campaign actually typed,
+    # replayed against a fixture in which the session holds the claims it held
+    # then. A refusal here is a false positive with a date on it.
+    #
+    # ONE ROLE, STATED: every entry is replayed as an EXECUTOR of campaign 1,
+    # whatever role the session that typed it had. A planner's campaign-plane
+    # `gh` is admitted to an executor holding the claim too, so the corpus
+    # stays green under the narrower of the two readings; replaying as a
+    # planner instead would refuse every file write into a checkout, which is
+    # the rule working and not a finding.
+    rows = corpus_rows()
+    check("the allow corpus is present", rows is not None,
+          f"{CORPUS} is missing; scripts/guard-corpus.py writes it")
+    if rows:
+        mod = guard_module()
+        issues = corpus_issues(mod, rows)
+        check("the corpus names sub-issues to hold claims on", len(issues) > 1,
+              f"issues={issues}")
+        with tempfile.TemporaryDirectory() as d:
+            # One claim per sub-issue the corpus names, plus one more for the
+            # worktree UNDER the campaign directory: `worktree` entries came
+            # from `<campaign>/worktrees/<n>/`, which is a checkout of its own
+            # and cannot share a branch with the sibling worktrees above.
+            f = Fixture(d, claims=tuple([f"campaign-1/{i}-x" for i in issues]
+                                        + ["campaign-1/909-corpus"]))
+            git(f.base, "worktree", "remove", "--force",
+                str(f.trees["campaign-1/909-corpus"]))
+            wt = f.worktree("209", "campaign-1/909-corpus",
+                            under=f.camp / "worktrees")
+            member = f.member(branch="campaign-1/7-x")
+            env = herdr_stub(d, {"sid-1": "campaign-1-executor-1"})
+            # FOUR SLOTS, AND TODAY'S CORPUS FILLS TWO. Every file entry in it
+            # is `campaign` or `worktree`, because that is where this
+            # campaign's sessions wrote; `base` and `member` are exercised by
+            # the hand-written cases above and by nothing here. Kept anyway, so
+            # a corpus extracted on a machine that works differently replays
+            # without a change -- and said out loud, because a slot nothing
+            # reaches reads exactly like a slot that passed.
+            where = {"base": f.base, "campaign": f.camp, "worktree": wt,
+                     "member": member}
+            refused, replayed = [], 0
+            for row in rows:
+                if row["tool"] == "Bash":
+                    ti = {"command": row["command"]}
+                    subject = row["command"]
+                else:
+                    root = where.get(row["kind"])
+                    if root is None:
+                        continue
+                    ti = {"file_path": str(root / row["path"])}
+                    subject = f'{row["tool"]} {row["kind"]}:{row["path"]}'
+                payload = {"session_id": "sid-1", "cwd": str(f.base),
+                           "tool_name": row["tool"], "tool_input": ti,
+                           "hook_event_name": "PreToolUse"}
+                rc, _o, err = ask_inproc(mod, payload, env)
+                replayed += 1
+                if rc != 0:
+                    refused.append(f"{subject[:120]}\n         -> "
+                                   f"{' '.join(err.split())[:200]}")
+            # The count is asserted, not printed: a loop whose body never ran
+            # prints the same clean line as one that replayed everything.
+            check("the corpus replay ran over every entry",
+                  replayed == len(rows), f"{replayed} of {len(rows)}")
+            check(f"the guard refuses none of the {replayed} recorded allows",
+                  not refused, "\n      ".join(refused[:8]))
+
+            # THE REPLAY IS IN-PROCESS, so something must show that the
+            # in-process reading is the shipped script's. A sample of the
+            # corpus goes through the real subprocess and the two verdicts are
+            # compared; without this the whole sweep could be measuring a
+            # module the hook never runs.
+            sample = rows[::max(1, len(rows) // 12)][:12]
+            disagreed = []
+            for row in sample:
+                if row["tool"] != "Bash":
+                    continue
+                rc1, _o, _e = ask_inproc(
+                    mod, {"session_id": "sid-1", "cwd": str(f.base),
+                          "tool_name": "Bash",
+                          "tool_input": {"command": row["command"]},
+                          "hook_event_name": "PreToolUse"}, env)
+                r2 = ask(f.base, tool="Bash", command=row["command"], env=env)
+                if rc1 != r2.returncode:
+                    disagreed.append(f"{row['command'][:80]}: in-process "
+                                     f"{rc1}, subprocess {r2.returncode}")
+            check("corpus: in-process and subprocess agree on the sample",
+                  not disagreed, "; ".join(disagreed))
 
     if not ran:
         print("FAIL  the suite ran no case at all")

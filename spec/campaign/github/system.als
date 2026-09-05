@@ -124,6 +124,20 @@ fact WellFormed {
   always all c: Campaign | c.campaignIssue not in c.memberIssues
   always all disj c1, c2: Campaign | no c1.memberIssues & c2.memberIssues
   always all p: PullRequest | p in Merged implies some pullRequest.p
+  /* THE BASE IS NEVER IN `## Repos`. That list says which repositories to
+     CLONE when a campaign opens, and the base reaches
+     `<campaign>/repos/campaign-base/` by its own route, so a list naming it
+     would have a campaign acquire a second checkout of the base over the
+     first. It is the premise `claimWithinScope`'s `Base` disjunct rests on --
+     no campaign lists the base, so no campaign is out of scope for changing
+     it -- and until kalaluthien/campaign-base#205 it was prose in three files
+     with no reader and no fact: `campaign-repos.py` accepted the entry and
+     exited 0, and this model let a trace put `Base` in `reposInBody`.
+     `S20_TheBaseIsNeverListed` is the command that reddens when this line
+     goes; `campaign-repos.py` is the reader that refuses the entry, and a
+     fact stricter than its reader would be a false claim that reads as
+     cautious. */
+  always Base not in Campaign.reposInBody
 }
 
 /* Read from GitHub, so it survives the agent's death and the machine's

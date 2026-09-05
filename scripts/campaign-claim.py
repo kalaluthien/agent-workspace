@@ -184,6 +184,8 @@ release  0 released, 1 refused or the reading failed.
 live     0 every reading made, 1 one of them did not happen.
 """
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -192,7 +194,26 @@ import sys
 import tempfile
 from pathlib import Path
 
-DEFAULT_REPO = "kalaluthien/campaign-base"
+HERE = Path(__file__).resolve().parent
+
+
+def _repos_module():
+    """`campaign-repos.py`, imported for the three things only it should say:
+    what the base's slug is, what makes two spellings one repository, and what
+    a `## Repos` entry may look like. The LIST is still read by running it as a
+    subprocess (`campaign_repos` below) -- its refusals are exit strings, and
+    reading them back is what keeps one reader rather than two."""
+    src = HERE / "campaign-repos.py"
+    spec = importlib.util.spec_from_loader(
+        "campaign_repos", importlib.machinery.SourceFileLoader(
+            "campaign_repos", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+REPOS = _repos_module()
+DEFAULT_REPO = REPOS.BASE_REPO
 
 # THE SAME STRING, TWO QUESTIONS, so it is named twice on purpose. `DEFAULT_REPO`
 # is where a ref is cut when nothing says otherwise; `TRACKER` is where every
@@ -213,8 +234,6 @@ OTHER_CAMPAIGN = re.compile(r"^campaign-\d+-")
 # derives the list from GitHub, because the question is which directories are on
 # THIS machine. The same regex the claim guard uses.
 CAMPAIGN_DIR = re.compile(r"-\d{6}$")
-
-HERE = Path(__file__).resolve().parent
 
 
 def run(*args, **kw):
@@ -357,20 +376,66 @@ def issue_repo(issue, default_repo):
             f"#{issue}'s body has no `Repository:` line, so where its work "
             f"lands is unstated. Fill it from "
             f".claude/skills/opening-campaign/assets/sub-issue.md")
-    named = m.group(1)
-    if named.lower() == "none":
+    raw = m.group(1)
+    if raw.strip(REPOS.WRAPPERS).lower() == "none":
         return default_repo, None, (
             f"#{issue} names no member repository, so its ref is cut on the "
             f"base ({default_repo})")
-    if "/" not in named:
+    # NORMALIZED BEFORE ANYTHING IS COMPARED, through campaign-repos.py's one
+    # reader (#205). `Repository:` is prose a person types, so the same
+    # repository arrives backticked, angle-bracketed, `.git`-suffixed or in
+    # another case; compared raw, every one of those came out as the SCOPE
+    # refusal, which says "this campaign is not for that repository" when the
+    # truth is "that line was not read as a slug". Those are different
+    # diagnoses and they now print apart.
+    named = REPOS.slug(raw)
+    if named is None:
         return None, None, (
-            f"#{issue}'s `Repository:` line reads {named!r}, which is not an "
-            f"owner/repo and not `none`")
-    if named == default_repo:
-        return named, None, (
-            f"#{issue} says its work lands in the base ({named}), which every "
-            f"campaign is for")
-    return named, named, f"#{issue} says its work lands in {named}"
+            f"#{issue}'s `Repository:` line reads {raw!r}, which is not an "
+            f"owner/repo and not `none`. It is not a scope question: nothing "
+            f"was compared, because that line does not name a repository")
+    note = (f"#{issue} says its work lands in {named}"
+            + (f" (read from {raw!r})" if raw.strip() != named else ""))
+    if REPOS.key(named) == REPOS.key(default_repo):
+        return default_repo, None, (
+            f"#{issue} says its work lands in the base ({default_repo}), which "
+            f"every campaign is for")
+    return named, named, note
+
+
+def issue_parent(issue):
+    """(parent number or None, note, was it readable) -- which campaign issue
+    this sub-issue actually hangs from, read from GitHub's sub-issue link and
+    not from the number the caller typed.
+
+    THREE OUTCOMES, KEPT APART, because they license different things
+    (kalaluthien/campaign-base#206):
+
+      * a parent read, and it is a number -- compared with the campaign named;
+      * a parent read, and there is none -- an issue nobody linked. It is
+        ALLOWED, and loudly: #213 is unparented because #1 sits at GitHub's
+        100-sub-issue cap, so refusing here would refuse the repair of exactly
+        the situation the cap creates. A mistyped campaign number almost always
+        lands on a PARENTED issue, which is the case this check is for;
+      * could not be read -- ALLOWED with the reading named. A parent that
+        could not be read is not a parent that disagrees, and this script's
+        rule everywhere is that "I could not look" never becomes a verdict.
+
+    TAKE ONLY, AND ON PURPOSE. `release` and `live` are keyed on the typed
+    campaign number too, and they must stay that way: they read refs that are
+    ALREADY cut under `campaign-<N>/`, so a parentage check there would refuse
+    to list or release exactly the mis-cut ref this check exists to prevent.
+    `take` is the one command that creates the ref, so it is the one place the
+    premise can still be tested before anything durable exists."""
+    r = run("gh", "issue", "view", str(issue), "-R", TRACKER, "--json", "parent",
+            "--jq", ".parent.number // \"\"")
+    if r.returncode != 0:
+        return None, (f"could not read #{issue}'s parent from {TRACKER} "
+                      f"({r.stderr.strip()[:120]})"), False
+    n = r.stdout.strip()
+    if not n:
+        return None, f"#{issue} is a sub-issue of no campaign issue", True
+    return n, f"#{issue} is a sub-issue of #{n}", True
 
 
 def issue_settled(issue):
@@ -525,6 +590,29 @@ def cmd_take(args):
         return 1
     print("bound here, so the claim may be cut")
 
+    # WHOSE SUB-ISSUE, read from GitHub and not from the number typed (#206).
+    # Before this, a mistyped campaign number cut a real ref under a campaign
+    # the sub-issue does not belong to, and nobody could see it: `live` and
+    # `release` list refs by the `campaign-<N>/` prefix, so the claim was
+    # invisible to the campaign that owns the work and unreachable from the one
+    # that does not. The model already says the right thing --
+    # `claimWithinScope` reads `campaignOf[Now.issue]`, the sub-issue's actual
+    # parent -- so this is the code moving up to the model.
+    parent, parent_note, readable = issue_parent(args.issue)
+    if readable and parent is not None and parent != str(args.campaign_issue):
+        print(f"refusing: {parent_note}, not #{args.campaign_issue}.\n"
+              f"  A ref cut under campaign-{args.campaign_issue}/ would be "
+              f"invisible to the campaign that owns #{args.issue}\n  and "
+              f"unreachable from the one named. Take it under #{parent}, or "
+              f"fix the sub-issue's parent.", file=sys.stderr)
+        return 1
+    print(parent_note + (
+        f", the campaign named" if parent == str(args.campaign_issue) else
+        (", so nothing disagrees with the campaign named; a claim on an "
+         "unparented issue is admitted" if readable else
+         ", so the parentage could not be checked -- a parent that could not "
+         "be read is not a parent that disagrees")))
+
     # WHERE, read from the sub-issue and not from the caller. Before #187 this
     # was `repo`, so two takers naming different repositories both cut a
     # ref and both held #N. `--repo` survives only as a confirmation, and a
@@ -552,12 +640,14 @@ def cmd_take(args):
     # base -- `none`, and the base's own slug -- come back with `named` None,
     # because the base is never in the list and a campaign that changes it is
     # not thereby out of its own scope. The model is `claimWithinScope`, whose
-    # `Base` disjunct R14d pins. That the base is never in the list is a
-    # convention no reader enforces -- kalaluthien/campaign-base#205 -- and
-    # nothing here rests on it: a campaign that listed the base still reaches
-    # this block with `named` None, so the list is not consulted and the claim
-    # is admitted either way. The convention decides nothing HERE; #205 is about
-    # the second clone it would produce at acquire time.
+    # `Base` disjunct R14d pins. That the base is never in the list HAS a
+    # reader since kalaluthien/campaign-base#205: `campaign-repos.py` refuses
+    # the entry, and `WellFormed` in spec/campaign/github/system.als forbids
+    # the trace, pinned by `S20_TheBaseIsNeverListed`. Nothing here rests on it
+    # either way -- a campaign that listed the base still reaches this block
+    # with `named` None, so the list is not consulted and the claim is admitted
+    # regardless; what #205 closed is the second clone the entry would produce
+    # at acquire time.
     if named is not None:
         listed, repos_note = campaign_repos(args.campaign_issue)
         if listed is None:
@@ -566,7 +656,12 @@ def cmd_take(args):
                   f"A scope that could not be read is not a scope that admits "
                   f"it.", file=sys.stderr)
             return 1
-        if named not in listed:
+        # COMPARED THROUGH THE ONE KEY (#205), not as raw strings. `issue_repo`
+        # has already de-wrapped the `Repository:` line; the list entries come
+        # from `campaign-repos.py`, which admits `owner/repo` and nothing else,
+        # so the only difference left between two spellings of one repository
+        # is case -- and GitHub does not tell `Web` from `web`.
+        if REPOS.key(named) not in {REPOS.key(x) for x in listed}:
             print(f"refusing: #{args.issue} says its work lands in {named}, but "
                   f"{repos_note}.\n  Adding a repository is a scope change and "
                   f"belongs in the campaign issue's `## Repos`,\n  not in one "

@@ -179,6 +179,26 @@ var sig Compacted in Session {}
    the review inherits it. */
 var sig Reviewed in PullRequest {}
 
+/* WHAT THE GUARD WROTE DOWN, and the reason there is a signature for it at all
+   (kalaluthien/campaign-base#196). `claimBeforeWork` says the gate refuses
+   unclaimed work; it says nothing about the gate leaving a trace, so a guard
+   that judged every call and recorded none satisfied the model exactly. That
+   is the state the reader was in: every false positive it had was found by
+   whoever it hit, because a refusal left no record, the session retried in
+   another shape, and the next session paid the same refusal again.
+
+   An issue is in `Judged` once a verdict about work on it is on disk.
+   APPEND-ONLY, because a log a later step can unwrite measures nothing -- and
+   because that is what the reader does: one line appended per verdict, to
+   `<campaign>/runtime/guard.log`, read by scripts/guard-precision.py.
+
+   Deliberately not framed by any step. What is being said is that a verdict
+   SURVIVES, not when it may be written, and a frame condition per transition
+   would be a second statement of the same rule in eleven places. */
+var sig Judged in Issue {}
+
+fact VerdictLogIsAppendOnly { always Judged in Judged' }
+
 one sig Target { var agent: lone Agent }
 
 fact AgentWellFormed {

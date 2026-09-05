@@ -83,6 +83,23 @@ case "$*" in
   *"--json state"*"issue view 600 "*|*"issue view 600 "*"--json state"*) echo 'CLOSED not_planned'; exit 0 ;;
   *"--json state"*"issue view 601 "*|*"issue view 601 "*"--json state"*) exit 1 ;;
   *"--json state"*) echo 'OPEN '; exit 0 ;;
+  # WHOSE SUB-ISSUE IT IS (#206). Matched before the body arms for the reason
+  # the state arms are: a parent read answered with a body comes back as prose
+  # and reads as a parent that disagrees. 700 hangs from another campaign, 701
+  # from the campaign these cases name, 702 will not read, 703 hangs from
+  # nothing, and every other issue is parented to the campaign these cases
+  # name -- the ordinary answer, so the cases written before #206 go on
+  # exercising what they were written for rather than this reading. The other
+  # shims in this file answer 9999 for the same reason: a fixture that read as
+  # unparented made a mutation refusing that branch kill the suite mid-way,
+  # where it should fail one named case.
+  *"--json parent"*"issue view 700 "*|*"issue view 700 "*"--json parent"*) echo '1234'; exit 0 ;;
+  *"--json parent"*"issue view 701 "*|*"issue view 701 "*"--json parent"*) echo '9999'; exit 0 ;;
+  *"--json parent"*"issue view 702 "*|*"issue view 702 "*"--json parent"*) exit 1 ;;
+  *"--json parent"*"issue view 703 "*|*"issue view 703 "*"--json parent"*) echo ''; exit 0 ;;
+  # The two sub-issues of campaign 8888, whose `## Repos` will not read.
+  *"--json parent"*"issue view 51"*|*"issue view 51"*"--json parent"*) echo '8888'; exit 0 ;;
+  *"--json parent"*) echo '9999'; exit 0 ;;
   # WHERE A CLAIM IS CUT, read from the sub-issue since #187. `none` is the
   # ordinary answer here: these cases claim on the base, which is what a
   # repo-less sub-issue resolves to.
@@ -96,6 +113,18 @@ case "$*" in
   # THE BASE SPELLED OUT, which `none` above cannot stand in for: `## Repos`
   # never holds the base, so this is the one line whose two readings differ.
   *"issue view 503 "*) echo 'Repository: kalaluthien/campaign-base'; exit 0 ;;
+  # #205: THE SPELLINGS PROSE ARRIVES IN. Each names a repository the campaign
+  # already holds, so anything but a clean claim is the raw comparison talking.
+  *"issue view 504 "*) echo 'Repository: `other/elsewhere`'; exit 0 ;;
+  *"issue view 505 "*) echo 'Repository: kalaluthien/campaign-base.git'; exit 0 ;;
+  *"issue view 506 "*) echo 'Repository: Other/Elsewhere'; exit 0 ;;
+  # ...and the one that names no repository: the template's own placeholder.
+  *"issue view 507 "*) echo 'Repository: <owner/repo>'; exit 0 ;;
+  # 512 and 513 are 502 and 503 again, as sub-issues of campaign 8888: the
+  # scope cases take under 8888, and since #206 a sub-issue must hang from the
+  # campaign it is claimed under.
+  *"issue view 512 "*) echo 'Repository: outside/scope'; exit 0 ;;
+  *"issue view 513 "*) echo 'Repository: kalaluthien/campaign-base'; exit 0 ;;
   *"issue view 501 "*) exit 1 ;;
   *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/campaign-9999/1-alpha","refs/heads/campaign-9999/2-beta"]'; exit 0 ;;
@@ -451,7 +480,7 @@ def take_cases(m):
         # ...and a scope that could not be READ is not a scope that admits it.
         # Separate from the case above: both exit 1, and only this sentence
         # tells "I looked and it is not there" from "I could not look".
-        r = claim(["take", "8888", "502", "x"], path)
+        r = claim(["take", "8888", "512", "x"], path)
         out = r.stdout + r.stderr
         # ASSERTED ON THE SCOPE SENTENCE, not on "could not be read": the
         # BINDING refusal prints that phrase too, so the first shape of this
@@ -496,11 +525,83 @@ def take_cases(m):
         # ...and the exemption is decided BEFORE the list is read, not by the
         # list happening to admit it: campaign 8888's body has no `## Repos`
         # heading at all, which denies a claim naming a member repository.
-        r = claim(["take", "8888", "503", "zeta"], path)
+        r = claim(["take", "8888", "513", "zeta"], path)
         out = r.stdout + r.stderr
         check("a base sub-issue is claimable though the campaign's list will not read",
               "cut from" in out and "not a scope that admits it" not in out,
               out[:300])
+
+        # ------ #205: A SLUG IS NORMALIZED THROUGH ONE READER ------
+        # Every one of these named a repository campaign 9999 already holds,
+        # and every one of them used to come back as the SCOPE refusal -- which
+        # says "this campaign is not for that repository" when the truth is
+        # "that line was not read as a slug". Asserted on the absence of that
+        # sentence as well as on the claim, because the refusal is the defect.
+        for issue, spelling in (("504", "backticked"), ("506", "in another case")):
+            r = claim(["take", "9999", issue, "x"], path)
+            out = r.stdout + r.stderr
+            check(f"a `Repository:` line {spelling} names the same repository",
+                  "cut from" in out and "belongs in the campaign issue" not in out,
+                  out[:300])
+        # ...and when the text was CHANGED to read it, the note says so. Only
+        # for a spelling that differs from the slug: a line differing by case
+        # alone is left as the person wrote it, since `slug` folds nothing.
+        r = claim(["take", "9999", "504", "y"], path)
+        check("...and a de-wrapped line says what it was read from",
+              "read from" in r.stdout + r.stderr, (r.stdout + r.stderr)[:300])
+        # The base with a `.git` on it is still the base, so it never reaches
+        # the list at all.
+        r = claim(["take", "9999", "505", "x"], path)
+        out = r.stdout + r.stderr
+        check("the base with a `.git` suffix is still the base",
+              "which every campaign is for" in out and "cut from" in out,
+              out[:300])
+        # ...AND A LINE THAT NAMES NO REPOSITORY IS ITS OWN DIAGNOSIS. The
+        # template's `<owner/repo>` placeholder is an absent answer; reading
+        # angle brackets as a wrapper would cut a ref for a repository
+        # literally named `owner/repo`.
+        r = claim(["take", "9999", "507", "x"], path)
+        out = r.stdout + r.stderr
+        check("an unfilled `Repository:` placeholder is refused by its own name",
+              r.returncode == 1 and "is not an owner/repo" in out
+              and "nothing was compared" in out, f"exit {r.returncode}: {out[:300]}")
+        check("...and it is not the scope refusal",
+              "belongs in the campaign issue" not in out, out[:300])
+
+        # ------ #206: WHOSE SUB-ISSUE IT IS, READ AND NOT TYPED ------
+        # A mistyped campaign number cut a real ref under a campaign the
+        # sub-issue does not belong to, and nobody could see it: `live` and
+        # `release` list by the `campaign-<N>/` prefix. Three outcomes, three
+        # cases, because a parent that could not be read is not a parent that
+        # disagrees.
+        r = claim(["take", "9999", "700", "x"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue of another campaign is refused",
+              r.returncode == 1 and "#700 is a sub-issue of #1234, not #9999"
+              in out, f"exit {r.returncode}: {out[:300]}")
+        check("...and the refusal says where the ref would have been invisible",
+              "invisible to the campaign that owns #700" in out, out[:400])
+        # ALLOW beside it: the same reading, agreeing.
+        r = claim(["take", "9999", "701", "x"], path)
+        out = r.stdout + r.stderr
+        check("ALLOW beside it: a sub-issue of the campaign named is claimed",
+              "#701 is a sub-issue of #9999, the campaign named" in out
+              and "cut from" in out, out[:300])
+        # ALLOW, printed apart: could not look.
+        r = claim(["take", "9999", "702", "x"], path)
+        out = r.stdout + r.stderr
+        check("a parent that could not be read does not refuse the claim",
+              "cut from" in out and "could not be checked" in out, out[:400])
+        check("...and it does not print as a parent that disagrees",
+              "not #9999" not in out, out[:400])
+        # ALLOW, printed apart again: an issue nobody linked. #213 is one,
+        # because #1 sits at GitHub's 100-sub-issue cap -- refusing here would
+        # refuse the repair of exactly the situation the cap creates.
+        r = claim(["take", "9999", "703", "eta"], path)
+        out = r.stdout + r.stderr
+        check("an unparented sub-issue is claimed, and the note says so",
+              "cut from" in out and "sub-issue of no campaign issue" in out
+              and "is admitted" in out, out[:400])
 
         # ------ #187 Q3: A SETTLED SUB-ISSUE'S REF IS RESIDUE ------
         # `delete_branch_on_merge` is off on this tracker, so a merged branch's
@@ -541,6 +642,7 @@ def take_cases(m):
         unread_gh = shims(Path(d) / "unread", gh="""#!/bin/sh
 case "$*" in
   *"--json state"*) echo 'OPEN '; exit 0 ;;
+  *"--json parent"*) echo '9999'; exit 0 ;;
   *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/campaign-9999/3-gamma"]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
@@ -566,6 +668,7 @@ exit 1
         reopened = shims(Path(d) / "reopened", gh="""#!/bin/sh
 case "$*" in
   *"--json state"*) echo 'OPEN '; exit 0 ;;
+  *"--json parent"*) echo '9999'; exit 0 ;;
   *"issue view"*) echo 'Repository: none'; exit 0 ;;
   # Stateful, or the survey sees the ref this run is about to cut and refuses
   # before the re-check -- the branch under test -- is ever reached.
@@ -606,6 +709,7 @@ exit 1
         raced = shims(Path(d) / "raced", gh="""#!/bin/sh
 STATE=RACEDIR/n
 case "$*" in
+  *"--json parent"*) echo '9999'; exit 0 ;;
   *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
   # Neither racing ref ever merged, so both are live claims and the yield is
@@ -657,6 +761,7 @@ exit 1
         nodel = shims(Path(d) / "nodel", gh="""#!/bin/sh
 STATE=NODELDIR/n
 case "$*" in
+  *"--json parent"*) echo '9999'; exit 0 ;;
   *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *matching-refs*)
@@ -681,6 +786,7 @@ exit 1
         # A ref listing that failed is not proof the sub-issue is free.
         blind = shims(Path(d) / "blind", gh="""#!/bin/sh
 case "$*" in
+  *"--json parent"*) echo '9999'; exit 0 ;;
   *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
 esac

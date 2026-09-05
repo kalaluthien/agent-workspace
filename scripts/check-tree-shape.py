@@ -26,6 +26,8 @@ WHAT IT CHECKS
       on being able to say `runtime/holder` is retired, while a path or an
       identifier spelling it is a reintroduction. Retirement notes exist to
       stop reintroduction; with a machine behind the ban they can be deleted.
+      It stands down over `RECORDED` -- a corpus of calls that were really
+      made -- and says so on every run; the comment there is why.
 
   R4  no member-repository file is committed here.
       Three planes, and the base is one of them. R2 catches the ordinary
@@ -152,6 +154,23 @@ RETIRED = [
      "#105 -- a script carries the extension of its language; add .py or .sh"),
 ]
 
+# A RECORDED CORPUS IS EVIDENCE, NOT CODE, and R3 does not run over one.
+# `scripts/fixtures/` holds calls this machine's sessions really made, extracted
+# by scripts/guard-corpus.py and replayed by the guard suite. Some of them spell
+# a name that has since been retired, because they were typed before it was --
+# and that is the record being correct, not a reintroduction. Editing the entry
+# to please R3 would falsify the measurement, and dropping it would delete the
+# one allow case that pins how the guard reads that shape.
+#
+# NARROW BY PATH AND BY NOTHING ELSE. Not by suffix, which would exempt every
+# `.jsonl` anywhere, and not by a marker, which a data format has nowhere to
+# put. R1, R2 and R4 still run over these paths: a member repository's file
+# under `scripts/fixtures/` is as wrong as anywhere else, and only the
+# retired-name reading has a reason to stand down. Every run says how many
+# paths it skipped and why, because an exemption that prints nothing is a rule
+# silently gone.
+RECORDED = ("scripts/fixtures/",)
+
 FENCE = re.compile(r"^\s*(```|~~~)")
 
 # An exemption names the guard it exempts, the way check-rule-readers' does, and
@@ -207,6 +226,7 @@ PROSE = {
     ".sh":   {"block": [], "line": ["#"]},      # no block comment in POSIX sh
     ".html": {"block": [("<!--", "-->")], "line": []},
     ".json": {"block": [], "line": []},        # no comment syntax; all code
+    ".jsonl": {"block": [], "line": []},       # ditto, one object per line
     "":      {"block": [('"""', '"""'), ("'''", "'''")], "line": ["#"]},
 }
 
@@ -354,7 +374,10 @@ def main():
                 note("R2", t, "tracked but not in .gitignore's allowlist")
 
     # R3
+    recorded = [p for p in paths if p.startswith(RECORDED)]
     for p in paths:
+        if p in recorded:
+            continue
         # The kind is decided before the file is opened, so a binary file with
         # no prose rule for its suffix is reported as R0 rather than crashing
         # the decode.
@@ -385,6 +408,11 @@ def main():
         if p == "repos" or p.startswith("repos/") or "/repos/" in p:
             note("R4", p, "a member repository's file in the base plane")
 
+    if recorded:
+        print(f"  R3 stood down for {len(recorded)} recorded path(s) under "
+              f"{', '.join(RECORDED)}: a corpus of calls that were really made "
+              f"is evidence, and a retired name in one records when it was "
+              f"typed")
     unread = sum(1 for f in findings if f.startswith("R0\t"))
     print(f"  {len(findings)} finding(s)"
           + (f", {unread} of them a path the sweep could not read" if unread else ""))

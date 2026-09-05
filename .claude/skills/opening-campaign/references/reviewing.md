@@ -50,6 +50,15 @@ review needing both at their limit is a brief covering two reviews.
 **A reviewer that needs more than the brief allows is a brief written too wide.
 Split the brief.**
 
+**A brief over a guard reads the ALLOWS before the refusals.** A refusal branch
+is easy to read and easy to agree with; what it catches by mistake is neither,
+and five of #184's fix rounds stayed green while each opened a new false
+positive. So the brief names the ordinary shapes the branch could catch, and the
+review checks those first. The measured version of the same rule is
+`scripts/guard-precision.py`, which reads the guard's verdict log, and the
+replayed version is `scripts/fixtures/guard-allow-corpus.jsonl`, the calls this
+machine's sessions really made.
+
 ## Three ways to get the mode wrong
 
 **A peer session** is not a reviewer: it costs a re-explanation of context the
