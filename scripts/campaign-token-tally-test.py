@@ -150,6 +150,13 @@ def build(tmp):
                            "input": {"command":
                                      'W=/tmp/w; "$W/scripts/campaign-repos.py" '
                                      'README.md'}}]),
+        # A shell's -c string with no operands after the script: the guard
+        # re-reads that string as segments, so counting bash's file operand too
+        # would count the one invocation twice.
+        assistant("m-dashc", day + "01:55:00Z", look, out=10, settled=True,
+                  blocks=[{"type": "tool_use", "name": "Bash", "id": "t7",
+                           "input": {"command":
+                                     'bash -c "scripts/campaign-tracker.py"'}}]),
     ]
     # A worktree whose directory was deleted when its sub-issue closed.
     dead = str(base / "camp-260101" / "worktrees" / "302")
@@ -177,7 +184,9 @@ def build(tmp):
              {"type": "tool_result", "tool_use_id": "t5",
               "content": [{"type": "text", "text": "L" * 700}]},
              {"type": "tool_result", "tool_use_id": "t6",
-              "content": [{"type": "text", "text": "Q" * 800}]}]}},
+              "content": [{"type": "text", "text": "Q" * 800}]},
+             {"type": "tool_result", "tool_use_id": "t7",
+              "content": [{"type": "text", "text": "C" * 600}]}]}},
         assistant("m-branch", day + "02:00:00Z", str(base),
                   branch="campaign-1/301-topic", out=70),
         assistant("m-dead", day + "02:10:00Z", dead, out=60),
@@ -330,8 +339,7 @@ def main():
         # sed in a third.
         tracker = row(echo, "campaign-tracker")
         check("a script a command runs is charged the result it returned",
-              tracker and tracker["charged"] == "1"
-              and int(tracker["result_bytes"]) >= 400, str(tracker))
+              tracker and tracker["result_bytes"] == "1,000", str(tracker))
         repos = row(echo, "campaign-repos")
         check("a second script in the same command is counted, not charged twice",
               repos and repos["also_run"] == "1"
@@ -348,6 +356,12 @@ def main():
               and shape["result_bytes"] == "700", str(shape))
         check("a quoted invocation path is a call",
               repos and repos["charged"] == "1", str(repos))
+        # tracker is run twice in the corpus: once by the `&&` command, once
+        # inside a shell's -c string. Two charged commands, and no third
+        # invocation from reading bash's operand as well as the string.
+        check("a shell's -c string is read once, not once per reader",
+              tracker and tracker["charged"] == "2" and tracker["also_run"] == "0",
+              str(tracker))
 
         # A WINDOW BOUND THAT CANNOT BE COMPARED IS REFUSED, not quietly used.
         bad = subprocess.run(
