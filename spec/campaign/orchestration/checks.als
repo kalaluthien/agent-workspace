@@ -115,7 +115,16 @@ assert SessionCompactsBetweenSubIssues {
   always all a1, a2: Agent |
     (some a1.peer and a1.peer = a2.peer and a1 != a2
      and Now.event = Launch and Target.agent = a2 and a1 in Launched)
-    implies once (Now.event = Release and Who.session = a1.peer)
+    /* BETWEEN, not merely BEFORE. The nested `once` is what says "after a1 was
+       launched": some past instant held a release by this session, and at that
+       instant a1 had already been launched. A single `once (Release ...)` --
+       which is how this read at 114e71a -- says only that the session released
+       at SOME point, which is a weaker claim than the comment above makes and
+       true for a release that happened before a1 ever started. It held only
+       because nothing else in the model returns the bit; a later event that
+       did would leave it green and the comment false. Found by review. */
+    implies once (Now.event = Release and Who.session = a1.peer
+                  and once (Now.event = Launch and Target.agent = a1))
 }
 
 /* ---------------- reachability floor ---------------- */

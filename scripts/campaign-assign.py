@@ -23,6 +23,9 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
   not idle          a pane mid-turn queues the prompt behind work whose outcome
                     nobody has read, and the assignment lands on a session that
                     may be about to report something that changes it.
+  window filled     no release line, in a read that filled the window, so the
+                    release may sit above it. An absence beyond the window is
+                    not an absence: --lines raises the window, --force skips it.
   not compacted     the pane released a sub-issue and has not compacted since,
                     so the next sub-issue would re-read the last one's whole
                     transcript on every turn. `campaign-claim.py release`
@@ -71,15 +74,28 @@ DEFAULT_REPO = "kalaluthien/campaign-base"
 # what a reader hits in the meantime.
 MARKER = "Compacted (ctrl+o to see full summary)"
 
-# What `campaign-claim.py release` prints when it sends the compaction. The
-# marker alone cannot answer "compacted SINCE the last release", which is the
-# question: a pane that compacted, then worked and released, holds an older
-# marker that says nothing about now.
-RELEASE_LINE = "sent /compact to "
+# THE ANCHOR IS THE RELEASE, NOT THE COMPACTION'S SUCCESS, and it is
+# `campaign_claim.RELEASED` -- taken from the script that prints it, never
+# copied. Keyed on the compaction's own success line, which is how this shipped
+# at 114e71a, a release that could NOT compact printed no such line, read as a
+# pane that never released, and was assigned: the single case this guard exists
+# for. Found by review and reproduced end to end before this was written.
+#
+# The marker alone cannot answer the question either: a pane that compacted,
+# then worked and released again holds an older marker that says nothing about
+# now. Hence the ordering in `compaction_verdict`.
 
 # How much scrollback to ask for. A release turn and the compaction after it
 # are a few dozen lines; this is wide enough for several and small enough that
 # an unreadable pane fails fast.
+#
+# WHAT HAPPENS AT THE EDGE, because a window is an absence that looks like an
+# answer. A pane whose history is longer than this returns exactly LINES lines
+# and the release may sit above them -- so "no release line in what I read" is
+# `truncated`, not `fresh`, and refuses. Only a read that came back SHORTER
+# than the window is evidence the whole history was seen. Both directions now
+# fail closed; before this the open one was exactly the case a long transcript
+# produces, which is the whole premise of this change.
 LINES = 400
 
 
@@ -136,25 +152,35 @@ def idle_verdict(row):
                    f"of.")
 
 
-def compaction_verdict(text):
+def compaction_verdict(text, anchor, limit=LINES):
     """Has this pane compacted since its last release? Pure, over the pane's
     scrollback. Returns (verdict, why) with verdict one of:
 
-      `fresh`       no release line in what was read, so nothing to compact
-                    since -- a session that has not released is assignable.
+      `fresh`       no release line, in a read SHORTER than the window, so
+                    the whole history was seen and this pane has not released.
+                    Assignable.
       `compacted`   the marker appears after the last release line.
       `stale`       a release line with no marker after it.
+      `truncated`   no release line, in a read that FILLED the window, so the
+                    release may sit above it. An absence beyond the window is
+                    not an absence, so this refuses exactly like `stale`.
 
     ORDER, NOT PRESENCE, is the whole reading: a pane that compacted, worked,
     and released again holds a marker that is older than its release and says
     nothing about now. Both are searched by last occurrence for that reason."""
     lines = (text or "").splitlines()
     last_release = max((i for i, ln in enumerate(lines)
-                        if RELEASE_LINE in ln), default=None)
+                        if anchor in ln), default=None)
+    if last_release is None and len(lines) >= limit:
+        return "truncated", (f"no release line in the {len(lines)} line(s) "
+                             f"read, and that filled the window, so the "
+                             f"release may be above it. An absence beyond the "
+                             f"window is not an absence.")
     if last_release is None:
         return "fresh", (f"nothing in the {len(lines)} line(s) read says this "
-                         f"pane released a claim, so there is no context to "
-                         f"have carried")
+                         f"pane released a claim, and the read was shorter "
+                         f"than the {limit}-line window, so that is the whole "
+                         f"history")
     after = [i for i, ln in enumerate(lines) if MARKER in ln and i > last_release]
     if after:
         return "compacted", (f"released at line {last_release + 1}, compacted "
@@ -163,15 +189,15 @@ def compaction_verdict(text):
                      f"after it in the {len(lines)} line(s) read")
 
 
-def read_pane(pane):
+def read_pane(pane, limit=LINES):
     """(text, why_unread). The scrollback, or the reason there is none.
 
     Not guarded by HERDR_ENV: that guard is against ACTING on somebody else's
     session, never against reading -- the same reading `campaign-claim.py`
     makes of `agent list`."""
-    r = run("herdr", "agent", "read", pane, "--lines", str(LINES))
+    r = run("herdr", "agent", "read", pane, "--lines", str(limit))
     if r.returncode != 0:
-        return None, (f"`herdr agent read {pane} --lines {LINES}` exited "
+        return None, (f"`herdr agent read {pane} --lines {limit}` exited "
                       f"{r.returncode}: {r.stderr.strip()[:200] or r.stdout.strip()[:200]}")
     return r.stdout, None
 
@@ -189,6 +215,9 @@ def main():
     ap.add_argument("pane")
     ap.add_argument("issue")
     ap.add_argument("--repo", default=DEFAULT_REPO)
+    ap.add_argument("--lines", type=int, default=LINES,
+                    help=f"how much scrollback to read (default {LINES}); "
+                         f"raise it when a release sits above the window")
     ap.add_argument("--force", action="store_true",
                     help="assign a pane that has not compacted since its "
                          "last release, saying so")
@@ -214,7 +243,7 @@ def main():
         print(f"refusing: {why}", file=sys.stderr)
         return 1
 
-    screen, why_unread = read_pane(args.pane)
+    screen, why_unread = read_pane(args.pane, args.lines)
     if screen is None:
         # I COULD NOT LOOK, which is neither a yes nor a no. It refuses rather
         # than assigning, and `--force` is the way past -- the same door the
@@ -227,20 +256,25 @@ def main():
                   file=sys.stderr)
             return 1
         print(f"--force: {why_unread}; assigning without reading the pane")
-        verdict = "unread"
+        verdict, why = "unread", why_unread
     else:
-        verdict, why = compaction_verdict(screen)
+        verdict, why = compaction_verdict(screen, m.RELEASED, args.lines)
         print(f"{verdict}: {why}")
-    if verdict == "stale" and not args.force:
-        print(f"refusing: {args.pane} has not compacted since its last "
-              f"release.\n  Every turn of {args.repo}#{issue} would re-read "
-              f"the sub-issue before it. `campaign-claim.py release`\n  sends "
-              f"that compaction; if it could not, prompt the pane with "
-              f"/compact and retry,\n  or pass --force.", file=sys.stderr)
+    if verdict in ("stale", "truncated") and not args.force:
+        headline = ("has not compacted since its last release"
+                    if verdict == "stale"
+                    else "may have released above the window this read")
+        print(f"refusing: {args.pane} {headline}.\n  {why}\n"
+              f"  Every turn of {args.repo}#{issue} would "
+              f"re-read the sub-issue before it. `campaign-claim.py release`"
+              f"\n  sends that compaction; if it could not, prompt the pane "
+              f"with /compact and retry; if the\n  release is further back "
+              f"than the window, raise --lines; otherwise pass --force.",
+              file=sys.stderr)
         return 1
-    if verdict == "stale":
+    if verdict in ("stale", "truncated"):
         print(f"--force: assigning a pane that has not compacted since its "
-              f"last release")
+              f"last release -- {why}")
 
     sentence = prompt_for(args.repo, issue)
     # The one call here that DRIVES a pane, so it carries the guard and names

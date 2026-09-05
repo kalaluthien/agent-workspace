@@ -32,7 +32,10 @@ def check(name, ok, detail=""):
 
 
 MARKER = "Compacted (ctrl+o to see full summary)"
-RELEASED = "sent /compact to w1:p2; it runs when this turn ends"
+# The anchor as `campaign-claim.py` prints it. Spelled here rather than
+# imported so that a case fails if the two ever disagree -- which is the one
+# thing importing it on both sides would hide.
+RELEASED = "campaign-claim: released campaign-1/195-token-tally"
 
 
 def agent(sid, name, pane, status="idle"):
@@ -125,21 +128,54 @@ def pure_cases(m):
     check("a status this does not recognise is not evidence of rest",
           not ok and "unheard-of" in why, why)
 
-    v, why = m.compaction_verdict("nothing about a release here\nor here\n")
+    import importlib.machinery
+    import importlib.util
+    cspec = importlib.util.spec_from_loader(
+        "campaign_claim", importlib.machinery.SourceFileLoader(
+            "campaign_claim", str(HERE / "campaign-claim.py")))
+    cm = importlib.util.module_from_spec(cspec)
+    cspec.loader.exec_module(cm)
+    check("the anchor this suite fixtures is the line campaign-claim prints",
+          RELEASED.startswith(cm.RELEASED), f"{cm.RELEASED!r} vs {RELEASED!r}")
+
+    def verdict(text, limit=400):
+        return m.compaction_verdict(text, cm.RELEASED, limit)
+
+    v, why = verdict("nothing about a release here\nor here\n")
     check("a pane that never released is fresh, not stale",
           v == "fresh" and "2 line(s)" in why, f"{v} {why}")
-    v, why = m.compaction_verdict(f"work\n{RELEASED}\n{MARKER}\n")
+    v, why = verdict(f"work\n{RELEASED}\n{MARKER}\n")
     check("a marker after the release line is compacted", v == "compacted", why)
-    v, why = m.compaction_verdict(f"work\n{RELEASED}\nstill going\n")
+    v, why = verdict(f"work\n{RELEASED}\nstill going\n")
     check("a release with no marker after it is stale",
           v == "stale" and "released at line 2" in why, why)
     # ORDER, NOT PRESENCE. This is the case the obvious implementation fails.
-    v, why = m.compaction_verdict(f"{MARKER}\nwork\n{RELEASED}\nstill going\n")
+    v, why = verdict(f"{MARKER}\nwork\n{RELEASED}\nstill going\n")
     check("a marker BEFORE the release line does not count as compacted",
           v == "stale", f"{v} {why}")
-    v, why = m.compaction_verdict("")
+    v, why = verdict("")
     check("an empty read is fresh with the count said, not a crash",
           v == "fresh" and "0 line(s)" in why, f"{v} {why}")
+    # THE WINDOW IS AN ABSENCE THAT LOOKS LIKE AN ANSWER. A read that filled it
+    # is not evidence the pane never released; before this it returned `fresh`,
+    # which ALLOWS, and that is the case a long transcript produces.
+    v, why = verdict("\n".join(["noise"] * 400) + "\n", 400)
+    check("a read that filled the window is truncated, not fresh",
+          v == "truncated" and "filled the window" in why, f"{v} {why[:120]}")
+    v, why = verdict("\n".join(["noise"] * 399) + "\n", 400)
+    check("...and one line short of the window is the whole history, so fresh",
+          v == "fresh" and "shorter than the 400-line window" in why,
+          f"{v} {why[:120]}")
+    # THE RELEASE THAT COULD NOT COMPACT is the single case this guard exists
+    # for, and at 114e71a it read `fresh` and was assigned: the anchor was the
+    # compaction's success line, which that release never printed.
+    could_not = (f"work\n{RELEASED}\n"
+                 f"not compacting: no herdr row names it (3 row(s) listed). "
+                 f"The claim is released; only the compaction did not "
+                 f"happen.\n")
+    v, why = verdict(could_not)
+    check("a release that could NOT compact reads stale, not fresh",
+          v == "stale", f"{v} {why[:140]}")
 
     sentence = m.prompt_for("kalaluthien/campaign-base", "42")
     check("the prompt names the sub-issue and defers to its body",
@@ -191,6 +227,26 @@ def end_to_end_cases():
               r.returncode == 0 and "--force: assigning a pane that has not"
               in out and len(prompts(forced)) == 1,
               f"exit {r.returncode}: {out[:300]}")
+
+        # REFUSE: the window filled and held no release line. Fails CLOSED
+        # now; at 114e71a this was `fresh` and was assigned.
+        full = shims(Path(d) / "full", rows,
+                     screen="\n".join(["noise"] * 400))
+        r = assign(["w1:p2", "198", "--lines", "400"], full)
+        out = r.stdout + r.stderr
+        check("a pane whose window filled with no release line is refused",
+              r.returncode == 1 and "truncated" in out
+              and prompts(full) == [], f"exit {r.returncode}: {out[:300]}")
+        check("...and the refusal offers --lines as the honest repair",
+              "raise --lines" in out, out[:400])
+        # ...and raising the window past the history admits it, which is the
+        # allow case that keeps the refusal from being a refusal of everything.
+        wide = shims(Path(d) / "wide", rows,
+                     screen="\n".join(["noise"] * 400))
+        r = assign(["w1:p2", "198", "--lines", "401"], wide)
+        check("...and a window wider than the history admits the same pane",
+              r.returncode == 0 and len(prompts(wide)) == 1,
+              f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
 
         # REFUSE: not idle. Asserted on the pane's own status, and the read arm
         # is left working so a pass cannot come from an unreadable screen.

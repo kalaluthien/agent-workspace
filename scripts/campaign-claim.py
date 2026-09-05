@@ -771,6 +771,18 @@ def herdr_sessions():
 COMPACT = "/compact"
 SESSION_ID_VAR = "CLAUDE_CODE_SESSION_ID"
 
+# THE ONE LINE A LATER READER ANCHORS ON. Printed at both of `release`'s
+# success exits and nowhere else, and printed BEFORE the compaction is
+# attempted, so it is there whether or not the compaction happened.
+#
+# `campaign-assign.py` reads it to answer "has this pane compacted since its
+# last release". Keyed on the compaction's own success line instead -- which is
+# how this shipped at 114e71a -- the one case the assignment guard exists for,
+# a release that could NOT compact, left no release line at all and read as a
+# pane that never released, which allows. Found by review and reproduced end to
+# end before this was written.
+RELEASED = "campaign-claim: released"
+
 
 def own_pane(sessions, session_id):
     """(pane, what_was_read) -- which pane THIS process's session sits in, by
@@ -796,7 +808,7 @@ def own_pane(sessions, session_id):
                          f"({row['name']})")
 
 
-def compact_own_pane(sessions, session_id, why_unread):
+def compact_own_pane(sessions, session_id):
     """Enqueue `/compact` into the releasing session's own pane, and print what
     was read either way. Returns the pane it prompted, or None.
 
@@ -819,11 +831,13 @@ def compact_own_pane(sessions, session_id, why_unread):
     sends anything.
 
     It never prompts a pane that is not its own: the only pane it can name is
-    the one the join returned."""
-    if sessions is None:
-        print(f"not compacting: {why_unread}. The claim is released; only the "
-              f"compaction did not happen.")
-        return None
+    the one the join returned.
+
+    NO `sessions is None` BRANCH, because `cmd_release` refuses on an unread
+    listing long before either call site -- an occupant it could not read is
+    not an absent one, and the suite asserts that ordering. A branch for it
+    here would read as a live could-not-look while nothing could reach it,
+    which is the shape that gets trusted for months while handling nothing."""
     pane, note = own_pane(sessions, session_id)
     if pane is None:
         print(f"not compacting: {note}. The claim is released; only the "
@@ -1490,7 +1504,8 @@ def cmd_release(args):
             return 1
         print(f"{repo} has no ref {branch}, and it was {text}: nothing "
               f"beyond main, and no ref to delete")
-        compact_own_pane(sessions, os.environ.get(SESSION_ID_VAR), why2)
+        print(f"{RELEASED} {branch}")
+        compact_own_pane(sessions, os.environ.get(SESSION_ID_VAR))
         return 0
     n = ahead_count(r.returncode, r.stdout)
     ok, refusal = ahead_verdict(n, r.stdout, r.stderr, repo, branch)
@@ -1582,11 +1597,12 @@ def cmd_release(args):
               file=sys.stderr)
         return 1
     print(f"deleted {branch}")
+    print(f"{RELEASED} {branch}")
     # LAST, and after the delete rather than before it: the release is what
     # this command is for, and compaction is a cost rule that must not be able
     # to stop one. Last also because the prompt fires when the turn ends, so
     # anything printed after it is printed by a session about to be compacted.
-    compact_own_pane(sessions, os.environ.get(SESSION_ID_VAR), why2)
+    compact_own_pane(sessions, os.environ.get(SESSION_ID_VAR))
     return 0
 
 

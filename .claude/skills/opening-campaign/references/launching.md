@@ -35,7 +35,13 @@ Launch in `<campaign>/repos/<repo>/`.
 
 ## Delivering the prompt
 
-**`herdr agent prompt <pane> "<text>"`.** A prompt put on the launch line is
+**`herdr agent prompt <pane> "<text>"`.** This is the launch's own step and
+the delegate's first brief; every LATER assignment to the same session goes
+through `scripts/campaign-assign.py`, which adds the idle and compacted
+readings a running session needs and a fresh one cannot have. Both are prompts
+into the pane, which is the criterion in `AGENTS.md` § The four messages.
+
+A prompt put on the launch line is
 word-split: a launch ending with a whole sentence delivered its first word alone,
 and the delegate reported it had been given no brief while the launch looked
 successful.

@@ -1452,6 +1452,13 @@ exit 1
               r.returncode == 0 and "deleted campaign-9999/4-done" in out
               and "sent /compact to w1:p2" in out,
               f"exit {r.returncode}: {out[:300]}")
+        # THE ANCHOR A LATER READER KEYS ON, printed BEFORE the compaction is
+        # attempted so that it is there whether or not the compaction happened.
+        # `campaign-assign.py` reads exactly this; keyed on the compaction's own
+        # success line instead, a release that could not compact read as a pane
+        # that never released and was assigned.
+        check("...and prints the release anchor, naming the branch",
+              f"{m.RELEASED} campaign-9999/4-done" in out, out[:300])
         check("...sending exactly one /compact, to its own pane, guarded",
               len(sent) == 1 and "pane=w1:p2" in sent[0]
               and "prompt=/compact" in sent[0] and "HERDR_ENV=1" in sent[0],
@@ -1470,6 +1477,12 @@ exit 1
               r.returncode == 0 and "deleted campaign-9999/4-done" in out
               and "not compacting" in out and "no herdr row names it" in out,
               f"exit {r.returncode}: {out[:300]}")
+        # THE CASE THE ANCHOR EXISTS FOR. A release that could not compact must
+        # still leave the release line, or the next `campaign-assign` reads the
+        # pane as one that never released and assigns it -- which is the single
+        # case its guard is for.
+        check("...and the release anchor is there even though nothing compacted",
+              f"{m.RELEASED} campaign-9999/4-done" in out, out[:400])
         check("...and sends nothing at all",
               prompts(miss) == [], repr(prompts(miss)))
 
@@ -1497,6 +1510,38 @@ exit 1
               r.returncode == 0 and "deleted campaign-9999/4-done" in out
               and "exited 3" in out and "only the compaction did not happen" in out,
               f"exit {r.returncode}: {out[:300]}")
+
+        # THE OTHER SUCCESS EXIT, pinned by nothing until now: the ref is
+        # already gone and a merged pull request had it as its head, so there
+        # is nothing to delete. It is the ordinary shape for a re-run release,
+        # and deleting its `compact_own_pane` call left the whole suite green.
+        # Found by review at 114e71a; the mutation string had been indented for
+        # the other exit and could never match this one.
+        gone_gh = """#!/bin/sh
+case "$*" in
+  *"--json state"*) echo 'CLOSED completed'; exit 0 ;;
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *compare/main*) echo 'HTTP 404: Not Found' >&2; exit 1 ;;
+  *"git/ref/heads"*) echo 'HTTP 404: Not Found' >&2; exit 1 ;;
+  *"pr list"*) echo '[{"number": 208}]'; exit 0 ;;
+esac
+exit 1
+"""
+        noref = shims(Path(d) / "noref", gh=gone_gh, herdr=two)
+        r = claim(["release", "9999", "4"], noref,
+                  {"CLAUDE_CODE_SESSION_ID": "S2"})
+        out = r.stdout + r.stderr
+        check("the no-ref-and-merged exit releases and compacts too",
+              r.returncode == 0 and "no ref to delete" in out
+              and "sent /compact to w1:p2" in out,
+              f"exit {r.returncode}: {out[:400]}")
+        check("...sending exactly one /compact from that exit as well",
+              len(prompts(noref)) == 1 and "pane=w1:p2" in prompts(noref)[0],
+              repr(prompts(noref)))
+        check("...and printing the release anchor there too",
+              f"{m.RELEASED} campaign-9999/4-done" in out, out[:400])
 
         # HERDR ABSENT: `release` refuses long before this on the occupancy
         # sweep, so the compaction is not what is being read here -- and that
