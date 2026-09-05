@@ -14,9 +14,9 @@ than off a claim>.
 ## Working it
 
 This body is the whole brief, so this section is here on every sub-issue. It
-points rather than restates: the rules are in the base's `AGENTS.md`, which a
-delegate reaches through the `--add-dir <base>` its launch passes, and a second
-copy of them here would be the one that goes stale.
+points rather than restates: the rules are in the base's `AGENTS.md`, which every
+session here loads from the tree it sits in, and a second copy of them here would
+be the one that goes stale.
 
 - **A branch is already claimed on the remote for this sub-issue.** Its name is
   not written here — `gh issue create` mints the issue number, so the branch
