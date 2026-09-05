@@ -152,6 +152,46 @@ checkout_branch() {
 # which is what lets this function converge over a checkout it already guarded
 # either way. Before #178 the shim was written unconditionally and the installer
 # refused over it, so no delegate clone ever held the repository's hooks.
+# Leave the campaign's principles where a delegate in this clone will read
+# them: `CLAUDE.local.md` in its own cwd, excluded from the clone's index.
+#
+# #176 replaced `--append-system-prompt-file` with this file and wrote the
+# instruction as prose; #187 question 5 is that no command anywhere wrote one,
+# so a delegate launched by the documented procedure got no principles and
+# NOTHING RECORDED THAT -- the failure mode the flag was abandoned for, back in
+# a new shape. The prose is now here, where a caller cannot skip it.
+#
+# Excluded in `.git/info/exclude` and not `.gitignore`: the latter is tracked,
+# so excluding a per-launch file there is a commit on the member repository for
+# this campaign's convenience.
+#
+# A campaign with no `AGENTS.md` is a real answer and not a failure -- not every
+# campaign adds principles -- but it is SAID, because a silent skip here is
+# indistinguishable from the defect this closes.
+install_principles() {
+	local dest=$1
+	local campaign src exclude
+	campaign=$(cd "$dest/../.." 2>/dev/null && pwd -P) || {
+		log "no campaign directory above $dest, so no principles were written"
+		return 0
+	}
+	src="$campaign/AGENTS.md"
+	if [ ! -f "$src" ]; then
+		log "no $src, so this campaign adds no principles for $dest"
+		return 0
+	fi
+	cp "$src" "$dest/CLAUDE.local.md" ||
+		die "could not write $dest/CLAUDE.local.md from $src"
+	exclude=$(git -C "$dest" rev-parse --path-format=absolute --git-path info/exclude) ||
+		die "could not resolve $dest's info/exclude"
+	mkdir -p "$(dirname "$exclude")" || die "could not create $(dirname "$exclude")"
+	if ! grep -qxF "CLAUDE.local.md" "$exclude" 2>/dev/null; then
+		printf 'CLAUDE.local.md\n' >>"$exclude" ||
+			die "could not append to $exclude"
+	fi
+	log "principles: $src -> $dest/CLAUDE.local.md, excluded in $exclude"
+}
+
 install_commit_guard() {
 	local dest=$1
 	local guard="$HOME/.claude/git-hooks/no-main-commits"
@@ -235,6 +275,7 @@ acquire() {
 	fi
 
 	install_commit_guard "$dest"
+	install_principles "$dest"
 	log "ready: $dest"
 }
 

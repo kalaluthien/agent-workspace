@@ -15,6 +15,8 @@ changes it. Nothing here reaches the network.
 
 Usage: scripts/campaign-claim-test.py
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -73,13 +75,33 @@ GH = """#!/bin/sh
 # Every endpoint this suite needs, and a refusal for anything else, so a call
 # that escaped a gate is visible as a different failure rather than as silence.
 case "$*" in
+  # IS IT SETTLED. Matched before the body arms and on `--json state`, or the
+  # body answer would come back as a state word and every sub-issue would read
+  # open -- which is how these arms first passed while answering the wrong
+  # question.
+  *"--json state"*"issue view 2 "*|*"issue view 2 "*"--json state"*) echo 'CLOSED completed'; exit 0 ;;
+  *"--json state"*"issue view 600 "*|*"issue view 600 "*"--json state"*) echo 'CLOSED not_planned'; exit 0 ;;
+  *"--json state"*"issue view 601 "*|*"issue view 601 "*"--json state"*) exit 1 ;;
+  *"--json state"*) echo 'OPEN '; exit 0 ;;
+  # WHERE A CLAIM IS CUT, read from the sub-issue since #187. `none` is the
+  # ordinary answer here: these cases claim on the base, which is what a
+  # repo-less sub-issue resolves to.
+  # The CAMPAIGN issue's body, whose `## Repos` is the campaign's scope. A
+  # sub-issue may only name a repository this list holds.
+  *"issue view 9999 "*) printf '## Repos\n- other/elsewhere\n'; exit 0 ;;
+  *"issue view 8888 "*) printf 'no Repos heading at all\n'; exit 0 ;;
+  *"issue view 404 "*) echo 'no Repository line here'; exit 0 ;;
+  *"issue view 502 "*) echo 'Repository: outside/scope'; exit 0 ;;
+  *"issue view 500 "*) echo 'Repository: other/elsewhere'; exit 0 ;;
+  *"issue view 501 "*) exit 1 ;;
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/campaign-9999/1-alpha","refs/heads/campaign-9999/2-beta"]'; exit 0 ;;
   *compare/main*) echo 0; exit 0 ;;
   # `2-beta` landed; `1-alpha` never did. The two answers are what `live`'s
   # vacant group and `release`'s fresh-claim gate each turn on.
   *"--head campaign-9999/2-beta"*) echo '[{"number": 162}]'; exit 0 ;;
   *"pr list"*|*--state*merged*) echo '[]'; exit 0 ;;
-  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"issues/9999"*|*"issues/8888"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
   *git/refs*) echo 'Reference already exists' >&2; exit 1 ;;
 esac
@@ -345,6 +367,169 @@ def take_cases(m):
         check("an unclaimed sub-issue reaches the create-ref",
               "cut from" in out and "one claim whatever the topic" not in out)
 
+        # ------ #187 Q1: WHERE IS A FACT ABOUT THE SUB-ISSUE ------
+        # Three refusals, broken apart, because they share exit 1 and a stream.
+        # A case asserting only the status passes while any one is deleted.
+
+        # "I could not look" is not "there is nothing there". These two are the
+        # pair the guard rules say must never collapse into one another.
+        r = claim(["take", "9999", "501", "x"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue body that could not be fetched refuses",
+              r.returncode == 1 and "could not read #501" in out,
+              f"exit {r.returncode}: {out[:200]}")
+        r = claim(["take", "9999", "404", "x"], path)
+        out = r.stdout + r.stderr
+        check("...and a body with no Repository line refuses differently",
+              r.returncode == 1 and "no `Repository:` line" in out,
+              f"exit {r.returncode}: {out[:200]}")
+        check("...naming the template the line comes from",
+              "sub-issue.md" in out, out[:300])
+        # THE DEFECT ITSELF. `--repo` deciding is what let two takers each hold
+        # #N; it may now only agree. Refused rather than resolved: whichever
+        # side won silently, one of the two readers would be wrong for good.
+        r = claim(["take", "9999", "500", "x", "--repo", "someone/other"], path)
+        out = r.stdout + r.stderr
+        check("--repo disagreeing with the sub-issue is refused",
+              r.returncode == 1 and "The sub-issue decides" in out,
+              f"exit {r.returncode}: {out[:200]}")
+        check("...and the refusal names both repositories it read",
+              "someone/other" in out and "other/elsewhere" in out, out[:300])
+        # A REPOSITORY OUTSIDE THE CAMPAIGN'S SCOPE. `Repository:` is prose on
+        # one sub-issue; `## Repos` is what a person signed up for, so a
+        # sub-issue naming a repository outside it is a scope change filed as a
+        # typo. Cutting the ref would make the campaign wider than its charter.
+        r = claim(["take", "9999", "502", "x"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue naming a repository outside `## Repos` is refused",
+              r.returncode == 1 and "belongs in the campaign issue" in out,
+              f"exit {r.returncode}: {out[:200]}")
+        check("...and names the repository it read and the list it read",
+              "outside/scope" in out and "other/elsewhere" in out, out[:300])
+        # ...and a scope that could not be READ is not a scope that admits it.
+        # Separate from the case above: both exit 1, and only this sentence
+        # tells "I looked and it is not there" from "I could not look".
+        r = claim(["take", "8888", "502", "x"], path)
+        out = r.stdout + r.stderr
+        # ASSERTED ON THE SCOPE SENTENCE, not on "could not be read": the
+        # BINDING refusal prints that phrase too, so the first shape of this
+        # case passed while the campaign body was never fetched at all.
+        check("a `## Repos` list that would not read denies the claim",
+              r.returncode == 1 and "did not read" in out
+              and "not a scope that admits it" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        # ...and the scope check ADMITS a sub-issue the list holds, or it is a
+        # rule that refuses everything.
+        r = claim(["take", "9999", "500", "x"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue naming a listed repository passes the scope check",
+              "which includes other/elsewhere" in out, out[:300])
+
+        # ...and the rule admits the ordinary claim, or it forbids everything.
+        # `none` is the repo-less answer and means the base.
+        r = claim(["take", "9999", "7", "delta"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue naming no member repository cuts on the base",
+              "names no member repository" in out and "cut from" in out,
+              out[:300])
+
+        # ------ #187 Q3: A SETTLED SUB-ISSUE'S REF IS RESIDUE ------
+        # `delete_branch_on_merge` is off on this tracker, so a merged branch's
+        # ref stands until somebody deletes it. Read as a live claim, it made a
+        # sub-issue that had ever been settled un-re-workable for ever.
+        # Sub-issue 2 is closed-completed and `2-beta` merged as #162.
+        r = claim(["take", "9999", "2", "again"], path)
+        out = r.stdout + r.stderr
+        # ASSERTED ON THE REASON, not on exit 3: the OLD behaviour also refused
+        # this, saying "already claimed", so a case keyed on the status passes
+        # against the very defect it is here to pin.
+        check("a settled sub-issue is refused for BEING settled",
+              "is settled and its work is over" in out
+              and "already claimed" not in out,
+              f"exit {r.returncode}: {out[:250]}")
+        check("...and its merged ref is named residue, not a claim",
+              "residue of settled work" in out and "#162" in out, out[:300])
+        check("...and it says reopening is a person's call",
+              "gh issue reopen 2" in out, out[:300])
+        # Closed as NOT PLANNED is settled too, or a dropped sub-issue would
+        # stay claimable while a completed one did not.
+        r = claim(["take", "9999", "600", "x"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue dropped as not planned is settled as well",
+              r.returncode == 1 and "is settled" in out and "not_planned" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        # "I could not look" is not "it is open".
+        r = claim(["take", "9999", "601", "x"], path)
+        out = r.stdout + r.stderr
+        check("a state that could not be read denies the claim",
+              r.returncode == 1 and "not a sub-issue known to be open" in out,
+              f"exit {r.returncode}: {out[:250]}")
+
+        # ...and a merge question that could not be ANSWERED is neither. Its
+        # own shim, because the answer has to fail for one branch while the ref
+        # listing still succeeds, and widening the shared shim's ref list would
+        # move every count the `live` cases assert.
+        unread_gh = shims(Path(d) / "unread", gh="""#!/bin/sh
+case "$*" in
+  *"--json state"*) echo 'OPEN '; exit 0 ;;
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/campaign-9999/3-gamma"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"pr list"*) echo "the merge question failed" >&2; exit 1 ;;
+esac
+exit 1
+""")
+        r = claim(["take", "9999", "3", "delta"], unread_gh)
+        out = r.stdout + r.stderr
+        check("a merge question that could not be answered denies the claim",
+              r.returncode == 1 and "whether it is a live claim or" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        check("...and names the ref it could not settle",
+              "campaign-9999/3-gamma" in out, out[:300])
+
+        # ------ FINDING 1: REOPEN-THEN-TAKE, THE ONLY PATH Q3 DELIVERS ON ---
+        # A settled sub-issue is refused while it is closed, so re-working one
+        # means reopening it. Then its merged ref is still on the remote, and
+        # the survey walks past it correctly -- but the RE-CHECK counted the
+        # same residue as a rival, deleted the ref just cut, and reported a race
+        # against a branch merged weeks ago. Its own shim: sub-issue 8 is OPEN
+        # and `8-old` merged as #162, which no other fixture here has.
+        reopened = shims(Path(d) / "reopened", gh="""#!/bin/sh
+case "$*" in
+  *"--json state"*) echo 'OPEN '; exit 0 ;;
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  # Stateful, or the survey sees the ref this run is about to cut and refuses
+  # before the re-check -- the branch under test -- is ever reached.
+  *matching-refs*)
+      if [ -f REOPENDIR/n ]; then
+        echo '["refs/heads/campaign-9999/8-old","refs/heads/campaign-9999/8-new"]'
+      else
+        : > REOPENDIR/n; echo '["refs/heads/campaign-9999/8-old"]'
+      fi
+      exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
+  *"--head campaign-9999/8-old"*) echo '[{"number": 162}]'; exit 0 ;;
+  *"pr list"*) echo '[]'; exit 0 ;;
+  *"-X DELETE"*) echo "$*" >> REOPENDIR/deleted; exit 0 ;;
+  *git/refs*) exit 0 ;;
+esac
+exit 1
+""".replace("REOPENDIR", str(Path(d) / "reopened")))
+        r = claim(["take", "9999", "8", "new"], reopened)
+        out = r.stdout + r.stderr
+        # ASSERTED ON THE DELETE, not on the exit status: the defect exited 3
+        # and printed "in the same moment", which a status-keyed case accepts.
+        deleted = Path(d) / "reopened" / "deleted"
+        check("a reopened sub-issue's take does NOT delete the ref it just cut",
+              not deleted.exists(),
+              deleted.read_text() if deleted.exists() else "")
+        check("...and it claims the sub-issue",
+              r.returncode == 0 and "claimed campaign-9999/8-new" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        check("...naming the merged ref as residue rather than as a rival",
+              "not a rival" in out and "#162" in out, out[:300])
+
         # THE RACE THE SURVEY ALONE CANNOT CLOSE. Two takers on two topics both
         # see no sibling and both create; the re-check AFTER the create is what
         # settles it, because by then both refs exist. The shim answers empty
@@ -352,7 +537,12 @@ def take_cases(m):
         raced = shims(Path(d) / "raced", gh="""#!/bin/sh
 STATE=RACEDIR/n
 case "$*" in
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  # Neither racing ref ever merged, so both are live claims and the yield is
+  # what settles them. Without this arm the merge question comes back unread
+  # and the re-check refuses instead, which is a different branch.
+  *"pr list"*) echo '[]'; exit 0 ;;
   *matching-refs*)
       if [ -f "$STATE" ]; then
         echo '["refs/heads/campaign-9999/5-aaa","refs/heads/campaign-9999/5-zzz"]'
@@ -398,6 +588,7 @@ exit 1
         nodel = shims(Path(d) / "nodel", gh="""#!/bin/sh
 STATE=NODELDIR/n
 case "$*" in
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *matching-refs*)
       if [ -f "$STATE" ]; then
@@ -407,6 +598,7 @@ case "$*" in
       fi
       exit 0 ;;
   *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
+  *"pr list"*) echo '[]'; exit 0 ;;
   *"-X DELETE"*) echo "boom" >&2; exit 1 ;;
   *git/refs*) exit 0 ;;
 esac
@@ -420,6 +612,7 @@ exit 1
         # A ref listing that failed is not proof the sub-issue is free.
         blind = shims(Path(d) / "blind", gh="""#!/bin/sh
 case "$*" in
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
 esac
 exit 1
@@ -508,6 +701,114 @@ def release_cases(m):
         out = r.stdout + r.stderr
         check("...and a confirmed absence gets past it to the delete",
               "absence confirmed by: a person" in out)
+        # ------ #187 Q2: THE SUB-ISSUE'S OWN STATE ANSWERS THIS ------
+        # A repo-less sub-issue lands no commit, so its ref is 0 ahead FOR EVER
+        # and no merged pull request will ever exist to say the work is done.
+        # `--confirmed-absent` was the only door, and passing it for a sub-issue
+        # that is closed-completed would be a person asserting something GitHub
+        # already says. Its own shim: the ref list has to hold a branch whose
+        # sub-issue is closed, and widening the shared one moves every count the
+        # `live` cases assert.
+        def rel_gh(state):
+            return """#!/bin/sh
+case "$*" in
+  *"--json state"*) echo '%s'; exit 0 ;;
+  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *compare/main*) echo 0; exit 0 ;;
+  *"pr list"*) echo '[]'; exit 0 ;;
+esac
+exit 1
+""" % state
+        done = shims(Path(d) / "q2done", gh=rel_gh("CLOSED completed"),
+                     herdr=listing())
+        r = claim(["release", "9999", "4"], done)
+        out = r.stdout + r.stderr
+        check("a closed sub-issue's empty ref releases with no person's word",
+              "its work is over and the ref is residue" in out
+              and "--confirmed-absent" not in out,
+              out[:300])
+        # Dropped counts as settled too, or a sub-issue closed as not planned
+        # would strand its ref while a completed one did not.
+        gone = shims(Path(d) / "q2gone", gh=rel_gh("CLOSED not_planned"),
+                     herdr=listing())
+        r = claim(["release", "9999", "4"], gone)
+        out = r.stdout + r.stderr
+        check("...and a sub-issue dropped as not planned counts as settled",
+              "not_planned" in out and "ref is residue" in out, out[:300])
+        # ...and an OPEN one still needs the person, or the gate is gone.
+        openish = shims(Path(d) / "q2open", gh=rel_gh("OPEN "),
+                        herdr=listing())
+        r = claim(["release", "9999", "4"], openish)
+        out = r.stdout + r.stderr
+        check("an open sub-issue's empty ref still needs --confirmed-absent",
+              r.returncode == 1 and "--confirmed-absent" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        check("...and the refusal offers closing the sub-issue as the other way",
+              "Close the sub-issue if its work is done" in out, out[:300])
+        # "I could not look" is not "it is closed" and not "it is open".
+        unread_state = shims(Path(d) / "q2unread", gh=rel_gh("").replace(
+            "echo ''; exit 0", "exit 1"), herdr=listing())
+        r = claim(["release", "9999", "4"], unread_state)
+        out = r.stdout + r.stderr
+        check("a state that would not read denies the release",
+              r.returncode == 1 and "an unknown is not a release" in out,
+              f"exit {r.returncode}: {out[:250]}")
+
+        # ------ FINDINGS 2 AND 7: release reads the sub-issue too ------
+        # The spec says "`take` and `release` read the sub-issue's own
+        # `Repository:` line"; only `take` did, and `release` picked a
+        # repository out of the clones on disk. A delete aimed by the wrong
+        # reader takes a ref that is not this sub-issue's.
+        r = claim(["release", "9999", "501"], empty)
+        out = r.stdout + r.stderr
+        check("release refuses when the sub-issue's repository will not read",
+              r.returncode == 1 and "could not read #501" in out
+              and "this deletes a ref" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        r = claim(["release", "9999", "500", "--repo", "someone/other"], empty)
+        out = r.stdout + r.stderr
+        check("...and refuses a --repo that disagrees with the sub-issue",
+              r.returncode == 1 and "The sub-issue decides" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        # FINDING 7. An explicit `--repo <the base>` used to be indistinguishable
+        # from no flag, so this one disagreement passed silently. Sub-issue 500
+        # says `other/elsewhere`.
+        r = claim(["release", "9999", "500", "--repo",
+                   "kalaluthien/campaign-base"], empty)
+        out = r.stdout + r.stderr
+        check("...including an explicit --repo that happens to be the base",
+              r.returncode == 1 and "The sub-issue decides" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        # ...and the allow beside it: an agreeing --repo gets past the check.
+        # Asserted on the refusal being ABSENT and the reading having happened,
+        # not on the exit status: this run stops later for want of a ref, which
+        # is a different branch and would satisfy a status-keyed case either way.
+        r = claim(["release", "9999", "500", "--repo", "other/elsewhere"], empty)
+        out = r.stdout + r.stderr
+        check("...while a release whose --repo AGREES gets past the check",
+              "The sub-issue decides" not in out
+              and "says its work lands in other/elsewhere" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        r = claim(["take", "9999", "500", "x", "--repo",
+                   "kalaluthien/campaign-base"], path)
+        out = r.stdout + r.stderr
+        check("...and take says the same about an explicit base --repo",
+              r.returncode == 1 and "The sub-issue decides" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        # THE ALLOW BESIDE THE REFUSAL. `--repo` may confirm, so a `--repo` that
+        # AGREES with the sub-issue must pass -- otherwise "may only confirm"
+        # is a flag that can only ever refuse, which is a false positive on the
+        # one shape the flag exists for. Every refusal branch this lands ships
+        # with the ordinary shape it could wrongly catch named beside it.
+        r = claim(["take", "9999", "500", "y", "--repo", "other/elsewhere"],
+                  path)
+        out = r.stdout + r.stderr
+        check("...while a --repo that AGREES with the sub-issue passes",
+              "The sub-issue decides" not in out and "cut from" in out,
+              f"exit {r.returncode}: {out[:250]}")
+
         # ...and the OTHER side of the same gate: a branch whose pull request
         # merged is finished work, and needs no person to say so.
         r = claim(["release", "9999", "2"], empty)
@@ -515,6 +816,211 @@ def release_cases(m):
         check("a merged branch passes the gate with no --confirmed-absent",
               "finished work and not a fresh claim" in out
               and "--confirmed-absent" not in out)
+
+
+def scope_cases(m):
+    """#187 Q4: which campaign directory a reading is about."""
+    # The walk, as a calculation. Driven by a path rather than by where this
+    # file sits, which differs in a worktree, in a clone, and on CI.
+    root = Path("/b")
+    check("the campaign directory is the `<slug>-<YYMMDD>` ancestor",
+          m.own_campaign_dir(Path("/b/demo-260905/repos/acme/scripts/x.py"))
+          == Path("/b/demo-260905"))
+    check("...and a path under no campaign directory has none",
+          m.own_campaign_dir(Path("/b/scripts/x.py")) is None)
+    # The nearest one wins: a campaign directory inside another is still the
+    # one this invocation is about.
+    check("...and the nearest ancestor wins",
+          m.own_campaign_dir(Path("/b/outer-260901/x/inner-260905/s/x.py"))
+          == Path("/b/outer-260901/x/inner-260905"))
+
+    # ------ FINDING 3: THE SCOPE MUST BE THE SUBJECT'S, NOT THE INVOKER'S ---
+    # `own_campaign_dir` answers "which directory is this script under", which
+    # is the invoker's. Scoping on that alone made `live 5` run from campaign
+    # #1's tree sweep #1's clones and report all three readings made -- blind to
+    # #5's, which the machine-wide sweep at least reached. Confirmed against the
+    # one artifact that names a campaign: the derived body's first line.
+    with tempfile.TemporaryDirectory() as d:
+        camp = Path(d) / "demo-260905"
+        (camp / "runtime").mkdir(parents=True)
+        (camp / "runtime" / "campaign-issue-body-derived.md").write_text(
+            "Bootstrap the thing.\n\n## Intent\n")
+        real_own, real_run = m.own_campaign_dir, m.run
+        try:
+            m.own_campaign_dir = lambda start=None: camp
+
+            class R:
+                returncode, stdout, stderr = 0, "Bootstrap the thing.\n\nx", ""
+            m.run = lambda *a, **k: R()
+            got, note = m.scope_for("9999")
+            check("a directory whose derived body matches the campaign scopes",
+                  got == camp and "this campaign's directory" in note, note)
+
+            class R2:
+                returncode, stdout, stderr = 0, "Some other campaign.\n", ""
+            m.run = lambda *a, **k: R2()
+            got, note = m.scope_for("9999")
+            check("...and one that does not match falls back to the wide sweep",
+                  got is None and "not campaign #9999's directory" in note, note)
+            check("...saying the sweep was wide, so the reader is not misled",
+                  "every campaign directory here was swept" in note, note)
+
+            # "I could not look" is its own answer and also falls back: a scope
+            # that MIGHT be the wrong campaign's is worse than no scope, since
+            # the wide sweep is noisy and the wrong scope is silently blind.
+            class R3:
+                returncode, stdout, stderr = 1, "", "boom"
+            m.run = lambda *a, **k: R3()
+            got, note = m.scope_for("9999")
+            check("...and a campaign body that would not read falls back too",
+                  got is None and "could not read campaign #9999" in note, note)
+
+            (camp / "runtime" / "campaign-issue-body-derived.md").unlink()
+            m.run = lambda *a, **k: R()
+            got, note = m.scope_for("9999")
+            check("...as does a directory carrying no derived body at all",
+                  got is None and "no readable" in note, note)
+        finally:
+            m.own_campaign_dir, m.run = real_own, real_run
+
+    # THE WIRING, and not the helper alone. A case that only called
+    # `own_campaign_dir` would pass with the command never consulting it --
+    # which is exactly what happened: the helper was covered and the call was
+    # not, and deleting the walk left every case green.
+    real = (m.own_campaign_dir, m.sweep_roots, m.base_root, m.matching_refs,
+            m.herdr_sessions, m.checkouts, m.claim_repos, m.scope_for)
+    seen = {}
+    try:
+        m.own_campaign_dir = lambda start=None: Path("/the-scope-260905")
+        m.scope_for = lambda ci: (Path("/the-scope-260905"),
+                                  "SCOPE-NOTE-FOR-THE-READER")
+        m.base_root = lambda: ("/b", None)
+        m.matching_refs = lambda repo, ci: ([], None)
+        m.herdr_sessions = lambda: ({}, None)
+        m.checkouts = lambda roots: ({}, [])
+        def claim_repos_spy(r, root, only=None, ci=None):
+            seen["claim_repos"] = only
+            # THE SECOND ARGUMENT, recorded too. Pinning `only` alone left the
+            # `## Repos` reading unwired-testable: dropping `args.campaign_issue`
+            # from either caller kept every case green, and `live` would print
+            # "0 occupied, 0 vacant" over a held claim on an uncloned member --
+            # the exact false-clean this branch exists to prevent.
+            seen["claim_repos_ci"] = ci
+            return [r], "note"
+        m.claim_repos = claim_repos_spy
+        def spy(sessions, only=None):
+            seen["sweep_roots"] = only
+            return ([], [], None)
+        m.sweep_roots = spy
+
+        class Args:
+            campaign_issue, repo = "9999", "o/r"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            m.cmd_live(Args())
+        # THE NOTE IS PRINTED, not merely returned. `scope_for` says whether the
+        # sweep was scoped or fell back to every campaign directory here, and a
+        # wrong-scope reading that says nothing is exactly the silent failure
+        # the fallback exists to avoid. Deleting `print(scope_note)` reddened no
+        # case before this one.
+        check("cmd_live prints which sweep it made",
+              "SCOPE-NOTE-FOR-THE-READER" in buf.getvalue(),
+              buf.getvalue()[:200])
+        check("cmd_live scopes its sweep to this campaign's directory",
+              seen.get("sweep_roots") == Path("/the-scope-260905"),
+              f"got {seen.get('sweep_roots')!r}")
+        check("...and scopes the repository reading the same way",
+              seen.get("claim_repos") == Path("/the-scope-260905"),
+              f"got {seen.get('claim_repos')!r}")
+        check("...and names the campaign, so `## Repos` is read at all",
+              seen.get("claim_repos_ci") == "9999",
+              f"got {seen.get('claim_repos_ci')!r}")
+        # FINDING 4: THE OTHER COMMAND. `cmd_release` has the same two calls
+        # and the spy covered only `cmd_live`, so dropping the scope from
+        # release changed no case at all -- the helper-covered, caller-
+        # uncovered shape for the sixth time in this repository.
+        seen.clear()
+        real_ir, real_ar = m.issue_repo, m.all_refs
+        try:
+            m.issue_repo = lambda i, d: (d, None, "note")
+            m.all_refs = lambda repos, ci: ({}, [])
+            class RArgs:
+                campaign_issue, issue, repo = "9999", "7", None
+                branch, confirmed_absent = None, None
+            rbuf = io.StringIO()
+            with contextlib.redirect_stdout(rbuf):
+                m.cmd_release(RArgs())
+            check("cmd_release prints which sweep it made",
+                  "SCOPE-NOTE-FOR-THE-READER" in rbuf.getvalue(),
+                  rbuf.getvalue()[:200])
+        finally:
+            m.issue_repo, m.all_refs = real_ir, real_ar
+        check("cmd_release scopes its repository reading the same way",
+              seen.get("claim_repos") == Path("/the-scope-260905"),
+              f"got {seen.get('claim_repos')!r}")
+        check("...and names the campaign there too",
+              seen.get("claim_repos_ci") == "9999",
+              f"got {seen.get('claim_repos_ci')!r}")
+    finally:
+        (m.own_campaign_dir, m.sweep_roots, m.base_root, m.matching_refs,
+         m.herdr_sessions, m.checkouts, m.claim_repos, m.scope_for) = real
+
+
+def sweep_scope_cases(m):
+    """The hop INSIDE sweep_roots, which the other two cases jump over.
+
+    `sweep_roots({}, None)` covers `campaign_clones(only)` and the wiring spy
+    replaces `sweep_roots` wholesale, so both ends were pinned and the wire
+    between them was not: passing `None` through to `campaign_clones` left every
+    case green while the worktree sweep went machine-wide again. Eighth instance
+    of that shape here.
+    """
+    real = m.campaign_clones
+    seen = {}
+    try:
+        def spy(root, only=None):
+            seen["only"] = only
+            return [], []
+        m.campaign_clones = spy
+        m.sweep_roots({}, "THE-SCOPE")
+        check("sweep_roots passes its scope through to campaign_clones",
+              seen.get("only") == "THE-SCOPE", f"got {seen.get('only')!r}")
+    finally:
+        m.campaign_clones = real
+
+
+def listed_repo_cases(m):
+    """#187 Q1 third defect: `## Repos` is read, not only the clones on disk."""
+    real = m.campaign_repos
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            (root / "demo-260904" / "repos").mkdir(parents=True)
+            # A member repository the campaign is FOR, whose clone was never
+            # made here. Its claim is real, on the remote, and was invisible:
+            # `live` printed "0 occupied, 0 vacant" and a close passed over a
+            # held claim. The clones answer "where might somebody be standing";
+            # `## Repos` answers "where might a claim be", and they differ
+            # exactly when a member repository was never cloned or was removed.
+            m.campaign_repos = lambda ci: (["owner/member"], "listed")
+            repos, note = m.claim_repos("base/base", str(root), None, "1")
+            check("a `## Repos` member with no clone here is still read",
+                  "owner/member" in repos, str(repos))
+            check("...and the note says it had no clone, so the reader knows why",
+                  "no clone here" in note, note)
+            # ...and a list that would not READ narrows nothing silently.
+            m.campaign_repos = lambda ci: (None, "the list did not read")
+            repos, note = m.claim_repos("base/base", str(root), None, "1")
+            check("a `## Repos` that would not read is named, not skipped",
+                  "may be unread" in note, note)
+            # ...and with no campaign issue passed, the old behaviour stands,
+            # so a caller that names its own repository asks nothing extra.
+            m.campaign_repos = lambda ci: (["owner/member"], "listed")
+            repos, _ = m.claim_repos("base/base", str(root), None, None)
+            check("...and nothing is read from `## Repos` when none is asked for",
+                  "owner/member" not in repos, str(repos))
+    finally:
+        m.campaign_repos = real
 
 
 def sweep_cases(m):
@@ -549,9 +1055,25 @@ def sweep_cases(m):
             check("a repos/ that will not enumerate is reported, not skipped",
                   len(unread) == 1 and "locked-260904" in unread[0])
             m.base_root = lambda: (str(root), None)
-            roots, unread, why = m.sweep_roots({})
+            roots, unread, why = m.sweep_roots({}, None)
             check("...and an unreadable repos/ comes back through sweep_roots",
                   len(unread) == 1 and "locked-260904" in unread[0])
+            # ------ #187 Q4: A NEIGHBOUR'S DIRECTORY IS NOT THIS ONE'S ------
+            # The same locked directory, with the sweep scoped to a DIFFERENT
+            # campaign's directory. It used to deny `live` and `release` for
+            # every campaign on the machine; scoped, it is not read at all.
+            mine = root / "mine-260905" / "repos" / "acme"
+            mine.mkdir(parents=True)
+            clones, unread = m.campaign_clones(str(root), root / "mine-260905")
+            check("a neighbour's unreadable repos/ does not deny this campaign",
+                  not unread, str(unread))
+            check("...and this campaign's own clone is still swept",
+                  any("acme" in c for c in clones), str(clones))
+            # ...and the scoping does not become a way to MISS this campaign's
+            # own failure: locked, scoped to itself, it is still reported.
+            clones, unread = m.campaign_clones(str(root), root / "locked-260904")
+            check("...while this campaign's OWN unreadable repos/ still denies",
+                  len(unread) == 1 and "locked-260904" in unread[0], str(unread))
         finally:
             bad.chmod(0o755)
             m.base_root = real
@@ -564,7 +1086,7 @@ def sweep_cases(m):
         real = m.base_root
         try:
             m.base_root = lambda: (str(root), None)
-            roots, unread, why = m.sweep_roots({})
+            roots, unread, why = m.sweep_roots({}, None)
             check("sweep_roots reaches a member clone with nothing alive",
                   why is None
                   and str(root / "demo-260904" / "repos" / "acme") in roots)
@@ -592,7 +1114,7 @@ def verdict_cases(m, capsys=None):
         m.matching_refs = lambda r, n: (["campaign-9/1-a"], None)
         m.herdr_sessions = lambda: ({}, None)
         m.base_root = lambda: ("/nowhere", None)
-        m.sweep_roots = lambda s: (["/a"], ["/b: would not enumerate"], None)
+        m.sweep_roots = lambda s, only=None: (["/a"], ["/b: would not enumerate"], None)
         m.checkouts = lambda roots: ({}, [])
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -605,7 +1127,7 @@ def verdict_cases(m, capsys=None):
         check("...and names the repository it could not sweep",
               "would not enumerate" in out)
 
-        m.sweep_roots = lambda s: (["/a"], [], None)
+        m.sweep_roots = lambda s, only=None: (["/a"], [], None)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             code = m.cmd_live(Args())
@@ -620,7 +1142,7 @@ def verdict_cases(m, capsys=None):
         # every unit case passed, because they call `classify` with the right
         # root directly. This one runs the command.
         m.base_root = lambda: ("/BASE", None)
-        m.sweep_roots = lambda s: (["/some/other/repo"], [], None)
+        m.sweep_roots = lambda s, only=None: (["/some/other/repo"], [], None)
         m.herdr_sessions = lambda: ({"s1": {"name": "<unnamed>",
                                             "cwd": "/BASE/anywhere",
                                             "pane": "p", "status": "idle"}},
@@ -799,7 +1321,8 @@ def main():
     spec.loader.exec_module(m)
 
     for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
-               sweep_cases, verdict_cases, peer_cases, robustness_cases,
+               scope_cases, sweep_scope_cases, listed_repo_cases, sweep_cases, verdict_cases, peer_cases,
+               robustness_cases,
                root_cases, repos_cases):
         fn(m)
     for name in FAILED:
