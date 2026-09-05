@@ -17,7 +17,6 @@ Usage: scripts/campaign-token-tally-test.py
 import json
 import subprocess
 import sys
-import os
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "campaign-token-tally.py"
@@ -75,11 +74,23 @@ def run(root, base, command, pr_map, extra=()):
 
 
 def row(text, first):
-    """The row whose first column is `first`, as a list of cells."""
+    """The row whose first column is `first`, keyed by the table's own headings.
+
+    By heading and not by index, so adding a column to a table does not fail
+    every case that reads one -- the cases here are about what a number says,
+    and a column's position is not part of that.
+    """
+    head = None
     for line in text.splitlines():
         cells = line.split()
-        if cells and cells[0] == first:
-            return cells
+        if not cells:
+            continue
+        if head is None:
+            if cells[0] in ("issue", "session", "pr", "script"):
+                head = cells
+            continue
+        if cells[0] == first:
+            return dict(zip(head, cells))
     return None
 
 
@@ -100,7 +111,23 @@ def build(tmp):
                   blocks=[{"type": "text", "text": "y"}]),
         assistant("m-fold", day + "01:00:02Z", wt, out=500, settled=True,
                   blocks=[{"type": "tool_use", "name": "Bash", "id": "t1",
-                           "input": {"command": "scripts/campaign-tracker.py index 1"}}]),
+                           "input": {"command":
+                                     "scripts/campaign-tracker.py index 1 && "
+                                     "scripts/campaign-repos.py README.md"}}]),
+    ]
+    # Two commands that name a script without running one: the result they
+    # return is the script's own source, and charging it to the script would
+    # make reading a file look like an agent being printed at.
+    look = str(base / "camp-260101" / "worktrees" / "307")
+    reads = [
+        assistant("m-grep", day + "01:10:00Z", look, out=10, settled=True,
+                  blocks=[{"type": "tool_use", "name": "Bash", "id": "t2",
+                           "input": {"command":
+                                     "grep -n live scripts/campaign-claim.py"}}]),
+        assistant("m-sed", day + "01:20:00Z", look, out=10, settled=True,
+                  blocks=[{"type": "tool_use", "name": "Bash", "id": "t3",
+                           "input": {"command":
+                                     "sed -n 1,40p scripts/campaign-primitives.py"}}]),
     ]
     # A worktree whose directory was deleted when its sub-issue closed.
     dead = str(base / "camp-260101" / "worktrees" / "302")
@@ -115,6 +142,14 @@ def build(tmp):
          "message": {"role": "user", "content": [
              {"type": "tool_result", "tool_use_id": "t1",
               "content": [{"type": "text", "text": "R" * 400}]}]}},
+        *reads,
+        {"type": "user", "timestamp": day + "01:20:03Z", "cwd": look,
+         "gitBranch": "main", "sessionId": "s1", "uuid": "r2",
+         "message": {"role": "user", "content": [
+             {"type": "tool_result", "tool_use_id": "t2",
+              "content": [{"type": "text", "text": "S" * 9000}]},
+             {"type": "tool_result", "tool_use_id": "t3",
+              "content": [{"type": "text", "text": "S" * 9000}]}]}},
         assistant("m-branch", day + "02:00:00Z", str(base),
                   branch="campaign-1/301-topic", out=70),
         assistant("m-dead", day + "02:10:00Z", dead, out=60),
@@ -138,8 +173,10 @@ def build(tmp):
     write(root / "proj" / "s1" / "subagents" / "agent-a2.jsonl", [
         user(day + "02:05:00Z", str(base), "find every reader of the guard",
              session="s1", agent="a2"),
+        # Unsettled, as a subagent's turns nearly always are: no record of the
+        # message carries usage.iterations, so its output is a floor.
         assistant("m-child", day + "02:06:00Z", str(base), out=20, session="s1",
-                  agent="a2"),
+                  agent="a2", settled=False),
     ])
     # A brief naming the pull request the long way. Issues and pull requests
     # share one number sequence, so #400 here is PR 400 and not issue 400.
@@ -170,40 +207,42 @@ def main():
         # input counts.
         r300 = row(issues, "300")
         check("a message written as three records is one turn",
-              r300 and r300[1] == "1", str(r300))
+              r300 and r300["turns"] == "1", str(r300))
         check("...its output is the settled record's, not the placeholder's",
-              r300 and r300[3] == "500", str(r300))
+              r300 and r300["output"] == "500", str(r300))
         check("...and its input is counted once, not once per record",
-              r300 and r300[5] == "100" and r300[6] == "50", str(r300))
+              r300 and r300["input_new"] == "100" and r300["cache_read"] == "50",
+              str(r300))
 
         # PLACE, IN ORDER. Worktree, then branch, then the brief of a subagent.
         check("a cwd under worktrees/<issue> names the issue", r300 is not None)
         r301 = row(issues, "301")
         check("a campaign branch names the issue when the cwd does not",
-              r301 and r301[3] == "90", str(r301))
+              r301 and r301["output"] == "90", str(r301))
         r303 = row(issues, "303")
         # Two subagents name PR 400 -- one by the review command, one in prose --
         # and both land on the sub-issue that pull request is for.
         check("a review subagent is attributed by the pull request in its brief",
-              r303 and r303[7] == "brief" and r303[3] == "55", str(r303))
+              r303 and r303["attributed_by"] == "brief" and r303["output"] == "55",
+              str(r303))
         check("...even though it ran in another sub-issue's worktree",
-              r300 and r300[1] == "1", str(r300))
+              r300 and r300["turns"] == "1", str(r300))
         check("a pull request named the long way is not read as an issue",
               row(issues, "400") is None, issues)
         check("...and both count as subagent turns, apart from their parent",
-              r303 and r303[2] == "2" and r303[1] == "2", str(r303))
+              r303 and r303["sub_turns"] == "2" and r303["turns"] == "2", str(r303))
 
         # A DELETED WORKTREE IS STILL THIS CAMPAIGN'S WORK. The filter is
         # containment in the base root, never whether the path still resolves.
         r302 = row(issues, "302")
         check("a worktree that no longer exists still attributes its turns",
-              r302 and r302[3] == "60", str(r302))
+              r302 and r302["output"] == "60", str(r302))
 
         # WHAT IS NOT READ. A bare number, an issue reference and a branch name
         # in prose all leave the turn unattributed.
         unattr = row(issues, "unattributed")
         check("prose naming a branch or an issue attributes nothing",
-              unattr and "40" in unattr, str(unattr))
+              unattr and unattr["output"] == "40", str(unattr))
         check("...and issue 305 and 306 have no row at all",
               row(issues, "305") is None and row(issues, "306") is None)
 
@@ -214,14 +253,27 @@ def main():
         check("a cwd outside every base root is dropped and counted",
               "888" not in issues and "1 with a cwd outside" in issues, issues[:400])
 
-        # THE FLOOR IS NAMED. Two of the three folded records were unsettled,
-        # but the message settled, so nothing here is a floor.
-        check("a corpus whose messages all settled says so by saying nothing",
-              "unsettled turns" not in issues, issues[:400])
+        # A FOLD IS NOT A DROP. Two records of m-fold were folded into the turn
+        # they belong to, and no message was met twice in two files.
+        check("folded records are counted as folded, not as dropped duplicates",
+              "records folded into one of them 2" in issues, issues[:400])
+        check("...and the message-seen-elsewhere counter is its own, and zero",
+              "messages already counted in another file 0" in issues, issues[:400])
+
+        # THE FLOOR IS NAMED, AND PER ROW. One subagent turn never settled, so
+        # its row is a floor, and the row says so where the number is read.
+        check("a row holding an unsettled turn says so in its own settled column",
+              r301 and r301["settled"] == "1/2", str(r301))
+        check("...while a row of settled turns says that",
+              r300 and r300["settled"] == "1/1" and r303["settled"] == "2/2",
+              str(r300) + str(r303))
+        check("the floor line splits session turns from subagent turns",
+              "session: 0 of" in issues and "subagent: 1 of" in issues,
+              issues[:900])
 
         # A SUBAGENT WITH NO BRIEF FALLS BACK TO ITS PARENT'S ISSUE.
         check("a subagent with no issue in its brief takes its parent's",
-              r301 and r301[2] == "1", str(r301))
+              r301 and r301["sub_turns"] == "1", str(r301))
 
         # SESSIONS NAME THE SUBAGENT BY ITS PARENT, which is the only place the
         # name is written.
@@ -230,13 +282,42 @@ def main():
 
         # REVIEWS READ THE LEVEL AND THE PULL REQUEST FROM THE BRIEF.
         check("a review round is one row, with its pull request and level",
-              row(reviews, "400") and row(reviews, "400")[1] == "high",
+              row(reviews, "400") and row(reviews, "400")["level"] == "high",
               reviews)
 
-        # TOOL-ECHO PAIRS A SCRIPT CALL WITH THE BYTES ITS RESULT CARRIED.
+        # TOOL-ECHO COUNTS A CALL, NOT A MENTION, AND PARTITIONS THE BYTES.
+        # The fixture runs campaign-tracker and campaign-repos in one command,
+        # greps campaign-claim in another, and reads campaign-primitives with
+        # sed in a third.
         tracker = row(echo, "campaign-tracker")
-        check("a call to one of this repository's scripts is counted with its result",
-              tracker and tracker[1] == "1" and int(tracker[2]) >= 400, str(tracker))
+        check("a script a command runs is charged the result it returned",
+              tracker and tracker["calls"] == "1"
+              and int(tracker["result_bytes"]) >= 400, str(tracker))
+        repos = row(echo, "campaign-repos")
+        check("a second script in the same command is named, not charged twice",
+              repos and repos["also_named"] == "1" and repos["calls"] == "0"
+              and repos["result_bytes"] == "0", str(repos))
+        check("grepping a script is not calling it",
+              row(echo, "campaign-claim") is None, echo)
+        check("...and neither is reading it with sed",
+              row(echo, "campaign-primitives") is None, echo)
+
+        # A WINDOW BOUND THAT CANNOT BE COMPARED IS REFUSED, not quietly used.
+        bad = subprocess.run(
+            [sys.executable, str(SCRIPT), "issues", "--root", str(root),
+             "--base", str(base), "--pr-map", str(pr_map), "--offline",
+             "--since", "2026-01-02T00:00:00+09:00"],
+            capture_output=True, text=True)
+        check("a window bound in another offset is refused",
+              bad.returncode == 2 and "not UTC" in bad.stderr, bad.stderr)
+        worse = subprocess.run(
+            [sys.executable, str(SCRIPT), "issues", "--root", str(root),
+             "--base", str(base), "--pr-map", str(pr_map), "--offline",
+             "--since", "yesterday"],
+            capture_output=True, text=True)
+        check("...and one that is not a timestamp at all is refused",
+              worse.returncode == 2 and "not an ISO timestamp" in worse.stderr,
+              worse.stderr)
 
     for name in FAILED:
         print(f"FAIL  {name}")

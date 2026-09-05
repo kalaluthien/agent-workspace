@@ -98,7 +98,38 @@ import sys
 
 WORKTREE = re.compile(r"/worktrees/(\d+)(?:/|$)")
 REVIEW_CMD = re.compile(r"/code-review\s+(\w+)\s+(\d+)")
-SCRIPT_CALL = re.compile(r"(?:scripts/|\b)(campaign-[a-z-]+|check-[a-z-]+)\.py\b")
+SCRIPT_NAME = re.compile(r"^(?:[^\s]*/)?((?:campaign|check|install)-[a-z0-9-]+)"
+                         r"\.(?:py|sh)$")
+# What separates one command from the next inside one Bash call, and the words
+# that stand in front of a command without being one.
+SEGMENT = re.compile(r"[;\n|&]+|\$\(|`|\|\||&&")
+PREFIX = re.compile(r"^(?:[A-Za-z_][A-Za-z0-9_]*=\S*|time|exec|nohup|command|"
+                    r"python3?|sh|bash)$")
+
+
+def scripts_called(command):
+    """The repository's scripts this Bash command *runs*, in the order it runs them.
+
+    A name is not a call. `sed -n 1,120p scripts/check-campaign-claim.py`,
+    `grep -n foo scripts/campaign-claim.py` and `git show <sha>:scripts/...`
+    all name a script and none of them runs it, and the result they return is
+    the script's own source -- charged as the script's output, a majority of
+    the bytes, by any reader that matches the name anywhere in the command.
+    So the command is split at every shell separator and only the first word of
+    each segment is tested, after the words that stand in front of a command
+    without being one (an environment assignment, `time`, `python3`).
+    """
+    called = []
+    for segment in SEGMENT.split(command):
+        words = segment.strip().split()
+        while words and PREFIX.match(words[0]):
+            words.pop(0)
+        if not words:
+            continue
+        m = SCRIPT_NAME.match(words[0])
+        if m:
+            called.append(m.group(1))
+    return called
 
 
 def die(why):
@@ -179,19 +210,19 @@ def read_pr_map(path, repo, offline):
     elif offline:
         return {}
     else:
-        out = subprocess.run(
+        listed = subprocess.run(
             ["gh", "pr", "list", "-R", repo, "--state", "all", "--limit", "300",
              "--json", "number,headRefName"],
             capture_output=True, text=True)
-        if out.returncode != 0:
-            die(f"gh pr list failed: {out.stderr.strip()}")
-        raw = json.loads(out.stdout)
-    out = {}
+        if listed.returncode != 0:
+            die(f"gh pr list failed: {listed.stderr.strip()}")
+        raw = json.loads(listed.stdout)
+    issue_of = {}
     for pr in raw:
         m = re.match(r"campaign-\d+/(\d+)-", pr.get("headRefName", ""))
         if m:
-            out[int(pr["number"])] = int(m.group(1))
-    return out
+            issue_of[int(pr["number"])] = int(m.group(1))
+    return issue_of
 
 
 class Corpus:
@@ -203,7 +234,8 @@ class Corpus:
         self.issue_ref = re.compile(rf"{re.escape(args.repo)}#(\d+)")
         self.pr_map = read_pr_map(args.pr_map, args.repo, args.offline)
         self.bases = [os.path.realpath(b).rstrip("/") for b in args.base]
-        self.dropped = {"window": 0, "off_base": 0, "duplicate": 0}
+        self.dropped = {"window": 0, "off_base": 0, "folded": 0,
+                        "seen_elsewhere": 0}
         self.files_read = 0
         self.seen_messages = set()
         self.session_timeline = {}   # parent session id -> [(ts, issue)]
@@ -218,12 +250,28 @@ class Corpus:
                         yield os.path.join(dirpath, name)
 
     def in_base(self, cwd):
-        return any(cwd == b or cwd.startswith(b + "/") for b in self.bases)
+        """Is this record's directory inside a base root?
+
+        Both sides are resolved, because a session reaching the base through a
+        symlink records the symlinked path and would otherwise be dropped as
+        somebody else's work -- silently, since a dropped record and a campaign
+        that was quiet print the same nothing.
+        """
+        real = os.path.realpath(cwd) if cwd else ""
+        return any(real == b or real.startswith(b + "/") for b in self.bases)
 
     def in_window(self, ts):
-        if self.args.since and ts < self.args.since:
+        """Both sides cut to whole seconds, `2026-09-04T00:45:00`.
+
+        The harness writes `...T00:45:00.123Z`, and a bound normalised with its
+        `Z` would sort *after* a message in the same second, because `.` sorts
+        below `Z` -- one second of turns dropped at each end for a reason no
+        reader of the output could see.
+        """
+        stamp = ts[:19]
+        if self.args.since and stamp < self.args.since:
             return False
-        if self.args.until and ts > self.args.until:
+        if self.args.until and stamp > self.args.until:
             return False
         return True
 
@@ -264,7 +312,7 @@ class Corpus:
                 first_prompt_seen = True
                 brief_issue = self.read_brief(message)
             branch_field = record.get("gitBranch") or ""
-            on_branch = self.branch.search(branch_field)
+            on_branch = self.branch.match(branch_field)
             if on_branch:
                 carried = int(on_branch.group(1))
             if record.get("type") != "assistant":
@@ -283,11 +331,11 @@ class Corpus:
             body = len(json.dumps(message.get("content"), ensure_ascii=False))
             settled = bool(message.get("usage", {}).get("iterations"))
             if mid in pending:
-                self.dropped["duplicate"] += 1
+                self.dropped["folded"] += 1
                 fold(pending[mid], usage, body, settled)
                 continue
             if mid in self.seen_messages:
-                self.dropped["duplicate"] += 1
+                self.dropped["seen_elsewhere"] += 1
                 continue
             issue, how = self.attribute(record, cwd, branch_field, is_sub,
                                         brief_issue, carried, ts)
@@ -372,9 +420,17 @@ class Corpus:
 
 
 def totals(turns):
-    out = {"turns": 0, "output": 0, "input_new": 0, "cache_read": 0}
+    """Sums, and beside them the count of turns whose output is a measurement.
+
+    `settled` travels with every total because the unsettled state is nearly
+    the kind -- 86% of subagent turns against 0.7% of session turns on the
+    corpus this was written against -- so a row's output column is a count or a
+    floor depending on which turns fell into it, and only the row can say which.
+    """
+    out = {"turns": 0, "settled": 0, "output": 0, "input_new": 0, "cache_read": 0}
     for t in turns:
         out["turns"] += 1
+        out["settled"] += 1 if t["settled"] else 0
         for k in ("output", "input_new", "cache_read"):
             out[k] += t[k]
     return out
@@ -392,20 +448,34 @@ def sample_line(corpus):
           f"{', '.join(corpus.args.root)}")
     print(f"window {corpus.args.since or '(open)'} .. {corpus.args.until or '(open)'}; "
           f"bases {', '.join(corpus.bases)}")
-    print(f"turns kept {len(corpus.turns)}; dropped: "
-          f"{corpus.dropped['duplicate']} duplicate records of a counted message, "
-          f"{corpus.dropped['window']} outside the window, "
-          f"{corpus.dropped['off_base']} with a cwd outside every base root")
+    print(f"turns kept {len(corpus.turns):,} (one per message); "
+          f"records folded into one of them {corpus.dropped['folded']:,}; "
+          f"messages already counted in another file "
+          f"{corpus.dropped['seen_elsewhere']:,}")
+    print(f"records dropped: {corpus.dropped['window']:,} outside the window, "
+          f"{corpus.dropped['off_base']:,} with a cwd outside every base root "
+          f"(records, not messages: a dropped record is never folded, so its "
+          f"message is never counted)")
     unsettled = [t for t in corpus.turns if not t["settled"]]
     settled = [t for t in corpus.turns if t["settled"]]
     if unsettled:
         bytes_out = sum(t["body_bytes"] for t in unsettled)
         rate = (sum(t["body_bytes"] for t in settled)
                 / max(1, sum(t["output"] for t in settled)))
-        print(f"unsettled turns {len(unsettled)} of {len(corpus.turns)} "
+        print(f"unsettled turns {len(unsettled):,} of {len(corpus.turns):,} "
               f"({100 * len(unsettled) // max(1, len(corpus.turns))}%), carrying "
               f"{bytes_out:,} body bytes: their output column is a floor, not a "
               f"count")
+        for kind in ("session", "subagent"):
+            of_kind = [t for t in corpus.turns if t["kind"] == kind]
+            if not of_kind:
+                continue
+            bad = [t for t in of_kind if not t["settled"]]
+            print(f"  {kind:>9}: {len(bad):,} of {len(of_kind):,} unsettled "
+                  f"({100 * len(bad) // len(of_kind)}%)")
+        print(f"  the two rates differ that much because the state is nearly the "
+              f"kind: every column counting subagent output is a floor, which is "
+              f"why each row carries its own settled count")
         print(f"  at the settled turns' {rate:.1f} body bytes per output token, "
               f"those would add about {int(bytes_out / rate):,} output tokens -- "
               f"an estimate, and not part of any number below")
@@ -435,11 +505,12 @@ def cmd_issues(corpus, args):
         hows = sorted({t["how"] for t in buckets[issue]})
         rows.append([issue if issue is not None else "unattributed",
                      fmt(both["turns"]), fmt(subs["turns"]),
+                     f"{both['settled']}/{both['turns']}",
                      fmt(both["output"]), fmt(subs["output"]),
                      fmt(both["input_new"]), fmt(both["cache_read"]),
                      ",".join(hows)])
-    table(rows, ["issue", "turns", "sub_turns", "output", "sub_output",
-                 "input_new", "cache_read", "attributed_by"])
+    table(rows, ["issue", "turns", "sub_turns", "settled", "output",
+                 "sub_output", "input_new", "cache_read", "attributed_by"])
     grand = totals(corpus.turns)
     print()
     print(f"total: {fmt(grand['turns'])} turns, {fmt(grand['output'])} output, "
@@ -457,10 +528,12 @@ def cmd_sessions(corpus, args):
     for key in sorted(buckets, key=lambda k: -totals(buckets[k])["output"]):
         got = totals(buckets[key])
         issues = sorted({t["issue"] for t in buckets[key] if t["issue"] is not None})
-        rows.append([key, fmt(got["turns"]), fmt(got["output"]),
+        rows.append([key, fmt(got["turns"]),
+                     f"{got['settled']}/{got['turns']}", fmt(got["output"]),
                      fmt(got["input_new"]), fmt(got["cache_read"]),
                      ",".join(str(i) for i in issues)[:40]])
-    table(rows, ["session", "turns", "output", "input_new", "cache_read", "issues"])
+    table(rows, ["session", "turns", "settled", "output", "input_new",
+                 "cache_read", "issues"])
 
 
 def cmd_turns(corpus, args):
@@ -484,19 +557,27 @@ def cmd_reviews(corpus, args):
         if not m:
             continue
         got = totals(turns)
-        rows.append([m.group(2), m.group(1), head["issue"], head["model"],
-                     fmt(got["turns"]), fmt(got["output"]),
-                     fmt(got["input_new"]), fmt(got["cache_read"]),
-                     head["timestamp"][:16]])
+        rows.append((int(m.group(2)), m.group(1), head["issue"], head["model"],
+                     got, head["timestamp"][:16]))
     rows.sort(key=lambda r: (r[0], r[-1]))
-    table(rows, ["pr", "level", "issue", "model", "turns", "output",
-                 "input_new", "cache_read", "started"])
+    table([[r[0], r[1], r[2], r[3], fmt(r[4]["turns"]),
+            f"{r[4]['settled']}/{r[4]['turns']}", fmt(r[4]["output"]),
+            fmt(r[4]["input_new"]), fmt(r[4]["cache_read"]), r[5]]
+           for r in rows],
+          ["pr", "level", "issue", "model", "turns", "settled", "output",
+           "input_new", "cache_read", "started"])
     if rows:
-        counted = [r for r in rows]
         print()
-        print(f"{len(counted)} review rounds; "
-              f"{fmt(sum(int(r[5].replace(',', '')) for r in counted))} output, "
-              f"{fmt(sum(int(r[6].replace(',', '')) for r in counted))} input_new")
+        settled = sum(r[4]["settled"] for r in rows)
+        turns_read = sum(r[4]["turns"] for r in rows)
+        print(f"{len(rows)} review rounds; "
+              f"{fmt(sum(r[4]['output'] for r in rows))} output over "
+              f"{settled} settled turns of {turns_read}, "
+              f"{fmt(sum(r[4]['input_new'] for r in rows))} input_new")
+        if settled < turns_read:
+            print("a review runs as a subagent, and a subagent's output is the "
+                  "column the harness mostly leaves unsettled: read the output "
+                  "figures here as a floor and the input figures as counts")
 
 
 def read_first_prompt(path):
@@ -520,24 +601,37 @@ def cmd_tool_echo(corpus, args):
     cache. This counts the first, per script, by the tool call that produced it.
     """
     sample_line(corpus)
-    by_script = scan_script_calls(corpus)
+    by_script, grand, all_bytes = scan_script_calls(corpus)
     rows = []
     for script in sorted(by_script, key=lambda s: -by_script[s]["result_bytes"]):
         got = by_script[script]
-        rows.append([script, fmt(got["calls"]), fmt(got["result_bytes"]),
-                     fmt(got["result_bytes"] // 4)])
-    table(rows, ["script", "calls", "result_bytes", "approx_tokens"])
+        rows.append([script, fmt(got["calls"]), fmt(got["also_named"]),
+                     fmt(got["result_bytes"])])
+    table(rows, ["script", "calls", "also_named", "result_bytes"])
     print()
-    print("approx_tokens is result_bytes/4, an estimate and not a measurement: "
-          "the transcript records no per-tool-result token count.")
+    print(f"{fmt(grand)} bytes over {fmt(sum(r['calls'] for r in by_script.values()))} "
+          f"calls, of {fmt(all_bytes)} bytes in every tool result of the kept "
+          f"turns ({100 * grand // max(1, all_bytes)}%)")
+    print("result_bytes is a partition: one Bash call's result is charged to the "
+          "first script that call runs, and every other script it runs is "
+          "counted in also_named without its bytes, so the column sums to the "
+          "figure above.")
+    print("No token figure is printed. The transcript records no per-tool-result "
+          "token count, and bytes/4 would be an estimate wearing a measurement's "
+          "heading.")
 
 
 def scan_script_calls(corpus):
-    """Bash calls naming one of this repository's scripts, and their result sizes."""
-    wanted = {t["file"] for t in corpus.turns}
-    keep = {(t["message_id"]) for t in corpus.turns}
+    """What this repository's scripts printed back at an agent, per script.
+
+    Returns the per-script rows, their byte total, and the byte total of *every*
+    tool result in the kept turns, so a share can be read rather than asserted.
+    """
+    keep = {t["message_id"] for t in corpus.turns}
     by_script = {}
-    for path in sorted(wanted):
+    charged = 0
+    all_bytes = 0
+    for path in sorted({t["file"] for t in corpus.turns}):
         pending = {}
         for line in open(path, errors="replace"):
             if not line.strip().startswith("{"):
@@ -555,20 +649,28 @@ def scan_script_calls(corpus):
             for block in content:
                 if not isinstance(block, dict):
                     continue
-                if block.get("type") == "tool_use" and block.get("name") == "Bash":
+                if block.get("type") == "tool_use":
                     if message.get("id") not in keep:
                         continue
-                    command = str(block.get("input", {}).get("command", ""))
-                    found = set(SCRIPT_CALL.findall(command))
-                    if found:
-                        pending[block.get("id")] = found
+                    called = []
+                    if block.get("name") == "Bash":
+                        called = scripts_called(
+                            str(block.get("input", {}).get("command", "")))
+                    pending[block.get("id")] = called
                 elif block.get("type") == "tool_result" and block.get("tool_use_id") in pending:
+                    called = pending.pop(block["tool_use_id"])
                     size = len("\n".join(text_blocks({"content": [block]})))
-                    for script in pending.pop(block["tool_use_id"]):
-                        row = by_script.setdefault(script, {"calls": 0, "result_bytes": 0})
-                        row["calls"] += 1
-                        row["result_bytes"] += size
-    return by_script
+                    all_bytes += size
+                    for rank, script in enumerate(called):
+                        row = by_script.setdefault(
+                            script, {"calls": 0, "also_named": 0, "result_bytes": 0})
+                        if rank == 0:
+                            row["calls"] += 1
+                            row["result_bytes"] += size
+                            charged += size
+                        else:
+                            row["also_named"] += 1
+    return by_script, charged, all_bytes
 
 
 COMMANDS = {
@@ -583,8 +685,9 @@ COMMANDS = {
 def parse_args(argv):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("command", choices=sorted(COMMANDS))
-    p.add_argument("--since", help="ISO timestamp; turns before it are dropped")
-    p.add_argument("--until", help="ISO timestamp; turns after it are dropped")
+    p.add_argument("--since", help="UTC ISO timestamp, e.g. 2026-09-04T00:45:00Z; "
+                                   "turns before it are dropped")
+    p.add_argument("--until", help="UTC ISO timestamp; turns after it are dropped")
     p.add_argument("--campaign", default="1", help="campaign number in branch names")
     p.add_argument("--repo", default="kalaluthien/campaign-base")
     p.add_argument("--root", action="append", default=[],
@@ -595,11 +698,35 @@ def parse_args(argv):
     p.add_argument("--offline", action="store_true",
                    help="do not call gh; leave the pull-request map empty")
     args = p.parse_args(argv)
+    for name in ("since", "until"):
+        args.__dict__[name] = checked_bound(getattr(args, name), name)
     if not args.root:
         args.root = ["~/.claude/projects"]
     if not args.base:
         args.base = [base_root()]
     return args
+
+
+def checked_bound(value, name):
+    """Refuse a window bound the transcripts cannot be compared against.
+
+    A timestamp is compared lexicographically against `message.timestamp`,
+    which the harness writes as `2026-09-04T00:45:00.000Z`. So a bound that
+    parses but is not in that shape -- `2026-9-04T00:45`, or an offset-bearing
+    `2026-09-04T09:45:00+09:00` -- silently selects a different sample instead
+    of failing, and a wrong window looks exactly like a quiet campaign.
+    """
+    if value is None:
+        return None
+    import datetime
+    try:
+        moment = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        die(f"--{name} {value!r} is not an ISO timestamp")
+    if moment.utcoffset() not in (None, datetime.timedelta(0)):
+        die(f"--{name} {value!r} is not UTC; transcripts are written in UTC "
+            f"and the comparison is on the text")
+    return moment.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def main(argv):
