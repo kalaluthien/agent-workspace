@@ -70,6 +70,19 @@ other way.
 
 ## The shape of a round
 
+**One full review, at the final sha, and narrowed reviews after it.** The full
+review is commissioned once, on the pull request as a whole, when the work is
+what the author means to land. Every fix round after it is reviewed on that
+round's diff only — `/code-review <level> <PR#>` with the brief naming the diff
+range, launched by the executor that made the fixes — and a narrowed review does
+not re-run a measurement the full review already made and reported. The one thing
+that earns a second full review is a reconciliation with `main` that was not a
+clean auto-merge; a clean one earns none (`AGENTS.md` § Concurrency).
+
+#195 measured the shape this replaces: PR #184 ran seven rounds at 800,567 input
+tokens, 38% of #177's whole spend, because each round re-read the entire pull
+request to check a handful of fixes.
+
 One reviewer per pull request, one verifier per fix round. Every angle the review
 should take is a section of the one reviewer's brief. Fan out into parallel
 reviewers only when the angles are genuinely independent *and* the budget is

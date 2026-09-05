@@ -269,6 +269,13 @@ number; the reopened work cuts a fresh topic ref under that number. File a new
 sub-issue only when none fits. A parent holds at most 100 sub-issues, closed
 ones included, which is a cost every new number pays and a reopen does not.
 
+**A sub-issue is filed only for work that outlives one review cycle.** A defect
+one commit fixes goes into the pull request already open on that file, or as a
+listed item into the next sub-issue that touches it, and never onto a number of
+its own: a sub-issue costs a claim, a pull request and a review whatever its
+size, and #195 measured three that could not cover it — #170, #171 and #175 were
+each closed within 20 minutes of being filed.
+
 **A sub-issue whose work lives only under `<campaign>/scripts/` has no commit to
 land**: it closes as completed with no pull request, its closing comment saying
 what was built. Quote `campaign-tracker settlement`'s note for that row, not its verdict.
@@ -326,6 +333,13 @@ Then, within what the repository allows, choose by cost:
 - **a herdr delegate in a clone** when the work needs the repository's own
   toolchain, will take many turns, or two repositories must move together.
 
+**Read a file with the Read tool, or through a bounded `sed -n a,bp`; never a
+whole file through the shell.** #195 measured 5.7MB read by `sed` over 914 calls,
+1.3MB by `grep` and 0.9MB by `cat`, against 0.7MB through the Read tool — the
+harness's own auto-mode text is what asks for `cat`/`sed`/`grep` and RTK does not
+trim them, so this sentence is all the repository can do and the harness setting
+is the owner's.
+
 **Weigh the setup against the work**: the delegate's price is paid per launch, so
 for the base it is the mode of last resort. All modes share the mechanics —
 the branch is claimed by `campaign-claim take` after the issue exists, because the
@@ -362,7 +376,11 @@ invariants: **the brief is the sub-issue**, named by a one-sentence prompt, so
 there is nothing to keep in step with it and nothing that dies with a directory;
 the prompt is delivered by **`herdr agent prompt`**, never on the launch line;
 and **read the pane once after every launch**, because the dialogs that halt a
-fresh delegate do not all report `blocked`. The campaign's principles reach the
+fresh delegate do not all report `blocked`. **`--add-dir <base>` is a member
+repository's**, whose cwd cannot reach `<base>/scripts/`; a delegate in the
+base's own clone reaches them in its own tree and is launched without the flag.
+It buys back none of the duplicated rules #202 measured, and `launching.md` has
+the probe that says why. The campaign's principles reach the
 delegate as **`CLAUDE.local.md` written into its clone** and excluded via
 `.git/info/exclude` — a file on disk, so nothing has to prove it arrived. A
 campaign's principles only ever *add*. The full procedure — the launch line, the
@@ -458,6 +476,14 @@ names the new sha *and* asks; a session that asked and received nothing stops.
 
 ## The fix round
 
+**One full review, at the pull request's final sha.** A fix round is reviewed on
+its own diff alone, launched by the executor that made the fixes, and no review
+re-runs a measurement a clean review has already made. A full re-review is due at
+one moment only: a reconciliation with `main` that was not a clean auto-merge.
+#195 measured what the old shape cost — PR #184 ran seven rounds and 800,567
+input tokens, 38% of #177's whole spend, because every round re-read the whole
+pull request.
+
 **A fix round is: findings on the pull request, one executor, one `REPORT`.** The
 executor verifies each finding at the site it names before touching anything.
 Follow-ups fold into the same round, whose boundary is the `REPORT` and never a
@@ -507,11 +533,11 @@ across a network. It does not settle the campaign's own writes — the binding
 serializes neither the campaign issue body nor the shared directory.
 
 **Two open pull requests over the same normative files are normal, and the second
-to land reconciles**, and **containment buys attention from nobody**: a clean
-auto-merge produces a commit whose diff against the branch *is* the other branch's
-work, exactly what a reviewer skims as "just the merge". So **the review after a
-reconciliation reads the combination**, and its brief says so — **the gate is
-condition 3**.
+to land reconciles** — **the gate is condition 3**. A reconciliation that
+auto-merged cleanly is reviewed by nothing further; one that needed a resolution
+is the single case that earns a full re-review, and its brief says it reads the
+combination, because a hand-resolved merge is where the two branches actually
+meet.
 
 **The named cost: no concurrent cross-machine or cloud work on one campaign.**
 Another machine may read a campaign, may file a sub-issue of it, and may open a
