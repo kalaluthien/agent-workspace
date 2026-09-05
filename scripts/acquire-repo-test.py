@@ -416,6 +416,10 @@ def main():
     # "refused" and "overwrote and then failed later" share an exit status.
     check("the shim marker was found in acquire-repo.sh, so the fixtures below "
           "carry the real one", SHIM_MARKER is not None)
+    # ...and if it was not, the loop below still RUNS. A failed check that then
+    # raises aborts the suite, and every case after it goes unreported -- the
+    # thing `text_of` above exists to prevent, met again one screen down.
+    marker = SHIM_MARKER or "# SHIM_MARKER WAS NOT FOUND IN acquire-repo.sh"
 
     # The two shapes that MUST still be overwritten, or a re-run stops
     # converging and clones acquired before #190 never gain the claim gate.
@@ -450,21 +454,23 @@ def main():
 
     # ...and the near misses, one per conjunct of `is_guard_shim`. A row of
     # refusals needs one case per branch or it is pinned by whichever conjunct
-    # happens to be exercised: deleting any one of these five must redden the
-    # case named for it and no other.
+    # happens to be exercised: deleting any one conjunct must redden the case
+    # named for it and no other. NO COUNT IS WRITTEN HERE -- the first spelling
+    # said "these five" over six entries, which is the staleness three comments
+    # in install-hooks.sh hit with "ten lines".
     GUARD_CALL = '"/x/.claude/git-hooks/no-main-commits" "$@" || exit 1\n'
     for name, body in (
             # THE ONE #214 IS ABOUT: the guard named in a comment and called
             # nowhere. Under the substring test this was overwritten.
             ("naming the guard only in a comment",
-             "#!/usr/bin/env sh\n" + SHIM_MARKER + "\n"
+             "#!/usr/bin/env sh\n" + marker + "\n"
              + "# nothing here calls no-main-commits\nexec /usr/bin/true\n"),
             # ...and the case the substring test got RIGHT, which must not
             # regress: a hook that never mentions the guard at all.
             ("not naming the guard at all",
              "#!/usr/bin/env sh\n# our team's pre-commit\nexec /usr/bin/true\n"),
             ("carrying the marker and the call but not the shebang",
-             "#!/bin/sh\n" + SHIM_MARKER + "\n" + GUARD_CALL),
+             "#!/bin/sh\n" + marker + "\n" + GUARD_CALL),
             ("carrying the shebang and the call but somebody else's line 2",
              "#!/usr/bin/env sh\n# our team's pre-commit\n" + GUARD_CALL),
             # Two lines is the legacy branch, matched WHOLE; three is not it,
@@ -473,7 +479,13 @@ def main():
              '#!/usr/bin/env sh\nexec "/x/.claude/git-hooks/no-main-commits" "$@"\n'
              "echo also this\n"),
             ("that is a legacy shim whose shebang is not the one written",
-             '#!/bin/sh\nexec "/x/.claude/git-hooks/no-main-commits" "$@"\n')):
+             '#!/bin/sh\nexec "/x/.claude/git-hooks/no-main-commits" "$@"\n'),
+            # THE LEGACY BRANCH'S OTHER CONJUNCT, and nothing pinned it until a
+            # review of #214 deleted the pattern and watched the suite stay
+            # green: two lines, the right shebang, and a line 2 that is not the
+            # exec. Somebody's own two-line hook, overwritten.
+            ("two lines and the right shebang but no guard call on line 2",
+             "#!/usr/bin/env sh\nexec /usr/bin/true\n")):
         with tempfile.TemporaryDirectory() as d:
             base, camp = a_base_with_campaign(d)
             home = a_home(d)

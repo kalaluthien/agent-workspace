@@ -162,14 +162,26 @@ checkout_branch() {
 # apart because only one was in that round's diff, and this is the direction
 # that destroys rather than merely mislabels.
 #
-# TWO READERS ON PURPOSE, because no single place could serve both. This one
-# decides in a clone that ships no scripts/install-hooks.sh -- that is the branch
-# it is on -- and that installer decides inside whatever repository ships IT,
-# which holds no copy of this script. Neither can reach the other at the moment
-# it has to answer. What keeps them from drifting is not this comment: both are
-# pinned against the bytes the printf below actually writes -- the convergence
-# case in scripts/acquire-repo-test.py here, case 5d in
-# scripts/install-hooks-test.py there -- so changing the shim reddens both.
+# TWO READERS, AND THE HONEST REASON. Not that a shared one is unreachable: a
+# review of #214 showed it is. This function could source a
+# `$base/scripts/is-guard-shim.sh` the same way `$gate` is resolved, and
+# scripts/install-hooks.sh in practice only ever runs from a tree that ships
+# one. The reason is one-sided: THAT script is written to work inside whatever
+# repository ships it, depending on no sibling of its own, and a sourced reader
+# would spend exactly that. This one can reach the base; that one is the half
+# that cannot be made to depend on anything. A judgement, not a constraint.
+#
+# What keeps them from drifting is not this comment: both are pinned against
+# the bytes the printf below actually writes -- the convergence case in
+# scripts/acquire-repo-test.py here, case 5d in scripts/install-hooks-test.py
+# there. That covers the guard CALL, which both read out of the shim. It does
+# not cover the marker: this file reads SHIM_MARKER, so the marker cannot drift
+# on this side by construction, and the copy in install-hooks.sh is pinned by
+# its own fixtures alone.
+#
+# CALL IT IN A CONDITION. Under `set -e` a function whose last command is false
+# returns non-zero, so calling this outside an `if`/`&&` would exit the script
+# rather than take the false branch. One call site, and it is guarded.
 #
 # It establishes exactly what the reader there establishes and no more: that the
 # slot opens with the shebang, carries the marker on line 2, and holds SOMEWHERE
@@ -310,15 +322,26 @@ install_commit_guard() {
 		# repository, and its hook has to chain the guard for success here to
 		# mean the same thing it means on the shim path.
 		#
-		# A WHOLE LINE, for the reason `is_guard_shim` above is: this was
-		# `grep -q 'no-main-commits'` until #214, and a hook merely MENTIONING
-		# the guard in a comment passed as one chaining it -- the same defect,
-		# read in the milder direction, three lines from the one that destroys.
-		# Deliberately loose about the rest of the line, because the hook is the
-		# other repository's: an optional `exec`, the path however it is spelled,
-		# and any arguments. What it will not match is a line that starts with
-		# anything else, which is every comment.
-		grep -qE '^[[:space:]]*(exec[[:space:]]+)?"?[^"[:space:]]*/\.claude/git-hooks/no-main-commits"?([[:space:]]|$)' \
+		# A LINE THAT IS NOT WHOLLY A COMMENT, which is the whole of the change
+		# #214 makes here. This was `grep -q 'no-main-commits'` over the file,
+		# so a hook merely MENTIONING the guard in a comment passed as one
+		# chaining it -- the same defect as the overwrite test above, read in
+		# the milder direction.
+		#
+		# NOT a whole-line call pattern, which is what the first spelling of
+		# this used and which refused three shapes the substring test accepted:
+		# `guard="$HOME/.claude/git-hooks/no-main-commits"` with the call made
+		# through the variable, and the `if [ -x ... ]` guard this repository's
+		# OWN hook writes on the line above its call. The hook belongs to
+		# another repository and its shell is arbitrary; no pattern can decide
+		# that a line RUNS. So the discrimination is exactly the one the issue
+		# asks for -- a mention in a comment is not evidence -- and nothing
+		# tighter, because a false refusal here is fatal.
+		#
+		# Its ceiling, said rather than implied: a line of code with the path in
+		# a TRAILING comment matches, and so does the path inside a string. What
+		# it will not match is a line whose first non-blank character is `#`.
+		grep -qE '^[[:space:]]*[^#[:space:]].*/\.claude/git-hooks/no-main-commits' \
 			"$hooks/pre-commit" 2>/dev/null ||
 			die "the installer left $hooks/pre-commit without the no-main-commits guard; refusing to call $dest guarded"
 		log "installed the repository's git hooks, which chain the no-main-commits guard"

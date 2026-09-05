@@ -39,9 +39,11 @@
 # still on disk in clones acquired then. `is_guard_shim` below recognises both.
 # Since #214 acquire-repo.sh carries a reader of the same two shapes, under the
 # same name, for its own overwrite decision; the block above that one says why
-# there is no single place both could read, and neither file is the other's
-# source. What ties them is that each is pinned against the bytes acquire's
-# printf writes, not against the other's text.
+# they are kept apart, and neither file is the other's source. What ties them
+# is that each is pinned against the bytes acquire's printf writes -- the guard
+# CALL, which both read out of the shim. The MARKER is not tied that way: that
+# script reads its own SHIM_MARKER variable, while the copy below is pinned by
+# the fixtures here alone.
 #
 # `--git-only` installs the two git hooks and leaves ~/.claude/settings.json
 # alone. The harness registration is machine-wide and points at ONE checkout;
@@ -99,11 +101,15 @@ fi
 # side's home. It cannot be derived from acquire-repo.sh at run time: this
 # installer runs inside whatever repository is being set up, and a member clone
 # holds no copy of that script, so a derived read would refuse to adopt in
-# exactly the clones the shim is written into. The overwrite side, in that
-# script, cannot read this file for the mirror-image reason -- it decides in a
-# clone that ships no install-hooks.sh, which is the branch it is on. So the
-# question has two readers because there is no place a single one could sit,
-# and #214 is where that was settled rather than assumed.
+# exactly the clones the shim is written into.
+#
+# The overwrite side, in that script, COULD read a shared one: it resolves the
+# base it was invoked from already. So two readers is a judgement and not a
+# constraint, and the constraint is one-sided -- this file is written to work
+# inside whatever repository ships it, depending on no sibling, and a sourced
+# reader would spend that. #214 is where that was settled rather than assumed;
+# the block above `is_guard_shim` in acquire-repo.sh states the same thing from
+# its side.
 #
 # The pre-#190 form is matched WHOLE -- a shebang and one exec of the
 # machine-wide guard by absolute path, two lines and no more -- because it
