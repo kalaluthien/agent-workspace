@@ -26,9 +26,13 @@
 # repository), or a repository with core.hooksPath set (git would never run what
 # gets written to .git/hooks/). One exception, adopted and announced: a
 # pre-commit acquire-repo.sh wrote, because the hook written here runs the same
-# guard and the same claim gate and is a strict superset of it. Two writers of
-# one slot, the second refusing the first's output, left every delegate clone
-# with none of this repository's hooks (#178).
+# guard and the same claim gate, so nothing `is_guard_shim` reads out of the
+# slot is lost. That is weaker than a strict superset, which this header claimed
+# for one revision while the block above `is_guard_shim` retracted it -- the
+# same file asserting and withdrawing one sentence. What is and is not
+# established is stated there, once. Two writers of one slot, the second
+# refusing the first's output, left every delegate clone with none of this
+# repository's hooks (#178).
 #
 # THAT SHIM HAS TWO SHAPES. Since #190 it carries the claim gate as well as the
 # guard and names itself on line 2; the two-line form written before #190 is
@@ -108,10 +112,13 @@ fi
 # in a comment was adopted and announced as chaining it.
 #
 # WHAT THIS ESTABLISHES, and what it does not. It establishes that the slot
-# holds the shebang, the marker, and a real call to the guard, so replacing it
-# loses neither. It does NOT establish that the hook is UNMODIFIED acquire
-# output: a shim somebody extended by hand carries all three and its extension
-# is dropped. Accepted rather than closed, because closing it needs either a
+# opens with the shebang, carries the marker on line 2, and holds SOMEWHERE a
+# whole line shaped exactly like the guard call -- so replacing it loses none of
+# those three. It does NOT establish that the line RUNS: the pattern is anchored
+# to a line and applied to the whole file, so the same text inside a heredoc, or
+# after an unconditional `exit 0`, matches. Nor does it establish that the hook
+# is UNMODIFIED acquire output: a shim somebody extended by hand carries all
+# three and its extension is dropped. Accepted rather than closed, because closing it needs either a
 # line count -- the thing that just went stale three times -- or a copy of the
 # template here, which is the second reader this repository refuses. And the
 # path is narrow: this script runs only in a repository that ships it, while

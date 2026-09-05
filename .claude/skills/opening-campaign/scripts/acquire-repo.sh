@@ -288,7 +288,7 @@ install_commit_guard() {
 		log "$hook exists and does not call the guard. Read it, then either"
 		log "chain the two lines below from it by hand, or move it aside and"
 		log "re-run this script, which writes both:"
-		log "  \"$guard\" \"\$@\""
+		log "  \"$guard\" \"\$@\" || exit 1"
 		log "  \"$gate\" --staged"
 		log "  mv '$hook' '$hook.bak' && <re-run acquire-repo.sh>"
 		die "refusing to overwrite an existing pre-commit hook"
