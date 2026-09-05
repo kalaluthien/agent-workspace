@@ -781,7 +781,10 @@ SESSION_ID_VAR = "CLAUDE_CODE_SESSION_ID"
 
 # THE ONE LINE A LATER READER ANCHORS ON. Printed at both of `release`'s
 # success exits and nowhere else, and printed whether or not the compaction
-# that follows it succeeded.
+# succeeded. The compaction is SENT FIRST -- `release_line` takes the pane that
+# `compact_own_pane` returns, so Python evaluates the inner call first -- and
+# the anchor still precedes the marker in the pane, because the marker is only
+# written at the end of the turn.
 #
 # IT NAMES THE PANE, and that is not decoration. A pane's text holds whatever
 # it has DISPLAYED as well as whatever it printed -- `herdr agent read` puts
