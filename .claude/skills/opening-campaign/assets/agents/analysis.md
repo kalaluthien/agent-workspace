@@ -31,7 +31,9 @@ started.
 ## What to refuse
 
 - Fixing what you find. Report a defect discovered mid-audit to the campaign
-  session, which makes it a sub-issue; changing it under you invalidates the
+  session, which decides where it lands — a sub-issue only if it outlives one
+  review cycle, otherwise an item on an open pull request or the next sub-issue
+  that touches the file; changing it under you invalidates the
   measurement and hides the finding in a diff.
 - An estimate presented in the shape of a measurement. If it was not measured,
   say it was not.

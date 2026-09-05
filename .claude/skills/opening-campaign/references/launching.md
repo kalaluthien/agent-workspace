@@ -37,7 +37,10 @@ Launch in `<campaign>/repos/<repo>/`.
   pair. The base's rules arrive twice with the flag gone, because the campaign
   directory lives *under* the base root and the outer copy loads as an ancestor
   import. The duplication is the clone's location, not the flag, and removing
-  the flag recovers none of the 28,466 bytes.
+  the flag recovers none of the 28,466 duplicated bytes #202 measured on
+  2026-09-05 — a figure pinned to that day's `AGENTS.md`, which every edit to it
+  moves. The probe's raw output is kept as a comment on #210; it is the
+  delegate's own report of what it loaded, not an observation of the loader.
 - Choose the session UUID in advance (`--session-id`) so the transcript path is
   known before the agent starts, and `--name` it `campaign-<N>-executor-<n>` per
   § The session name -- a delegate is always the executor role. `--name`

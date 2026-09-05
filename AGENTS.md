@@ -274,7 +274,8 @@ one commit fixes goes into the pull request already open on that file, or as a
 listed item into the next sub-issue that touches it, and never onto a number of
 its own: a sub-issue costs a claim, a pull request and a review whatever its
 size, and #195 measured three that could not cover it — #170, #171 and #175 were
-each closed within 20 minutes of being filed.
+each closed within 27 minutes of being filed, and #171's single review round
+alone cost 57,374 input tokens for 21 changed lines.
 
 **A sub-issue whose work lives only under `<campaign>/scripts/` has no commit to
 land**: it closes as completed with no pull request, its closing comment saying
@@ -333,12 +334,16 @@ Then, within what the repository allows, choose by cost:
 - **a herdr delegate in a clone** when the work needs the repository's own
   toolchain, will take many turns, or two repositories must move together.
 
-**Read a file with the Read tool, or through a bounded `sed -n a,bp`; never a
-whole file through the shell.** #195 measured 5.7MB read by `sed` over 914 calls,
-1.3MB by `grep` and 0.9MB by `cat`, against 0.7MB through the Read tool — the
-harness's own auto-mode text is what asks for `cat`/`sed`/`grep` and RTK does not
-trim them, so this sentence is all the repository can do and the harness setting
-is the owner's.
+**Read only the part of a file you need** — the Read tool, or a bounded
+`sed -n a,bp`. #201 measured file reading through the shell at 7.9MB, 61% of
+everything this campaign read back, against 0.7MB through the Read tool: `sed`
+5.7MB over 914 calls, `grep` 1.3MB, `cat` 0.9MB. **That is a rule without its
+cause.** Those 914 `sed` calls averaged 6.2 KB, so they were already bounded, and
+the volume is how many reads happened rather than how wide each one was; #201's
+first step was to group the calls by file and say whether the cost is breadth or
+repetition, and that step was never run. The instruction asking for `cat`/`sed`/
+`grep` is the harness's own auto-mode text, which this repository cannot edit —
+so what is written here is the habit, and the setting is the owner's.
 
 **Weigh the setup against the work**: the delegate's price is paid per launch, so
 for the base it is the mode of last resort. All modes share the mechanics —
@@ -476,13 +481,12 @@ names the new sha *and* asks; a session that asked and received nothing stops.
 
 ## The fix round
 
-**One full review, at the pull request's final sha.** A fix round is reviewed on
-its own diff alone, launched by the executor that made the fixes, and no review
-re-runs a measurement a clean review has already made. A full re-review is due at
-one moment only: a reconciliation with `main` that was not a clean auto-merge.
-#195 measured what the old shape cost — PR #184 ran seven rounds and 800,567
-input tokens, 38% of #177's whole spend, because every round re-read the whole
-pull request.
+**One full review, at the pull request's final sha; every round after it is
+reviewed on its own diff alone.** A full re-review is due at one moment only, a
+reconciliation with `main` that needed a hand resolution (§ Concurrency). What a
+round costs and how the narrowed brief is written are
+`.claude/skills/opening-campaign/references/reviewing.md`, which keeps the
+measurement.
 
 **A fix round is: findings on the pull request, one executor, one `REPORT`.** The
 executor verifies each finding at the site it names before touching anything.
@@ -533,11 +537,12 @@ across a network. It does not settle the campaign's own writes — the binding
 serializes neither the campaign issue body nor the shared directory.
 
 **Two open pull requests over the same normative files are normal, and the second
-to land reconciles** — **the gate is condition 3**. A reconciliation that
-auto-merged cleanly is reviewed by nothing further; one that needed a resolution
-is the single case that earns a full re-review, and its brief says it reads the
-combination, because a hand-resolved merge is where the two branches actually
-meet.
+to land reconciles** — **the gate is condition 3**. The merge is a push, so
+condition 1 still wants a review at the combined sha; what the reconciliation
+decides is that review's *breadth*. A clean auto-merge earns a narrowed one, on
+the merge commit's diff alone. A merge that needed a hand resolution earns a full
+one, and its brief says it reads the combination: **containment buys attention
+from nobody**, and the resolution is where the two branches actually met.
 
 **The named cost: no concurrent cross-machine or cloud work on one campaign.**
 Another machine may read a campaign, may file a sub-issue of it, and may open a
