@@ -144,9 +144,13 @@ VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
 PLANNER_GH = {"issue", "label"}
 
 # THE ONE `gh issue` VERB THE LICENCE DOES NOT COVER
-# (kalaluthien/campaign-base#213). `gh issue develop` cuts a branch, and on
-# this base the branch IS the claim -- the same object `campaign-claim take`
-# cuts. So the tempting argument, that `develop` belongs beside `gh pr create`
+# (kalaluthien/campaign-base#213). `gh issue develop` cuts a branch on the
+# campaign's own remote, and with `--name campaign-<N>/<issue>-<topic>` that
+# branch IS a claim -- the same object `campaign-claim take` cuts. Bare, it
+# names the branch `<issue>-<slug>`, which no reader here treats as a claim;
+# the flag is one word away and this guard reads no flags, so the verb is
+# judged by what it can cut and not by what a given spelling does cut.
+# So the tempting argument, that `develop` belongs beside `gh pr create`
 # on the code plane, is WRONG and was checked rather than assumed: `Claim` sits
 # in `campaignPlaneEvents` and not in `codePlaneEvents`
 # (spec/campaign/orchestration/system.als), and a planner cutting a claim for a
@@ -160,13 +164,14 @@ PLANNER_GH = {"issue", "label"}
 # anyway. Refusing it here leaves ONE route to a claim, which is the only
 # condition under which that model rule has a reader at all.
 #
-# WHAT THIS DOES NOT CLOSE, stated rather than left to be discovered. A session
-# that is not a planner still reaches `gh issue develop 9` through the claim
-# reading below, so one already holding a claim on #9 can cut a second,
-# unscoped branch for it. That hole is strictly narrower -- it needs a claim on
-# the very issue named -- and closing it means the guard reading the campaign
-# issue's `## Repos` on a `gh` call, a `gh` call inside a `PreToolUse` hook,
-# which is the cost #213 weighed and did not pay.
+# WHAT THIS DOES NOT CLOSE, stated rather than left to be discovered. This is
+# the PLANNER branch, so it refuses a planner and nobody else. A session that
+# is not a planner still reaches `gh issue develop 9` through the claim reading
+# below, so one already holding a claim on #9 can cut a second, unscoped branch
+# for it. That hole is strictly narrower -- it needs a claim on the very issue
+# named -- and closing it means the guard reading the campaign issue's
+# `## Repos` on a `gh` call, a `gh` call inside a `PreToolUse` hook, which is
+# the cost #213 weighed and did not pay.
 PLANNER_GH_EXCEPT = {("issue", "develop")}
 
 # WHAT AN EXECUTOR MAY DO TO ITS OWN CAMPAIGN'S ISSUE WITHOUT A CLAIM. No claim
@@ -1040,9 +1045,21 @@ def bash_call(command, cwd: Path, session_id=""):
         read_on = [f"{how_role}, but `gh {v}` is not the campaign plane, so "
                    f"the planner licence does not cover it"
                    for v in sorted(verbs - PLANNER_GH)]
-        read_on += [f"{how_role}, but `gh {v}` cuts a claim without reading "
-                    f"the binding or the campaign's `## Repos`, so the planner "
-                    f"licence does not cover it -- {TAKE}" for v in excepted]
+        # A REFUSAL AND NOT A SENTENCE. The first cut of this only appended to
+        # `read_on` and fell through to the claim reading, which allowed a
+        # planner `gh issue develop 9` outright whenever ANY worktree on this
+        # machine sat on a claim for #9 -- and the planner's own
+        # `campaign-claim take` before a delegate launch creates exactly that
+        # state. A licence removal that leaves the write allowed is not a
+        # removal, and the sentence in scenarios.als saying so was false. Found
+        # by the review of 48dd5fc.
+        if excepted:
+            return refuse([f"{what}: {how_role}.", *[
+                f"`gh {v}` cuts a branch on the campaign's own remote without "
+                f"reading the binding, the sub-issue's parent, or the "
+                f"campaign issue's `## Repos`, so the planner licence does not "
+                f"cover it. This reads no flags, so a `--list` is refused with "
+                f"it." for v in excepted], TAKE])
         if not read_on:
             read_on = [f"{how_role}, but a gh call this cannot read is not "
                        f"covered by the planner licence"]

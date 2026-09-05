@@ -757,7 +757,8 @@ def main():
         # keyed on rc=2 alone passes with the exception deleted.
         r = ask(f.base, tool="Bash", command="gh issue develop 9", env=planner)
         check("the planner licence does not cover `gh issue develop`",
-              r.returncode == 2 and "cuts a claim without reading" in r.stderr
+              r.returncode == 2 and "cuts a branch on the campaign's own "
+              "remote" in r.stderr
               and "not the campaign plane" not in r.stderr, out(r)[:400])
         # ...and one develop hidden among covered verbs sinks the whole call,
         # which is the shape a set-membership test on the SUBCOMMAND missed.
@@ -765,8 +766,44 @@ def main():
                 command="gh issue comment 9 --body x && gh issue develop 9",
                 env=planner)
         check("...and a develop beside a covered verb is not carried by it",
-              r.returncode == 2 and "cuts a claim without reading" in r.stderr,
-              out(r)[:400])
+              r.returncode == 2 and "cuts a branch on the campaign's own "
+              "remote" in r.stderr, out(r)[:400])
+        # THE REFUSAL IS A REFUSAL AND NOT A SENTENCE, which the first cut of
+        # this got wrong and a review caught. Appending to `read_on` and
+        # falling through left the claim reading to decide, and it ALLOWS a
+        # planner `gh issue develop 9` outright whenever any worktree on this
+        # machine sits on a claim for #9 -- the state the planner's own
+        # `campaign-claim take` before a delegate launch creates. So the case
+        # needs a fixture where that claim EXISTS, or it passes over the one
+        # world the exception has to cover.
+        with tempfile.TemporaryDirectory() as d9:
+            f9 = Fixture(d9, claims=("campaign-1/9-topic",))
+            p9 = herdr_stub(d9, {"sid-1": "campaign-1-planner-3"})
+            r = ask(f9.base, tool="Bash", command="gh issue develop 9", env=p9)
+            check("...and a live claim on the very issue does not carry it "
+                  "either", r.returncode == 2
+                  and "cuts a branch on the campaign's own remote" in r.stderr,
+                  out(r)[:400])
+            # ALLOW beside it: the same claim, the same planner, an ordinary
+            # campaign-plane verb -- so the refusal is the verb and not the
+            # fixture.
+            r = ask(f9.base, tool="Bash", command="gh issue comment 9 --body x",
+                    env=p9)
+            check("...and the same planner still comments on that issue",
+                  r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
+
+        # THE FALLBACK SENTENCE, which had no case. `read_on` is empty when a
+        # planner's command holds no gh WRITE the guard can read but does hold
+        # a `gh` it cannot read as a call -- `stray`. Without it the refusal
+        # printed the role line and then nothing about why the licence did not
+        # apply.
+        r = ask(f.base, tool="Bash", command="echo 9 | xargs gh issue close",
+                env=planner)
+        check("a planner's unreadable `gh` is refused saying the licence does "
+              "not cover it", r.returncode == 2
+              and "a gh call this cannot read is not covered by the planner "
+                  "licence" in r.stderr, out(r)[:400])
+
         # THE COST, PINNED RATHER THAN LEFT TO BE FOUND. `-l` is `--list` for
         # `gh issue develop`, so this is a READ, and `WRITES` holds the verb
         # unconditionally -- so a planner is now over-refused on it. The
@@ -776,7 +813,8 @@ def main():
                 env=planner)
         check("...and a planner's `gh issue develop --list` is over-refused "
               "with it, which is the cost", r.returncode == 2
-              and "cuts a claim without reading" in r.stderr, out(r)[:400])
+              and "This reads no flags, so a `--list` is refused with it."
+              in r.stderr, out(r)[:400])
 
         # ALLOW beside it: the campaign-plane verbs the licence is FOR.
         for cmd in ("gh issue edit 9 --body x", "gh issue comment 9 --body x",
