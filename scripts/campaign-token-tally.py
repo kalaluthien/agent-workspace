@@ -98,35 +98,63 @@ import sys
 
 WORKTREE = re.compile(r"/worktrees/(\d+)(?:/|$)")
 REVIEW_CMD = re.compile(r"/code-review\s+(\w+)\s+(\d+)")
-SCRIPT_NAME = re.compile(r"^(?:[^\s]*/)?((?:campaign|check|install)-[a-z0-9-]+)"
-                         r"\.(?:py|sh)$")
-# What separates one command from the next inside one Bash call, and the words
-# that stand in front of a command without being one.
-SEGMENT = re.compile(r"[;\n|&]+|\$\(|`|\|\||&&")
-PREFIX = re.compile(r"^(?:[A-Za-z_][A-Za-z0-9_]*=\S*|time|exec|nohup|command|"
-                    r"python3?|sh|bash)$")
+SCRIPT_NAME = re.compile(r"^((?:campaign|check|install)-[a-z0-9-]+)\.(?:py|sh)$")
+# An interpreter runs the file that follows it, and check-campaign-claim's
+# PREFIXES deliberately holds no interpreter -- it is looking for `gh`, which
+# nothing interprets. Named here, one word per form, for the same reason that
+# set names its shells: adding a name reads one more shape and promises nothing
+# about the next.
+INTERPRETERS = {"python", "python3", "sh", "bash", "zsh"}
 
 
-def scripts_called(command):
-    """The repository's scripts this Bash command *runs*, in the order it runs them.
+def shell_grammar():
+    """check-campaign-claim.py, imported for its shell splitter.
+
+    That guard already owns the one reading of a Bash command's grammar in this
+    repository -- `segments` (shlex, with `;|&(){}` as their own tokens, and a
+    shell's `-c` string re-read) and `head` (a segment's command word, with
+    `VAR=x` and `time`-shaped prefixes stripped and a path reduced to its
+    basename). A second reader here drifts from it, and drifted the moment it
+    was written: a hand-rolled splitter counted heredoc body lines as commands,
+    missed `"$W/scripts/campaign-claim.py" take ...` because of the quote, and
+    missed `; do python3 scripts/x.py` because `do` was not in its prefix list.
+    All three are cases that guard already had right.
+    """
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "check-campaign-claim.py")
+    spec = importlib.util.spec_from_file_location("check_campaign_claim", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def scripts_called(command, grammar):
+    """The repository's scripts this command *runs*, in the order it runs them.
 
     A name is not a call. `sed -n 1,120p scripts/check-campaign-claim.py`,
     `grep -n foo scripts/campaign-claim.py` and `git show <sha>:scripts/...`
-    all name a script and none of them runs it, and the result they return is
-    the script's own source -- charged as the script's output, a majority of
-    the bytes, by any reader that matches the name anywhere in the command.
-    So the command is split at every shell separator and only the first word of
-    each segment is tested, after the words that stand in front of a command
-    without being one (an environment assignment, `time`, `python3`).
+    each name a script and none of them runs it, and what they return is the
+    script's own source -- charged to the script as its output, a majority of
+    the bytes, by any reader that matches a name anywhere in the command.
+
+    Returns None when the command will not split, which is not the same answer
+    as "runs nothing" and is counted apart.
     """
+    segs, _why = grammar.segments(command)
+    if segs is None:
+        return None
     called = []
-    for segment in SEGMENT.split(command):
-        words = segment.strip().split()
-        while words and PREFIX.match(words[0]):
-            words.pop(0)
-        if not words:
+    for seg in segs:
+        word, rest = grammar.head(seg)
+        if word is None:
             continue
-        m = SCRIPT_NAME.match(words[0])
+        if word in INTERPRETERS:
+            operands = [t for t in rest[1:] if not t.startswith("-")]
+            if not operands:
+                continue
+            word = operands[0].rsplit("/", 1)[-1]
+        m = SCRIPT_NAME.match(word)
         if m:
             called.append(m.group(1))
     return called
@@ -412,11 +440,13 @@ class Corpus:
         timeline = self.session_timeline.get(session_id)
         if not timeline:
             return None
-        best = None
-        for when, issue in timeline:
-            if when <= ts:
-                best = issue
-        return best if best is not None else timeline[0][1]
+        # By timestamp and not by position: a transcript's records are not
+        # ordered by time -- a resumed session appends earlier turns after
+        # later ones -- so "the last one seen" is not "the last one before".
+        before = [(when, issue) for when, issue in timeline if when <= ts]
+        if before:
+            return max(before)[1]
+        return min(timeline)[1]
 
 
 def totals(turns):
@@ -506,11 +536,18 @@ def cmd_issues(corpus, args):
         rows.append([issue if issue is not None else "unattributed",
                      fmt(both["turns"]), fmt(subs["turns"]),
                      f"{both['settled']}/{both['turns']}",
-                     fmt(both["output"]), fmt(subs["output"]),
+                     fmt(both["output"]),
+                     f"{subs['settled']}/{subs['turns']}",
+                     fmt(subs["output"]),
                      fmt(both["input_new"]), fmt(both["cache_read"]),
                      ",".join(hows)])
+    # sub_settled sits beside sub_output and not beside settled, because the
+    # column it qualifies is that one: a row settled 89% overall can rest its
+    # sub_output on 6 settled turns of 18, and the combined figure hides
+    # exactly the floor the split was added to show.
     table(rows, ["issue", "turns", "sub_turns", "settled", "output",
-                 "sub_output", "input_new", "cache_read", "attributed_by"])
+                 "sub_settled", "sub_output", "input_new", "cache_read",
+                 "attributed_by"])
     grand = totals(corpus.turns)
     print()
     print(f"total: {fmt(grand['turns'])} turns, {fmt(grand['output'])} output, "
@@ -601,21 +638,27 @@ def cmd_tool_echo(corpus, args):
     cache. This counts the first, per script, by the tool call that produced it.
     """
     sample_line(corpus)
-    by_script, grand, all_bytes = scan_script_calls(corpus)
+    by_script, grand, all_bytes, unsplittable, invocations = scan_script_calls(corpus)
     rows = []
     for script in sorted(by_script, key=lambda s: -by_script[s]["result_bytes"]):
         got = by_script[script]
-        rows.append([script, fmt(got["calls"]), fmt(got["also_named"]),
+        rows.append([script, fmt(got["charged"]), fmt(got["also_run"]),
                      fmt(got["result_bytes"])])
-    table(rows, ["script", "calls", "also_named", "result_bytes"])
+    table(rows, ["script", "charged", "also_run", "result_bytes"])
+    commands = sum(r["charged"] for r in by_script.values())
     print()
-    print(f"{fmt(grand)} bytes over {fmt(sum(r['calls'] for r in by_script.values()))} "
-          f"calls, of {fmt(all_bytes)} bytes in every tool result of the kept "
-          f"turns ({100 * grand // max(1, all_bytes)}%)")
-    print("result_bytes is a partition: one Bash call's result is charged to the "
-          "first script that call runs, and every other script it runs is "
-          "counted in also_named without its bytes, so the column sums to the "
-          "figure above.")
+    print(f"{fmt(grand)} bytes from {fmt(commands)} commands running "
+          f"{fmt(invocations)} invocations, of {fmt(all_bytes)} bytes in every "
+          f"tool result of the kept turns "
+          f"({100 * grand / max(1, all_bytes):.1f}%)")
+    print("result_bytes is a partition: one command's result is charged once, to "
+          "the first script that command runs. charged counts commands, and "
+          "also_run counts every later invocation in a charged command -- "
+          "including the same script run twice -- so charged + also_run is "
+          "invocations, not commands.")
+    if unsplittable:
+        print(f"{fmt(unsplittable)} commands would not split and were read as "
+              f"running nothing: that is a floor on this table, not a zero.")
     print("No token figure is printed. The transcript records no per-tool-result "
           "token count, and bytes/4 would be an estimate wearing a measurement's "
           "heading.")
@@ -628,9 +671,12 @@ def scan_script_calls(corpus):
     tool result in the kept turns, so a share can be read rather than asserted.
     """
     keep = {t["message_id"] for t in corpus.turns}
+    grammar = shell_grammar()
     by_script = {}
     charged = 0
     all_bytes = 0
+    unsplittable = 0
+    invocations = 0
     for path in sorted({t["file"] for t in corpus.turns}):
         pending = {}
         for line in open(path, errors="replace"):
@@ -655,22 +701,26 @@ def scan_script_calls(corpus):
                     called = []
                     if block.get("name") == "Bash":
                         called = scripts_called(
-                            str(block.get("input", {}).get("command", "")))
+                            str(block.get("input", {}).get("command", "")), grammar)
+                        if called is None:
+                            unsplittable += 1
+                            called = []
                     pending[block.get("id")] = called
                 elif block.get("type") == "tool_result" and block.get("tool_use_id") in pending:
                     called = pending.pop(block["tool_use_id"])
                     size = len("\n".join(text_blocks({"content": [block]})))
                     all_bytes += size
+                    invocations += len(called)
                     for rank, script in enumerate(called):
                         row = by_script.setdefault(
-                            script, {"calls": 0, "also_named": 0, "result_bytes": 0})
+                            script, {"charged": 0, "also_run": 0, "result_bytes": 0})
                         if rank == 0:
-                            row["calls"] += 1
+                            row["charged"] += 1
                             row["result_bytes"] += size
                             charged += size
                         else:
-                            row["also_named"] += 1
-    return by_script, charged, all_bytes
+                            row["also_run"] += 1
+    return by_script, charged, all_bytes, unsplittable, invocations
 
 
 COMMANDS = {

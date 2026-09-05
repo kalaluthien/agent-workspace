@@ -119,6 +119,15 @@ def build(tmp):
     # return is the script's own source, and charging it to the script would
     # make reading a file look like an agent being printed at.
     look = str(base / "camp-260101" / "worktrees" / "307")
+    # A heredoc whose body opens with a script name, and a `for` loop running a
+    # script through an interpreter: the two shapes a line-splitting reader gets
+    # backwards in opposite directions -- it counts the heredoc line as a
+    # command and misses the loop body, because `do` stands in front of one.
+    heredoc = ('python3 - <<"PY"\n'
+               'campaign-claim.py is only a string here\n'
+               'print(1)\n'
+               'PY')
+    loop = ("for f in one two; do python3 scripts/check-tree-shape.py $f; done")
     reads = [
         assistant("m-grep", day + "01:10:00Z", look, out=10, settled=True,
                   blocks=[{"type": "tool_use", "name": "Bash", "id": "t2",
@@ -128,6 +137,19 @@ def build(tmp):
                   blocks=[{"type": "tool_use", "name": "Bash", "id": "t3",
                            "input": {"command":
                                      "sed -n 1,40p scripts/campaign-primitives.py"}}]),
+        assistant("m-heredoc", day + "01:30:00Z", look, out=10, settled=True,
+                  blocks=[{"type": "tool_use", "name": "Bash", "id": "t4",
+                           "input": {"command": heredoc}}]),
+        assistant("m-loop", day + "01:40:00Z", look, out=10, settled=True,
+                  blocks=[{"type": "tool_use", "name": "Bash", "id": "t5",
+                           "input": {"command": loop}}]),
+        # The invocation path in quotes, which a reader testing the raw word
+        # misses however well it handles paths.
+        assistant("m-quoted", day + "01:50:00Z", look, out=10, settled=True,
+                  blocks=[{"type": "tool_use", "name": "Bash", "id": "t6",
+                           "input": {"command":
+                                     'W=/tmp/w; "$W/scripts/campaign-repos.py" '
+                                     'README.md'}}]),
     ]
     # A worktree whose directory was deleted when its sub-issue closed.
     dead = str(base / "camp-260101" / "worktrees" / "302")
@@ -143,18 +165,29 @@ def build(tmp):
              {"type": "tool_result", "tool_use_id": "t1",
               "content": [{"type": "text", "text": "R" * 400}]}]}},
         *reads,
-        {"type": "user", "timestamp": day + "01:20:03Z", "cwd": look,
+        {"type": "user", "timestamp": day + "01:50:03Z", "cwd": look,
          "gitBranch": "main", "sessionId": "s1", "uuid": "r2",
          "message": {"role": "user", "content": [
              {"type": "tool_result", "tool_use_id": "t2",
               "content": [{"type": "text", "text": "S" * 9000}]},
              {"type": "tool_result", "tool_use_id": "t3",
-              "content": [{"type": "text", "text": "S" * 9000}]}]}},
+              "content": [{"type": "text", "text": "S" * 9000}]},
+             {"type": "tool_result", "tool_use_id": "t4",
+              "content": [{"type": "text", "text": "H" * 5000}]},
+             {"type": "tool_result", "tool_use_id": "t5",
+              "content": [{"type": "text", "text": "L" * 700}]},
+             {"type": "tool_result", "tool_use_id": "t6",
+              "content": [{"type": "text", "text": "Q" * 800}]}]}},
         assistant("m-branch", day + "02:00:00Z", str(base),
                   branch="campaign-1/301-topic", out=70),
         assistant("m-dead", day + "02:10:00Z", dead, out=60),
         assistant("m-prose", day + "02:20:00Z", str(base), out=40,
                   blocks=[{"type": "text", "text": prose}]),
+        # Inside the window by a fraction of a second: the harness writes
+        # milliseconds, so a bound carrying its Z sorts after this message and
+        # would drop a second of turns at each end.
+        assistant("m-edge", "2026-01-02T00:00:00.500Z",
+                  str(base / "camp-260101" / "worktrees" / "308"), out=7),
         # Outside the window by its own timestamp, in a file written just now.
         assistant("m-old", "2026-01-01T00:00:00Z", wt, out=999),
         # Outside every base root: a workspace this campaign does not own.
@@ -252,6 +285,9 @@ def main():
               "999" not in issues and "1 outside the window" in issues, issues[:400])
         check("a cwd outside every base root is dropped and counted",
               "888" not in issues and "1 with a cwd outside" in issues, issues[:400])
+        check("a turn in the boundary second itself is kept",
+              row(issues, "308") and row(issues, "308")["output"] == "7",
+              str(row(issues, "308")))
 
         # A FOLD IS NOT A DROP. Two records of m-fold were folded into the turn
         # they belong to, and no message was met twice in two files.
@@ -264,6 +300,9 @@ def main():
         # its row is a floor, and the row says so where the number is read.
         check("a row holding an unsettled turn says so in its own settled column",
               r301 and r301["settled"] == "1/2", str(r301))
+        check("sub_output carries its own settled count, not the row's",
+              r303 and r303["sub_settled"] == "2/2"
+              and r301["sub_settled"] == "0/1", str(r301) + str(r303))
         check("...while a row of settled turns says that",
               r300 and r300["settled"] == "1/1" and r303["settled"] == "2/2",
               str(r300) + str(r303))
@@ -291,16 +330,24 @@ def main():
         # sed in a third.
         tracker = row(echo, "campaign-tracker")
         check("a script a command runs is charged the result it returned",
-              tracker and tracker["calls"] == "1"
+              tracker and tracker["charged"] == "1"
               and int(tracker["result_bytes"]) >= 400, str(tracker))
         repos = row(echo, "campaign-repos")
-        check("a second script in the same command is named, not charged twice",
-              repos and repos["also_named"] == "1" and repos["calls"] == "0"
-              and repos["result_bytes"] == "0", str(repos))
+        check("a second script in the same command is counted, not charged twice",
+              repos and repos["also_run"] == "1"
+              and repos["result_bytes"] == "800", str(repos))
         check("grepping a script is not calling it",
               row(echo, "campaign-claim") is None, echo)
         check("...and neither is reading it with sed",
               row(echo, "campaign-primitives") is None, echo)
+        check("a script name inside a heredoc body is not a call",
+              row(echo, "campaign-claim") is None, echo)
+        shape = row(echo, "check-tree-shape")
+        check("a script run through an interpreter inside a loop is a call",
+              shape and shape["charged"] == "1"
+              and shape["result_bytes"] == "700", str(shape))
+        check("a quoted invocation path is a call",
+              repos and repos["charged"] == "1", str(repos))
 
         # A WINDOW BOUND THAT CANNOT BE COMPARED IS REFUSED, not quietly used.
         bad = subprocess.run(
