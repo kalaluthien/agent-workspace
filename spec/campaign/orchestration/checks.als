@@ -108,6 +108,37 @@ assert DelegateLaunchedByPlanner {
     (some p: plannerAgents | p.peer = a.launcher and p.task = a.task)
 }
 
+/* A SESSION NEVER TAKES TWO SUB-ISSUES WITHOUT A COMPACTION BETWEEN THEM, and
+   it is DERIVED rather than assumed: `launch` spends the bit, only
+   `agentRelease` returns it, and `launch` requires it.
+
+   MEASURED 2026-09-05, one clause deleted at a time. Deleting either of
+   `launch`'s two clauses reddens THIS command, UNSAT -> SAT. Deleting the
+   release's `Compacted' = Compacted + Who.session` does NOT: with nothing to
+   return the bit, a session's second launch becomes unreachable and this
+   assert stays green over an empty set. So that clause is pinned by P8 below
+   and by nothing here, which is the whole reason P8 exists -- a green assert
+   is a rule only while its subject is reachable.
+
+   It is the whole rule #198 lands, read at its two ends: `campaign-claim.py
+   release` compacting its own pane, and `scripts/campaign-assign.py` refusing
+   a pane that has not. */
+assert SessionCompactsBetweenSubIssues {
+  always all a1, a2: Agent |
+    (some a1.peer and a1.peer = a2.peer and a1 != a2
+     and Now.event = Launch and Target.agent = a2 and a1 in Launched)
+    /* BETWEEN, not merely BEFORE. The nested `once` is what says "after a1 was
+       launched": some past instant held a release by this session, and at that
+       instant a1 had already been launched. A single `once (Release ...)` --
+       which is how this read at 114e71a -- says only that the session released
+       at SOME point, which is a weaker claim than the comment above makes and
+       true for a release that happened before a1 ever started. It held only
+       because nothing else in the model returns the bit; a later event that
+       did would leave it green and the comment false. Found by review. */
+    implies once (Now.event = Release and Who.session = a1.peer
+                  and once (Now.event = Launch and Target.agent = a1))
+}
+
 /* ---------------- reachability floor ---------------- */
 
 pred Cov_LaunchAgent      { eventually (Now.event = Launch and some Target.agent) }
@@ -126,6 +157,44 @@ pred Cov_StandDown        { eventually Now.event = StandDown }
 pred Cov_Retire           { eventually Now.event = Retire }
 pred Cov_AgentDie         { eventually Now.event = AgentDie }
 pred Cov_GuardedRelease   { eventually Now.event = Release }
+/* THE CONTROL FOR THE ASSERT ABOVE. Without it, deleting the release's
+   `Compacted' = Compacted + Who.session` makes a session's second launch
+   unreachable and the assert stays green on a vacuity nobody would read. This
+   says two launches by one session do happen, so a green assert is a rule and
+   not an empty set. */
+/* THE CONTROL FOR THE GUARD'S SCOPE, and P8 cannot be it. P8's two launches
+   both have `some peer`, so it is satisfied whether the guard binds on every
+   launch or only on a session taking its own claim -- measured, the
+   unconditional form leaves P8 SAT.
+
+   This one separates them: a session works a sub-issue itself and LATER
+   launches a delegate. Unconditional, the delegate launch would need the
+   planner compacted, which only a release gives back, so a planner could
+   launch at most one delegate between releases -- and that is a precondition
+   nothing on the machine reads, since `campaign-assign.py` reads the pane of
+   the session being ASSIGNED and a delegate has no pane until its launch makes
+   one. So this run going UNSAT is the signal that the model has drifted back
+   to demanding what no reader checks. */
+pred P9_DelegateAfterOwnSubIssue {
+  some s: Session | some disj own, deleg: Agent |
+    own.peer = s and no deleg.peer and deleg.launcher = s
+    /* WITH NO RELEASE IN BETWEEN, and that clause is the whole discriminator:
+       without it the session simply releases between the two launches and the
+       run is satisfiable either way -- measured, and it is why the first cut
+       of this control caught nothing. Unconditional, the delegate launch needs
+       the bit a release alone returns, so forbidding the release makes the
+       trace impossible. */
+    and eventually (Now.event = Launch and Target.agent = own
+                    and after ((not (Now.event = Release and Who.session = s))
+                               until (Now.event = Launch
+                                      and Target.agent = deleg)))
+}
+pred P8_TwoSubIssuesOneSession {
+  some s: Session | some disj a1, a2: Agent |
+    a1.peer = s and a2.peer = s
+    and eventually (Now.event = Launch and Target.agent = a1
+                    and eventually (Now.event = Launch and Target.agent = a2))
+}
 
 /* ---------------- commands ---------------- */
 
@@ -177,3 +246,10 @@ run Cov_StandDown        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Ag
 run Cov_Retire           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_AgentDie         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_GuardedRelease   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+
+-- a release compacts, a launch spends it, so two sub-issues need a release between them
+check SessionCompactsBetweenSubIssues for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 12 steps expect 0
+-- and two sub-issues on one session do happen, so the check above is not vacuous
+run P8_TwoSubIssuesOneSession        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 12 steps expect 1
+-- and a delegate launch is NOT guarded, so one session can work a sub-issue and then launch one
+run P9_DelegateAfterOwnSubIssue      for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 3 Repo, 3 Branch, 2 CampaignDir, 12 steps expect 1
