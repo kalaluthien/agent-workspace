@@ -97,16 +97,22 @@ fi
 # The pre-#190 form is matched WHOLE -- a shebang and one exec of the
 # machine-wide guard by absolute path, two lines and no more -- because it
 # carries nothing to name itself by. Clones acquired then still hold it.
-# The current form carries the claim gate as well and is ten lines, so it is
-# matched by the marker acquire-repo.sh puts on line 2 and nothing else; the
-# text lives there, in SHIM_MARKER, with a comment pointing back here.
+# The current form is ten lines, so matching it whole would be a second copy of
+# what acquire-repo.sh writes; it is matched by three things instead, and the
+# marker alone is NOT enough. A hook is adopted here only if it also opens with
+# the shebang and actually calls the guard, because what licenses replacing it
+# is that the hook written below is a STRICT SUPERSET of it -- and a comment
+# somebody pasted proves nothing about that. The marker text lives in
+# acquire-repo.sh's SHIM_MARKER, with a comment pointing back here.
 is_guard_shim() {
 	if [ "$(wc -l <"$1" | tr -d ' ')" = 2 ]; then
 		[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
 			sed -n 2p "$1" | grep -qE '^exec "[^"]*/\.claude/git-hooks/no-main-commits" "\$@"$'
 		return
 	fi
-	sed -n 2p "$1" | grep -qF '# Written by acquire-repo.sh.'
+	[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
+		sed -n 2p "$1" | grep -qF '# Written by acquire-repo.sh.' &&
+		grep -q 'no-main-commits' "$1"
 }
 
 # Each hook gets the same two refusals, so a second hook cannot arrive with
@@ -120,9 +126,13 @@ check_slot() {
 		echo "Move it aside and re-run, or chain $ours from its target by hand." >&2
 		exit 1
 	fi
+	# What it OBSERVED, not what it assumes: two shapes reach this branch and
+	# they carry different things, so a message naming only the guard was untrue
+	# of the one that also carries the claim gate.
 	if [ -e "$slot" ] && is_guard_shim "$slot"; then
-		echo "adopting: $slot held only the no-main-commits shim, which the hook" >&2
-		echo "written here chains; replacing it." >&2
+		echo "adopting: $slot is a shim acquire-repo.sh wrote -- $(wc -l <"$slot" | tr -d ' ') lines," >&2
+		echo "calling the no-main-commits guard. The hook written here runs that" >&2
+		echo "guard and this repository's own, so it is a superset; replacing it." >&2
 		return 0
 	fi
 	if [ -e "$slot" ] && ! grep -qF "$marker_match" "$slot"; then

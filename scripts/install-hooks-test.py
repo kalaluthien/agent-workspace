@@ -298,6 +298,25 @@ def main():
               and "adopting" not in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:160]}")
 
+    # THE MARKER IS NOT ENOUGH ON ITS OWN. What licenses replacing a hook here
+    # is that the one written below is a strict SUPERSET of it, and a comment
+    # somebody pasted proves nothing about that. A hook carrying the marker on
+    # line 2 and a foreign body must be refused, or the installer overwrites
+    # somebody's decision and announces it as adopting a shim.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        r.hook("pre-commit").write_text(
+            "#!/usr/bin/env sh\n"
+            "# Written by acquire-repo.sh. Re-run it after changing this file.\n"
+            "exec /usr/bin/true\n")
+        r.hook("pre-commit").chmod(0o755)
+        out = installer(r.root)
+        check("a hook carrying the marker but not the guard is refused, not "
+              "adopted",
+              out.returncode != 0 and "refusing" in out.stderr
+              and "adopting" not in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
+
     # 5c. --git-only. The harness half is machine-wide and points at one
     # checkout; a clone running it would repoint every session's guard.
     with tempfile.TemporaryDirectory() as d:
@@ -417,6 +436,14 @@ def main():
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
         check("...carrying the claim gate by its absolute path in the base",
               f'"{gate}" --staged' in body, repr(body[-160:]))
+        # "Only the shim" used to be pinned by comparing the whole text, which
+        # went with #190. This is what that comparison was actually for: acquire
+        # must not install THIS repository's hook into a member clone, whose
+        # `# runs:` guards it does not have and whose post-commit would push its
+        # branches.
+        check("...and not this repository's own hook, which the clone could not "
+              "run",
+              "# runs:" not in body, repr(body[:160]))
 
         # 5e. AND THIS INSTALLER ADOPTS THAT SHIM. #178's fix, which #190 would
         # have undone in silence: the shim stopped being the two lines

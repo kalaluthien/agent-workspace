@@ -652,14 +652,23 @@ pred R12d_AcquireIsWhatPrinciplesAClone {
    their committing in. That is the shape #187 question 5 hit with the
    principles channel: a mechanism that existed only as prose.
 
-   NARROWED TO A TASK THAT HAS A CAMPAIGN, deliberately. An agent whose task
-   belongs to no campaign is committing on nothing this base owns, and
-   check-commit-claim.py admits exactly that commit unread -- `classify` returns
-   "not campaign work, no claim needed". A rule stated without the conjunct
-   would forbid it, since `x in none` is false, and would be a claim about the
-   code that the code does not make. R13f is that case's witness, so the
-   narrowing is a decision with a command behind it rather than a silent
-   omission. */
+   NARROWED TO A TASK THAT HAS A CAMPAIGN, deliberately, and the reason is
+   about this model and not about the script. Without the conjunct the rule
+   forbids a commit whose task belongs to no campaign -- `campaignOf` is `lone`,
+   `campaignDirAt[none, m]` is empty, and `x in none` is FALSE -- so it would
+   refuse by vacuity rather than by anything it claims. A rule wider than what
+   it can justify is false, not cautious.
+
+   DO NOT justify this by check-commit-claim.py admitting such a commit: that
+   was the first spelling of this comment and it is wrong. The script reads the
+   committing checkout's PATH, and this entity carries none -- `CommitLocal`
+   names an agent and an issue and no location, and `launch` reaches a checkout
+   through `Who.session.worksOn` rather than through `campaignOf[a.task]`, so
+   the two are free of one another here (R13e's witness rests on exactly that
+   freedom). "The issue has no campaign" and "the checkout is outside every base
+   tree" are two different readings, and the model cannot state that they
+   coincide. What the script does with a commit it cannot place is its
+   docstring's. R13f is this narrowing's witness. */
 pred commitGateInstalled {
   always all a: Agent |
     (Now.event = CommitLocal and Target.agent = a and some campaignOf[a.task])
@@ -748,6 +757,52 @@ pred R13f_ACommitOnNoCampaignsWorkIsNotGated {
   no gated
   some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
                               and no campaignOf[a.task])
+}
+
+/* R13g. WHICH HOST, pinned -- #203's lesson one axis over, and the axis R13e
+   did not reach. `campaignDirAt[c, m]` filters on two columns, and R11 and R13e
+   between them pin only the campaign. Every command above runs at `1 Machine`,
+   where `campaignDirAt[campaignOf[a.task], a.host]` and
+   `campaignDirsOf[campaignOf[a.task]]` are the same relation, so nothing said
+   the gate has to be installed on the machine the commit is MADE on -- and one
+   campaign directory per machine is exactly the shape that has two of them.
+
+   Two machines, one campaign: the directory on the agent's own host has the
+   repository ungated and the one on the other machine has it gated, and the
+   rule must still refuse. Expect 0, and it goes SAT the moment `a.host` stops
+   filtering.
+
+   `principled` has the same gap at `delegateLaunchIsPrincipled`, measured and
+   not fixed here: kalaluthien/campaign-base#212. */
+pred R13g_TheAgentsOwnHostIsTheOneThatCounts {
+  commitGateInstalled
+  some a: Agent, m: Machine |
+    eventually (Now.event = CommitLocal and Target.agent = a
+                and some campaignOf[a.task]
+                and m != a.host
+                and a.task.repo not in
+                    campaignDirAt[campaignOf[a.task], a.host].gated
+                and a.task.repo in campaignDirAt[campaignOf[a.task], m].gated)
+}
+
+/* R13h. AND NOTHING BUT AN ACQUIRE GATES A CLONE. R13d says a gated commit is
+   REACHABLE from `no gated`, which is satisfied by any producer at all -- so it
+   rests on `gated' = gated` holding in `directoryFrame`, and deleting that line
+   left R13 through R13g green while `gated` became free on every event outside
+   this entity. This is the other half: from nothing gated, with no Acquire ever
+   firing, a gated commit is IMPOSSIBLE. Expect 0, and it goes SAT the moment
+   the frame stops carrying `gated`.
+
+   `principled` is unframed in the same way and by the same measurement;
+   kalaluthien/campaign-base#212 carries it, because widening R12 is that
+   command's business and not this one's. */
+pred R13h_NothingButAnAcquireGatesAClone {
+  no gated
+  always Now.event != Acquire
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and some campaignOf[a.task]
+                              and a.task.repo in
+                                  campaignDirAt[campaignOf[a.task], a.host].gated)
 }
 
 /* R9d. THE ORDINARY LANDING, and the case whose absence let the first spelling
@@ -1337,6 +1392,8 @@ run R13c_RepairAdmitsTheGatedCommit for 3 Issue, 1 PullRequest, 1 Campaign, 2 Se
 run R13d_AcquireIsWhatGatesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R13e_TheAgentsOwnDirIsTheOneThatCounts for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run R13f_ACommitOnNoCampaignsWorkIsNotGated for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R13g_TheAgentsOwnHostIsTheOneThatCounts for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run R13h_NothingButAnAcquireGatesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0

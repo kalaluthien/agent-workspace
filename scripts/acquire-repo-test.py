@@ -170,16 +170,22 @@ def a_member_repo(d, camp, slug="acme/widget"):
     return slug, dest
 
 
-def a_home(d, name="home"):
+def a_home(d, name="home", refuses=False):
     """A HOME holding the machine-wide guard where acquire-repo looks for it.
 
-    It exits 0 and says its own name, so the two halves of the installed hook
-    are told apart: a commit that reaches the gate has run the guard first, and
-    a refusal carrying only one of the two words names which half spoke."""
+    It says its own name, so the two halves of the installed hook are told
+    apart: a commit that reaches the gate has run the guard first, and a
+    refusal carrying only one of the two words names which half spoke.
+
+    `refuses=True` is the real guard's answer on `main`, and it is the only way
+    to ask whether the hook HONOURS that answer rather than merely running it.
+    """
     home = Path(d) / name
     g = home / ".claude" / "git-hooks" / "no-main-commits"
     g.parent.mkdir(parents=True)
-    g.write_text("#!/bin/sh\necho 'NO-MAIN-COMMITS RAN' >&2\nexit 0\n")
+    g.write_text("#!/bin/sh\necho 'NO-MAIN-COMMITS RAN' >&2\n"
+                 + ("echo 'GUARD REFUSED' >&2\nexit 1\n" if refuses
+                    else "exit 0\n"))
     g.chmod(0o755)
     return home
 
@@ -320,6 +326,35 @@ def main():
               c.returncode == 0, f"exit {c.returncode}; {both[:240]}")
         check("...saying so, and not merely staying quiet",
               "is a claim" in both, both[:240])
+
+    # ---- THE GUARD'S REFUSAL IS THE HOOK'S ANSWER, not a line it printed on
+    # the way to the gate. Before #190 the shim was `exec "$guard"`, so its
+    # status was the hook's by construction; now something runs after it. For
+    # one revision the only thing making the refusal fatal was a `set -e` no
+    # case pinned, and deleting that line left both suites fully green while a
+    # commit the guard had refused LANDED.
+    with tempfile.TemporaryDirectory() as d:
+        home = a_home(d, refuses=True)
+        # OUTSIDE every base tree and every campaign directory ON PURPOSE: there
+        # `classify` says "not campaign work", so the claim gate admits and the
+        # guard is the only half that can refuse. In a campaign clone the gate
+        # refuses too and the case would pass without testing anything.
+        loose = Path(d) / "loose"
+        loose.mkdir()
+        slug, clone = a_member_repo(d, loose)
+        r = run_acquire(slug, clone, home)
+        c, both = commit_in(clone, home, "a", "1")
+        check("a commit the machine-wide guard refuses does not land, even where "
+              "the claim gate admits it",
+              r.returncode == 0 and c.returncode != 0,
+              f"acquire {r.returncode}, commit {c.returncode}; {both[:240]}")
+        # The gate NEVER RUNS, and that is the assertion. Without `|| exit 1`
+        # it runs, prints "no claim needed", and the commit lands -- so its
+        # silence here is what separates a refusal honoured from one printed.
+        check("...and the gate never got to speak, which is what honouring the "
+              "refusal means",
+              "GUARD REFUSED" in both and "no claim needed" not in both,
+              both[:400])
 
     # ---- The gate that is named but cannot run, at both moments it can be
     # read. A hook naming a script that is not there is worse than no hook: it

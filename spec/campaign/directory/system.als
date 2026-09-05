@@ -118,12 +118,16 @@ pred deleteDir[t: CampaignDir] {
 
 /* opening-campaign/scripts/acquire-repo.sh. On a re-run over an existing checkout it switches the
    branch, which is what orchestration/scenarios.als's R4c catches it doing under a live role.
-   Not modelled, stated: an acquired checkout carries the repository's own git hooks when the
-   repository ships an installer (scripts/install-hooks.sh), and the machine-wide no-main-commits
-   guard alone otherwise, and acquire-repo.sh verifies the guard is chained on both paths. For a
-   repository shipping this base's installer, one writer owns the slot -- the installer, which
-   adopts the guard's shim and refuses anything else -- because two writers left every delegate
-   clone with no hook of the repository's own, and a commit there was never auto-pushed. */
+   An acquired checkout carries the repository's own git hooks when the repository ships an
+   installer (scripts/install-hooks.sh), and otherwise a shim carrying the machine-wide
+   no-main-commits guard AND the claim gate; acquire-repo.sh verifies the guard is chained on
+   both paths, and refuses to install a gate it cannot run. That the shim also carries the gate
+   is #190, and it is what `gated` below is: until then it was the guard alone, so this sentence
+   said "the machine-wide no-main-commits guard alone otherwise" and the two halves of this file
+   would now disagree. For a repository shipping this base's installer, one writer owns the slot
+   -- the installer, which adopts the shim in either of its shapes and refuses anything else --
+   because two writers left every delegate clone with no hook of the repository's own, and a
+   commit there was never auto-pushed. */
 pred acquire[t: CampaignDir, r: Repo, b: Branch] {
   t in OnDisk
   t.checkedOut[r] != b

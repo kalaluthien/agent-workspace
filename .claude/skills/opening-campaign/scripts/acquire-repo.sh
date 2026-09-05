@@ -298,11 +298,18 @@ install_commit_guard() {
 	# the clone and finds nothing. The path is baked in at acquire time, and the
 	# hook re-reads it at every commit rather than trusting it: a base checkout
 	# that moved or was deleted turns a silent pass into a named refusal.
+	#
+	# `|| exit 1` ON THE GUARD, spelled rather than left to `set -e`. Before
+	# #190 the shim was `exec "$guard"`, so the guard's status WAS the hook's;
+	# now something runs after it, and for one revision the only thing making
+	# its refusal fatal was a `set -e` no case pinned. Measured on the deployed
+	# path: with the shim's `set -e` deleted, a clone outside every base tree --
+	# where the claim gate admits -- LANDED a commit on `main` that the guard
+	# had just refused, with the refusal printed above the commit line.
 	printf '%s\n' \
 		'#!/usr/bin/env sh' \
 		"$SHIM_MARKER" \
-		'set -e' \
-		"\"$guard\" \"\$@\"" \
+		"\"$guard\" \"\$@\" || exit 1" \
 		"if [ ! -x \"$gate\" ]; then" \
 		"	echo \"pre-commit: REFUSING -- $gate is missing or not executable.\" >&2" \
 		'	echo "  acquire-repo.sh installed this hook, so the claim gate is" >&2' \

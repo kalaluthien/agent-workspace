@@ -105,6 +105,8 @@
     ["orchestration/scenarios.als", "run", "R13d_AcquireIsWhatGatesAClone"],
     ["orchestration/scenarios.als", "run", "R13e_TheAgentsOwnDirIsTheOneThatCounts"],
     ["orchestration/scenarios.als", "run", "R13f_ACommitOnNoCampaignsWorkIsNotGated"],
+    ["orchestration/scenarios.als", "run", "R13g_TheAgentsOwnHostIsTheOneThatCounts"],
+    ["orchestration/scenarios.als", "run", "R13h_NothingButAnAcquireGatesAClone"],
     ["orchestration/scenarios.als", "run", "R14_ClaimOnARepoOutsideTheScope"],
     ["orchestration/scenarios.als", "run", "R14b_RepairExcludesIt"],
     ["orchestration/scenarios.als", "run", "R14c_ScopeAdmitsTheListedMember"],
