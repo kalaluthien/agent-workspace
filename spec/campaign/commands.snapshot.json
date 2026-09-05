@@ -103,6 +103,7 @@
     ["orchestration/scenarios.als", "run", "R14b_RepairExcludesIt"],
     ["orchestration/scenarios.als", "run", "R14c_ScopeAdmitsTheListedMember"],
     ["orchestration/scenarios.als", "run", "R14d_ScopeAdmitsTheBaseWhateverTheListHolds"],
+    ["orchestration/scenarios.als", "run", "R14e_TheParentsListIsTheOneThatCounts"],
     ["orchestration/scenarios.als", "run", "R3b_CloseFromAnotherMachine"],
     ["orchestration/scenarios.als", "run", "R3c_GlobalCloseRuleBlocks"],
     ["orchestration/scenarios.als", "run", "R4c_CheckoutSwitchedUnderAgent"],

@@ -307,8 +307,10 @@ REPOSITORY_LINE = re.compile(r"^Repository:\s*(\S+)\s*$", re.MULTILINE)
 def issue_repo(issue, default_repo):
     """(repo, named, note) -- the repository a sub-issue's work lands in, read
     from the sub-issue's own body. `None` for repo means the reading did not
-    happen; `named` is that repository when the body named a member one and
-    None when it said `none`, which is what the `## Repos` scope check reads.
+    happen; `named` is that repository when the body named a MEMBER one, and
+    None for either spelling of the base -- `none`, and the base's own slug.
+    `named` is what the `## Repos` scope check reads, and None is what exempts
+    a destination from it.
 
     THE DESTINATION IS A FACT ABOUT THE SUB-ISSUE, NOT AN ARGUMENT. `--repo`
     used to decide it, so two takers naming different repositories both cut a

@@ -482,6 +482,28 @@ pred R14c_ScopeAdmitsTheListedMember {
    Expects 1 WITH the rule asserted: dropping the `Base` disjunct from
    `claimWithinScope` makes it UNSAT, which is the shape campaign-claim.py was
    in between #187 and #203. */
+/* R14e. WHOSE list, pinned. Every command above runs at `1 Campaign`, where
+   `campaignOf[Now.issue].reposInBody` and `Campaign.reposInBody` are the same
+   relation and the choice between them is free -- so the four of them together
+   say nothing about which campaign's scope a claim is judged against. Two
+   campaigns, and the sub-issue's OWN parent does not list its repository while
+   the other campaign does. Replacing `campaignOf[Now.issue]` with `Campaign`
+   in `claimWithinScope` makes this SAT and moves no other verdict, which is
+   the only thing that tells the two readings apart.
+
+   The reader makes exactly this mistake in the other direction -- it judges
+   against the campaign the caller typed, not the parent -- which is
+   kalaluthien/campaign-base#206 and not something this command can fix. */
+pred R14e_TheParentsListIsTheOneThatCounts {
+  claimWithinScope and claimAtomic and claimOnTheIssuesRepo
+  some c, other: Campaign, i: Issue |
+    c != other and
+    eventually (Now.event = Claim and Now.issue = i and i in c.memberIssues
+                and i.repo != Base
+                and i.repo not in c.reposInBody
+                and i.repo in other.reposInBody)
+}
+
 pred R14d_ScopeAdmitsTheBaseWhateverTheListHolds {
   claimWithinScope and claimAtomic and claimOnTheIssuesRepo
   some c: Campaign, i: Issue, r: Repo |
@@ -1182,6 +1204,8 @@ run R8c_RepairAdmitsTheOrdinaryClaim for 4 Issue, 1 PullRequest, 1 Campaign, 2 S
 run R14_ClaimOnARepoOutsideTheScope for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R14b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R14c_ScopeAdmitsTheListedMember for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- ...judged against the sub-issue's OWN campaign, which needs two to see
+run R14e_TheParentsListIsTheOneThatCounts for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 -- ...and the base, whose absence from `## Repos` is the point
 run R14d_ScopeAdmitsTheBaseWhateverTheListHolds for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R9_SettledSubIssueStaysClaimed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
