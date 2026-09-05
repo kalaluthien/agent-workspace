@@ -151,6 +151,17 @@ def herdr_stub(d, sessions):
     return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}"}
 
 
+def herdr_stub_raw(d, text):
+    """A `herdr` printing exactly `text`, for the shapes a listing should not
+    have and the guard must survive rather than traceback through."""
+    bindir = Path(d) / f"stub-raw-{abs(hash(text)) % 10**8}"
+    bindir.mkdir(exist_ok=True)
+    body = text.replace("'", "'\\''")
+    (bindir / "herdr").write_text(f"#!/bin/sh\nprintf '%s' '{body}'\n")
+    (bindir / "herdr").chmod(0o755)
+    return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}"}
+
+
 def no_herdr(d):
     """A PATH on which `herdr` exits non-zero: the COULD NOT LOOK case."""
     bindir = Path(d) / "nostub"
@@ -668,13 +679,88 @@ def main():
         check("...and on the code plane too", r.returncode == 2
               and "no role" in r.stderr, out(r)[:300])
 
+        # A CHECKOUT UNDER A CAMPAIGN DIRECTORY IS STILL CODE. A clone at
+        # <campaign>/repos/<repo>/ reports the campaign directory as where it
+        # is, so keying the planner refusal on that alone let a planner edit
+        # every member clone and every worktree under a campaign directory.
+        # A MEMBER repository's clone, not the base's: a clone of the base
+        # carries the marker and answers as a base in its own right, so it
+        # never reaches the scratch reading and the case could not see the
+        # bug it was written for. Probed: with `f.clone()` here, reverting
+        # `scratch` left the suite fully green.
+        member = f.member(branch="campaign-1/7-x")
+        r = ask(member, path=str(member / "code.txt"), env=planner)
+        check("a planner may not edit a checkout under the campaign directory",
+              r.returncode == 2 and "may not change code" in r.stderr,
+              out(r)[:400])
+        # ALLOW beside it: the campaign directory itself is still scratch.
+        r = ask(f.camp, path=str(f.camp / "plan.md"), env=planner)
+        check("ALLOW beside it: the campaign directory itself stays scratch",
+              r.returncode == 0 and "campaign-plane scratch" in r.stdout,
+              out(r)[:400])
+
         # COULD NOT LOOK is not the same as looked-and-found-nothing: with no
         # herdr the guard falls back to the claim reading and says so, which is
         # the pre-#185 behaviour and neither a wall nor a bypass.
         r = ask(f.base, tool="Bash", command="gh issue close 9", env=gone)
-        check("herdr unreadable falls back to the claim reading, not to a wall",
-              r.returncode == 2 and "could not be read" not in r.stderr
-              and "no claim covering" in r.stderr, out(r)[:400])
+        check("herdr unreadable falls back to the claim reading, and SAYS both "
+              "that it could not read the role and what it fell back to",
+              r.returncode == 2 and "no claim covering" in r.stderr
+              and "the role could not be read" in r.stderr
+              and "falling back to the claim reading" in r.stderr, out(r)[:600])
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=gone)
+        check("...and the file half says the same",
+              r.returncode == 2
+              and "falling back to the claim reading" in r.stderr, out(r)[:600])
+        # A NAME THAT IS NOT A CAMPAIGN NAME IS NOT CAMPAIGN WORK'S PROBLEM
+        # OUTSIDE A CAMPAIGN. Asked before "is this a base", it refused every
+        # gh write anywhere on this machine from any session herdr lists.
+        plain2 = Path(d) / "plain2"
+        plain2.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(plain2)],
+                       check=True)
+        r = ask(plain2, tool="Bash", command="gh issue close 9", env=unnamed)
+        check("a session with no campaign name still writes outside every base",
+              r.returncode == 0, out(r)[:400])
+        # A herdr row this cannot read is a reading, not a traceback: a hook
+        # that exits 1 is its OWN error, and the call then proceeds.
+        broken = herdr_stub_raw(
+            d, '{"result": {"agents": [{"agent_session": "not-an-object", '
+               '"name": "x"}]}}')
+        r = ask(f.base, tool="Bash", command="gh issue close 9", env=broken)
+        check("a malformed herdr row refuses rather than crashing",
+              r.returncode == 2 and "not an object" in r.stderr, out(r)[:400])
+
+        # ---- one ALLOW per refusal branch above, for the ordinary shape it
+        # could catch by mistake. Five fix rounds stayed green while each
+        # opened a false positive, because every case was named for a refusal.
+        # A refusal branch with no allow beside it is half a test.
+        r = ask(d, path=str(Path(d) / "elsewhere.md"), env=unnamed)
+        check("ALLOW beside the nameless refusal: a file outside every base",
+              r.returncode == 0 and "not campaign work" in r.stdout, out(r)[:300])
+        r = ask(d, path=str(Path(d) / "elsewhere.md"), env=planner)
+        check("ALLOW beside the planner code refusal: a file outside every base",
+              r.returncode == 0 and "not campaign work" in r.stdout, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue list", env=unnamed)
+        check("ALLOW beside the nameless refusal: a gh READ needs no role",
+              r.returncode == 0, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="grep -rn 'gh issue close 9' .",
+                env=unnamed)
+        check("ALLOW beside the nameless refusal: a quoted string is data",
+              r.returncode == 0, out(r)[:300])
+        # A listing carrying other sessions and fields this does not read still
+        # resolves the row it wants: the malformed-row refusal must not fire on
+        # a shape that is merely unfamiliar.
+        crowded = herdr_stub_raw(d, json.dumps({"result": {"agents": [
+            {"agent_session": {"value": "sid-other"}, "name": "campaign-2-executor-1",
+             "cwd": "/x", "unknown_field": 7},
+            {"agent_session": {"value": "sid-1"}, "name": "campaign-1-planner-3",
+             "revision": 12, "tab_id": "t1"},
+        ]}}))
+        r = ask(f.base, tool="Bash", command="gh issue close 116", env=crowded)
+        check("ALLOW beside the malformed-row refusal: other rows and unknown "
+              "fields are not malformed",
+              r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
         r = ask(d, tool="Bash", command="gh issue close 9", env=gone)
         check("...and outside every base it still allows, as it always did",
               r.returncode == 0, out(r)[:300])
@@ -695,6 +781,15 @@ def main():
         r = ask(f.base, path=str(f.base / "AGENTS.md"), env=stranger)
         check("...and the file half says the same",
               r.returncode == 2 and "another campaign" in r.stderr, out(r)[:400])
+        # ALLOW beside the foreign-campaign refusal: this campaign's own
+        # executor, standing at the same root, with the same claims present.
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=executor)
+        check("ALLOW beside the foreign-campaign refusal: its own campaign's "
+              "executor is admitted at the same root",
+              r.returncode == 0, out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh pr view 7", env=stranger)
+        check("ALLOW beside the foreign-campaign refusal: a read is not a write",
+              r.returncode == 0, out(r)[:400])
 
     if not ran:
         print("FAIL  the suite ran no case at all")

@@ -28,6 +28,24 @@ WHERE A FILE TARGET IS. A base tree -- main checkout, linked worktree anywhere,
 delegate clone, all by `git rev-parse --git-common-dir` from the TARGET, never
 from cwd -- or a campaign directory at a base root. Anything else is outside.
 
+WHO MAY WRITE WHAT. A session's ROLE decides, read from its name through
+`herdr agent list` and the pattern `campaign-name-session.py` owns: a PLANNER
+writes the campaign plane of any campaign and changes no code, an EXECUTOR
+writes its own campaign and the sub-issue it claimed, and a name that pattern
+does not admit is refused on both. A campaign directory is campaign-plane
+scratch, but a CHECKOUT under one -- a member clone, a linked worktree -- is
+code like any other. The role being unreadable is not the same as a name that
+is not a campaign name: the first falls back to the claim reading below and
+says so, because this guard runs for every session on this machine and a
+failed read must not wall them all.
+
+THE ROLE IS NOT A SECURITY BOUNDARY. A session can rename itself, so it can
+name itself a planner; every session here also shares one `gh` account, so one
+that renames itself already holds the power the name would grant. What this
+buys is that the role is EXPLICIT and the mistake is LOUD, which is what the
+guard is for. #194 is the sub-issue for tying the name to something the named
+session did not choose.
+
 WHO HOLDS A CLAIM. Derived, never stored. Clause 1: the target's own checkout
 is on a claimed branch. Clause 2: the session's repository root (the payload
 cwd's common dir, or the base above a cwd inside a campaign directory) has a
@@ -36,7 +54,7 @@ reads as holding every claim under it, design B's named cost -- and for a
 FILE write the commit gate is what holds. A `gh` write has no landing, so
 clause 2 is its only gate, narrowed by the issue number: `gh issue <verb> <n>`
 needs a claim on `<n>`. `gh issue create` is exempt, the number being minted
-there. Every exit prints which clause held, or that neither did, and what was
+there. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
 read: path, branch, and whether the ref came from `origin/` or the remote.
 
 EXIT. 0 allows; 2 refuses with the reading on stderr, where the model reads
@@ -143,11 +161,22 @@ def role_of(session_id):
     if not isinstance(rows, list):
         return None, None, "herdr agents was not a list"
     for a in rows:
+        # EVERY SHAPE HERE IS SOMEBODY ELSE'S OUTPUT. A row that is not an
+        # object, an `agent_session` that is not one, a `name` that is not a
+        # string: each used to reach an attribute that does not exist, and the
+        # traceback exited 1 -- which a PreToolUse hook treats as its own error
+        # and the call then PROCEEDS. Unreadable is a reading, and it belongs
+        # on the could-not-look path with the rest.
         if not isinstance(a, dict):
-            continue
-        if (a.get("agent_session") or {}).get("value") != session_id:
+            return None, None, "a herdr row was not an object"
+        sess = a.get("agent_session")
+        if sess is not None and not isinstance(sess, dict):
+            return None, None, "a herdr row's agent_session was not an object"
+        if (sess or {}).get("value") != session_id:
             continue
         name = a.get("name") or ""
+        if not isinstance(name, str):
+            return None, None, "a herdr row's name was not a string"
         m = pattern.match(name)
         if not m:
             return None, NO_ROLE, (f"session {session_id} is named "
@@ -213,13 +242,23 @@ def classify(target: Path):
     if base is None:
         return (False,
                 f"in no base tree and no campaign directory ({note or main})",
-                top, None)
+                top, False)
     camp = campaign_dir_of(target, base)
     if camp is not None:
-        return True, f"inside the campaign directory {camp}", top, camp
+        # SCRATCH means in a campaign directory and in NO CHECKOUT NEARER than
+        # the one holding that directory. A campaign directory sits at the base
+        # root, so a plain note under it reports the base as its checkout -- but
+        # a member repository clone at <campaign>/repos/<repo>/ and a linked
+        # worktree at <campaign>/worktrees/<n>/ are checkouts of their own,
+        # under the same campaign directory, and they are code. Keying on the
+        # campaign directory alone let a planner edit both.
+        _, camp_top, _ = checkout_of(camp)
+        scratch = top is None or top == camp_top
+        return (True, f"inside the campaign directory {camp}"
+                + ("" if scratch else f", in the checkout {top}"), top, scratch)
     return (True,
             f"inside the base {base}" + (f" (checkout {top})" if by_git else ""),
-            top, None)
+            top, False)
 
 
 def ref_exists(branch, repo_root):
@@ -490,12 +529,15 @@ TAKE = ("Take the claim first: scripts/campaign-claim.py take <campaign issue> "
 
 
 def file_call(tool, target: Path, cwd: Path, session_id=""):
-    inside, where, top, camp = classify(target)
+    inside, where, top, scratch = classify(target)
     if not inside:
         return allow([f"{tool} -> {target} is {where}; not campaign work."])
     read = [f"{tool} -> {target}, {where}."]
     campaign, role, how_role = role_of(session_id)
-    read.append(how_role)
+    read.append(how_role if role else
+                f"{how_role}, so the role could not be read; falling back to "
+                f"the claim reading alone, which is what this gate was "
+                f"before #185.")
     if role == NO_ROLE:
         return refuse(read + [NAMELESS])
     if role == "planner":
@@ -506,10 +548,11 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
         # the notes it plans from, and #185 puts the campaign directories on
         # the campaign plane beside the issues.
         #
-        # NOT keyed on `top`: a campaign directory sits at the base root, so a
-        # target under it is inside the base checkout as well and `top` is set
-        # for both. `camp` is the question actually being asked.
-        if camp is None and top is not None:
+        # NOT keyed on `top` alone: a campaign directory sits at the base
+        # root, so a target under it reports the base as its checkout too.
+        # `scratch` is the question actually being asked -- in a campaign
+        # directory AND in no checkout of its own.
+        if not scratch and top is not None:
             return refuse(read + [
                 f"a planner may not change code, and {target} is in the "
                 f"checkout {top}.",
@@ -570,6 +613,15 @@ def bash_call(command, cwd: Path, session_id=""):
                         "gated where it lands, by the pre-commit claim gate."])
     what = ", ".join([w for _, is_write, w in gh if is_write]
                      + [f"a `gh` this cannot read as a call, in `{x}`" for x in stray])
+    root, how = session_root(cwd)
+    # IS THIS CAMPAIGN WORK AT ALL -- asked before the role, and that order is
+    # the whole of it. Asked after, a session whose name is not campaign-shaped
+    # was refused every `gh` write anywhere on this machine, including in
+    # repositories that have nothing to do with any campaign. This guard is
+    # registered for every session here, so that is an outage and not a gate.
+    if root is None or not (root / BASE_MARKER).is_file():
+        why = how if root is None else f"{how}, which is a repository and not a base"
+        return allow([f"{what}: {why}, so this session is in no campaign."])
     campaign, role, how_role = role_of(session_id)
     if role == NO_ROLE:
         return refuse([f"{what}: a campaign-plane write.", how_role, NAMELESS])
@@ -581,21 +633,15 @@ def bash_call(command, cwd: Path, session_id=""):
         # had no passing form for them and the closes were run by hand.
         return allow([f"{what}: {how_role}, and a planner writes the campaign "
                       f"plane of any campaign."])
-    root, how = session_root(cwd)
-    # A repository is not a base. `session_root` answers "which repository root"
-    # and any git checkout has one, so gating on `root is None` alone walled
-    # every campaign-plane write from every unrelated repository on the machine
-    # -- and this guard is registered for every session. The marker is what
-    # `file_call` already decides on, so both halves ask the same question.
-    if root is None or not (root / BASE_MARKER).is_file():
-        why = how if root is None else f"{how}, which is a repository and not a base"
-        return allow([f"{what}: {why}, so this session is in no campaign."])
     # EVERY issue named must be covered, not one of them. Collapsing two to
     # `None` and asking for any claim at all is a WIDENING: it let a claim on
     # #7 admit `gh issue close 9; gh issue close 7`, and a decoy naming a
     # claimed issue was the shape a review turned into a bypass. A write whose
     # issue this could not read still falls back to the unnarrowed question,
     # which is the weaker gate and is printed as such.
+    fell_back = [] if role else [
+        f"{how_role}, so the role could not be read; falling back to the claim "
+        f"reading alone, which is what this gate was before #185."]
     if role == "executor" and campaign is not None:
         mine, foreign = [], []
         for h in held(root)[0]:
@@ -618,14 +664,16 @@ def bash_call(command, cwd: Path, session_id=""):
     if uncovered:
         i = uncovered[0][0]
         return refuse([f"{what}: a campaign-plane write, and this session holds "
-                       f"no claim covering a write to #{i}.", how, *detail, TAKE])
+                       f"no claim covering a write to #{i}.", how, *fell_back,
+                       *detail, TAKE])
     if unreadable:
         holders, d = held(root)
         if not holders and own is not None:
             holders = [own]
         if not holders:
             return refuse([f"{what}: a campaign-plane write, and this session "
-                           f"holds no claim covering it.", how, *detail, *d, TAKE])
+                           f"holds no claim covering it.", how, *fell_back,
+                           *detail, *d, TAKE])
         path, branch, source = holders[0]
         return allow([f"{what}: {how}; {path} is on {branch}, a claim "
                       f"({source})."])

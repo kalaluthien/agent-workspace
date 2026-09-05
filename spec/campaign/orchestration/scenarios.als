@@ -177,6 +177,14 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    and bounds the planner's by the BINDING instead -- any campaign bound to the
    session's own machine -- and Q10/Q10b/Q10c are the three that say which of
    the two rules refuses an executor the same claim. */
+/* WHAT THIS IS NOT. `s.role` is read from the session's own name, and a session
+   can rename itself -- so this table bounds MISTAKES and not adversaries. It is
+   not weaker than what it replaces: every session on a machine shares one `gh`
+   account, so a session that renames itself a planner already holds the power
+   the name would grant, and what the rule buys is that the role is explicit and
+   the mistake is loud. Stated here because a permission table is the thing a
+   reader is most likely to mistake for a security boundary. The sub-issue for
+   tying the name to something the named session did not choose is #194. */
 pred mayAct[s: Session, e: Event, i: lone Issue] {
   some s.role
   s.role = Planner implies (planeOf[e] = CampaignPlane

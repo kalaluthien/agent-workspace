@@ -151,11 +151,14 @@ is the ordinary shape for a member repository and the mode of last resort for th
 base, and a repo-less campaign has the first form and not the second; the launch
 itself is `.claude/skills/opening-campaign/references/launching.md`). A
 separate executor is never the planner's subagent — a subagent shares the
-planner's pane and dies with it. The planner's own hands, and an in-process
-subagent it starts *on a sub-issue*, are the planner executing that sub-issue
-itself. **A planner holds no claim of its own**: the branch it cuts at a
-delegate launch is the delegate's workspace, and it holds one in its own name
-only when it executes a sub-issue itself. The model is `Planner` in
+planner's pane and dies with it, and carries the planner's session id, so the
+guard reads the PLANNER's role for everything it does. **A planner changes no
+code**, by its own hands or through a subagent: #185 refuses it, and its code
+modes are a herdr delegate or a separate executor session. What it does keep is
+the campaign plane of *any* campaign — a comment, a sub-issue, a close, a claim
+cut for a delegate — which is the row the claim reading had no passing form for.
+**A planner holds no claim of its own**: the branch it cuts at a delegate launch
+is the delegate's workspace. The model is `Planner` in
 `spec/campaign/orchestration/system.als`, and it requires a planner only of a
 delegate launch.
 
@@ -172,10 +175,19 @@ branch the delegate's.
 roles, assigned in the order sessions appear, so two do not both pick `-1` —
 this sentence is that counting rule's one home. **The role word is a label for
 a person reading `herdr agent list`**: it says what the session is for, and the
-machine reads only `<campaign issue>` from a name. It is per-session, where the
-`role` on the model's Agent atom is per launch and records the shape one
-sub-issue was worked in; a planner working a sub-issue by its own hands or an
-in-process subagent is the planner executing it. Choose the role by what the
+machine reads it. **The role word is not a label**: `check-campaign-claim.py`
+resolves it from `herdr agent list` and decides both planes by it, so a name of
+the wrong shape is refused every campaign write and a session named `planner`
+may change no code. It is per-session, where the `role` on the model's Agent
+atom is per launch and records the shape one sub-issue was worked in.
+
+**The name is not a security boundary, and is not meant to be.** A session can
+rename itself, and every session here shares one `gh` account — so one that
+renames itself a planner already holds the power the name would grant. What the
+role buys is that it is explicit and that the mistake is loud; #194 is the
+sub-issue for tying the name to something the named session did not choose.
+
+Choose the role by what the
 session will do when it names itself; one that turns out to be the other role
 renames itself with the same script, and nothing durable carries the old name —
 a rename touches no claim, because a claim is a ref and a checkout. **Set it at
@@ -254,8 +266,9 @@ what was built. Quote `campaign-tracker settlement`'s note for that row, not its
 a repo-less campaign. **Work that lands no commit is claimed all the same**,
 with `campaign-claim take`: one ref, cut on the base. **Two readers make that
 true rather than remembered, one rule read at two moments.**
-`scripts/check-campaign-claim.py` is a `PreToolUse` guard answering "is this a
-change to campaign work that no claim covers" for what has an unambiguous
+`scripts/check-campaign-claim.py` is a `PreToolUse` guard answering "may this
+session make this change" — the claim for an executor, and since #185 the
+session's ROLE for both — for what has an unambiguous
 target — a file tool's path and a `gh` write — and allowing every other shell
 command unread, saying so. `scripts/check-commit-claim.py` is the `pre-commit`
 gate where a shell write lands: a commit on a base tree or under a campaign
@@ -272,8 +285,10 @@ and reads none of this one's settings.
 **Do it here, hand it to a subagent, or hand it to a delegate.** The session
 the request arrived at chooses the mode before the work starts, **first by the
 repository and only then by cost**. It is the planner only in the second shape
-(§ The binding), where the first two modes are the planner executing the
-sub-issue itself and the third is a separate executor.
+(§ The binding). **The three modes are an EXECUTOR's**: since #185 a planner
+changes no code by its own hands and none through a subagent, which carries its
+session id and so its role, so a planner's only shape here is the third —
+a delegate, or a separate executor session that takes the sub-issue.
 
 An executor that *changes* a repository runs in a process started in that
 repository's checkout: a herdr delegate in `<campaign>/repos/<repo>/` for a member
@@ -286,7 +301,8 @@ skills of the session or directory they were *started in*, and a skill marked
 
 Then, within what the repository allows, choose by cost:
 
-- **your own hands** for one small edit needing nothing from the build loop;
+- **your own hands** for one small edit needing nothing from the build loop
+  (an executor's hands: a planner's are refused, and the refusal says so);
 - **a subagent on a worktree** when several sub-issues can run at once, or the work
   would eat the session's turns;
 - **a herdr delegate in a clone** when the work needs the repository's own
