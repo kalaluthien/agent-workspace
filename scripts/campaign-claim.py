@@ -542,7 +542,10 @@ def cmd_take(args):
     # base -- `none`, and the base's own slug -- come back with `named` None,
     # because the base is never in the list and a campaign that changes it is
     # not thereby out of its own scope. The model is `claimWithinScope`, whose
-    # `Base` disjunct R14d pins.
+    # `Base` disjunct R14d pins. That the base is never in the list is a
+    # convention no reader enforces -- kalaluthien/campaign-base#205 -- and the
+    # exemption does not rest on it: a campaign that listed the base would admit
+    # the same claim through `listed` instead.
     if named is not None:
         listed, repos_note = campaign_repos(args.campaign_issue)
         if listed is None:

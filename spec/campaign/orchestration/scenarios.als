@@ -122,7 +122,18 @@ pred claimOnTheIssuesRepo {
    not hold the base -- the shape every campaign with a member repository has --
    and campaign-claim.py refused exactly that shape from #187 until #203, so
    every sub-issue of such a campaign was unclaimable. R14d is that world, and
-   it goes UNSAT the moment this disjunct is dropped. */
+   it goes UNSAT the moment this disjunct is dropped.
+
+   THE READER APPROXIMATES THIS IN TWO NAMED WAYS, both of them the reader's
+   fault and neither a reason to narrow the rule. `campaignOf[Now.issue]` is the
+   sub-issue's ACTUAL parent; campaign-claim.py reads the `## Repos` of whatever
+   campaign number the caller typed and never asks GitHub for the parent, so the
+   two agree exactly when the caller types the right one. And `x in none` is
+   FALSE, so this also forbids a claim on an issue no campaign holds as a
+   member, which the reader does not check either. Both are
+   kalaluthien/campaign-base#206, and nothing here changes when it lands.
+   Separately, the base's absence from `## Repos` is assumed by R14d's witness
+   and enforced by no reader and no fact: kalaluthien/campaign-base#205. */
 pred claimWithinScope {
   always (Now.event = Claim implies
             (Now.issue.repo = Base
