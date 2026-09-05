@@ -96,6 +96,28 @@ assert DelegateLaunchedByPlanner {
     (some p: role.Planner | p.peer = a.launcher and p.task = a.task)
 }
 
+/* A SESSION NEVER TAKES TWO SUB-ISSUES WITHOUT A COMPACTION BETWEEN THEM, and
+   it is DERIVED rather than assumed: `launch` spends the bit, only
+   `agentRelease` returns it, and `launch` requires it.
+
+   MEASURED 2026-09-05, one clause deleted at a time. Deleting either of
+   `launch`'s two clauses reddens THIS command, UNSAT -> SAT. Deleting the
+   release's `Compacted' = Compacted + Who.session` does NOT: with nothing to
+   return the bit, a session's second launch becomes unreachable and this
+   assert stays green over an empty set. So that clause is pinned by P8 below
+   and by nothing here, which is the whole reason P8 exists -- a green assert
+   is a rule only while its subject is reachable.
+
+   It is the whole rule #198 lands, read at its two ends: `campaign-claim.py
+   release` compacting its own pane, and `scripts/campaign-assign.py` refusing
+   a pane that has not. */
+assert SessionCompactsBetweenSubIssues {
+  always all a1, a2: Agent |
+    (some a1.peer and a1.peer = a2.peer and a1 != a2
+     and Now.event = Launch and Target.agent = a2 and a1 in Launched)
+    implies once (Now.event = Release and Who.session = a1.peer)
+}
+
 /* ---------------- reachability floor ---------------- */
 
 pred Cov_LaunchAgent      { eventually (Now.event = Launch and some Target.agent) }
@@ -114,6 +136,17 @@ pred Cov_StandDown        { eventually Now.event = StandDown }
 pred Cov_Retire           { eventually Now.event = Retire }
 pred Cov_AgentDie         { eventually Now.event = AgentDie }
 pred Cov_GuardedRelease   { eventually Now.event = Release }
+/* THE CONTROL FOR THE ASSERT ABOVE. Without it, deleting the release's
+   `Compacted' = Compacted + Who.session` makes a session's second launch
+   unreachable and the assert stays green on a vacuity nobody would read. This
+   says two launches by one session do happen, so a green assert is a rule and
+   not an empty set. */
+pred P8_TwoSubIssuesOneSession {
+  some s: Session | some disj a1, a2: Agent |
+    a1.peer = s and a2.peer = s
+    and eventually (Now.event = Launch and Target.agent = a1
+                    and eventually (Now.event = Launch and Target.agent = a2))
+}
 
 /* ---------------- commands ---------------- */
 
@@ -163,3 +196,8 @@ run Cov_StandDown        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Ag
 run Cov_Retire           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_AgentDie         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_GuardedRelease   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+
+-- a release compacts, a launch spends it, so two sub-issues need a release between them
+check SessionCompactsBetweenSubIssues for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 12 steps expect 0
+-- and two sub-issues on one session do happen, so the check above is not vacuous
+run P8_TwoSubIssuesOneSession        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 12 steps expect 1
