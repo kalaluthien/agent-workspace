@@ -781,11 +781,32 @@ exit 1
         check("...including an explicit --repo that happens to be the base",
               r.returncode == 1 and "The sub-issue decides" in out,
               f"exit {r.returncode}: {out[:250]}")
+        # ...and the allow beside it: an agreeing --repo gets past the check.
+        # Asserted on the refusal being ABSENT and the reading having happened,
+        # not on the exit status: this run stops later for want of a ref, which
+        # is a different branch and would satisfy a status-keyed case either way.
+        r = claim(["release", "9999", "500", "--repo", "other/elsewhere"], empty)
+        out = r.stdout + r.stderr
+        check("...while a release whose --repo AGREES gets past the check",
+              "The sub-issue decides" not in out
+              and "says its work lands in other/elsewhere" in out,
+              f"exit {r.returncode}: {out[:250]}")
         r = claim(["take", "9999", "500", "x", "--repo",
                    "kalaluthien/campaign-base"], path)
         out = r.stdout + r.stderr
         check("...and take says the same about an explicit base --repo",
               r.returncode == 1 and "The sub-issue decides" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        # THE ALLOW BESIDE THE REFUSAL. `--repo` may confirm, so a `--repo` that
+        # AGREES with the sub-issue must pass -- otherwise "may only confirm"
+        # is a flag that can only ever refuse, which is a false positive on the
+        # one shape the flag exists for. Every refusal branch this lands ships
+        # with the ordinary shape it could wrongly catch named beside it.
+        r = claim(["take", "9999", "500", "y", "--repo", "other/elsewhere"],
+                  path)
+        out = r.stdout + r.stderr
+        check("...while a --repo that AGREES with the sub-issue passes",
+              "The sub-issue decides" not in out and "cut from" in out,
               f"exit {r.returncode}: {out[:250]}")
 
         # ...and the OTHER side of the same gate: a branch whose pull request
