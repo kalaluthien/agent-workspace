@@ -329,7 +329,12 @@ class Corpus:
                 return int(m.group(1))
             m = self.issue_ref.search(text)
             if m:
-                return int(m.group(1))
+                # `<owner>/<repo>#N` numbers issues and pull requests from one
+                # sequence, so a reference is an issue only when it is not a
+                # pull request: a brief saying "review kalaluthien/campaign-base#183"
+                # names PR #183, whose sub-issue is #176, and reading it as
+                # issue 183 opens a row for an issue nobody ever filed.
+                return self.pr_map.get(int(m.group(1)), int(m.group(1)))
         return None
 
     def attribute(self, record, cwd, branch_field, is_sub, brief_issue, carried, ts):

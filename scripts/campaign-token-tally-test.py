@@ -141,6 +141,15 @@ def build(tmp):
         assistant("m-child", day + "02:06:00Z", str(base), out=20, session="s1",
                   agent="a2"),
     ])
+    # A brief naming the pull request the long way. Issues and pull requests
+    # share one number sequence, so #400 here is PR 400 and not issue 400.
+    write(root / "proj" / "s1" / "subagents" / "agent-a3.jsonl", [
+        user(day + "03:30:00Z", str(base),
+             "verify the fix on kalaluthien/campaign-base#400",
+             session="s1", agent="a3"),
+        assistant("m-verify", day + "03:31:00Z", str(base), out=25, session="s1",
+                  agent="a3"),
+    ])
     pr_map = tmp / "prs.json"
     pr_map.write_text(json.dumps([{"number": 400, "headRefName": "campaign-1/303-x"}]))
     return root, base, pr_map
@@ -173,12 +182,16 @@ def main():
         check("a campaign branch names the issue when the cwd does not",
               r301 and r301[3] == "90", str(r301))
         r303 = row(issues, "303")
+        # Two subagents name PR 400 -- one by the review command, one in prose --
+        # and both land on the sub-issue that pull request is for.
         check("a review subagent is attributed by the pull request in its brief",
-              r303 and r303[3] == "30", str(r303))
+              r303 and r303[7] == "brief" and r303[3] == "55", str(r303))
         check("...even though it ran in another sub-issue's worktree",
               r300 and r300[1] == "1", str(r300))
-        check("...and counts as a subagent turn, apart from its parent",
-              r303 and r303[2] == "1", str(r303))
+        check("a pull request named the long way is not read as an issue",
+              row(issues, "400") is None, issues)
+        check("...and both count as subagent turns, apart from their parent",
+              r303 and r303[2] == "2" and r303[1] == "2", str(r303))
 
         # A DELETED WORKTREE IS STILL THIS CAMPAIGN'S WORK. The filter is
         # containment in the base root, never whether the path still resolves.
